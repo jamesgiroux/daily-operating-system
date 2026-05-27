@@ -1,0 +1,9 @@
+Blocking findings
+
+1. **Section 4, Request; Section 7, Idempotency And Rate-Limit Storage:** `category` is optional, but the receipt and idempotency key require a normalized category slug. Missing-category behavior is not frozen.
+Action: Make `category` required, or define the exact default slug and apply it before validation, receipt rendering, dry-run preview, and idempotency key creation.
+
+2. **Section 5, Placement Error Taxonomy:** The sample error shape includes `allowed`, `retry_after_seconds`, and `trace_id` as nullable fields, but the rules say those fields are present only for specific codes. DOS-480 cannot implement a stable wire mapping from this.
+Action: Choose one contract: omit optional fields when not applicable, or require nullable fields on every error. Update the sample and tests to match.
+
+Final verdict: HOLD

@@ -15,8 +15,8 @@ Deepen an entity's intelligence by identifying data gaps, conducting web researc
 ### Step 1: Read Current Intelligence
 
 Resolve the entity and load all existing workspace data (entity-intelligence skill auto-fires):
-- `dashboard.json` — Current vitals
-- `intelligence.json` — Current assessment, risks, wins
+- Runtime entity facts — Current vitals
+- Runtime entity intelligence — Current assessment, risks, wins
 - `stakeholders.md` — Current stakeholder map
 - Recent `_archive/` meeting summaries
 - People/ profiles for known stakeholders
@@ -26,8 +26,8 @@ Resolve the entity and load all existing workspace data (entity-intelligence ski
 Compare what the workspace has against what a complete intelligence picture requires:
 
 **Staleness check:**
-- When was `intelligence.json` last updated? Flag if older than 14 days.
-- When was `dashboard.json` last refreshed? Flag if metrics are from last quarter.
+- When was runtime intelligence last updated? Flag if older than 14 days.
+- When were runtime metrics last refreshed? Flag if metrics are from last quarter.
 - When was the last meeting with this entity? Flag if more than 30 days.
 
 **Completeness check:**
@@ -106,12 +106,12 @@ Organize research findings into workspace-relevant categories:
 - "Vendor sprawl reduction" theme from CTO keynote is a risk if we are seen as an additional vendor rather than a consolidation play
 
 ### Recommended Intelligence Updates
-1. Update intelligence.json executive_assessment to reflect Q4 earnings and AI pivot
+1. Promote an updated executive assessment through DailyOS runtime/services
 2. Add competitive risk: Atlas Analytics analytics module + CloudVault consulting partnership
 3. Add opportunity: AI analytics pivot alignment with our platform
 4. Create People/ profile for Maya Patel (new CDO)
 5. Update David Park's profile with vendor sprawl concerns
-6. Update dashboard.json with Q4 revenue figures if available
+6. Promote Q4 revenue facts through DailyOS runtime/services if available
 ```
 
 ### Step 5: Present for Confirmation
@@ -121,7 +121,7 @@ Present the enrichment report and proposed workspace updates:
 ```
 Ready to update Acme Corp workspace:
 
-1. Update Accounts/Acme-Corp/intelligence.json:
+1. Promote runtime intelligence updates for Acme Corp:
    - Revised executive assessment reflecting Q4 performance and AI pivot
    - New risk: competitive evaluation (Atlas Analytics, CloudVault)
    - New opportunity: AI analytics alignment

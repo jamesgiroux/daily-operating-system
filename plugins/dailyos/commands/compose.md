@@ -19,7 +19,7 @@ Resolve the recipient from People/:
 1. Match name against `People/` directories
 2. Load person.json for role, organization, classification
 3. Load person.md for relationship intelligence
-4. Check data/emails.json for email address and recent correspondence
+4. Check DailyOS email/context tools for email address and recent correspondence
 5. If recipient not found, check if they appear in any entity stakeholders.md or meeting attendees
 
 **Domain alias resolution:** If the user says "email Marcus" and there is no People/Marcus but there is a People/Marcus-Rivera, resolve it. If ambiguous, ask.
@@ -118,7 +118,7 @@ After presenting the draft:
 
 ```
 Would you like me to:
-1. Track the commitments in this email as actions in data/actions.json
+1. Track the commitments in this email as DailyOS actions
    - "Send adoption metrics report to Marcus" — due Mar 3
    - "Schedule renewal discussion with Marcus and Elena" — due week of Mar 10
 2. Update People/Marcus-Rivera/person.md with today's outreach

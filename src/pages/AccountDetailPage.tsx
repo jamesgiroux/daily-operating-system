@@ -390,7 +390,6 @@ export default function AccountDetailPage() {
             />
             <StrategicLandscape
               intelligence={intelligence}
-              onUpdateField={page.handleUpdateIntelField}
               onItemFeedback={fb.submit}
             />
           </MarginSection>
@@ -405,7 +404,6 @@ export default function AccountDetailPage() {
             />
             <ValueCommitments
               intelligence={intelligence}
-              onUpdateField={page.handleUpdateIntelField}
               onItemFeedback={fb.submit}
             />
           </MarginSection>
@@ -560,7 +558,7 @@ export default function AccountDetailPage() {
       const isInternal = /internal|^program\b|\bteam\b/i.test(c.title) || /internal/.test(contextLower);
 
       // Linear link on the action row = shared with the team. Only the
-      // linear_identifier + linear_url flavour is wired today; REDACTED
+      // linear_identifier + linear_url flavour is wired today; Salesforce
       // / Slack writeback lands later.
       const linearHref = c.linearUrl;
       const visibility: "shared" | "private" = linearHref ? "shared" : "private";
@@ -721,7 +719,7 @@ export default function AccountDetailPage() {
     const hasRecentlyLanded = recentlyLanded.length > 0;
     const hasReports = reports.length > 0;
     // Shared chapter: any open commitment with a Linear link present on the
-    // action row surfaces the "Shared with the team" chapter. REDACTED /
+    // action row surfaces the "Shared with the team" chapter. Salesforce /
     // Slack writeback sources will extend this check when wired.
     const hasSharedData = work.commitments.some((c) => !!c.linearUrl);
 
@@ -791,6 +789,8 @@ export default function AccountDetailPage() {
                     headline={r.title}
                     rationale={r.context ?? ""}
                     provenance={provenance}
+                    trustBand={r.trustBand ?? null}
+                    sourceCount={r.commitmentSourceCount ?? null}
                     accepting={work.suggestionAcceptInFlight.has(r.id)}
                     onAccept={() => work.handleAcceptSuggestion(r.id)}
                     dismissing={work.suggestionDismissInFlight.has(r.id)}
@@ -804,6 +804,7 @@ export default function AccountDetailPage() {
                         entityType="account"
                         field={`work_suggestion:${r.id}`}
                         itemKey={r.title}
+                        source="account_detail_work"
                         onDismissed={() => {
                           suppressions.markSuppressed(`work_suggestion:${r.id}`, r.title);
                           return work.handleDismissSuggestion(r.id);

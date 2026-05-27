@@ -28,7 +28,7 @@ When this skill activates:
 | Quotation marks | Use curly quotes in prose | Replace straight quotes with curly |
 | Oxford comma | Always use serial comma | Add comma before "and" in lists |
 | WordPress VIP | Capital P in WordPress | Fix capitalization |
-| REDACTED products | Agentforce, Data Cloud | Fix product name styling |
+| Salesforce products | Agentforce, Data Cloud | Fix product name styling |
 
 ### Anti-Patterns (via detect_patterns.py)
 

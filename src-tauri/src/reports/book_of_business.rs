@@ -812,7 +812,7 @@ pub fn gather_book_of_business_data(
     let mut meeting_count_stmt = db
         .conn_ref()
         .prepare(
-            "SELECT COUNT(*) FROM meeting_entities me
+            "SELECT COUNT(*) FROM effective_meeting_entities me
              JOIN meetings m ON m.id = me.meeting_id
              WHERE me.entity_id = ?1 AND me.entity_type = 'account'
                AND m.start_time >= ?2",

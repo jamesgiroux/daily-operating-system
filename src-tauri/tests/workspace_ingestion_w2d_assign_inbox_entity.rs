@@ -1,6 +1,6 @@
 use abilities_runtime::abilities::provenance::source::WorkspaceFileKind;
 use chrono::{DateTime, Utc};
-use dailyos_lib::db::ActionDb;
+use dailyos_lib::db::{ActionDb, DbAccount};
 use dailyos_lib::services::workspace_ingestion::lifecycle::{LifecycleRepo, LifecycleState};
 use dailyos_lib::services::workspace_ingestion::pipeline::file_id_from_identity;
 use dailyos_lib::services::workspace_ingestion::registry::WorkspaceSourceRegistry;
@@ -21,6 +21,7 @@ fn assign_inbox_entity_adds_link_reruns_pipeline_and_ingests() {
         "notes.txt",
         b"Follow up with Acme next week.",
     );
+    seed_account(db);
     let file_id = seed_pending_assignment(&conn, &workspace_root, &file_path);
 
     let receipt = dailyos_lib::command_test_api::assign_inbox_entity_for_tests(
@@ -64,6 +65,17 @@ fn assign_inbox_entity_adds_link_reruns_pipeline_and_ingests() {
         )
         .expect("run count");
     assert_eq!(run_count, 1);
+}
+
+fn seed_account(db: &ActionDb) {
+    let account = DbAccount {
+        id: "acme".to_string(),
+        name: "Acme".to_string(),
+        tracker_path: Some("Accounts/Acme".to_string()),
+        updated_at: Utc::now().to_rfc3339(),
+        ..Default::default()
+    };
+    db.upsert_account(&account).expect("account upsert");
 }
 
 fn migrated_conn() -> Connection {

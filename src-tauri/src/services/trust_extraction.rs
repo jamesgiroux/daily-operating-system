@@ -74,12 +74,46 @@ pub fn extract_target_footprint(
     }
 
     let Some(context) = build_account_extraction_context(db, entity_type, entity_id)? else {
-        return Ok(ExtractionOutcome::SkipExtractorMismatch {
-            reason: ExtractionMismatchReason::TargetNotFound,
-        });
+        return extract_generic_target_footprint(db, subject, entity_type, entity_id);
     };
 
     Ok(extract_target_footprint_from_context(&context, subject))
+}
+
+pub fn extract_generic_target_footprint(
+    db: &ActionDb,
+    subject: &SubjectRef,
+    entity_type: &str,
+    entity_id: &str,
+) -> Result<ExtractionOutcome, ExtractionError> {
+    if !entity_exists(db, entity_type, entity_id)? {
+        return Ok(ExtractionOutcome::SkipExtractorMismatch {
+            reason: ExtractionMismatchReason::TargetNotFound,
+        });
+    }
+
+    let Some(expected_subject) = subject_for_entity(entity_type, entity_id) else {
+        return Ok(ExtractionOutcome::SkipExtractorMismatch {
+            reason: ExtractionMismatchReason::SubjectRefMismatch,
+        });
+    };
+
+    if subject != &expected_subject {
+        return Ok(ExtractionOutcome::SkipExtractorMismatch {
+            reason: ExtractionMismatchReason::SubjectRefMismatch,
+        });
+    }
+
+    Ok(ExtractionOutcome::Ok {
+        footprint: TargetFootprint {
+            subject: expected_subject,
+            names: names_for_entity(db, entity_type, entity_id)?,
+            domains: Vec::new(),
+            related_subjects: Vec::new(),
+            allowed_aliases: Vec::new(),
+        },
+        portfolio_footprints: Vec::new(),
+    })
 }
 
 pub fn build_account_extraction_context(
@@ -168,7 +202,7 @@ fn table_for_entity_type(entity_type: &str) -> Option<&'static str> {
         "account" => Some("accounts"),
         "project" => Some("projects"),
         "person" => Some("people"),
-        "meeting" => Some("meetings_history"),
+        "meeting" => Some("meetings"),
         "user" => Some("user_entity"),
         _ => None,
     }
@@ -284,6 +318,30 @@ fn aliases_for_account(account: &DbAccount) -> Vec<String> {
     clean_dedup(aliases)
 }
 
+fn names_for_entity(
+    db: &ActionDb,
+    entity_type: &str,
+    entity_id: &str,
+) -> Result<Vec<String>, ExtractionError> {
+    let names = match normalize_entity_type(entity_type).as_str() {
+        "person" => db
+            .get_person(entity_id)?
+            .map(|person| vec![person.name, person.email])
+            .unwrap_or_default(),
+        "project" => db
+            .get_project(entity_id)?
+            .map(|project| vec![project.name])
+            .unwrap_or_default(),
+        "meeting" => db
+            .get_meeting_by_id(entity_id)?
+            .map(|meeting| vec![meeting.title])
+            .unwrap_or_default(),
+        "user" | "global" => Vec::new(),
+        _ => Vec::new(),
+    };
+    Ok(clean_dedup(names))
+}
+
 fn collect_alias_values(value: Option<&Value>, aliases: &mut Vec<String>) {
     match value {
         Some(Value::String(alias)) => aliases.push(alias.clone()),
@@ -388,9 +446,7 @@ mod tests {
     use rusqlite::Connection;
 
     fn fresh_db() -> Connection {
-        let conn = Connection::open_in_memory().expect("open in-memory db");
-        crate::migrations::run_migrations(&conn).expect("apply migrations");
-        conn
+        crate::migrations::migrated_in_memory_for_tests()
     }
 
     fn db_view(conn: &Connection) -> &ActionDb {
@@ -433,6 +489,26 @@ mod tests {
                 params![id],
             )
             .expect("insert project");
+    }
+
+    fn insert_person(db: &ActionDb, id: &str) {
+        db.conn_ref()
+            .execute(
+                "INSERT INTO people (id, email, name, updated_at) \
+                 VALUES (?1, 'person@example.com', 'Fixture Person', '2026-05-04T00:00:00Z')",
+                params![id],
+            )
+            .expect("insert person");
+    }
+
+    fn insert_meeting(db: &ActionDb, id: &str) {
+        db.conn_ref()
+            .execute(
+                "INSERT INTO meetings (id, title, meeting_type, start_time, created_at) \
+                 VALUES (?1, 'Fixture Meeting', 'customer', '2026-05-04T12:00:00Z', '2026-05-04T00:00:00Z')",
+                params![id],
+            )
+            .expect("insert meeting");
     }
 
     #[test]
@@ -535,6 +611,89 @@ mod tests {
                 reason: ExtractionMismatchReason::SubjectRefMismatch
             }
         );
+    }
+
+    #[test]
+    fn extract_returns_ok_for_existing_person_with_generic_footprint() {
+        let conn = fresh_db();
+        let db = db_view(&conn);
+        insert_person(db, "person-target");
+
+        let outcome = extract_target_footprint(
+            db,
+            &SubjectRef::Person("person-target".into()),
+            "person",
+            "person-target",
+        )
+        .expect("extract");
+
+        let ExtractionOutcome::Ok {
+            footprint,
+            portfolio_footprints,
+        } = outcome
+        else {
+            panic!("expected ok outcome");
+        };
+
+        assert_eq!(
+            footprint.subject,
+            SubjectRef::Person("person-target".into())
+        );
+        assert!(footprint.names.contains(&"Fixture Person".to_string()));
+        assert!(footprint.domains.is_empty());
+        assert!(portfolio_footprints.is_empty());
+    }
+
+    #[test]
+    fn extract_returns_ok_for_existing_project_with_generic_footprint() {
+        let conn = fresh_db();
+        let db = db_view(&conn);
+        insert_project(db, "project-target");
+
+        let outcome = extract_target_footprint(
+            db,
+            &SubjectRef::Project("project-target".into()),
+            "project",
+            "project-target",
+        )
+        .expect("extract");
+
+        let ExtractionOutcome::Ok { footprint, .. } = outcome else {
+            panic!("expected ok outcome");
+        };
+
+        assert_eq!(
+            footprint.subject,
+            SubjectRef::Project("project-target".into())
+        );
+        assert!(footprint.names.contains(&"Fixture Project".to_string()));
+        assert!(footprint.domains.is_empty());
+    }
+
+    #[test]
+    fn extract_returns_ok_for_existing_meeting_with_generic_footprint() {
+        let conn = fresh_db();
+        let db = db_view(&conn);
+        insert_meeting(db, "meeting-target");
+
+        let outcome = extract_target_footprint(
+            db,
+            &SubjectRef::Meeting("meeting-target".into()),
+            "meeting",
+            "meeting-target",
+        )
+        .expect("extract");
+
+        let ExtractionOutcome::Ok { footprint, .. } = outcome else {
+            panic!("expected ok outcome");
+        };
+
+        assert_eq!(
+            footprint.subject,
+            SubjectRef::Meeting("meeting-target".into())
+        );
+        assert!(footprint.names.contains(&"Fixture Meeting".to_string()));
+        assert!(footprint.domains.is_empty());
     }
 
     #[test]

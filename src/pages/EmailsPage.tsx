@@ -15,6 +15,7 @@ import { FolioRefreshButton } from "@/components/ui/folio-refresh-button";
 import { EmailEntityChip } from "@/components/ui/email-entity-chip";
 import { EntityPicker } from "@/components/ui/entity-picker";
 import { DatePicker } from "@/components/ui/date-picker";
+import { TrustBandIndicator } from "@/components/ui/TrustBandIndicator";
 import { compareEmailRank } from "@/lib/email-ranking";
 import { Archive, Check, Clock, ExternalLink, Pin, X } from "lucide-react";
 import { toast } from "sonner";
@@ -88,8 +89,18 @@ export default function EmailsPage() {
   const [failureActionInFlight, setFailureActionInFlight] = useState(false);
   const [, startTransition] = useTransition();
   const inboxSyncInFlight = useRef(false);
+  const loadEmailsInFlight = useRef(false);
+  const pendingSilentRefresh = useRef(false);
+  const silentRefreshTimer = useRef<number | null>(null);
 
   const loadEmails = useCallback(async (silent = false) => {
+    if (loadEmailsInFlight.current) {
+      if (silent) {
+        pendingSilentRefresh.current = true;
+      }
+      return;
+    }
+    loadEmailsInFlight.current = true;
     try {
       const [result, dismissedItems, stats] = await Promise.all([
         invoke<EmailBriefingData>("get_emails_enriched"),
@@ -114,7 +125,12 @@ export default function EmailsPage() {
     } catch (err) {
       setError(err instanceof Error ? err.message : String(err));
     } finally {
+      loadEmailsInFlight.current = false;
       setLoading(false);
+      if (pendingSilentRefresh.current) {
+        pendingSilentRefresh.current = false;
+        window.setTimeout(() => { void loadEmails(true); }, 0);
+      }
     }
   }, []);
 
@@ -161,7 +177,22 @@ export default function EmailsPage() {
   }, [syncInboxPresence]);
 
   // Silent refresh on backend email events — uses transition to avoid blink
-  const silentRefresh = useCallback(() => { loadEmails(true); }, [loadEmails]);
+  const silentRefresh = useCallback(() => {
+    if (silentRefreshTimer.current !== null) {
+      window.clearTimeout(silentRefreshTimer.current);
+    }
+    silentRefreshTimer.current = window.setTimeout(() => {
+      silentRefreshTimer.current = null;
+      void loadEmails(true);
+    }, 750);
+  }, [loadEmails]);
+
+  useEffect(() => () => {
+    if (silentRefreshTimer.current !== null) {
+      window.clearTimeout(silentRefreshTimer.current);
+    }
+  }, []);
+
   useTauriEvent("emails-updated", silentRefresh);
   useTauriEvent("workflow-completed", silentRefresh);
   useTauriEvent("email-enrichment-progress", silentRefresh);
@@ -1171,6 +1202,12 @@ function EmailIntelItem({
           emailId={email.id}
           onEntityChanged={onEntityChanged}
         />
+        {email.summaryContextTrustBand && <TrustBandIndicator band={email.summaryContextTrustBand} />}
+        {email.summaryContextSourceCount && email.summaryContextSourceCount > 0 && (
+          <span>
+            claim context · {email.summaryContextSourceCount} source{email.summaryContextSourceCount === 1 ? "" : "s"}
+          </span>
+        )}
         {email.sentiment && email.sentiment !== "neutral" && (
           <span className={s.emailIntelSentiment}>
             <span

@@ -326,7 +326,7 @@ pub struct DbAccountProduct {
     /// When this product classification was last verified from Glean
     #[serde(skip_serializing_if = "Option::is_none")]
     pub last_verified_at: Option<String>,
-    /// Source system for product data (e.g., "REDACTED", "glean")
+    /// Source system for product data (e.g., "Salesforce", "glean")
     #[serde(skip_serializing_if = "Option::is_none")]
     pub data_source: Option<String>,
     pub created_at: String,
@@ -607,6 +607,16 @@ pub struct DbEmail {
     pub entity_id: Option<String>,
     pub entity_type: Option<String>,
     pub contextual_summary: Option<String>,
+    /// Prompt/evidence version that produced contextual_summary metadata.
+    pub summary_context_prompt_version: Option<String>,
+    /// Trust band for the claim-backed context used by the summary.
+    pub summary_context_trust_band: Option<String>,
+    /// Distinct prompt-safe source count used by the summary.
+    pub summary_context_source_count: Option<i64>,
+    /// JSON array of source keys used by the summary; not exposed to UI.
+    pub summary_context_source_keys_json: Option<String>,
+    /// UTC timestamp when summary context metadata was generated.
+    pub summary_context_generated_at: Option<String>,
     pub sentiment: Option<String>,
     pub urgency: Option<String>,
     pub user_is_last_sender: bool,
@@ -1142,6 +1152,7 @@ pub struct DbAccountSourceRef {
     pub source_kind: String,
     pub source_value: Option<String>,
     pub observed_at: String,
+    pub source_record_ref: Option<String>,
 }
 
 /// A row from the `entity_feedback_events` table.

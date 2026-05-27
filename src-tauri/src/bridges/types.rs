@@ -534,11 +534,14 @@ pub(crate) async fn invoke_registry_json<'a>(
     )
 }
 
-pub(crate) struct RequestScopedInvocation {
+pub(crate) struct RequestScopedInvocation<'a> {
     pub registry_actor: Actor,
     pub response_actor: BridgeActor,
     pub surface: BridgeSurface,
     pub claim_dismissal_surface: ClaimDismissalSurface,
+    pub dry_run: bool,
+    pub confirmation: Option<&'a ConfirmationToken>,
+    pub confirmation_store: Option<&'a dyn ConfirmationTokenStore>,
 }
 
 pub(crate) async fn invoke_registry_json_for_actor<'a>(
@@ -546,7 +549,7 @@ pub(crate) async fn invoke_registry_json_for_actor<'a>(
     services: &'a ServiceContext<'a>,
     provider: &'a dyn IntelligenceProvider,
     tracer: &'a dyn AbilityTracer,
-    invocation: RequestScopedInvocation,
+    invocation: RequestScopedInvocation<'a>,
     ability_name: &str,
     input_json: serde_json::Value,
 ) -> Result<AbilityResponseJson, AbilityInvokeError> {
@@ -555,6 +558,9 @@ pub(crate) async fn invoke_registry_json_for_actor<'a>(
         response_actor,
         surface,
         claim_dismissal_surface,
+        dry_run,
+        confirmation,
+        confirmation_store,
     } = invocation;
     let descriptor = resolve_pre_dispatch(
         registry,
@@ -588,9 +594,9 @@ pub(crate) async fn invoke_registry_json_for_actor<'a>(
         mode: services.mode,
         surface,
         claim_dismissal_surface,
-        dry_run: false,
-        confirmation: None,
-        confirmation_store: None,
+        dry_run,
+        confirmation,
+        confirmation_store,
     };
     let args_hash = confirmation_args_hash(&input_json);
     verify_confirmation_token(
@@ -607,7 +613,7 @@ pub(crate) async fn invoke_registry_json_for_actor<'a>(
         provider,
         tracer,
         registry_actor,
-        None,
+        confirmation.map(|token| token as &dyn ConfirmationProof),
         claim_dismissal_surface,
     );
     let output_json = registry
@@ -911,7 +917,7 @@ fn maintenance_blocked_for_surface(descriptor: &AbilityDescriptor, surface: Brid
 fn ability_response_from_output_json(
     ability_name: String,
     ability_version: String,
-    schema_version: u32,
+    descriptor_schema_version: u32,
     actor: BridgeActor,
     surface: BridgeSurface,
     output_json: serde_json::Value,
@@ -932,6 +938,7 @@ fn ability_response_from_output_json(
         .cloned()
         .unwrap_or_else(|| serde_json::json!({ "warnings": [] }));
     let invocation_id = parse_invocation_id(&provenance)?;
+    let schema_version = response_schema_version(&data).unwrap_or(descriptor_schema_version);
 
     Ok(AbilityResponseJson {
         invocation_id,
@@ -943,6 +950,13 @@ fn ability_response_from_output_json(
         diagnostics: render_diagnostics(surface, diagnostics),
         raw_provenance: Some(provenance),
     })
+}
+
+fn response_schema_version(data: &serde_json::Value) -> Option<u32> {
+    data.get("schemaVersion")
+        .or_else(|| data.get("schema_version"))
+        .and_then(serde_json::Value::as_u64)
+        .and_then(|value| u32::try_from(value).ok())
 }
 
 fn parse_invocation_id(provenance: &serde_json::Value) -> Result<InvocationId, AbilityInvokeError> {
@@ -997,8 +1011,9 @@ fn provenance_actor_for_bridge(actor: BridgeActor) -> ProvenanceActor {
         BridgeActor::SurfaceClient => ProvenanceActor::External {
             source: "surface_client".to_string(),
         },
-        BridgeActor::McpClient => ProvenanceActor::External {
-            source: "mcp_client".to_string(),
+        BridgeActor::McpClient => ProvenanceActor::Agent {
+            name: "dailyos-mcp".to_string(),
+            version: env!("CARGO_PKG_VERSION").to_string(),
         },
     }
 }
@@ -1471,6 +1486,63 @@ mod tests {
             "type": "object",
             "additionalProperties": false
         })
+    }
+
+    fn output_with_data(data: serde_json::Value) -> serde_json::Value {
+        serde_json::json!({
+            "data": data,
+            "diagnostics": { "warnings": [] },
+            "provenance": {
+                "invocation_id": "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa"
+            }
+        })
+    }
+
+    #[test]
+    fn ability_response_schema_version_follows_camel_case_payload_version() {
+        let response = ability_response_from_output_json(
+            "versioned_fixture".to_string(),
+            "0.1.0".to_string(),
+            2,
+            BridgeActor::System,
+            BridgeSurface::Worker,
+            output_with_data(serde_json::json!({ "schemaVersion": 1 })),
+        )
+        .expect("versioned output is a valid bridge response");
+
+        assert_eq!(response.schema_version, 1);
+        assert_eq!(response.data["schemaVersion"], 1);
+    }
+
+    #[test]
+    fn ability_response_schema_version_follows_snake_case_payload_version() {
+        let response = ability_response_from_output_json(
+            "versioned_fixture".to_string(),
+            "0.1.0".to_string(),
+            2,
+            BridgeActor::System,
+            BridgeSurface::Worker,
+            output_with_data(serde_json::json!({ "schema_version": 1 })),
+        )
+        .expect("versioned output is a valid bridge response");
+
+        assert_eq!(response.schema_version, 1);
+        assert_eq!(response.data["schema_version"], 1);
+    }
+
+    #[test]
+    fn ability_response_schema_version_falls_back_to_descriptor_version() {
+        let response = ability_response_from_output_json(
+            "unversioned_fixture".to_string(),
+            "0.1.0".to_string(),
+            2,
+            BridgeActor::System,
+            BridgeSurface::Worker,
+            output_with_data(serde_json::json!({ "ok": true })),
+        )
+        .expect("unversioned output is a valid bridge response");
+
+        assert_eq!(response.schema_version, 2);
     }
 
     fn confirmation_descriptor() -> AbilityDescriptor {

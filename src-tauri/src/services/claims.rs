@@ -15,6 +15,7 @@
 //! D3 owns the 9-mechanism backfill. D4 routes existing dismissal callers
 //! through `commit_claim`. D5 owns reconcile_post_migration.
 
+use std::cell::Cell;
 use std::collections::{HashMap, HashSet, VecDeque};
 use std::sync::{Arc, OnceLock};
 
@@ -50,7 +51,8 @@ use crate::services::context::{ClaimDismissalSurface, ServiceContext};
 use crate::services::versioning::{
     checked_next_version, insert_committed_secondary_attempt, insert_version_event,
     mark_mutation_attempt_committed, mark_mutation_attempt_committed_noop, version_to_i64,
-    MutationGuard, SignalCursor, VersionActorKind, VersionEventInsert, VersionEventKind,
+    MutationAttempt, MutationGuard, MutationSubject, SignalCursor, VersionActorKind,
+    VersionEventInsert, VersionEventKind,
 };
 use abilities_runtime::predicates::registry::{PredicateRef, PREDICATE_REGISTRY_VERSION};
 use abilities_runtime::structured_claim::{
@@ -802,6 +804,89 @@ fn db_id_of(db: &ActionDb) -> usize {
 }
 
 static COMMIT_LOCKS: OnceLock<Mutex<HashMap<CommitKey, Arc<Mutex<()>>>>> = OnceLock::new();
+
+thread_local! {
+    static LEGACY_PROJECTION_SUPPRESSION_DEPTH: Cell<usize> = const { Cell::new(0) };
+    static SHADOW_CANONICALIZATION_SUPPRESSION_DEPTH: Cell<usize> = const { Cell::new(0) };
+    static CANONICAL_MATCH_SUPPRESSION_DEPTH: Cell<usize> = const { Cell::new(0) };
+}
+
+#[must_use = "dropping the guard resumes per-claim legacy projection"]
+pub(crate) struct LegacyProjectionSuppressionGuard;
+
+impl Drop for LegacyProjectionSuppressionGuard {
+    fn drop(&mut self) {
+        LEGACY_PROJECTION_SUPPRESSION_DEPTH.with(|depth| {
+            depth.set(depth.get().saturating_sub(1));
+        });
+    }
+}
+
+/// Suppress the synchronous compatibility projection normally run by
+/// `commit_claim`. Bulk backfills use this to commit many claim rows and then
+/// rebuild the affected legacy projection once per subject.
+pub(crate) fn suppress_legacy_projection_for_current_thread() -> LegacyProjectionSuppressionGuard {
+    LEGACY_PROJECTION_SUPPRESSION_DEPTH.with(|depth| {
+        depth.set(depth.get().saturating_add(1));
+    });
+    LegacyProjectionSuppressionGuard
+}
+
+fn legacy_projection_suppressed_for_current_thread() -> bool {
+    LEGACY_PROJECTION_SUPPRESSION_DEPTH.with(|depth| depth.get() > 0)
+}
+
+#[must_use = "dropping the guard resumes post-commit shadow canonicalization"]
+pub(crate) struct ShadowCanonicalizationSuppressionGuard;
+
+impl Drop for ShadowCanonicalizationSuppressionGuard {
+    fn drop(&mut self) {
+        SHADOW_CANONICALIZATION_SUPPRESSION_DEPTH.with(|depth| {
+            depth.set(depth.get().saturating_sub(1));
+        });
+    }
+}
+
+/// Suppress the post-commit shadow canonicalization audit for bulk historical
+/// backfills. `commit_claim` still runs the live tombstone, duplicate, and
+/// contradiction gates before writing the claim.
+pub(crate) fn suppress_shadow_canonicalization_for_current_thread(
+) -> ShadowCanonicalizationSuppressionGuard {
+    SHADOW_CANONICALIZATION_SUPPRESSION_DEPTH.with(|depth| {
+        depth.set(depth.get().saturating_add(1));
+    });
+    ShadowCanonicalizationSuppressionGuard
+}
+
+fn shadow_canonicalization_suppressed_for_current_thread() -> bool {
+    SHADOW_CANONICALIZATION_SUPPRESSION_DEPTH.with(|depth| depth.get() > 0)
+}
+
+#[must_use = "dropping the guard resumes semantic duplicate and contradiction checks"]
+pub(crate) struct CanonicalMatchSuppressionGuard;
+
+impl Drop for CanonicalMatchSuppressionGuard {
+    fn drop(&mut self) {
+        CANONICAL_MATCH_SUPPRESSION_DEPTH.with(|depth| {
+            depth.set(depth.get().saturating_sub(1));
+        });
+    }
+}
+
+/// Suppress expensive global canonical-match scans for bulk historical
+/// imports. This does not bypass exact dedup preflights performed by the
+/// producer, and `commit_claim` still runs the tombstone pre-gate before
+/// writing.
+pub(crate) fn suppress_canonical_match_for_current_thread() -> CanonicalMatchSuppressionGuard {
+    CANONICAL_MATCH_SUPPRESSION_DEPTH.with(|depth| {
+        depth.set(depth.get().saturating_add(1));
+    });
+    CanonicalMatchSuppressionGuard
+}
+
+fn canonical_match_suppressed_for_current_thread() -> bool {
+    CANONICAL_MATCH_SUPPRESSION_DEPTH.with(|depth| depth.get() > 0)
+}
 
 fn commit_locks() -> &'static Mutex<HashMap<CommitKey, Arc<Mutex<()>>>> {
     COMMIT_LOCKS.get_or_init(|| Mutex::new(HashMap::new()))
@@ -2998,6 +3083,58 @@ fn candidate_claim_shadowed_by_compatible_tombstone(
     )
 }
 
+fn replace_policy_supersedes_candidate_tx(
+    conn: &rusqlite::Connection,
+    subject: &SubjectRef,
+    proposal: &ClaimProposal,
+    commit_policy: CommitPolicyClass,
+    mutation_target: &ClaimMutationTarget,
+) -> Result<Option<String>, ClaimError> {
+    if !matches!(commit_policy, CommitPolicyClass::Replace)
+        || proposal.claim_type != ClaimType::Recommendation.as_str()
+        || !matches!(
+            mutation_target,
+            ClaimMutationTarget::Insert { .. } | ClaimMutationTarget::InsertWithId { .. }
+        )
+    {
+        return Ok(None);
+    }
+
+    let Some(kind) = subject_kind_label(subject) else {
+        return Ok(None);
+    };
+    let Some(id) = subject_id_for_lookup(subject) else {
+        return Ok(None);
+    };
+
+    let field = proposal.field_path.as_deref().unwrap_or("");
+    let surface_columns = claim_surface_shadow_columns(conn, "active_claim")?;
+    let sql = format!(
+        "SELECT {CLAIM_COLUMNS}, {surface_columns}
+         FROM intelligence_claims active_claim
+         WHERE json_valid(active_claim.subject_ref) = 1
+           AND lower(json_extract(active_claim.subject_ref, '$.kind')) = lower(?1)
+           AND json_extract(active_claim.subject_ref, '$.id') = ?2
+           AND active_claim.claim_type = ?3
+           AND coalesce(active_claim.field_path, '') = coalesce(?4, '')
+           AND active_claim.claim_state = 'active'
+           AND active_claim.surfacing_state = 'active'
+         ORDER BY active_claim.created_at DESC
+         LIMIT 1"
+    );
+    let mut stmt = conn.prepare(&sql)?;
+    let mut rows = stmt.query(params![kind, id, proposal.claim_type.as_str(), field])?;
+    let existing = if let Some(row) = rows.next()? {
+        Some(read_claim_row_with_surface_shadow_state(row)?)
+    } else {
+        None
+    };
+
+    Ok(existing
+        .filter(|claim| proposal.id.as_deref() != Some(claim.id.as_str()))
+        .map(|claim| claim.id))
+}
+
 fn canonical_input_shadowed_by_compatible_tombstone(
     conn: &rusqlite::Connection,
     input: &CanonicalMatchInput,
@@ -3586,6 +3723,9 @@ fn project_legacy_state_for_claim(
     tx: &ActionDb,
     claim: &IntelligenceClaim,
 ) -> Result<(), ClaimError> {
+    if legacy_projection_suppressed_for_current_thread() {
+        return Ok(());
+    }
     let outcomes = crate::services::derived_state::project_claim_to_db_legacy_tx(ctx, tx, claim);
     for outcome in outcomes {
         crate::services::derived_state::record_projection_outcome(ctx, tx, &claim.id, &outcome)
@@ -4976,19 +5116,19 @@ fn corroborate_in_tx(
     source_mechanism: Option<&str>,
     now: &str,
 ) -> Result<String, ClaimError> {
-    let existing: Option<(String, f64, i64)> = tx
+    let existing: Option<(String, f64, i64, Option<String>)> = tx
         .conn_ref()
         .query_row(
-            "SELECT id, strength, reinforcement_count
+            "SELECT id, strength, reinforcement_count, source_asof
              FROM claim_corroborations
              WHERE claim_id = ?1 AND data_source = ?2",
             params![claim_id, data_source],
-            |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?)),
+            |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?, row.get(3)?)),
         )
         .optional()?;
 
     let id = match existing {
-        Some((id, strength, count)) => {
+        Some((id, strength, count, existing_source_asof)) => {
             let numerator = (count as f64 + 2.0).ln();
             let denominator = (count as f64 + 1.0).ln();
             let increment = if denominator > 0.0 {
@@ -4997,13 +5137,15 @@ fn corroborate_in_tx(
                 1.0
             };
             let new_strength = (strength + increment).min(1.0);
+            let source_asof = newest_source_asof(existing_source_asof.as_deref(), source_asof);
             tx.conn_ref().execute(
                 "UPDATE claim_corroborations
                  SET strength = ?1,
                      reinforcement_count = reinforcement_count + 1,
-                     last_reinforced_at = ?2
-                 WHERE id = ?3",
-                params![new_strength, &now, &id],
+                     last_reinforced_at = ?2,
+                     source_asof = ?3
+                 WHERE id = ?4",
+                params![new_strength, &now, source_asof.as_deref(), &id],
             )?;
             id
         }
@@ -5027,6 +5169,26 @@ fn corroborate_in_tx(
         }
     };
     Ok(id)
+}
+
+fn newest_source_asof(existing: Option<&str>, incoming: Option<&str>) -> Option<String> {
+    match (existing, incoming) {
+        (None, None) => None,
+        (Some(existing), None) => Some(existing.to_string()),
+        (None, Some(incoming)) => Some(incoming.to_string()),
+        (Some(existing), Some(incoming)) => {
+            match (
+                DateTime::parse_from_rfc3339(existing),
+                DateTime::parse_from_rfc3339(incoming),
+            ) {
+                (Ok(existing_time), Ok(incoming_time)) if incoming_time > existing_time => {
+                    Some(incoming.to_string())
+                }
+                (Err(_), Ok(_)) => Some(incoming.to_string()),
+                _ => Some(existing.to_string()),
+            }
+        }
+    }
 }
 
 fn insert_semantic_evidence_in_tx(
@@ -5069,6 +5231,10 @@ fn load_claims_where(
     claim_type: Option<&str>,
     lifecycle_where: &str,
 ) -> Result<Vec<IntelligenceClaim>, ClaimError> {
+    load_claims_where_limited(db, subject_ref, claim_type, lifecycle_where, None)
+}
+
+fn claim_subject_lookup_parts(subject_ref: &str) -> Result<Option<(String, String)>, ClaimError> {
     // L2 cycle-13 fix #2: parse the caller's subject_ref into the
     // typed SubjectRef and query by json_extract on $.kind+$.id
     // (with json_valid guard) so the reader matches the same
@@ -5084,29 +5250,239 @@ fn load_claims_where(
         // Multi/Global readers aren't supported through this path —
         // they're a future addition (matching commit_claim's
         // behavior, which also returns no PRE-GATE match for them).
-        return Ok(Vec::new());
+        return Ok(None);
     };
     let Some(id) = subject_id_for_lookup(&subject) else {
+        return Ok(None);
+    };
+    Ok(Some((kind.to_string(), id.to_string())))
+}
+
+fn load_claims_where_limited(
+    db: &ActionDb,
+    subject_ref: &str,
+    claim_type: Option<&str>,
+    lifecycle_where: &str,
+    limit: Option<usize>,
+) -> Result<Vec<IntelligenceClaim>, ClaimError> {
+    let Some((kind, id)) = claim_subject_lookup_parts(subject_ref)? else {
         return Ok(Vec::new());
     };
     let surface_columns = claim_surface_shadow_columns(db.conn_ref(), "current_claim")?;
+    let claim_type_filter = if claim_type.is_some() {
+        "AND claim_type = ?3"
+    } else {
+        ""
+    };
+    let limit_clause = match (claim_type, limit) {
+        (Some(_), Some(_)) => " LIMIT ?4",
+        (None, Some(_)) => " LIMIT ?3",
+        _ => "",
+    };
+    let workspace_lifecycle_filter =
+        workspace_source_lifecycle_filter(db.conn_ref(), "current_claim")?;
     let sql = format!(
         "SELECT {CLAIM_COLUMNS}, {surface_columns}
          FROM intelligence_claims current_claim
          WHERE json_valid(subject_ref) = 1
            AND lower(json_extract(subject_ref, '$.kind')) = lower(?1)
            AND json_extract(subject_ref, '$.id') = ?2
-           AND (?3 IS NULL OR claim_type = ?3)
+           {claim_type_filter}
            AND {lifecycle_where}
-         ORDER BY created_at DESC"
+           {workspace_lifecycle_filter}
+         ORDER BY created_at DESC{limit_clause}"
     );
     let mut stmt = db.conn_ref().prepare(&sql)?;
-    let mut rows = stmt.query(params![kind, id, claim_type])?;
+    let mut rows = match (claim_type, limit) {
+        (Some(claim_type), Some(limit)) => {
+            stmt.query(params![kind, id, claim_type, limit as i64])?
+        }
+        (Some(claim_type), None) => stmt.query(params![kind, id, claim_type])?,
+        (None, Some(limit)) => stmt.query(params![kind, id, limit as i64])?,
+        (None, None) => stmt.query(params![kind, id])?,
+    };
     let mut claims = Vec::new();
     while let Some(row) = rows.next()? {
         claims.push(read_claim_row_with_surface_shadow_state(row)?);
     }
     Ok(claims)
+}
+
+fn load_claims_where_for_surface_limited(
+    db: &ActionDb,
+    subject_ref: &str,
+    claim_type: Option<&str>,
+    lifecycle_where: &str,
+    surface: &str,
+    limit: Option<usize>,
+) -> Result<Vec<IntelligenceClaim>, ClaimError> {
+    load_claims_where_for_surface_limited_filtered(
+        db,
+        subject_ref,
+        claim_type,
+        lifecycle_where,
+        surface,
+        limit,
+        false,
+    )
+}
+
+fn load_claims_where_for_surface_limited_filtered(
+    db: &ActionDb,
+    subject_ref: &str,
+    claim_type: Option<&str>,
+    lifecycle_where: &str,
+    surface: &str,
+    limit: Option<usize>,
+    prompt_safe_only: bool,
+) -> Result<Vec<IntelligenceClaim>, ClaimError> {
+    let surface = normalize_claim_surface(surface)?;
+    if !table_exists_sqlite(db.conn_ref(), "claim_surface_dismissals")? {
+        if prompt_safe_only {
+            return load_claims_where_limited_prompt_safe(
+                db,
+                subject_ref,
+                claim_type,
+                lifecycle_where,
+                limit,
+            );
+        }
+        return load_claims_where_limited(db, subject_ref, claim_type, lifecycle_where, limit);
+    }
+    let Some((kind, id)) = claim_subject_lookup_parts(subject_ref)? else {
+        return Ok(Vec::new());
+    };
+    let surface_columns = claim_surface_shadow_columns(db.conn_ref(), "current_claim")?;
+    let claim_type_filter = if claim_type.is_some() {
+        "AND claim_type = ?3"
+    } else {
+        ""
+    };
+    let prompt_safe_filter = if prompt_safe_only {
+        "AND sensitivity IN ('public', 'internal')"
+    } else {
+        ""
+    };
+    let surface_placeholder = if claim_type.is_some() { "?4" } else { "?3" };
+    let limit_clause = match (claim_type, limit) {
+        (Some(_), Some(_)) => " LIMIT ?5",
+        (None, Some(_)) => " LIMIT ?4",
+        _ => "",
+    };
+    let workspace_lifecycle_filter =
+        workspace_source_lifecycle_filter(db.conn_ref(), "current_claim")?;
+    let sql = format!(
+        "SELECT {CLAIM_COLUMNS}, {surface_columns}
+         FROM intelligence_claims current_claim
+         WHERE json_valid(subject_ref) = 1
+           AND lower(json_extract(subject_ref, '$.kind')) = lower(?1)
+           AND json_extract(subject_ref, '$.id') = ?2
+           {claim_type_filter}
+           AND {lifecycle_where}
+           {prompt_safe_filter}
+           {workspace_lifecycle_filter}
+           AND NOT EXISTS (
+               SELECT 1
+               FROM claim_surface_dismissals dismissal
+               WHERE dismissal.claim_id = current_claim.id
+                 AND dismissal.surface = {surface_placeholder}
+           )
+         ORDER BY created_at DESC{limit_clause}"
+    );
+    let mut stmt = db.conn_ref().prepare(&sql)?;
+    let mut rows = match (claim_type, limit) {
+        (Some(claim_type), Some(limit)) => stmt.query(params![
+            kind,
+            id,
+            claim_type,
+            surface.as_str(),
+            limit as i64
+        ])?,
+        (Some(claim_type), None) => stmt.query(params![kind, id, claim_type, surface.as_str()])?,
+        (None, Some(limit)) => stmt.query(params![kind, id, surface.as_str(), limit as i64])?,
+        (None, None) => stmt.query(params![kind, id, surface.as_str()])?,
+    };
+    let mut claims = Vec::new();
+    while let Some(row) = rows.next()? {
+        claims.push(read_claim_row_with_surface_shadow_state(row)?);
+    }
+    Ok(claims)
+}
+
+fn load_claims_where_limited_prompt_safe(
+    db: &ActionDb,
+    subject_ref: &str,
+    claim_type: Option<&str>,
+    lifecycle_where: &str,
+    limit: Option<usize>,
+) -> Result<Vec<IntelligenceClaim>, ClaimError> {
+    let Some((kind, id)) = claim_subject_lookup_parts(subject_ref)? else {
+        return Ok(Vec::new());
+    };
+    let surface_columns = claim_surface_shadow_columns(db.conn_ref(), "current_claim")?;
+    let claim_type_filter = if claim_type.is_some() {
+        "AND claim_type = ?3"
+    } else {
+        ""
+    };
+    let limit_clause = match (claim_type, limit) {
+        (Some(_), Some(_)) => " LIMIT ?4",
+        (None, Some(_)) => " LIMIT ?3",
+        _ => "",
+    };
+    let workspace_lifecycle_filter =
+        workspace_source_lifecycle_filter(db.conn_ref(), "current_claim")?;
+    let sql = format!(
+        "SELECT {CLAIM_COLUMNS}, {surface_columns}
+         FROM intelligence_claims current_claim
+         WHERE json_valid(subject_ref) = 1
+           AND lower(json_extract(subject_ref, '$.kind')) = lower(?1)
+           AND json_extract(subject_ref, '$.id') = ?2
+           {claim_type_filter}
+           AND {lifecycle_where}
+           AND sensitivity IN ('public', 'internal')
+           {workspace_lifecycle_filter}
+         ORDER BY created_at DESC{limit_clause}"
+    );
+    let mut stmt = db.conn_ref().prepare(&sql)?;
+    let mut rows = match (claim_type, limit) {
+        (Some(claim_type), Some(limit)) => {
+            stmt.query(params![kind, id, claim_type, limit as i64])?
+        }
+        (Some(claim_type), None) => stmt.query(params![kind, id, claim_type])?,
+        (None, Some(limit)) => stmt.query(params![kind, id, limit as i64])?,
+        (None, None) => stmt.query(params![kind, id])?,
+    };
+    let mut claims = Vec::new();
+    while let Some(row) = rows.next()? {
+        claims.push(read_claim_row_with_surface_shadow_state(row)?);
+    }
+    Ok(claims)
+}
+
+fn workspace_source_lifecycle_filter(
+    conn: &Connection,
+    claim_alias: &str,
+) -> Result<String, ClaimError> {
+    if !table_exists_sqlite(conn, "workspace_file_lifecycle")? {
+        return Ok(String::new());
+    }
+    Ok(format!(
+        "AND NOT EXISTS (
+            SELECT 1
+            FROM workspace_file_lifecycle workspace_lifecycle
+            WHERE {claim_alias}.source_ref = 'workspace_file:' || workspace_lifecycle.file_id
+              AND workspace_lifecycle.lifecycle_state IN (
+                'rejected',
+                'quarantined',
+                'superseded',
+                'ignored',
+                'scratchpad',
+                'archived',
+                'deleted'
+              )
+        )"
+    ))
 }
 
 fn actor_class_for_actor(actor: &str) -> Option<ClaimActorClass> {
@@ -5856,6 +6232,16 @@ where
             ));
         }
 
+        if proposal.supersedes.is_none() && proposal.tombstone.is_none() {
+            proposal.supersedes = replace_policy_supersedes_candidate_tx(
+                tx.conn_ref(),
+                &subject,
+                &proposal,
+                metadata.commit_policy_class,
+                &mutation_target,
+            )?;
+        }
+
         if let Some(superseded_id) = proposal.supersedes.as_deref() {
             let superseded = load_claim_by_id(tx.conn_ref(), superseded_id)?
                 .ok_or_else(|| ClaimError::UnknownClaimId(superseded_id.to_string()))?;
@@ -6079,6 +6465,7 @@ where
         // shadow the active claim).
         if proposal.tombstone.is_none()
             && !matches!(metadata.commit_policy_class, CommitPolicyClass::Append)
+            && !canonical_match_suppressed_for_current_thread()
         {
             let mut canonical_duplicate_needs_verification = None;
             if let Some(mut existing) = load_active_claim_by_dedup_key(
@@ -6584,11 +6971,14 @@ where
 
     mutation_guard.mark_completed();
 
-    if let Err(error) = record_shadow_canonicalization_for_committed_claim(ctx, db, &committed) {
-        log::warn!(
-            "shadow canonicalization audit failed after claim commit; \
-             repair_target=canonicalization_shadow_audit error={error}"
-        );
+    if !shadow_canonicalization_suppressed_for_current_thread() {
+        if let Err(error) = record_shadow_canonicalization_for_committed_claim(ctx, db, &committed)
+        {
+            log::warn!(
+                "shadow canonicalization audit failed after claim commit; \
+                 repair_target=canonicalization_shadow_audit error={error}"
+            );
+        }
     }
     Ok(committed)
 }
@@ -9068,13 +9458,34 @@ pub fn load_claims_active_for_surface(
     claim_type: Option<&str>,
     surface: &str,
 ) -> Result<Vec<IntelligenceClaim>, ClaimError> {
-    let mut visible = Vec::new();
-    for claim in load_claims_active(db, subject_ref, claim_type)? {
-        if !is_claim_dismissed_on_surface(db, &claim.id, surface)? {
-            visible.push(claim);
-        }
+    load_claims_where_for_surface_limited(
+        db,
+        subject_ref,
+        claim_type,
+        "claim_state = 'active' AND surfacing_state = 'active'",
+        surface,
+        None,
+    )
+}
+
+pub fn load_claims_active_for_surface_limited(
+    db: &ActionDb,
+    subject_ref: &str,
+    claim_type: Option<&str>,
+    surface: &str,
+    limit: usize,
+) -> Result<Vec<IntelligenceClaim>, ClaimError> {
+    if limit == 0 {
+        return Ok(Vec::new());
     }
-    Ok(visible)
+    load_claims_where_for_surface_limited(
+        db,
+        subject_ref,
+        claim_type,
+        "claim_state = 'active' AND surfacing_state = 'active'",
+        surface,
+        Some(limit),
+    )
 }
 
 pub fn load_claims_active_by_source_ref_for_surface(
@@ -9218,14 +9629,179 @@ pub fn load_entity_context_claims_active_for_surface(
     depth: usize,
     surface: &str,
 ) -> Result<Vec<IntelligenceClaim>, ClaimError> {
+    load_entity_context_claims_active_for_surface_inner(
+        db,
+        entity_type,
+        entity_id,
+        depth,
+        surface,
+        None,
+    )
+}
+
+pub fn load_entity_context_claims_active_for_surface_limited(
+    db: &ActionDb,
+    entity_type: &str,
+    entity_id: &str,
+    depth: usize,
+    surface: &str,
+    limit: usize,
+) -> Result<Vec<IntelligenceClaim>, ClaimError> {
+    if limit == 0 {
+        return Ok(Vec::new());
+    }
+    load_entity_context_claims_active_for_surface_inner(
+        db,
+        entity_type,
+        entity_id,
+        depth,
+        surface,
+        Some(limit),
+    )
+}
+
+pub fn load_entity_context_prompt_claims_active_for_surface_limited(
+    db: &ActionDb,
+    entity_type: &str,
+    entity_id: &str,
+    depth: usize,
+    surface: &str,
+    limit: usize,
+) -> Result<Vec<IntelligenceClaim>, ClaimError> {
+    if limit == 0 {
+        return Ok(Vec::new());
+    }
+    load_entity_context_claims_active_for_surface_inner_filtered(
+        db,
+        entity_type,
+        entity_id,
+        depth,
+        surface,
+        Some(limit),
+        true,
+    )
+}
+
+pub fn load_prompt_claims_by_types_active_for_surface_limited(
+    db: &ActionDb,
+    claim_types: &[&str],
+    surface: &str,
+    limit: usize,
+) -> Result<Vec<IntelligenceClaim>, ClaimError> {
+    if limit == 0 || claim_types.is_empty() {
+        return Ok(Vec::new());
+    }
+
+    let surface = normalize_claim_surface(surface)?;
+    let has_surface_dismissals = table_exists_sqlite(db.conn_ref(), "claim_surface_dismissals")?;
+    let surface_columns = claim_surface_shadow_columns(db.conn_ref(), "current_claim")?;
+    let mut bound_params: Vec<Box<dyn rusqlite::types::ToSql>> = Vec::new();
+    let mut claim_type_predicates = Vec::with_capacity(claim_types.len());
+
+    for claim_type in claim_types {
+        let position = bound_params.len() + 1;
+        bound_params.push(Box::new((*claim_type).to_string()));
+        claim_type_predicates.push(format!("current_claim.claim_type = ?{position}"));
+    }
+
+    let dismissal_filter = if has_surface_dismissals {
+        let surface_position = bound_params.len() + 1;
+        bound_params.push(Box::new(surface.as_str().to_string()));
+        format!(
+            "AND NOT EXISTS (
+                SELECT 1
+                FROM claim_surface_dismissals dismissal
+                WHERE dismissal.claim_id = current_claim.id
+                  AND dismissal.surface = ?{surface_position}
+            )"
+        )
+    } else {
+        String::new()
+    };
+    let limit_position = bound_params.len() + 1;
+    bound_params.push(Box::new(limit as i64));
+    let claim_type_filter = claim_type_predicates.join(" OR ");
+    let sql = format!(
+        "SELECT {CLAIM_COLUMNS}, {surface_columns}
+         FROM intelligence_claims current_claim
+         WHERE ({claim_type_filter})
+           AND current_claim.claim_state = 'active'
+           AND current_claim.surfacing_state = 'active'
+           AND current_claim.sensitivity IN ('public', 'internal')
+           {dismissal_filter}
+         ORDER BY current_claim.created_at DESC
+         LIMIT ?{limit_position}"
+    );
+    let param_refs: Vec<&dyn rusqlite::types::ToSql> =
+        bound_params.iter().map(|param| param.as_ref()).collect();
+    let mut stmt = db.conn_ref().prepare(&sql)?;
+    let mut rows = stmt.query(rusqlite::params_from_iter(param_refs))?;
+    let mut claims = Vec::new();
+    while let Some(row) = rows.next()? {
+        claims.push(read_claim_row_with_surface_shadow_state(row)?);
+    }
+    Ok(claims)
+}
+
+fn load_entity_context_claims_active_for_surface_inner(
+    db: &ActionDb,
+    entity_type: &str,
+    entity_id: &str,
+    depth: usize,
+    surface: &str,
+    limit: Option<usize>,
+) -> Result<Vec<IntelligenceClaim>, ClaimError> {
+    load_entity_context_claims_active_for_surface_inner_filtered(
+        db,
+        entity_type,
+        entity_id,
+        depth,
+        surface,
+        limit,
+        false,
+    )
+}
+
+fn load_entity_context_claims_active_for_surface_inner_filtered(
+    db: &ActionDb,
+    entity_type: &str,
+    entity_id: &str,
+    depth: usize,
+    surface: &str,
+    limit: Option<usize>,
+    prompt_safe_only: bool,
+) -> Result<Vec<IntelligenceClaim>, ClaimError> {
     let root = entity_context_subject(entity_type, entity_id)?;
     let subjects = entity_context_subjects_within_depth(db, root, depth.max(1))?;
+    if let Some(limit) = limit {
+        return load_entity_context_claims_for_subjects_limited(
+            db,
+            &subjects,
+            surface,
+            limit,
+            prompt_safe_only,
+        );
+    }
+
     let mut seen_claims = HashSet::new();
     let mut claims = Vec::new();
 
     for subject in subjects {
         let subject_ref = entity_context_subject_ref_json(&subject);
-        for claim in load_claims_active_for_surface(db, &subject_ref, None, surface)? {
+        let subject_claims = if prompt_safe_only {
+            load_claims_where_for_surface_limited_filtered(
+                db,
+                &subject_ref,
+                None,
+                "claim_state = 'active' AND surfacing_state = 'active'",
+                surface,
+                None,
+                true,
+            )?
+        } else {
+            load_claims_active_for_surface(db, &subject_ref, None, surface)?
+        };
+        for claim in subject_claims {
             if seen_claims.insert(claim.id.clone()) {
                 claims.push(claim);
             }
@@ -9233,6 +9809,82 @@ pub fn load_entity_context_claims_active_for_surface(
     }
 
     claims.sort_by(|left, right| right.created_at.cmp(&left.created_at));
+    Ok(claims)
+}
+
+fn load_entity_context_claims_for_subjects_limited(
+    db: &ActionDb,
+    subjects: &[EntityContextSubject],
+    surface: &str,
+    limit: usize,
+    prompt_safe_only: bool,
+) -> Result<Vec<IntelligenceClaim>, ClaimError> {
+    if limit == 0 || subjects.is_empty() {
+        return Ok(Vec::new());
+    }
+
+    let surface = normalize_claim_surface(surface)?;
+    let has_surface_dismissals = table_exists_sqlite(db.conn_ref(), "claim_surface_dismissals")?;
+    let surface_columns = claim_surface_shadow_columns(db.conn_ref(), "current_claim")?;
+    let mut bound_params: Vec<Box<dyn rusqlite::types::ToSql>> = Vec::new();
+    let mut subject_predicates = Vec::with_capacity(subjects.len());
+
+    for subject in subjects {
+        let kind_position = bound_params.len() + 1;
+        bound_params.push(Box::new(subject.kind.to_string()));
+        let id_position = bound_params.len() + 1;
+        bound_params.push(Box::new(subject.id.clone()));
+        subject_predicates.push(format!(
+            "(lower(json_extract(current_claim.subject_ref, '$.kind')) = ?{kind_position} \
+             AND json_extract(current_claim.subject_ref, '$.id') = ?{id_position})"
+        ));
+    }
+
+    let prompt_safe_filter = if prompt_safe_only {
+        "AND current_claim.sensitivity IN ('public', 'internal')"
+    } else {
+        ""
+    };
+    let dismissal_filter = if has_surface_dismissals {
+        let surface_position = bound_params.len() + 1;
+        bound_params.push(Box::new(surface.as_str().to_string()));
+        format!(
+            "AND NOT EXISTS (
+                SELECT 1
+                FROM claim_surface_dismissals dismissal
+                WHERE dismissal.claim_id = current_claim.id
+                  AND dismissal.surface = ?{surface_position}
+            )"
+        )
+    } else {
+        String::new()
+    };
+    let workspace_lifecycle_filter =
+        workspace_source_lifecycle_filter(db.conn_ref(), "current_claim")?;
+    let limit_position = bound_params.len() + 1;
+    bound_params.push(Box::new(limit as i64));
+    let subject_filter = subject_predicates.join(" OR ");
+    let sql = format!(
+        "SELECT {CLAIM_COLUMNS}, {surface_columns}
+         FROM intelligence_claims current_claim
+         WHERE json_valid(current_claim.subject_ref) = 1
+           AND ({subject_filter})
+           AND current_claim.claim_state = 'active'
+           AND current_claim.surfacing_state = 'active'
+           {prompt_safe_filter}
+           {dismissal_filter}
+           {workspace_lifecycle_filter}
+         ORDER BY current_claim.created_at DESC
+         LIMIT ?{limit_position}"
+    );
+    let param_refs: Vec<&dyn rusqlite::types::ToSql> =
+        bound_params.iter().map(|param| param.as_ref()).collect();
+    let mut stmt = db.conn_ref().prepare(&sql)?;
+    let mut rows = stmt.query(rusqlite::params_from_iter(param_refs))?;
+    let mut claims = Vec::new();
+    while let Some(row) = rows.next()? {
+        claims.push(read_claim_row_with_surface_shadow_state(row)?);
+    }
     Ok(claims)
 }
 
@@ -9669,6 +10321,763 @@ pub fn withdraw_email_subject_claims_for_existing_emails(
          )",
         [],
     )
+}
+
+/// Withdraw account-fact claims whose evidence came through Glean finalization.
+///
+/// Runs in the caller's transaction and uses the normal claim lifecycle side
+/// effects: subject claim-version bump, claim-version event, and edge
+/// tombstoning. The claim assertion rows remain for audit.
+fn withdraw_claim_ids_for_source_purge_in_tx(
+    ctx: &ServiceContext<'_>,
+    db: &ActionDb,
+    claim_ids: Vec<String>,
+    retraction_reason: &str,
+) -> Result<usize, ClaimError> {
+    ctx.check_mutation_allowed()
+        .map_err(|e| ClaimError::Mode(e.to_string()))?;
+    let mut withdrawn = 0usize;
+    let now = ctx.clock.now().to_rfc3339();
+    let actor_kind = VersionActorKind::from_service_actor(ctx.actor);
+    for claim_id in claim_ids {
+        let claim = load_claim_by_id(db.conn_ref(), &claim_id)?
+            .ok_or_else(|| ClaimError::UnknownClaimId(claim_id.clone()))?;
+        let subject_value = serde_json::from_str::<serde_json::Value>(&claim.subject_ref)?;
+        let subject = subject_ref_from_json(&subject_value)?;
+        let attempt = MutationAttempt {
+            mutation_id: uuid::Uuid::new_v4().to_string(),
+            subject: MutationSubject::Claim(claim_id.clone()),
+            cursor: SignalCursor::new(),
+        };
+        db.conn_ref().execute(
+            "INSERT INTO mutation_attempts
+                (mutation_id, claim_id, composition_id, cursor, started_at, status, finalized_at)
+             VALUES (?1, ?2, NULL, ?3, ?4, 'in_flight', NULL)",
+            params![
+                &attempt.mutation_id,
+                &claim_id,
+                attempt.cursor.as_str(),
+                &now
+            ],
+        )?;
+        execute_claims_update(
+            db.conn_ref(),
+            "UPDATE intelligence_claims
+             SET claim_state = 'withdrawn',
+                 surfacing_state = 'dormant',
+                 retraction_reason = coalesce(retraction_reason, ?2)
+             WHERE id = ?1",
+            params![claim_id, retraction_reason],
+        )?;
+        mark_claim_edges_tombstoned(db, &claim_id, &now)?;
+        db.bump_for_subject(&subject)?;
+        let (previous, current) = bump_existing_claim_version_tx(db, &claim_id)?;
+        finish_claim_version_event_tx(
+            db,
+            &attempt,
+            ClaimVersionEventWrite {
+                claim_id: &claim_id,
+                previous_version: Some(previous),
+                current_version: current,
+                event_kind: VersionEventKind::ClaimTombstoned,
+                now: &now,
+                actor_kind,
+            },
+        )?;
+        withdrawn += 1;
+    }
+    Ok(withdrawn)
+}
+
+pub fn withdraw_generated_projection_claims_for_field_path_roots_in_tx(
+    ctx: &ServiceContext<'_>,
+    db: &ActionDb,
+    entity_type: &str,
+    entity_id: &str,
+    field_path_roots: &[&str],
+    retraction_reason: &str,
+) -> Result<usize, ClaimError> {
+    if field_path_roots.is_empty() {
+        return Ok(0);
+    }
+
+    let mut stmt = db.conn_ref().prepare(
+        "SELECT ic.id, coalesce(ic.field_path, '')
+           FROM intelligence_claims ic
+          WHERE ic.claim_state = 'active'
+            AND ic.surfacing_state = 'active'
+            AND json_valid(ic.subject_ref) = 1
+            AND lower(json_extract(ic.subject_ref, '$.kind')) = lower(?1)
+            AND json_extract(ic.subject_ref, '$.id') = ?2
+            AND (
+                ic.source_ref LIKE 'intelligence_projection_source:%'
+                OR (
+                    json_valid(ic.provenance_json) = 1
+                    AND json_extract(ic.provenance_json, '$.ability_name') = 'claim_shaped_intelligence_projection'
+                )
+                OR (
+                    ic.metadata_json IS NOT NULL
+                    AND json_valid(ic.metadata_json) = 1
+                    AND json_type(ic.metadata_json, '$.legacy_projection_value') IS NOT NULL
+                )
+            )
+          ORDER BY ic.id",
+    )?;
+    let rows = stmt
+        .query_map(params![entity_type, entity_id], |row| {
+            Ok((row.get::<_, String>(0)?, row.get::<_, String>(1)?))
+        })?
+        .collect::<Result<Vec<_>, _>>()?;
+    let claim_ids = rows
+        .into_iter()
+        .filter_map(|(claim_id, field_path)| {
+            field_path_roots
+                .iter()
+                .any(|root| field_path_matches_projection_root(&field_path, root))
+                .then_some(claim_id)
+        })
+        .collect();
+
+    withdraw_claim_ids_for_source_purge_in_tx(ctx, db, claim_ids, retraction_reason)
+}
+
+pub struct GeneratedProjectionRefreshWithdrawal<'a> {
+    pub entity_type: &'a str,
+    pub entity_id: &'a str,
+    pub field_path_roots: &'a [&'a str],
+    pub projection_producers: &'a [&'a str],
+    pub retained_claim_keys: &'a [(String, String, String, String)],
+    pub retraction_reason: &'a str,
+}
+
+pub struct GeneratedProjectionRefreshWithdrawalOutcome {
+    pub withdrawn: usize,
+    pub affected_subjects: Vec<(String, String)>,
+}
+
+pub fn withdraw_generated_projection_claims_for_field_path_roots_by_projection_producer_in_tx(
+    ctx: &ServiceContext<'_>,
+    db: &ActionDb,
+    input: GeneratedProjectionRefreshWithdrawal<'_>,
+) -> Result<GeneratedProjectionRefreshWithdrawalOutcome, ClaimError> {
+    if input.field_path_roots.is_empty() || input.projection_producers.is_empty() {
+        return Ok(GeneratedProjectionRefreshWithdrawalOutcome {
+            withdrawn: 0,
+            affected_subjects: Vec::new(),
+        });
+    }
+
+    let mut stmt = db.conn_ref().prepare(
+        "SELECT ic.id,
+                ic.subject_ref,
+                lower(json_extract(ic.subject_ref, '$.kind')),
+                json_extract(ic.subject_ref, '$.id'),
+                ic.claim_type,
+                coalesce(ic.field_path, ''),
+                ic.text,
+                ic.metadata_json
+           FROM intelligence_claims ic
+          WHERE ic.claim_state = 'active'
+            AND ic.surfacing_state = 'active'
+            AND json_valid(ic.subject_ref) = 1
+            AND (
+                (
+                    lower(json_extract(ic.subject_ref, '$.kind')) = lower(?1)
+                    AND json_extract(ic.subject_ref, '$.id') = ?2
+                )
+                OR (
+                    ic.metadata_json IS NOT NULL
+                    AND json_valid(ic.metadata_json) = 1
+                    AND lower(json_extract(ic.metadata_json, '$.projection_origin_subject.kind')) = lower(?1)
+                    AND json_extract(ic.metadata_json, '$.projection_origin_subject.id') = ?2
+                )
+            )
+            AND (
+                ic.source_ref LIKE 'intelligence_projection_source:%'
+                OR (
+                    json_valid(ic.provenance_json) = 1
+                    AND json_extract(ic.provenance_json, '$.ability_name') = 'claim_shaped_intelligence_projection'
+                )
+                OR (
+                    ic.metadata_json IS NOT NULL
+                    AND json_valid(ic.metadata_json) = 1
+                    AND json_type(ic.metadata_json, '$.legacy_projection_value') IS NOT NULL
+                )
+            )
+          ORDER BY ic.id",
+    )?;
+    let rows = stmt
+        .query_map(params![input.entity_type, input.entity_id], |row| {
+            Ok((
+                row.get::<_, String>(0)?,
+                row.get::<_, String>(1)?,
+                row.get::<_, String>(2)?,
+                row.get::<_, String>(3)?,
+                row.get::<_, String>(4)?,
+                row.get::<_, String>(5)?,
+                row.get::<_, String>(6)?,
+                row.get::<_, Option<String>>(7)?,
+            ))
+        })?
+        .collect::<Result<Vec<_>, _>>()?;
+    let mut affected_subjects = HashSet::new();
+    let claim_ids = rows
+        .into_iter()
+        .filter_map(
+            |(
+                claim_id,
+                subject_ref,
+                subject_kind,
+                subject_id,
+                claim_type,
+                field_path,
+                text,
+                metadata_json,
+            )| {
+                let field_matches = input
+                    .field_path_roots
+                    .iter()
+                    .any(|root| field_path_matches_projection_root(&field_path, root));
+                if !field_matches {
+                    return None;
+                }
+                if input.retained_claim_keys.iter().any(
+                    |(retained_subject, retained_type, retained_path, retained_text)| {
+                        retained_subject == &subject_ref
+                            && retained_type == &claim_type
+                            && retained_path == &field_path
+                            && retained_text == &text
+                    },
+                ) {
+                    return None;
+                }
+                let producer = projection_producer_from_metadata(metadata_json.as_deref())?;
+                if !input
+                    .projection_producers
+                    .iter()
+                    .any(|candidate| producer.eq_ignore_ascii_case(candidate))
+                {
+                    return None;
+                }
+                affected_subjects.insert((subject_kind, subject_id));
+                Some(claim_id)
+            },
+        )
+        .collect();
+
+    let withdrawn =
+        withdraw_claim_ids_for_source_purge_in_tx(ctx, db, claim_ids, input.retraction_reason)?;
+    Ok(GeneratedProjectionRefreshWithdrawalOutcome {
+        withdrawn,
+        affected_subjects: affected_subjects.into_iter().collect(),
+    })
+}
+
+fn projection_producer_from_metadata(metadata_json: Option<&str>) -> Option<String> {
+    let value = serde_json::from_str::<serde_json::Value>(metadata_json?).ok()?;
+    value
+        .get("projection_producer")
+        .and_then(|value| value.as_str())
+        .map(str::trim)
+        .filter(|value| !value.is_empty())
+        .map(ToOwned::to_owned)
+}
+
+fn field_path_matches_projection_root(field_path: &str, root: &str) -> bool {
+    field_path == root
+        || field_path
+            .strip_prefix(root)
+            .is_some_and(|suffix| suffix.starts_with('[') || suffix.starts_with('.'))
+}
+
+/// Withdraw account-fact claims whose evidence came through Glean finalization.
+///
+/// Runs in the caller's transaction and uses the normal claim lifecycle side
+/// effects: subject claim-version bump, claim-version event, and edge
+/// tombstoning. The claim assertion rows remain for audit.
+pub fn withdraw_glean_account_fact_claims_for_source_purge_in_tx(
+    ctx: &ServiceContext<'_>,
+    db: &ActionDb,
+) -> Result<usize, ClaimError> {
+    let mut stmt = db.conn_ref().prepare(
+        "SELECT ic.id
+           FROM intelligence_claims ic
+          WHERE ic.claim_type = 'account_fact'
+            AND ic.claim_state IN ('active', 'tombstoned', 'dormant')
+            AND json_valid(ic.subject_ref) = 1
+            AND lower(json_extract(ic.subject_ref, '$.kind')) = 'account'
+            AND ic.source_ref LIKE 'glean_account_fact:%'
+          ORDER BY ic.id",
+    )?;
+    let claim_ids = stmt
+        .query_map([], |row| row.get::<_, String>(0))?
+        .collect::<Result<Vec<_>, _>>()?;
+
+    withdraw_claim_ids_for_source_purge_in_tx(ctx, db, claim_ids, "source_purged:glean")
+}
+
+/// Withdraw generated projection claims whose item-level evidence came from Glean.
+pub fn withdraw_glean_generated_projection_claims_for_source_purge_in_tx(
+    ctx: &ServiceContext<'_>,
+    db: &ActionDb,
+) -> Result<usize, ClaimError> {
+    let mut stmt = db.conn_ref().prepare(
+        "SELECT ic.id
+           FROM intelligence_claims ic
+          WHERE ic.claim_state IN ('active', 'tombstoned', 'dormant')
+            AND json_valid(ic.subject_ref) = 1
+            AND (
+                ic.data_source = 'glean'
+                OR ic.data_source LIKE 'glean_%'
+                OR (
+                    ic.metadata_json IS NOT NULL
+                    AND json_valid(ic.metadata_json) = 1
+                    AND json_extract(ic.metadata_json, '$.projection_producer') = 'glean'
+                    AND ic.data_source IN ('ai', 'ai_enrichment', 'ai_inference')
+                )
+                OR (
+                    EXISTS (
+                        SELECT 1
+                          FROM claim_corroborations cc
+                         WHERE cc.claim_id = ic.id
+                           AND (
+                               cc.data_source = 'glean'
+                               OR cc.data_source LIKE 'glean_%'
+                           )
+                    )
+                    AND NOT EXISTS (
+                        SELECT 1
+                          FROM claim_corroborations cc_local
+                         WHERE cc_local.claim_id = ic.id
+                           AND cc_local.data_source != 'ai_enrichment_progressive'
+                           AND cc_local.data_source != 'glean'
+                           AND cc_local.data_source NOT LIKE 'glean_%'
+                    )
+                    AND (
+                        ic.data_source = 'ai_enrichment_progressive'
+                        OR (
+                            ic.metadata_json IS NOT NULL
+                            AND json_valid(ic.metadata_json) = 1
+                            AND json_extract(ic.metadata_json, '$.projection_producer') = 'ai_enrichment_progressive'
+                        )
+                    )
+                )
+            )
+            AND (
+                ic.source_ref LIKE 'intelligence_projection_source:%'
+                OR (
+                    json_valid(ic.provenance_json) = 1
+                    AND json_extract(ic.provenance_json, '$.ability_name') = 'claim_shaped_intelligence_projection'
+                )
+                OR (
+                    ic.metadata_json IS NOT NULL
+                    AND json_valid(ic.metadata_json) = 1
+                    AND json_type(ic.metadata_json, '$.legacy_projection_value') IS NOT NULL
+                )
+            )
+          ORDER BY ic.id",
+    )?;
+    let claim_ids = stmt
+        .query_map([], |row| row.get::<_, String>(0))?
+        .collect::<Result<Vec<_>, _>>()?;
+    let reissues = load_glean_origin_projection_reissues_for_source_purge(ctx, db)?;
+
+    delete_glean_generated_projection_corroborations_for_source_purge_in_tx(db)?;
+
+    let withdrawn =
+        withdraw_claim_ids_for_source_purge_in_tx(ctx, db, claim_ids, "source_purged:glean")?;
+    for reissue in reissues {
+        commit_claim(ctx, db, reissue.into_claim_proposal())?;
+    }
+    Ok(withdrawn)
+}
+
+struct GeneratedProjectionClaimReissue {
+    subject_ref: String,
+    claim_type: String,
+    field_path: Option<String>,
+    topic_key: Option<String>,
+    text: String,
+    actor: String,
+    data_source: String,
+    source_asof: Option<String>,
+    observed_at: String,
+    provenance_json: String,
+    metadata_json: Option<String>,
+    temporal_scope: TemporalScope,
+    sensitivity: ClaimSensitivity,
+}
+
+impl GeneratedProjectionClaimReissue {
+    fn into_claim_proposal(self) -> ClaimProposal {
+        ClaimProposal {
+            id: None,
+            expected_claim_version: None,
+            subject_ref: self.subject_ref,
+            claim_type: self.claim_type,
+            field_path: self.field_path,
+            topic_key: self.topic_key,
+            text: self.text,
+            actor: self.actor,
+            data_source: self.data_source,
+            source_ref: None,
+            source_asof: self.source_asof,
+            observed_at: self.observed_at,
+            provenance_json: self.provenance_json,
+            metadata_json: self.metadata_json,
+            thread_id: None,
+            temporal_scope: Some(self.temporal_scope),
+            sensitivity: Some(self.sensitivity),
+            supersedes: None,
+            tombstone: None,
+        }
+    }
+}
+
+struct LocalProjectionCorroboration {
+    data_source: String,
+    source_asof: Option<String>,
+    strength: f64,
+}
+
+fn load_glean_origin_projection_reissues_for_source_purge(
+    ctx: &ServiceContext<'_>,
+    db: &ActionDb,
+) -> Result<Vec<GeneratedProjectionClaimReissue>, ClaimError> {
+    let mut stmt = db.conn_ref().prepare(
+        "SELECT ic.id
+           FROM intelligence_claims ic
+          WHERE ic.claim_state IN ('active', 'tombstoned', 'dormant')
+            AND json_valid(ic.subject_ref) = 1
+            AND (
+                ic.data_source = 'glean'
+                OR ic.data_source LIKE 'glean_%'
+                OR (
+                    ic.metadata_json IS NOT NULL
+                    AND json_valid(ic.metadata_json) = 1
+                    AND json_extract(ic.metadata_json, '$.projection_producer') = 'glean'
+                    AND ic.data_source IN ('ai', 'ai_enrichment', 'ai_inference')
+                )
+            )
+            AND EXISTS (
+                SELECT 1
+                  FROM claim_corroborations cc_local
+                 WHERE cc_local.claim_id = ic.id
+                   AND cc_local.data_source != 'ai_enrichment_progressive'
+                   AND cc_local.data_source != 'glean'
+                   AND cc_local.data_source NOT LIKE 'glean_%'
+            )
+            AND (
+                ic.source_ref LIKE 'intelligence_projection_source:%'
+                OR (
+                    json_valid(ic.provenance_json) = 1
+                    AND json_extract(ic.provenance_json, '$.ability_name') = 'claim_shaped_intelligence_projection'
+                )
+                OR (
+                    ic.metadata_json IS NOT NULL
+                    AND json_valid(ic.metadata_json) = 1
+                    AND json_type(ic.metadata_json, '$.legacy_projection_value') IS NOT NULL
+                )
+            )
+          ORDER BY ic.id",
+    )?;
+    let claim_ids = stmt
+        .query_map([], |row| row.get::<_, String>(0))?
+        .collect::<Result<Vec<_>, _>>()?;
+    let mut reissues = Vec::new();
+    for claim_id in claim_ids {
+        let Some(claim) = load_claim_by_id(db.conn_ref(), &claim_id)? else {
+            continue;
+        };
+        let Some(local) = load_best_local_projection_corroboration(db, &claim_id)? else {
+            continue;
+        };
+        let observed_at = local
+            .source_asof
+            .clone()
+            .unwrap_or_else(|| ctx.clock.now().to_rfc3339());
+        let provenance_json = projection_reissue_provenance_json(
+            ctx,
+            &claim,
+            &local.data_source,
+            local.source_asof.as_deref(),
+            local.strength,
+            &observed_at,
+        )?;
+        let metadata_json =
+            projection_reissue_metadata_json(claim.metadata_json.as_deref(), &local.data_source)?;
+        reissues.push(GeneratedProjectionClaimReissue {
+            subject_ref: claim.subject_ref,
+            claim_type: claim.claim_type,
+            field_path: claim.field_path,
+            topic_key: claim.topic_key,
+            text: claim.text,
+            actor: claim.actor,
+            data_source: local.data_source,
+            source_asof: local.source_asof,
+            observed_at,
+            provenance_json,
+            metadata_json,
+            temporal_scope: claim.temporal_scope,
+            sensitivity: claim.sensitivity,
+        });
+    }
+    Ok(reissues)
+}
+
+fn load_best_local_projection_corroboration(
+    db: &ActionDb,
+    claim_id: &str,
+) -> Result<Option<LocalProjectionCorroboration>, ClaimError> {
+    db.conn_ref()
+        .query_row(
+            "SELECT data_source, source_asof, strength
+               FROM claim_corroborations
+              WHERE claim_id = ?1
+                AND data_source != 'ai_enrichment_progressive'
+                AND data_source != 'glean'
+                AND data_source NOT LIKE 'glean_%'
+                AND trim(data_source) != ''
+              ORDER BY strength DESC,
+                       coalesce(last_reinforced_at, created_at) DESC,
+                       data_source ASC
+              LIMIT 1",
+            params![claim_id],
+            |row| {
+                Ok(LocalProjectionCorroboration {
+                    data_source: row.get(0)?,
+                    source_asof: row.get(1)?,
+                    strength: row.get(2)?,
+                })
+            },
+        )
+        .optional()
+        .map_err(ClaimError::from)
+}
+
+fn projection_reissue_metadata_json(
+    metadata_json: Option<&str>,
+    projection_producer: &str,
+) -> Result<Option<String>, ClaimError> {
+    let Some(metadata_json) = metadata_json else {
+        return Ok(None);
+    };
+    let mut value = serde_json::from_str::<serde_json::Value>(metadata_json)?;
+    let Some(object) = value.as_object_mut() else {
+        return Ok(None);
+    };
+    object.remove("legacy_projection_value");
+    object.insert(
+        "projection_producer".to_string(),
+        serde_json::json!(projection_producer),
+    );
+    Ok(Some(serde_json::to_string(&value)?))
+}
+
+fn projection_reissue_provenance_json(
+    ctx: &ServiceContext<'_>,
+    claim: &IntelligenceClaim,
+    data_source: &str,
+    source_asof: Option<&str>,
+    strength: f64,
+    observed_at: &str,
+) -> Result<String, ClaimError> {
+    let subject_value = serde_json::from_str::<serde_json::Value>(&claim.subject_ref)?;
+    let (subject_kind, subject_id) = projection_reissue_subject_parts(&subject_value)?;
+    let subject_ref = projection_reissue_provenance_subject_ref(&subject_kind, &subject_id)?;
+    let subject = crate::abilities::provenance::SubjectAttribution::direct_confident(subject_ref);
+    let observed_at = projection_reissue_timestamp(observed_at).unwrap_or_else(|| ctx.clock.now());
+    let source_asof_timestamp = source_asof.and_then(projection_reissue_timestamp);
+    let provenance_data_source = projection_reissue_provenance_data_source(data_source);
+    let source_identifier = crate::abilities::provenance::SourceIdentifier::Entity {
+        entity_id: crate::abilities::provenance::EntityId::new(subject_id),
+        field: claim.field_path.clone(),
+    };
+    let confidence = if strength.is_finite() {
+        strength.clamp(0.0, 1.0) as f32
+    } else {
+        0.5
+    };
+    let source = crate::abilities::provenance::SourceAttribution::new(
+        provenance_data_source,
+        vec![source_identifier],
+        observed_at,
+        source_asof_timestamp,
+        confidence,
+        None,
+    )
+    .map_err(|error| {
+        ClaimError::Transaction(format!("projection reissue source invalid: {error}"))
+    })?;
+
+    let mut config = crate::abilities::provenance::ProvenanceBuilderConfig::new(
+        "claim_shaped_intelligence_projection",
+        ctx.clock.now(),
+    );
+    config.invocation_id = crate::abilities::provenance::InvocationId::new(uuid::Uuid::new_v4());
+    config.actor = projection_reissue_provenance_actor(&claim.actor);
+    config.mode = ctx.mode.into();
+    config.category = crate::abilities::registry::AbilityCategory::Transform;
+
+    let mut builder = crate::abilities::provenance::ProvenanceBuilder::new(config);
+    builder.set_subject(subject.clone());
+    let source_index = builder.add_source(source);
+    let explanation = crate::abilities::provenance::SanitizedExplanation::new(
+        "Generated projection preserved through surviving local corroboration after source purge.",
+    )
+    .map_err(|error| {
+        ClaimError::Transaction(format!("projection reissue explanation invalid: {error}"))
+    })?;
+    let field_attribution = crate::abilities::provenance::FieldAttribution::llm_synthesis(
+        subject,
+        vec![crate::abilities::provenance::SourceRef::Source { source_index }],
+        crate::abilities::provenance::Confidence::provider_reported(confidence).map_err(
+            |error| {
+                ClaimError::Transaction(format!("projection reissue confidence invalid: {error}"))
+            },
+        )?,
+        Some(explanation),
+    )
+    .map_err(|error| {
+        ClaimError::Transaction(format!(
+            "projection reissue field attribution invalid: {error}"
+        ))
+    })?;
+    builder
+        .attribute_subtree(
+            crate::abilities::provenance::FieldPath::root(),
+            field_attribution,
+        )
+        .map_err(|error| {
+            ClaimError::Transaction(format!("projection reissue attribution failed: {error}"))
+        })?;
+    let output = serde_json::json!({
+        "claimType": claim.claim_type.as_str(),
+        "fieldPath": claim.field_path.as_deref(),
+        "text": claim.text.as_str(),
+        "dataSource": data_source,
+        "sourceRef": null,
+        "sourceAsOf": source_asof,
+    });
+    let output = builder.finalize(output).map_err(|error| {
+        ClaimError::Transaction(format!("projection reissue provenance invalid: {error}"))
+    })?;
+    serde_json::to_string(output.provenance()).map_err(ClaimError::from)
+}
+
+fn projection_reissue_subject_parts(
+    value: &serde_json::Value,
+) -> Result<(String, String), ClaimError> {
+    match subject_ref_from_json(value)? {
+        SubjectRef::Account { id } => Ok(("account".to_string(), id)),
+        SubjectRef::Project { id } => Ok(("project".to_string(), id)),
+        SubjectRef::Person { id } => Ok(("person".to_string(), id)),
+        SubjectRef::Meeting { id } => Ok(("meeting".to_string(), id)),
+        other => Err(ClaimError::SubjectRef(format!(
+            "unsupported generated projection reissue subject: {other:?}"
+        ))),
+    }
+}
+
+fn projection_reissue_provenance_subject_ref(
+    subject_kind: &str,
+    subject_id: &str,
+) -> Result<crate::abilities::provenance::SubjectRef, ClaimError> {
+    match subject_kind {
+        "account" => Ok(crate::abilities::provenance::SubjectRef::Account(
+            subject_id.to_string(),
+        )),
+        "project" => Ok(crate::abilities::provenance::SubjectRef::Project(
+            subject_id.to_string(),
+        )),
+        "person" => Ok(crate::abilities::provenance::SubjectRef::Person(
+            subject_id.to_string(),
+        )),
+        "meeting" => Ok(crate::abilities::provenance::SubjectRef::Meeting(
+            subject_id.to_string(),
+        )),
+        other => Err(ClaimError::SubjectRef(format!(
+            "unsupported projection provenance subject: {other}"
+        ))),
+    }
+}
+
+fn projection_reissue_provenance_data_source(
+    source: &str,
+) -> crate::abilities::provenance::DataSource {
+    match source.trim().to_ascii_lowercase().as_str() {
+        "user" | "user_correction" => crate::abilities::provenance::DataSource::User,
+        "google" | "gmail" | "email" => crate::abilities::provenance::DataSource::Google,
+        "clay" => crate::abilities::provenance::DataSource::Clay,
+        "local_enrichment" | "local_file" | "workspace_file" | "transcript" | "meeting"
+        | "post_meeting" | "calendar" => crate::abilities::provenance::DataSource::LocalEnrichment,
+        "ai" | "ai_enrichment" | "ai_inference" | "pty_synthesis" => {
+            crate::abilities::provenance::DataSource::Ai
+        }
+        "" => crate::abilities::provenance::DataSource::Other(
+            crate::abilities::provenance::SourceName::new("unknown_projection_source"),
+        ),
+        other => crate::abilities::provenance::DataSource::Other(
+            crate::abilities::provenance::SourceName::new(other),
+        ),
+    }
+}
+
+fn projection_reissue_provenance_actor(actor: &str) -> crate::abilities::provenance::Actor {
+    let actor = actor.trim();
+    if actor.eq_ignore_ascii_case("user") || actor.starts_with("user:") {
+        return crate::abilities::provenance::Actor::User;
+    }
+    if let Some(agent) = actor.strip_prefix("agent:") {
+        return crate::abilities::provenance::Actor::Agent {
+            name: agent.to_string(),
+            version: env!("CARGO_PKG_VERSION").to_string(),
+        };
+    }
+    crate::abilities::provenance::Actor::System {
+        component: if actor.is_empty() {
+            "intelligence_projection".to_string()
+        } else {
+            actor.to_string()
+        },
+    }
+}
+
+fn projection_reissue_timestamp(value: &str) -> Option<DateTime<Utc>> {
+    DateTime::parse_from_rfc3339(value)
+        .ok()
+        .map(|timestamp| timestamp.with_timezone(&Utc))
+}
+
+fn delete_glean_generated_projection_corroborations_for_source_purge_in_tx(
+    db: &ActionDb,
+) -> Result<usize, ClaimError> {
+    db.conn_ref()
+        .execute(
+            "DELETE FROM claim_corroborations -- dos7-allowed: source purge removes corroboration evidence; corroborations have no lifecycle column
+              WHERE (
+                    data_source = 'glean'
+                    OR data_source LIKE 'glean_%'
+                )
+                AND claim_id IN (
+                    SELECT ic.id
+                      FROM intelligence_claims ic
+                     WHERE (
+                            ic.source_ref LIKE 'intelligence_projection_source:%'
+                            OR (
+                                json_valid(ic.provenance_json) = 1
+                                AND json_extract(ic.provenance_json, '$.ability_name') = 'claim_shaped_intelligence_projection'
+                            )
+                            OR (
+                                ic.metadata_json IS NOT NULL
+                                AND json_valid(ic.metadata_json) = 1
+                                AND json_type(ic.metadata_json, '$.legacy_projection_value') IS NOT NULL
+                            )
+                        )
+                )",
+            [],
+        )
+        .map_err(ClaimError::from)
 }
 
 pub fn withdraw_tombstones_for(
@@ -11538,6 +12947,16 @@ mod tests {
         }
     }
 
+    fn recommendation_proposal(action_kind: &str, text: &str) -> ClaimProposal {
+        let mut p = proposal(text);
+        p.claim_type = "recommendation".to_string();
+        p.field_path = Some(format!("recommendation.{action_kind}"));
+        p.topic_key = Some(action_kind.to_string());
+        p.temporal_scope = None;
+        p.sensitivity = None;
+        p
+    }
+
     fn seed_account(db: &ActionDb) {
         db.conn_ref()
             .execute(
@@ -11653,6 +13072,28 @@ mod tests {
             )
             .expect("read item_hash")
             .unwrap_or_default()
+    }
+
+    fn active_recommendation_ids(db: &ActionDb, field_path: &str) -> Vec<String> {
+        let mut ids = load_claims_active(db, SUBJECT, Some("recommendation"))
+            .expect("load active recommendation claims")
+            .into_iter()
+            .filter(|claim| claim.field_path.as_deref() == Some(field_path))
+            .map(|claim| claim.id)
+            .collect::<Vec<_>>();
+        ids.sort();
+        ids
+    }
+
+    fn claim_contradiction_branch_kinds(db: &ActionDb) -> Vec<String> {
+        let mut stmt = db
+            .conn_ref()
+            .prepare("SELECT branch_kind FROM claim_contradictions ORDER BY detected_at, id")
+            .expect("prepare contradiction branch query");
+        stmt.query_map([], |row| row.get(0))
+            .expect("query contradiction branches")
+            .collect::<Result<Vec<_>, _>>()
+            .expect("map contradiction branches")
     }
 
     fn claim_contradiction_count(db: &ActionDb) -> i64 {
@@ -11815,6 +13256,16 @@ mod tests {
                 |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?, row.get(3)?)),
             )
             .expect("read lifecycle columns")
+    }
+
+    fn read_superseded_by(db: &ActionDb, claim_id: &str) -> Option<String> {
+        db.conn_ref()
+            .query_row(
+                "SELECT superseded_by FROM intelligence_claims WHERE id = ?1",
+                params![claim_id],
+                |row| row.get(0),
+            )
+            .expect("read superseded_by")
     }
 
     fn read_trust_columns(
@@ -12577,6 +14028,98 @@ mod tests {
         assert_eq!(
             claim.item_hash,
             Some(item_hash(ItemKind::Risk, &claim.text))
+        );
+    }
+
+    #[test]
+    fn commit_claim_replace_policy_supersedes_prior_recommendation_same_action() {
+        let db = test_db();
+        seed_account(&db);
+        let (clock, rng, external) = ctx_parts();
+        let ctx = live_ctx(&clock, &rng, &external);
+
+        let first_id = inserted_claim_id(
+            commit_claim(
+                &ctx,
+                &db,
+                recommendation_proposal(
+                    "scheduleMeeting",
+                    "Schedule a handoff meeting with the account team",
+                ),
+            )
+            .unwrap(),
+        );
+        let second_id = inserted_claim_id(
+            commit_claim(
+                &ctx,
+                &db,
+                recommendation_proposal(
+                    "scheduleMeeting",
+                    "Schedule an escalation meeting with the account team",
+                ),
+            )
+            .unwrap(),
+        );
+
+        assert_ne!(first_id, second_id);
+        assert_eq!(
+            read_lifecycle_columns(&db, &first_id),
+            (
+                "dormant".to_string(),
+                "dormant".to_string(),
+                Some("superseded".to_string()),
+                None
+            )
+        );
+        assert_eq!(read_superseded_by(&db, &first_id), Some(second_id.clone()));
+        assert_eq!(
+            active_recommendation_ids(&db, "recommendation.scheduleMeeting"),
+            vec![second_id.clone()]
+        );
+        assert_eq!(
+            claim_contradiction_branch_kinds(&db),
+            vec!["supersession".to_string()]
+        );
+    }
+
+    #[test]
+    fn commit_claim_replace_policy_replaces_same_text_recommendation_instead_of_reinforcing() {
+        let db = test_db();
+        seed_account(&db);
+        let (clock, rng, external) = ctx_parts();
+        let ctx = live_ctx(&clock, &rng, &external);
+
+        let first_id = inserted_claim_id(
+            commit_claim(
+                &ctx,
+                &db,
+                recommendation_proposal(
+                    "prepareBrief",
+                    "Prepare an implementation brief for the project team",
+                ),
+            )
+            .unwrap(),
+        );
+        let second = commit_claim(
+            &ctx,
+            &db,
+            recommendation_proposal(
+                "prepareBrief",
+                "Prepare an implementation brief for the project team",
+            ),
+        )
+        .unwrap();
+
+        let second_id = match second {
+            CommittedClaim::Inserted { claim } => claim.id,
+            other => panic!("replace policy should insert a superseding claim, got {other:?}"),
+        };
+
+        assert_ne!(first_id, second_id);
+        assert_eq!(read_superseded_by(&db, &first_id), Some(second_id.clone()));
+        assert_eq!(
+            active_recommendation_ids(&db, "recommendation.prepareBrief"),
+            vec![second_id]
         );
     }
 
@@ -13890,9 +15433,9 @@ mod tests {
         assert_eq!(jobs.len(), 2);
         assert_eq!(jobs[0].id, original_job_id);
         assert_eq!(jobs[0].status, "completed");
-        assert!(jobs[0].stale_marker_json.as_deref().is_some_and(
-            |marker| marker.contains("targeted_repair_completed_with_newer_claim_version")
-        ));
+        assert!(jobs[0].stale_marker_json.as_deref().is_some_and(|marker| {
+            marker.contains("targeted_repair_completed_with_newer_claim_version")
+        }));
         assert_eq!(jobs[1].status, "pending");
         assert_eq!(jobs[1].latest_source_claim_version, current_claim_version);
         assert_eq!(
@@ -14185,6 +15728,209 @@ mod tests {
         .map(|claim| claim.id)
         .collect::<Vec<_>>();
         assert!(entity_detail_ids.contains(&claim_id));
+    }
+
+    #[test]
+    fn entity_context_surface_limited_reader_caps_visible_claims() {
+        let db = test_db();
+        seed_account(&db);
+        let (clock, rng, external) = ctx_parts();
+        let ctx = live_ctx(&clock, &rng, &external);
+
+        for index in 0..8 {
+            let claim_text = format!("Visible claim {index} belongs on the account detail page.");
+            let mut p = proposal(&claim_text);
+            p.field_path = Some(format!("health.limit_fixture_{index}"));
+            p.source_ref = Some(format!("fixture-email-{index}"));
+            p.observed_at = format!("2026-05-02T12:{index:02}:00Z");
+            inserted_claim_id(commit_claim(&ctx, &db, p).unwrap());
+        }
+
+        let visible = load_entity_context_claims_active_for_surface_limited(
+            &db,
+            "account",
+            "acct-1",
+            1,
+            ClaimDismissalSurface::TauriEntityDetail.as_str(),
+            3,
+        )
+        .unwrap();
+
+        assert_eq!(
+            visible.len(),
+            3,
+            "entity intelligence must not load the full claim set before applying the render page cap"
+        );
+    }
+
+    #[test]
+    fn entity_context_surface_limited_reader_applies_global_cap_across_related_subjects() {
+        let db = test_db();
+        seed_account(&db);
+        for index in 0..8 {
+            let child_id = format!("acct-child-{index}");
+            db.conn_ref()
+                .execute(
+                    "INSERT INTO accounts (id, name, parent_id, updated_at)
+                     VALUES (?1, ?2, 'acct-1', ?3)",
+                    params![child_id, format!("Child Account {index}"), TS],
+                )
+                .expect("seed child account");
+            let subject_ref = format!(r#"{{"kind":"account","id":"acct-child-{index}"}}"#);
+            insert_fixture_claim(
+                &db,
+                &format!("claim-child-{index}"),
+                &subject_ref,
+                "risk",
+                &format!("Child account claim {index}"),
+                ClaimState::Active,
+                SurfacingState::Active,
+            );
+            db.conn_ref()
+                .execute(
+                    "UPDATE intelligence_claims
+                     -- dos7-allowed: ordering fixture for surface-limited reader
+                     SET created_at = ?1
+                     WHERE id = ?2",
+                    params![
+                        format!("2026-05-02T13:{index:02}:00Z"),
+                        format!("claim-child-{index}")
+                    ],
+                )
+                .expect("set child claim recency");
+        }
+
+        let visible = load_entity_context_claims_active_for_surface_limited(
+            &db,
+            "account",
+            "acct-1",
+            2,
+            ClaimDismissalSurface::TauriEntityDetail.as_str(),
+            3,
+        )
+        .unwrap();
+
+        assert_eq!(
+            visible
+                .iter()
+                .map(|claim| claim.id.as_str())
+                .collect::<Vec<_>>(),
+            vec!["claim-child-7", "claim-child-6", "claim-child-5"],
+            "related-subject entity reads must apply one global recency cap, not one cap per subject"
+        );
+    }
+
+    #[test]
+    fn entity_context_subject_lookup_uses_expression_index() {
+        let db = test_db();
+        seed_account(&db);
+        let (clock, rng, external) = ctx_parts();
+        let ctx = live_ctx(&clock, &rng, &external);
+        inserted_claim_id(
+            commit_claim(&ctx, &db, proposal("Indexed claim lookup fixture")).unwrap(),
+        );
+
+        let mut stmt = db
+            .conn_ref()
+            .prepare(
+                "EXPLAIN QUERY PLAN
+                 SELECT id
+                 FROM intelligence_claims current_claim
+                 WHERE json_valid(subject_ref) = 1
+                   AND lower(json_extract(subject_ref, '$.kind')) = lower(?1)
+                   AND json_extract(subject_ref, '$.id') = ?2
+                   AND claim_state = 'active'
+                   AND surfacing_state = 'active'
+                 ORDER BY created_at DESC
+                 LIMIT ?3",
+            )
+            .expect("prepare plan probe");
+        let details = stmt
+            .query_map(params!["account", "acct-1", 3_i64], |row| {
+                row.get::<_, String>(3)
+            })
+            .expect("query plan")
+            .collect::<Result<Vec<_>, _>>()
+            .expect("collect query plan");
+
+        assert!(
+            details.iter().any(|detail| {
+                detail.contains("idx_claims_subject_kind_id_lifecycle_untyped_created")
+            }),
+            "untyped entity claim reads should use the order-covering subject lookup index, got plan: {details:?}"
+        );
+        assert!(
+            details
+                .iter()
+                .all(|detail| !detail.contains("USE TEMP B-TREE")),
+            "untyped entity claim reads should not temp-sort before the page cap, got plan: {details:?}"
+        );
+    }
+
+    #[test]
+    fn entity_context_prompt_claim_reader_filters_sensitivity_before_cap() {
+        let db = test_db();
+        seed_account(&db);
+
+        for index in 0..51 {
+            let id = format!("claim-confidential-newer-{index}");
+            insert_fixture_claim(
+                &db,
+                &id,
+                SUBJECT,
+                "risk",
+                &format!("Confidential fixture claim {index}"),
+                ClaimState::Active,
+                SurfacingState::Active,
+            );
+            db.conn_ref()
+                .execute(
+                    "UPDATE intelligence_claims
+                     -- dos7-allowed: prompt-safety cap fixture
+                     SET sensitivity = 'confidential', created_at = ?1
+                     WHERE id = ?2",
+                    params![format!("2026-05-02T12:{index:02}:00Z"), id],
+                )
+                .expect("mark fixture claim confidential and newer");
+        }
+
+        insert_fixture_claim(
+            &db,
+            "claim-internal-older",
+            SUBJECT,
+            "risk",
+            "Older prompt-safe claim should survive the bounded read.",
+            ClaimState::Active,
+            SurfacingState::Active,
+        );
+        db.conn_ref()
+            .execute(
+                "UPDATE intelligence_claims
+                 -- dos7-allowed: prompt-safety cap fixture
+                 SET sensitivity = 'internal', created_at = ?1
+                 WHERE id = 'claim-internal-older'",
+                params!["2026-05-02T11:00:00Z"],
+            )
+            .expect("mark prompt-safe fixture older");
+
+        let claims = load_entity_context_prompt_claims_active_for_surface_limited(
+            &db,
+            "account",
+            "acct-1",
+            1,
+            ClaimDismissalSurface::McpTool.as_str(),
+            51,
+        )
+        .expect("prompt-safe entity context read");
+
+        assert_eq!(
+            claims
+                .iter()
+                .map(|claim| claim.id.as_str())
+                .collect::<Vec<_>>(),
+            vec!["claim-internal-older"],
+            "MCP/agent readers must filter prompt-unsafe claims before the page cap"
+        );
     }
 
     #[test]
@@ -15544,6 +17290,53 @@ mod tests {
         .unwrap();
         assert_eq!(recovered_for_surface.len(), 1);
         assert_eq!(recovered_for_surface[0].id, first_id);
+    }
+
+    #[test]
+    fn same_generated_claim_reinforces_existing_claim() {
+        let db = test_db();
+        seed_account(&db);
+        let (clock, rng, external) = ctx_parts();
+        let ctx = live_ctx(&clock, &rng, &external);
+
+        let mut first = proposal("Renewal budget approval is pending with finance");
+        first.actor = "agent:intelligence".to_string();
+        first.data_source = "ai_enrichment".to_string();
+        first.source_ref = Some("intelligence_projection_source:first".to_string());
+        let first_id = inserted_claim_id(commit_claim(&ctx, &db, first).unwrap());
+        update_claim_trust(&db, &first_id, TrustScore(0.85), 1, &ctx).unwrap();
+
+        let mut second = proposal("Renewal budget approval is pending with finance");
+        second.actor = "agent:intelligence".to_string();
+        second.data_source = "glean_crm".to_string();
+        second.source_ref = Some("intelligence_projection_source:second".to_string());
+        second.source_asof = Some("2026-05-03T12:00:00+00:00".to_string());
+        second.provenance_json = serde_json::json!({
+            "source": "generated_projection",
+            "sourceRef": second.source_ref.as_deref(),
+        })
+        .to_string();
+
+        match commit_claim(&ctx, &db, second).unwrap() {
+            CommittedClaim::Reinforced { claim, .. } => assert_eq!(claim.id, first_id),
+            other => panic!("same generated claim should reinforce, got {other:?}"),
+        }
+
+        let active = load_claims_active(&db, SUBJECT, Some("risk")).unwrap();
+        assert_eq!(active.len(), 1);
+        let corroboration_count: i64 = db
+            .conn_ref()
+            .query_row(
+                "SELECT COUNT(*)
+                   FROM claim_corroborations
+                  WHERE claim_id = ?1
+                    AND data_source = 'glean_crm'
+                    AND source_asof = '2026-05-03T12:00:00+00:00'",
+                params![&first_id],
+                |row| row.get(0),
+            )
+            .expect("corroboration count");
+        assert_eq!(corroboration_count, 1);
     }
 
     #[test]

@@ -42,10 +42,25 @@ use serde::de::Error as _;
 use serde::{Deserialize, Deserializer, Serialize, Serializer};
 
 use crate::abilities::composition::{Composition, CompositionDocId};
+pub use crate::abilities::markdown_preview::contracts::{
+    MarkdownPreviewOutput, MarkdownPreviewReadRequest,
+};
+pub use crate::abilities::recommendations::contracts::{
+    ListSuggestedNextStepsInput, ListSuggestedNextStepsResponse, SalienceReadError,
+    ScoreSalienceReadRequest, ScoreSalienceResponse, SuggestedNextStepsReadError,
+};
+use crate::abilities::registry::ActorKind;
+pub use crate::abilities::source_management_ledger::contracts::{
+    SourceManagementActionReceipt, SourceManagementActionRequest,
+    SourceManagementLedgerReadRequest, SourceManagementLedgerResponse,
+};
 use crate::abilities::temporal::{
     DetectRoleChangeInput, DetectRoleChangeResult, RefreshEngagementCurveInput,
     RefreshEngagementCurveResult, TemporalMaintenanceHandle, TrajectoryBundle,
     TrajectoryQueryDepth, TrajectoryReadHandle,
+};
+pub use crate::abilities::workspace_graph::contracts::{
+    WorkspaceGraphReadRequest, WorkspaceGraphResponse,
 };
 pub use crate::sensitivity::ClaimDismissalSurface;
 use crate::sensitivity::{renderable_claim_text_with_value, RenderActor, RenderSurface};
@@ -55,8 +70,8 @@ use crate::services::external_replay::{
 };
 use crate::services::workspace_intake::WorkspaceIntakeService;
 use crate::types::{
-    subject_ref_from_json, ClaimSubjectRef, EntityContextEntry, EntityContextText,
-    IntelligenceClaim,
+    subject_ref_from_json, ClaimSensitivity, ClaimSubjectRef, EntityContextEntry,
+    EntityContextText, IntelligenceClaim,
 };
 
 const DEFAULT_EVALUATE_AUTH_SCOPE_ID: &str = "test-tenant-default";
@@ -845,11 +860,18 @@ pub struct ServiceContext<'a> {
     temporal_maintenance: Option<Arc<dyn TemporalMaintenanceHandle>>,
     composition_commit: Option<Arc<dyn CompositionCommitHandle>>,
     entity_touchpoints_reader: Option<Arc<dyn EntityTouchpointsReadHandle>>,
+    entity_neighborhood_reader: Option<Arc<dyn EntityNeighborhoodReadHandle>>,
     meeting_prep_status_reader: Option<Arc<dyn MeetingPrepStatusReadHandle>>,
     claim_receipt_reader: Option<Arc<dyn ClaimReceiptReadHandle>>,
     account_list_reader: Option<Arc<dyn AccountListReadHandle>>,
     person_list_reader: Option<Arc<dyn PersonListReadHandle>>,
     project_list_reader: Option<Arc<dyn ProjectListReadHandle>>,
+    markdown_preview_reader: Option<Arc<dyn MarkdownPreviewReadHandle>>,
+    workspace_graph_reader: Option<Arc<dyn WorkspaceGraphReadHandle>>,
+    source_management_ledger_reader: Option<Arc<dyn SourceManagementLedgerReadHandle>>,
+    salience_reader: Option<Arc<dyn SalienceReadHandle>>,
+    suggested_next_steps_reader: Option<Arc<dyn SuggestedNextStepsReadHandle>>,
+    source_management_action_handler: Option<Arc<dyn SourceManagementActionHandle>>,
     workspace_intake: Option<Arc<dyn WorkspaceIntakeService>>,
 }
 
@@ -883,6 +905,47 @@ pub trait EntityContextClaimReadHandle: Send + Sync {
         surface: ClaimDismissalSurface,
         depth: usize,
     ) -> EntityContextClaimReadFuture<'a>;
+
+    /// Read at most `limit` active entity-context claims. Implementations that
+    /// can push the limit into their backing store should override this; the
+    /// default preserves compatibility for test readers.
+    fn read_entity_context_claims_limited<'a>(
+        &'a self,
+        entity_type: String,
+        entity_id: String,
+        surface: ClaimDismissalSurface,
+        depth: usize,
+        limit: usize,
+    ) -> EntityContextClaimReadFuture<'a> {
+        Box::pin(async move {
+            let mut claims = self
+                .read_entity_context_claims(entity_type, entity_id, surface, depth)
+                .await?;
+            claims.truncate(limit);
+            Ok(claims)
+        })
+    }
+
+    /// Read prompt-safe claims before applying the render page cap. Agent and
+    /// MCP paths use this so confidential/user-only rows cannot occupy the
+    /// bounded window and hide older prompt-safe claims.
+    fn read_entity_context_prompt_claims_limited<'a>(
+        &'a self,
+        entity_type: String,
+        entity_id: String,
+        surface: ClaimDismissalSurface,
+        depth: usize,
+        limit: usize,
+    ) -> EntityContextClaimReadFuture<'a> {
+        Box::pin(async move {
+            let mut claims = self
+                .read_entity_context_claims(entity_type, entity_id, surface, depth)
+                .await?;
+            claims.retain(crate::types::claim_allowed_for_prompt_input);
+            claims.truncate(limit);
+            Ok(claims)
+        })
+    }
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -1111,15 +1174,137 @@ pub trait ProjectListReadHandle: Send + Sync {
     fn read_projects<'a>(&'a self, query: ProjectListQuery) -> ProjectListReadFuture<'a>;
 }
 
+#[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
+pub enum MarkdownPreviewReadError {
+    #[error("{0}")]
+    InvalidSourceHandle(String),
+    #[error("source not found")]
+    SourceNotFound,
+    #[error("{0}")]
+    SourceUnavailable(String),
+    #[error("{0}")]
+    UnsupportedSource(String),
+}
+
+pub type MarkdownPreviewReadFuture<'a> = Pin<
+    Box<dyn Future<Output = Result<MarkdownPreviewOutput, MarkdownPreviewReadError>> + Send + 'a>,
+>;
+
+pub trait MarkdownPreviewReadHandle: Send + Sync {
+    fn read_markdown_preview<'a>(
+        &'a self,
+        request: MarkdownPreviewReadRequest,
+    ) -> MarkdownPreviewReadFuture<'a>;
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
+pub enum WorkspaceGraphReadError {
+    #[error("{0}")]
+    InvalidCursor(String),
+    #[error("{0}")]
+    InvalidFilter(String),
+    #[error("page size {requested} exceeds max {max}")]
+    PageSizeTooLarge { requested: u32, max: u32 },
+    #[error("{0}")]
+    ReadFailed(String),
+    #[error("{0}")]
+    AuditFailed(String),
+}
+
+pub type WorkspaceGraphReadFuture<'a> = Pin<
+    Box<dyn Future<Output = Result<WorkspaceGraphResponse, WorkspaceGraphReadError>> + Send + 'a>,
+>;
+
+pub trait WorkspaceGraphReadHandle: Send + Sync {
+    fn read_workspace_graph<'a>(
+        &'a self,
+        request: WorkspaceGraphReadRequest,
+    ) -> WorkspaceGraphReadFuture<'a>;
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
+pub enum SourceManagementLedgerReadError {
+    #[error("{0}")]
+    InvalidCursor(String),
+    #[error("{0}")]
+    InvalidFilter(String),
+    #[error("page size {requested} exceeds max {max}")]
+    PageSizeTooLarge { requested: u32, max: u32 },
+    #[error("{0}")]
+    ReadFailed(String),
+}
+
+pub type SourceManagementLedgerReadFuture<'a> = Pin<
+    Box<
+        dyn Future<Output = Result<SourceManagementLedgerResponse, SourceManagementLedgerReadError>>
+            + Send
+            + 'a,
+    >,
+>;
+
+pub trait SourceManagementLedgerReadHandle: Send + Sync {
+    fn read_source_management_ledger<'a>(
+        &'a self,
+        request: SourceManagementLedgerReadRequest,
+    ) -> SourceManagementLedgerReadFuture<'a>;
+}
+
+pub type SalienceReadFuture<'a> =
+    Pin<Box<dyn Future<Output = Result<ScoreSalienceResponse, SalienceReadError>> + Send + 'a>>;
+
+pub trait SalienceReadHandle: Send + Sync {
+    fn score_salience<'a>(&'a self, request: ScoreSalienceReadRequest) -> SalienceReadFuture<'a>;
+}
+
+pub type SuggestedNextStepsReadFuture<'a> = Pin<
+    Box<
+        dyn Future<Output = Result<ListSuggestedNextStepsResponse, SuggestedNextStepsReadError>>
+            + Send
+            + 'a,
+    >,
+>;
+
+pub trait SuggestedNextStepsReadHandle: Send + Sync {
+    fn list_suggested_next_steps<'a>(
+        &'a self,
+        input: ListSuggestedNextStepsInput,
+        actor: ActorKind,
+    ) -> SuggestedNextStepsReadFuture<'a>;
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
+pub enum SourceManagementActionError {
+    #[error("{0}")]
+    InvalidRequest(String),
+    #[error("{0}")]
+    ActionFailed(String),
+}
+
+pub type SourceManagementActionFuture<'a> = Pin<
+    Box<
+        dyn Future<Output = Result<SourceManagementActionReceipt, SourceManagementActionError>>
+            + Send
+            + 'a,
+    >,
+>;
+
+pub trait SourceManagementActionHandle: Send + Sync {
+    fn apply_source_management_action<'a>(
+        &'a self,
+        request: SourceManagementActionRequest,
+    ) -> SourceManagementActionFuture<'a>;
+}
+
 // -----------------------------------------------------------------------------
 // Canonical entity touchpoints read seam.
 //
 // Narrow read handle for entity-scoped touchpoint composition: the producer
 // asks for upcoming + recent meeting-shaped interactions for a subject; the
-// app-side reader resolves those out of `meeting_entities` + parent/child
-// account expansion + attendee-match fallback. Subject isolation lives in the
-// reader's filter — the reader returns each candidate with an explicit
-// `inclusion_reason`, never a raw join soup.
+// app-side reader resolves those out of the current entity-link graph, with
+// legacy junction rows as fallback, plus parent/child account expansion and
+// attendee-match fallback. Subject isolation lives in the reader's filter —
+// the reader returns each candidate with an explicit `inclusion_reason`, never
+// a raw join soup.
 // -----------------------------------------------------------------------------
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -1139,7 +1324,7 @@ pub struct EntityTouchpointsQuery {
 /// envelope so callers can debug subject bleed without re-querying.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum TouchpointInclusionReason {
-    /// Direct row in `meeting_entities` for this subject.
+    /// Direct meeting/entity link for this subject.
     SubjectMatch,
     /// Inherited via parent/child account or related entity link.
     EntityLink,
@@ -1207,6 +1392,116 @@ pub trait EntityTouchpointsReadHandle: Send + Sync {
         &'a self,
         query: EntityTouchpointsQuery,
     ) -> EntityTouchpointsReadFuture<'a>;
+}
+
+// -----------------------------------------------------------------------------
+// Canonical entity-neighborhood read seam.
+//
+// Read-only projection over existing relationship substrate. This is not a new
+// canonical graph store; app-side readers assemble bounded relationship and
+// participation evidence from existing tables (linked entity graph,
+// meeting_attendees, account_stakeholders/entity_members, person_relationships,
+// hierarchy links, actions/content/email where available).
+// -----------------------------------------------------------------------------
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct EntityNeighborhoodQuery {
+    pub entity_type: String,
+    pub entity_id: String,
+    pub now: DateTime<Utc>,
+    /// Maximum traversal depth. Default callers should use <= 2.
+    pub max_depth: u8,
+    /// Hard cap per evidence class to keep envelope projection bounded.
+    pub per_edge_cap: usize,
+    /// Number of recent touchpoint ids retained per participant.
+    pub recent_touchpoint_cap: usize,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum EntityRelationshipInclusionReason {
+    SubjectMatch,
+    Hierarchy,
+    ExplicitLink,
+    AttendeeMatch,
+    CoAttendance,
+    WorkItem,
+    ContentLink,
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub struct EntityRelationshipEdgeSnapshot {
+    pub edge_type: String,
+    pub related_entity_type: String,
+    pub related_entity_id: String,
+    pub related_display_label: Option<String>,
+    pub source_id: String,
+    pub source_type: String,
+    pub observed_at: Option<String>,
+    pub source_asof: Option<String>,
+    pub confidence: f32,
+    pub sensitivity: ClaimSensitivity,
+    pub inclusion_reason: EntityRelationshipInclusionReason,
+    pub traversal_depth: u8,
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub struct EntityParticipantSnapshot {
+    pub person_id: String,
+    pub display_label: Option<String>,
+    pub role: Option<String>,
+    pub relationship: Option<String>,
+    pub normalized_touchpoint_count: u32,
+    pub recent_touchpoint_ids: Vec<String>,
+    pub last_seen_at: Option<String>,
+    pub source_id: String,
+    pub source_type: String,
+    pub source_asof: Option<String>,
+    pub confidence: f32,
+    pub sensitivity: ClaimSensitivity,
+    pub caveats: Vec<String>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct EntityNeighborhoodTruncation {
+    pub edges_truncated: bool,
+    pub participants_truncated: bool,
+    pub per_edge_cap: usize,
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub struct EntityNeighborhoodSnapshot {
+    pub subject_entity_type: String,
+    pub subject_entity_id: String,
+    pub edges: Vec<EntityRelationshipEdgeSnapshot>,
+    pub participants: Vec<EntityParticipantSnapshot>,
+    pub truncation: EntityNeighborhoodTruncation,
+    pub caveats: Vec<String>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
+pub enum EntityNeighborhoodReadError {
+    #[error("subject is not owned by this workspace: {entity_type}:{entity_id}")]
+    SubjectNotOwned {
+        entity_type: String,
+        entity_id: String,
+    },
+    #[error("{0}")]
+    ReadFailed(String),
+}
+
+pub type EntityNeighborhoodReadFuture<'a> = Pin<
+    Box<
+        dyn Future<Output = Result<EntityNeighborhoodSnapshot, EntityNeighborhoodReadError>>
+            + Send
+            + 'a,
+    >,
+>;
+
+pub trait EntityNeighborhoodReadHandle: Send + Sync {
+    fn read_entity_neighborhood<'a>(
+        &'a self,
+        query: EntityNeighborhoodQuery,
+    ) -> EntityNeighborhoodReadFuture<'a>;
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -1360,6 +1655,22 @@ pub struct DailyReadinessCoverageWarningSnapshot {
 pub type DailyReadinessContextReadFuture<'a> =
     Pin<Box<dyn Future<Output = Result<DailyReadinessContextSnapshot, String>> + Send + 'a>>;
 
+/// Caller-declared surface intent for meetings projection. The trust contract
+/// is "ask for the shape you'll render, get rows already pruned of types that
+/// don't belong on that surface." Producers don't post-filter; consumers don't
+/// see personal blocks leak into briefing advisories.
+///
+/// `Briefing` and `Schedule` share exclusions today (personal). They're
+/// distinct enum variants so a future divergence (e.g., Schedule keeping
+/// personal blocks for time-blocking awareness) lands as a behavior change,
+/// not a new parameter.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum MeetingsViewIntent {
+    Briefing,
+    Schedule,
+    AllRows,
+}
+
 /// Narrow read handle for daily-readiness seed assembly. Ability code receives
 /// only this workspace-scoped snapshot, never raw DB or app-state handles.
 pub trait DailyReadinessContextReadHandle: Send + Sync {
@@ -1367,6 +1678,7 @@ pub trait DailyReadinessContextReadHandle: Send + Sync {
         &'a self,
         workspace_scope: String,
         date: String,
+        intent: MeetingsViewIntent,
     ) -> DailyReadinessContextReadFuture<'a>;
 }
 
@@ -1674,11 +1986,18 @@ impl<'a> ServiceContext<'a> {
             temporal_maintenance: None,
             composition_commit: None,
             entity_touchpoints_reader: None,
+            entity_neighborhood_reader: None,
             meeting_prep_status_reader: None,
             claim_receipt_reader: None,
             account_list_reader: None,
             person_list_reader: None,
             project_list_reader: None,
+            markdown_preview_reader: None,
+            workspace_graph_reader: None,
+            source_management_ledger_reader: None,
+            salience_reader: None,
+            suggested_next_steps_reader: None,
+            source_management_action_handler: None,
             workspace_intake: None,
         }
     }
@@ -1707,11 +2026,18 @@ impl<'a> ServiceContext<'a> {
             temporal_maintenance: None,
             composition_commit: None,
             entity_touchpoints_reader: None,
+            entity_neighborhood_reader: None,
             meeting_prep_status_reader: None,
             claim_receipt_reader: None,
             account_list_reader: None,
             person_list_reader: None,
             project_list_reader: None,
+            markdown_preview_reader: None,
+            workspace_graph_reader: None,
+            source_management_ledger_reader: None,
+            salience_reader: None,
+            suggested_next_steps_reader: None,
+            source_management_action_handler: None,
             workspace_intake: None,
         }
     }
@@ -1751,11 +2077,18 @@ impl<'a> ServiceContext<'a> {
             temporal_maintenance: None,
             composition_commit: None,
             entity_touchpoints_reader: None,
+            entity_neighborhood_reader: None,
             meeting_prep_status_reader: None,
             claim_receipt_reader: None,
             account_list_reader: None,
             person_list_reader: None,
             project_list_reader: None,
+            markdown_preview_reader: None,
+            workspace_graph_reader: None,
+            source_management_ledger_reader: None,
+            salience_reader: None,
+            suggested_next_steps_reader: None,
+            source_management_action_handler: None,
             workspace_intake: None,
         }
     }
@@ -1843,6 +2176,14 @@ impl<'a> ServiceContext<'a> {
         self
     }
 
+    pub fn with_entity_neighborhood_reader(
+        mut self,
+        reader: Arc<dyn EntityNeighborhoodReadHandle>,
+    ) -> Self {
+        self.entity_neighborhood_reader = Some(reader);
+        self
+    }
+
     pub fn with_meeting_prep_status_reader(
         mut self,
         reader: Arc<dyn MeetingPrepStatusReadHandle>,
@@ -1871,6 +2212,51 @@ impl<'a> ServiceContext<'a> {
         self
     }
 
+    pub fn with_markdown_preview_reader(
+        mut self,
+        reader: Arc<dyn MarkdownPreviewReadHandle>,
+    ) -> Self {
+        self.markdown_preview_reader = Some(reader);
+        self
+    }
+
+    pub fn with_workspace_graph_reader(
+        mut self,
+        reader: Arc<dyn WorkspaceGraphReadHandle>,
+    ) -> Self {
+        self.workspace_graph_reader = Some(reader);
+        self
+    }
+
+    pub fn with_source_management_ledger_reader(
+        mut self,
+        reader: Arc<dyn SourceManagementLedgerReadHandle>,
+    ) -> Self {
+        self.source_management_ledger_reader = Some(reader);
+        self
+    }
+
+    pub fn with_salience_reader(mut self, reader: Arc<dyn SalienceReadHandle>) -> Self {
+        self.salience_reader = Some(reader);
+        self
+    }
+
+    pub fn with_suggested_next_steps_reader(
+        mut self,
+        reader: Arc<dyn SuggestedNextStepsReadHandle>,
+    ) -> Self {
+        self.suggested_next_steps_reader = Some(reader);
+        self
+    }
+
+    pub fn with_source_management_action_handler(
+        mut self,
+        handler: Arc<dyn SourceManagementActionHandle>,
+    ) -> Self {
+        self.source_management_action_handler = Some(handler);
+        self
+    }
+
     pub fn with_workspace_intake(mut self, service: Arc<dyn WorkspaceIntakeService>) -> Self {
         self.workspace_intake = Some(service);
         self
@@ -1896,6 +2282,21 @@ impl<'a> ServiceContext<'a> {
             ));
         };
         reader.read_entity_touchpoints(query).await
+    }
+
+    /// Reader-backed generic relationship and participation evidence. Missing
+    /// readers are surfaced as typed read failures so producers can render
+    /// section caveats instead of silently treating absent readers as no data.
+    pub async fn read_entity_neighborhood(
+        &self,
+        query: EntityNeighborhoodQuery,
+    ) -> Result<EntityNeighborhoodSnapshot, EntityNeighborhoodReadError> {
+        let Some(reader) = &self.entity_neighborhood_reader else {
+            return Err(EntityNeighborhoodReadError::ReadFailed(
+                self.missing_reader_error("entity_neighborhood_reader"),
+            ));
+        };
+        reader.read_entity_neighborhood(query).await
     }
 
     /// Read per-meeting prep status. Returns
@@ -1967,10 +2368,11 @@ impl<'a> ServiceContext<'a> {
         &self,
         workspace_scope: String,
         date: String,
+        intent: MeetingsViewIntent,
     ) -> Result<DailyReadinessContextSnapshot, String> {
         if let Some(reader) = &self.daily_readiness_context_reader {
             return reader
-                .read_daily_readiness_context(workspace_scope, date)
+                .read_daily_readiness_context(workspace_scope, date, intent)
                 .await;
         }
 
@@ -1991,6 +2393,46 @@ impl<'a> ServiceContext<'a> {
         if let Some(reader) = &self.entity_context_claim_reader {
             return reader
                 .read_entity_context_claims(entity_type, entity_id, surface, depth)
+                .await;
+        }
+
+        Err(self.missing_reader_error("entity_context_claim_reader"))
+    }
+
+    pub async fn read_entity_context_claims_limited(
+        &self,
+        entity_type: String,
+        entity_id: String,
+        surface: ClaimDismissalSurface,
+        depth: usize,
+        limit: usize,
+    ) -> Result<Vec<IntelligenceClaim>, String> {
+        if let Some(reader) = &self.entity_context_claim_reader {
+            return reader
+                .read_entity_context_claims_limited(entity_type, entity_id, surface, depth, limit)
+                .await;
+        }
+
+        Err(self.missing_reader_error("entity_context_claim_reader"))
+    }
+
+    pub async fn read_entity_context_prompt_claims_limited(
+        &self,
+        entity_type: String,
+        entity_id: String,
+        surface: ClaimDismissalSurface,
+        depth: usize,
+        limit: usize,
+    ) -> Result<Vec<IntelligenceClaim>, String> {
+        if let Some(reader) = &self.entity_context_claim_reader {
+            return reader
+                .read_entity_context_prompt_claims_limited(
+                    entity_type,
+                    entity_id,
+                    surface,
+                    depth,
+                    limit,
+                )
                 .await;
         }
 
@@ -2047,6 +2489,85 @@ impl<'a> ServiceContext<'a> {
         };
 
         reader.read_projects(query).await
+    }
+
+    pub async fn read_markdown_preview(
+        &self,
+        request: MarkdownPreviewReadRequest,
+    ) -> Result<MarkdownPreviewOutput, MarkdownPreviewReadError> {
+        let Some(reader) = &self.markdown_preview_reader else {
+            return Err(MarkdownPreviewReadError::SourceUnavailable(
+                self.missing_reader_error("markdown_preview_read"),
+            ));
+        };
+
+        reader.read_markdown_preview(request).await
+    }
+
+    pub async fn read_workspace_graph(
+        &self,
+        request: WorkspaceGraphReadRequest,
+    ) -> Result<WorkspaceGraphResponse, WorkspaceGraphReadError> {
+        let Some(reader) = &self.workspace_graph_reader else {
+            return Err(WorkspaceGraphReadError::ReadFailed(
+                self.missing_reader_error("workspace_graph_read"),
+            ));
+        };
+
+        reader.read_workspace_graph(request).await
+    }
+
+    pub async fn read_source_management_ledger(
+        &self,
+        request: SourceManagementLedgerReadRequest,
+    ) -> Result<SourceManagementLedgerResponse, SourceManagementLedgerReadError> {
+        let Some(reader) = &self.source_management_ledger_reader else {
+            return Err(SourceManagementLedgerReadError::ReadFailed(
+                self.missing_reader_error("source_management_ledger_read"),
+            ));
+        };
+
+        reader.read_source_management_ledger(request).await
+    }
+
+    pub async fn score_salience(
+        &self,
+        request: ScoreSalienceReadRequest,
+    ) -> Result<ScoreSalienceResponse, SalienceReadError> {
+        let Some(reader) = &self.salience_reader else {
+            return Err(SalienceReadError::ReadFailed(
+                self.missing_reader_error("salience_read"),
+            ));
+        };
+
+        reader.score_salience(request).await
+    }
+
+    pub async fn list_suggested_next_steps(
+        &self,
+        input: ListSuggestedNextStepsInput,
+        actor: ActorKind,
+    ) -> Result<ListSuggestedNextStepsResponse, SuggestedNextStepsReadError> {
+        let Some(reader) = &self.suggested_next_steps_reader else {
+            return Err(SuggestedNextStepsReadError::ReadFailed(
+                self.missing_reader_error("suggested_next_steps_read"),
+            ));
+        };
+
+        reader.list_suggested_next_steps(input, actor).await
+    }
+
+    pub async fn apply_source_management_action(
+        &self,
+        request: SourceManagementActionRequest,
+    ) -> Result<SourceManagementActionReceipt, SourceManagementActionError> {
+        let Some(handler) = &self.source_management_action_handler else {
+            return Err(SourceManagementActionError::ActionFailed(
+                self.missing_reader_error("source_management_action"),
+            ));
+        };
+
+        handler.apply_source_management_action(request).await
     }
 
     pub async fn read_trajectory_bundle(

@@ -7,14 +7,19 @@ use crate::db::invalidation_jobs::{
     TerminalizationOutcome, DEFAULT_QUEUE_PENDING_CAP,
 };
 use crate::db::ActionDb;
+use crate::db_service::DbAccessError;
 use crate::services::context::ServiceContext;
 use crate::state::AppState;
 
 const STARTUP_DRAIN_LIMIT: usize = 100;
 const TARGETED_REPAIR_DRAIN_LIMIT: usize = 100;
+const CLAIM_RECOMPUTE_IDLE_POLL_MS: u64 = 250;
+const CLAIM_RECOMPUTE_ERROR_POLL_MS: u64 = 2_000;
 const TARGETED_REPAIR_IDLE_POLL_MS: u64 = 250;
 const TARGETED_REPAIR_ERROR_POLL_MS: u64 = 2_000;
 const QUEUE_PENDING_CAP_ENV: &str = "DAILYOS_INVALIDATION_JOBS_PENDING_CAP";
+const CLAIM_RECOMPUTE_SYNC_CLAIM_CAP_ENV: &str = "DAILYOS_CLAIM_RECOMPUTE_SYNC_CLAIM_CAP";
+const DEFAULT_CLAIM_RECOMPUTE_SYNC_CLAIM_CAP: usize = 25;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct InvalidationJobQueueConfig {
@@ -111,6 +116,21 @@ pub fn process_one_claim_recompute_job(
     };
 
     let job_id = job.id.clone();
+    let claim_count = match active_claim_count_for_subject(db, &job.subject_type, &job.subject_id) {
+        Ok(count) => count,
+        Err(error) if error.starts_with("unsupported claim recompute subject type:") => 0,
+        Err(error) => return Err(error),
+    };
+    let claim_cap = claim_recompute_sync_claim_cap();
+    if claim_count > claim_cap {
+        let error = format!(
+            "claim recompute subject has {claim_count} active claims, exceeding synchronous worker cap {claim_cap}; chunked recompute required"
+        );
+        db.dead_letter_invalidation_job(&job_id, &error)
+            .map_err(|e| e.to_string())?;
+        return Ok(ClaimRecomputeProcessOutcome::DeadLettered { job_id });
+    }
+
     let recompute = run_claim_recompute(ctx, db, &job);
     if let Err(error) = recompute {
         let disposition = db
@@ -142,6 +162,66 @@ pub fn process_one_claim_recompute_job(
     }
 }
 
+fn claim_recompute_sync_claim_cap() -> usize {
+    std::env::var(CLAIM_RECOMPUTE_SYNC_CLAIM_CAP_ENV)
+        .ok()
+        .and_then(|raw| raw.parse::<usize>().ok())
+        .filter(|cap| *cap > 0)
+        .unwrap_or(DEFAULT_CLAIM_RECOMPUTE_SYNC_CLAIM_CAP)
+}
+
+fn active_claim_count_for_subject(
+    db: &ActionDb,
+    subject_type: &str,
+    subject_id: &str,
+) -> Result<usize, String> {
+    let subject_ref = subject_ref_json(subject_type, subject_id)?;
+    let value: serde_json::Value = serde_json::from_str(&subject_ref)
+        .map_err(|error| format!("claim recompute subject ref build failed: {error}"))?;
+    let kind = value
+        .get("kind")
+        .and_then(|kind| kind.as_str())
+        .ok_or_else(|| "claim recompute subject kind missing".to_string())?;
+    let id = value
+        .get("id")
+        .and_then(|id| id.as_str())
+        .ok_or_else(|| "claim recompute subject id missing".to_string())?;
+
+    db.conn_ref()
+        .query_row(
+            "SELECT COUNT(*)
+               FROM intelligence_claims
+              WHERE json_valid(subject_ref) = 1
+                AND lower(json_extract(subject_ref, '$.kind')) = lower(?1)
+                AND json_extract(subject_ref, '$.id') = ?2
+                AND claim_state = 'active'
+                AND surfacing_state = 'active'",
+            rusqlite::params![kind, id],
+            |row| row.get::<_, usize>(0),
+        )
+        .map_err(|error| format!("claim recompute active claim count failed: {error}"))
+}
+
+async fn recover_db_service_after_worker_error(
+    state: &Arc<AppState>,
+    error: &DbAccessError,
+    context: &'static str,
+) -> String {
+    let message = error.to_string();
+    state
+        .recover_db_service_after_access_error(error, context)
+        .await;
+    message
+}
+
+fn log_worker_iteration_error(worker_name: &str, error: &DbAccessError, message: &str) {
+    if error.is_retryable() && !message.contains("file is not a database") {
+        log::debug!("{worker_name} iteration retrying after transient DB contention: {message}");
+    } else {
+        log::warn!("{worker_name} iteration failed: {message}");
+    }
+}
+
 pub async fn drain_pending_claim_recomputes(state: &Arc<AppState>) {
     let worker_id = format!("claim-recompute-startup-{}", uuid::Uuid::new_v4());
     for _ in 0..STARTUP_DRAIN_LIMIT {
@@ -154,15 +234,59 @@ pub async fn drain_pending_claim_recomputes(state: &Arc<AppState>) {
                 let ctx = crate::services::context::ServiceContext::new_live(&clock, &rng, &ext);
                 process_one_claim_recompute_job(&ctx, db, &worker_id)
             })
-            .await
-            .map_err(String::from);
+            .await;
 
         match result {
             Ok(ClaimRecomputeProcessOutcome::NoJob) => break,
             Ok(outcome) => log::info!("Claim recompute drain processed {outcome:?}"),
             Err(error) => {
-                log::warn!("Claim recompute drain stopped: {error}");
+                let message =
+                    recover_db_service_after_worker_error(state, &error, "Claim recompute drain")
+                        .await;
+                log::warn!("Claim recompute drain stopped: {message}");
                 break;
+            }
+        }
+    }
+}
+
+pub async fn run_claim_recompute_worker(state: Arc<AppState>) {
+    let worker_id = format!("claim-recompute-worker-{}", uuid::Uuid::new_v4());
+    loop {
+        if state.is_database_recovery_required() {
+            log::warn!("Claim recompute worker stopped: database recovery required");
+            break;
+        }
+        let worker_id_for_db = worker_id.clone();
+        let result = state
+            .db_write(move |db| {
+                let clock = crate::services::context::SystemClock;
+                let rng = crate::services::context::SystemRng;
+                let ext = crate::services::context::ExternalClients::default();
+                let ctx = crate::services::context::ServiceContext::new_live(&clock, &rng, &ext);
+                process_one_claim_recompute_job(&ctx, db, &worker_id_for_db)
+            })
+            .await;
+
+        match result {
+            Ok(ClaimRecomputeProcessOutcome::NoJob) => {
+                tokio::time::sleep(std::time::Duration::from_millis(
+                    CLAIM_RECOMPUTE_IDLE_POLL_MS,
+                ))
+                .await;
+            }
+            Ok(outcome) => {
+                log::info!("Claim recompute worker processed {outcome:?}");
+            }
+            Err(error) => {
+                let message =
+                    recover_db_service_after_worker_error(&state, &error, "Claim recompute worker")
+                        .await;
+                log_worker_iteration_error("Claim recompute worker", &error, &message);
+                tokio::time::sleep(std::time::Duration::from_millis(
+                    CLAIM_RECOMPUTE_ERROR_POLL_MS,
+                ))
+                .await;
             }
         }
     }
@@ -181,14 +305,19 @@ pub async fn drain_pending_targeted_claim_repairs(state: &Arc<AppState>) {
                 crate::services::claims::targeted_repair_process_next_job(&ctx, db, &worker_id)
                     .map_err(|e| e.to_string())
             })
-            .await
-            .map_err(String::from);
+            .await;
 
         match result {
             Ok(crate::services::claims::TargetedRepairProcessOutcome::NoJob) => break,
             Ok(outcome) => log::info!("Targeted claim repair drain processed {outcome:?}"),
             Err(error) => {
-                log::warn!("Targeted claim repair drain stopped: {error}");
+                let message = recover_db_service_after_worker_error(
+                    state,
+                    &error,
+                    "Targeted claim repair drain",
+                )
+                .await;
+                log::warn!("Targeted claim repair drain stopped: {message}");
                 break;
             }
         }
@@ -198,6 +327,10 @@ pub async fn drain_pending_targeted_claim_repairs(state: &Arc<AppState>) {
 pub async fn run_targeted_claim_repair_worker(state: Arc<AppState>) {
     let worker_id = format!("targeted-repair-worker-{}", uuid::Uuid::new_v4());
     loop {
+        if state.is_database_recovery_required() {
+            log::warn!("Targeted claim repair worker stopped: database recovery required");
+            break;
+        }
         let worker_id_for_db = worker_id.clone();
         let result = state
             .db_write(move |db| {
@@ -212,8 +345,7 @@ pub async fn run_targeted_claim_repair_worker(state: Arc<AppState>) {
                 )
                 .map_err(|e| e.to_string())
             })
-            .await
-            .map_err(String::from);
+            .await;
 
         match result {
             Ok(crate::services::claims::TargetedRepairProcessOutcome::NoJob) => {
@@ -226,7 +358,13 @@ pub async fn run_targeted_claim_repair_worker(state: Arc<AppState>) {
                 log::info!("Targeted claim repair worker processed {outcome:?}");
             }
             Err(error) => {
-                log::warn!("Targeted claim repair worker iteration failed: {error}");
+                let message = recover_db_service_after_worker_error(
+                    &state,
+                    &error,
+                    "Targeted claim repair worker",
+                )
+                .await;
+                log_worker_iteration_error("Targeted claim repair worker", &error, &message);
                 tokio::time::sleep(std::time::Duration::from_millis(
                     TARGETED_REPAIR_ERROR_POLL_MS,
                 ))
@@ -241,25 +379,30 @@ fn run_claim_recompute(
     db: &ActionDb,
     job: &InvalidationJob,
 ) -> Result<(), String> {
-    let subject_ref = subject_ref_json(&job.subject_type, &job.subject_id)?;
-    let _claims = crate::services::claims::load_claims_active(db, &subject_ref, None)
-        .map_err(|e| format!("load active claims for recompute: {e}"))?;
-
-    if job.subject_type.eq_ignore_ascii_case("account") {
-        crate::services::intelligence::recompute_entity_health(
+    db.with_transaction(|tx| {
+        crate::services::trust_recompute::recompute_claim_trust_for_subject(
             ctx,
-            db,
+            tx,
+            &job.subject_type,
             &job.subject_id,
-            "account",
         )?;
-    }
 
-    Ok(())
+        if job.subject_type.eq_ignore_ascii_case("account") {
+            crate::services::intelligence::recompute_entity_health(
+                ctx,
+                tx,
+                &job.subject_id,
+                "account",
+            )?;
+        }
+
+        Ok(())
+    })
 }
 
 fn subject_ref_json(subject_type: &str, subject_id: &str) -> Result<String, String> {
     let kind = match subject_type.to_ascii_lowercase().as_str() {
-        "account" | "project" | "person" | "meeting" | "email" => subject_type,
+        "account" | "project" | "person" | "meeting" => subject_type,
         other => return Err(format!("unsupported claim recompute subject type: {other}")),
     };
     Ok(json!({ "kind": kind, "id": subject_id }).to_string())
@@ -435,6 +578,40 @@ mod tests {
         let ctx = test_ctx(&clock, &rng, &ext);
         let outcome =
             process_one_claim_recompute_job(&ctx, &db, "worker-dead").expect("process job");
+        assert_eq!(
+            outcome,
+            ClaimRecomputeProcessOutcome::DeadLettered {
+                job_id: receipt.job_id.clone()
+            }
+        );
+
+        let dead = db
+            .list_dead_lettered_invalidation_jobs(10)
+            .expect("dead letters");
+        assert_eq!(dead.len(), 1);
+        assert_eq!(dead[0].id, receipt.job_id);
+    }
+
+    #[test]
+    fn email_subject_dead_letters_after_exhaustion() {
+        let db = test_db();
+        let mut input = EnqueueInvalidationJob::claim_recompute_from_signal(
+            "sig-email-unsupported",
+            "account",
+            "acct-placeholder",
+            0,
+        );
+        input.subject_type = "email".to_string();
+        input.subject_id = "message-fixture".to_string();
+        input.max_attempts = 1;
+        let receipt = db.enqueue_invalidation_job(input).expect("enqueue");
+
+        let clock = FixedClock::new(Utc.with_ymd_and_hms(2026, 5, 8, 12, 0, 0).unwrap());
+        let rng = SeedableRng::new(7);
+        let ext = ExternalClients::default();
+        let ctx = test_ctx(&clock, &rng, &ext);
+        let outcome =
+            process_one_claim_recompute_job(&ctx, &db, "worker-email-dead").expect("process job");
         assert_eq!(
             outcome,
             ClaimRecomputeProcessOutcome::DeadLettered {

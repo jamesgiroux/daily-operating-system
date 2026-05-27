@@ -168,6 +168,11 @@ pub enum ClaimType {
     AttendeeContext,
     MeetingChangeMarker,
     SuggestedOutcome,
+    /// Structured account schema fact promoted into the claim substrate.
+    /// Covers account-table facts such as ARR, renewal likelihood,
+    /// support tier, primary product, and customer status so surfaces
+    /// can read them through `get_entity_intelligence`.
+    AccountFact,
     UserNote,
     // --- Recommendations (salience subsystem) -----------------------
     /// Agent-generated recommendation for an action against an entity
@@ -271,6 +276,7 @@ pub const fn metadata_for_claim_type(kind: ClaimType) -> &'static ClaimTypeMetad
         ClaimType::AttendeeContext => &ATTENDEE_CONTEXT_META,
         ClaimType::MeetingChangeMarker => &MEETING_CHANGE_MARKER_META,
         ClaimType::SuggestedOutcome => &SUGGESTED_OUTCOME_META,
+        ClaimType::AccountFact => &ACCOUNT_FACT_META,
         ClaimType::UserNote => &USER_NOTE_META,
         ClaimType::Recommendation => &RECOMMENDATION_META,
     }
@@ -682,6 +688,17 @@ claim_meta!(
     ACTORS_AGENT
 );
 claim_meta!(
+    ACCOUNT_FACT_META,
+    AccountFact,
+    "account_fact",
+    State,
+    Internal,
+    Slow,
+    Replace,
+    SUBJECTS_ACCOUNT,
+    ACTORS_ANY
+);
+claim_meta!(
     USER_NOTE_META,
     UserNote,
     "user_note",
@@ -738,6 +755,7 @@ pub const CLAIM_TYPE_REGISTRY: &[&ClaimTypeMetadata] = &[
     &ATTENDEE_CONTEXT_META,
     &MEETING_CHANGE_MARKER_META,
     &SUGGESTED_OUTCOME_META,
+    &ACCOUNT_FACT_META,
     &USER_NOTE_META,
     &RECOMMENDATION_META,
 ];
@@ -782,6 +800,7 @@ mod tests {
             | ClaimType::EntityWin
             | ClaimType::ValueDelivered
             | ClaimType::CompanyContext
+            | ClaimType::AccountFact
             | ClaimType::UserNote => FreshnessDecayClass::Slow,
             ClaimType::Risk
             | ClaimType::EntityRisk
@@ -810,6 +829,7 @@ mod tests {
             | ClaimType::EntityCurrentState
             | ClaimType::MeetingReadiness
             | ClaimType::SuggestedOutcome
+            | ClaimType::AccountFact
             | ClaimType::Recommendation => CommitPolicyClass::Replace,
             ClaimType::Win
             | ClaimType::LinkingDismissed
@@ -900,6 +920,7 @@ mod tests {
             (ClaimType::AttendeeContext, "attendee_context"),
             (ClaimType::MeetingChangeMarker, "meeting_change_marker"),
             (ClaimType::SuggestedOutcome, "suggested_outcome"),
+            (ClaimType::AccountFact, "account_fact"),
             (ClaimType::UserNote, "user_note"),
             (ClaimType::Recommendation, "recommendation"),
         ];
@@ -1050,6 +1071,15 @@ mod tests {
         for kind in user_or_system {
             let actors = metadata_for_claim_type(kind).allowed_actor_classes;
             assert_eq!(actors.len(), 2, "{kind:?} should be user-or-system");
+            assert!(actors.contains(&ClaimActorClass::User));
+            assert!(actors.contains(&ClaimActorClass::System));
+        }
+
+        let any_actor = [ClaimType::Risk, ClaimType::Win, ClaimType::AccountFact];
+        for kind in any_actor {
+            let actors = metadata_for_claim_type(kind).allowed_actor_classes;
+            assert_eq!(actors.len(), 3, "{kind:?} should allow any actor class");
+            assert!(actors.contains(&ClaimActorClass::Agent));
             assert!(actors.contains(&ClaimActorClass::User));
             assert!(actors.contains(&ClaimActorClass::System));
         }

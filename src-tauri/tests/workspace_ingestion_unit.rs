@@ -8,16 +8,18 @@ use abilities_runtime::abilities::provenance::source::{
 };
 use abilities_runtime::abilities::provenance::DocumentId;
 use chrono::Utc;
+use dailyos_lib::db::ActionDb;
+use dailyos_lib::services::context::{ExternalClients, ServiceContext, SystemClock, SystemRng};
 use dailyos_lib::services::workspace_ingestion::contracts::{
-    Extractor, FileIdentity, NullExtractor, NullSignalEmitter, RejectionReason, SignalEmitter,
-    WorkspaceCategory, WorkspaceFileKind,
+    ExtractionContext, Extractor, FileIdentity, NullExtractor, NullSignalEmitter, RejectionReason,
+    SignalEmitContext, SignalEmitter, WorkspaceCategory, WorkspaceFileKind,
 };
 use dailyos_lib::services::workspace_ingestion::lifecycle::LifecycleState;
 
 // ---- LifecycleState ---------------------------------------------------------
 
 #[test]
-fn lifecycle_state_has_exactly_seven_variants_with_canonical_serde_strings() {
+fn lifecycle_state_has_canonical_serde_strings() {
     let pairs: &[(LifecycleState, &str)] = &[
         (LifecycleState::Pending, "pending"),
         (
@@ -29,12 +31,16 @@ fn lifecycle_state_has_exactly_seven_variants_with_canonical_serde_strings() {
         (LifecycleState::Superseded, "superseded"),
         (LifecycleState::Rejected, "rejected"),
         (LifecycleState::Quarantined, "quarantined"),
+        (LifecycleState::Ignored, "ignored"),
+        (LifecycleState::Scratchpad, "scratchpad"),
+        (LifecycleState::Archived, "archived"),
+        (LifecycleState::Deleted, "deleted"),
     ];
 
     assert_eq!(
         pairs.len(),
-        7,
-        "LifecycleState must have exactly 7 variants"
+        11,
+        "LifecycleState must have exactly 11 variants"
     );
 
     for (state, expected_slug) in pairs {
@@ -138,25 +144,68 @@ fn null_extractor_is_send_sync_and_returns_empty() {
     // Construct a dummy file handle for the Extractor::extract call. We can't
     // create a `std::fs::File` without I/O, so use a tempfile.
     let tmp = tempfile::NamedTempFile::new().expect("tempfile");
-    let file = std::fs::File::open(tmp.path()).expect("open tempfile");
-    let proposals = extractor.extract(&file, &identity, WorkspaceFileKind::Inbox);
+    let mut file = std::fs::File::open(tmp.path()).expect("open tempfile");
+    let now = Utc::now();
+    let context = ExtractionContext {
+        file_id: "wf-null",
+        identity: &identity,
+        content: "",
+        source_type: WorkspaceFileKind::Inbox,
+        source_asof: now,
+        resolved_category: None,
+        linked_subject: None,
+        ingestion_run_id: "run-null",
+        observed_at: now,
+        invocation_actor: "system:test",
+    };
+    let report = extractor.extract(&mut file, &context).expect("extract");
     assert!(
-        proposals.is_empty(),
-        "NullExtractor must return empty Vec, got {} items",
-        proposals.len()
+        report.proposals.is_empty(),
+        "NullExtractor must return empty proposals, got {} items",
+        report.proposals.len()
     );
 }
 
 #[test]
 fn null_signal_emitter_methods_are_noops_callable_through_dyn() {
     let boxed: Box<dyn SignalEmitter> = Box::new(NullSignalEmitter);
-    boxed.emit_file_ingested("f1", "deadbeef", "run1", Some("entity1"));
-    boxed.emit_file_ingested("f1", "deadbeef", "run1", None);
-    boxed.emit_file_rejected(Some("f2"), RejectionReason::PathTraversalAttempt);
-    boxed.emit_file_rejected(None, RejectionReason::FileTooLarge);
-    boxed.emit_file_pending_entity_assignment("f3", "run3");
-    boxed.emit_file_quarantined("f4", "user requested", "user-1");
-    boxed.emit_link_changed("f5", "entity-2", "user-1");
+    let conn = rusqlite::Connection::open_in_memory().expect("in-memory sqlite");
+    let db = ActionDb::from_conn(&conn);
+    let clock = SystemClock;
+    let rng = SystemRng;
+    let external = ExternalClients::default();
+    let services = ServiceContext::new_live(&clock, &rng, &external);
+    let signal_ctx = SignalEmitContext::new(&services, db, None);
+
+    boxed
+        .emit_file_ingested(&signal_ctx, "f1", "run1", "account", "entity1")
+        .expect("noop ingested");
+    boxed
+        .emit_file_rejected(
+            &signal_ctx,
+            Some("f2"),
+            RejectionReason::PathTraversalAttempt,
+        )
+        .expect("noop rejected");
+    boxed
+        .emit_file_rejected(&signal_ctx, None, RejectionReason::FileTooLarge)
+        .expect("noop rejected without file");
+    boxed
+        .emit_file_pending_entity_assignment(&signal_ctx, "f3", "run3")
+        .expect("noop pending entity");
+    boxed
+        .emit_file_quarantined(
+            &signal_ctx,
+            "f4",
+            "user requested",
+            "user-1",
+            Some("account"),
+            Some("entity1"),
+        )
+        .expect("noop quarantined");
+    boxed
+        .emit_link_changed(&signal_ctx, "f5", "account", "entity-2", "user-1")
+        .expect("noop link changed");
     // If we reach here without panicking the dyn dispatch worked.
 }
 

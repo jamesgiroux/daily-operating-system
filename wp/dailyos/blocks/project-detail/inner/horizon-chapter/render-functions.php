@@ -72,7 +72,6 @@ if ( ! function_exists( 'dailyos_horizon_chapter_render' ) ) {
 			}
 		}
 
-
 		if ( ! $any_present ) {
 			$reason = '' !== $first_empty_reason ? $first_empty_reason : 'no_horizon_read';
 			if ( function_exists( 'dailyos_empty_chip' ) ) {

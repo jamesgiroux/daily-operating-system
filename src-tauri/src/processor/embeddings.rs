@@ -14,7 +14,7 @@ use parking_lot::Mutex;
 use chrono::Utc;
 use tauri::AppHandle;
 
-use crate::db::{ActionDb, DbContentEmbedding, DbContentFile};
+use crate::db::{DbContentEmbedding, DbContentFile};
 use crate::state::AppState;
 
 const STARTUP_DELAY_SECS: u64 = 20;
@@ -141,7 +141,8 @@ pub async fn run_embedding_processor(state: Arc<AppState>, _app: AppHandle) {
 
         let sweep_interval = Duration::from_secs(config.embeddings.sweep_interval_secs.max(30));
         if last_sweep_at.elapsed() >= sweep_interval {
-            if let Err(e) = enqueue_sweep_candidates(&state, config.embeddings.max_files_per_sweep)
+            if let Err(e) =
+                enqueue_sweep_candidates(&state, config.embeddings.max_files_per_sweep).await
             {
                 log::warn!("EmbeddingProcessor: sweep enqueue failed: {}", e);
             }
@@ -160,7 +161,7 @@ pub async fn run_embedding_processor(state: Arc<AppState>, _app: AppHandle) {
                 }
             };
 
-            match process_request(&state, &request) {
+            match process_request(&state, &request).await {
                 Ok(updated) => {
                     if updated > 0 {
                         log::info!(
@@ -186,12 +187,14 @@ pub async fn run_embedding_processor(state: Arc<AppState>, _app: AppHandle) {
     }
 }
 
-fn enqueue_sweep_candidates(state: &AppState, max_files: usize) -> Result<(), String> {
-    let db = ActionDb::open(std::sync::Arc::new(crate::db::LocalKeychain::new()))
-        .map_err(|e| format!("open db failed: {e}"))?;
-    let files = db
-        .get_files_needing_embeddings(max_files)
-        .map_err(|e| format!("query files needing embeddings failed: {e}"))?;
+async fn enqueue_sweep_candidates(state: &AppState, max_files: usize) -> Result<(), String> {
+    let files = state
+        .db_read(move |db| {
+            db.get_files_needing_embeddings(max_files)
+                .map_err(|e| format!("query files needing embeddings failed: {e}"))
+        })
+        .await
+        .map_err(|e| format!("db read failed: {e}"))?;
 
     let mut entities = std::collections::HashSet::new();
     for file in files {
@@ -209,7 +212,7 @@ fn enqueue_sweep_candidates(state: &AppState, max_files: usize) -> Result<(), St
     Ok(())
 }
 
-fn process_request(state: &AppState, request: &EmbeddingRequest) -> Result<usize, String> {
+async fn process_request(state: &AppState, request: &EmbeddingRequest) -> Result<usize, String> {
     if !state.embedding_model.is_ready() {
         return Err("embedding model unavailable".to_string());
     }
@@ -220,12 +223,14 @@ fn process_request(state: &AppState, request: &EmbeddingRequest) -> Result<usize
         .clone()
         .ok_or_else(|| "config unavailable".to_string())?;
 
-    let db = ActionDb::open(std::sync::Arc::new(crate::db::LocalKeychain::new()))
-        .map_err(|e| format!("open db failed: {e}"))?;
-
-    let files = db
-        .get_entity_files(&request.entity_id)
-        .map_err(|e| format!("query entity files failed: {e}"))?;
+    let entity_id = request.entity_id.clone();
+    let files = state
+        .db_read(move |db| {
+            db.get_entity_files(&entity_id)
+                .map_err(|e| format!("query entity files failed: {e}"))
+        })
+        .await
+        .map_err(|e| format!("db read failed: {e}"))?;
 
     let pending: Vec<DbContentFile> = files
         .into_iter()
@@ -239,7 +244,7 @@ fn process_request(state: &AppState, request: &EmbeddingRequest) -> Result<usize
 
     let mut updated_count = 0usize;
     for file in pending {
-        if embed_file(&db, state, &config, &file).is_ok() {
+        if embed_file(state, &config, &file).await.is_ok() {
             updated_count += 1;
         }
     }
@@ -247,8 +252,7 @@ fn process_request(state: &AppState, request: &EmbeddingRequest) -> Result<usize
     Ok(updated_count)
 }
 
-fn embed_file(
-    db: &ActionDb,
+async fn embed_file(
     state: &AppState,
     config: &crate::types::Config,
     file: &DbContentFile,
@@ -261,8 +265,7 @@ fn embed_file(
     let text = crate::processor::extract::extract_text(path)
         .map_err(|e| format!("extract failed for {}: {}", file.filename, e))?;
     if text.trim().is_empty() {
-        db.set_embeddings_generated_at(&file.id, Some(&Utc::now().to_rfc3339()))
-            .map_err(|e| format!("watermark update failed: {e}"))?;
+        set_embeddings_generated_at(state, file.id.clone(), Utc::now().to_rfc3339()).await?;
         return Ok(());
     }
 
@@ -272,8 +275,7 @@ fn embed_file(
         config.embeddings.chunk_overlap_tokens,
     );
     if chunks.is_empty() {
-        db.set_embeddings_generated_at(&file.id, Some(&Utc::now().to_rfc3339()))
-            .map_err(|e| format!("watermark update failed: {e}"))?;
+        set_embeddings_generated_at(state, file.id.clone(), Utc::now().to_rfc3339()).await?;
         return Ok(());
     }
 
@@ -302,12 +304,34 @@ fn embed_file(
         })
         .collect();
 
-    db.replace_content_embeddings_for_file(&file.id, &rows)
-        .map_err(|e| format!("replace content embeddings failed: {e}"))?;
-    db.set_embeddings_generated_at(&file.id, Some(&now))
-        .map_err(|e| format!("watermark update failed: {e}"))?;
+    let file_id = file.id.clone();
+    state
+        .db_write(move |db| {
+            db.replace_content_embeddings_for_file(&file_id, &rows)
+                .map_err(|e| format!("replace content embeddings failed: {e}"))?;
+            db.set_embeddings_generated_at(&file_id, Some(&now))
+                .map_err(|e| format!("watermark update failed: {e}"))?;
+            Ok(())
+        })
+        .await
+        .map_err(|e| format!("db write failed: {e}"))?;
 
     Ok(())
+}
+
+async fn set_embeddings_generated_at(
+    state: &AppState,
+    file_id: String,
+    generated_at: String,
+) -> Result<(), String> {
+    state
+        .db_write(move |db| {
+            db.set_embeddings_generated_at(&file_id, Some(&generated_at))
+                .map_err(|e| format!("watermark update failed: {e}"))?;
+            Ok(())
+        })
+        .await
+        .map_err(|e| format!("db write failed: {e}"))
 }
 
 #[cfg(test)]

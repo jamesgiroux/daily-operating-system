@@ -368,7 +368,7 @@ pub async fn build_live_dashboard_data(state: &AppState) -> Option<DashboardData
             // 3. Get entity map and intelligence qualities
             let meeting_ids: Vec<String> = meetings.iter().map(|m| m.id.clone()).collect();
             // read from the linked_entities view rather than the legacy
-            // meeting_entities junction table so dashboard prep chips match the
+            // graph-compatible meeting link view so dashboard prep chips match the
             // meeting detail page.
             let entity_map = db
                 .get_linked_entities_map_for_meetings(&meeting_ids)
@@ -835,7 +835,7 @@ async fn get_dashboard_data_inner(state: &AppState, db_busy: &mut bool) -> Dashb
             Ok(DashboardDbSnapshot {
                 reviewed: db.get_reviewed_preps().ok(),
                 // read from the linked_entities view rather than the legacy
-                // meeting_entities junction table so dashboard snapshot chips match
+                // graph-compatible meeting link view so dashboard snapshot chips match
                 // the meeting detail page.
                 entity_map: db
                     .get_linked_entities_map_for_meetings(&meeting_ids_clone)
@@ -1056,6 +1056,8 @@ async fn get_dashboard_data_inner(state: &AppState, db_busy: &mut bool) -> Dashb
                             .entity_id
                             .as_ref()
                             .and_then(|eid| entity_names.get(eid).cloned());
+                        let (summary_context_trust_band, summary_context_source_count) =
+                            crate::services::emails::email_summary_context_for_display(dbe);
                         crate::types::Email {
                             id: dbe.email_id.clone(),
                             sender: dbe.sender_name.clone().unwrap_or_default(),
@@ -1069,6 +1071,8 @@ async fn get_dashboard_data_inner(state: &AppState, db_busy: &mut bool) -> Dashb
                             },
                             avatar_url: None,
                             summary: dbe.contextual_summary.clone(),
+                            summary_context_trust_band,
+                            summary_context_source_count,
                             recommended_action: None,
                             conversation_arc: None,
                             email_type: None,
@@ -1299,7 +1303,7 @@ async fn get_dashboard_data_inner(state: &AppState, db_busy: &mut bool) -> Dashb
                         let count = entity_ids.iter().filter(|eid| {
                             db.conn_ref()
                                 .query_row(
-                                    "SELECT COUNT(*) FROM meeting_entities me
+                                    "SELECT COUNT(*) FROM effective_meeting_entities me
                                      JOIN meetings m ON me.meeting_id = m.id
                                      WHERE me.entity_id = ?1 AND m.start_time >= ?2 AND m.start_time < ?3",
                                     rusqlite::params![eid, email_today, email_tomorrow],
@@ -1410,7 +1414,7 @@ pub fn get_week_data(_state: &AppState) -> WeekResult {
         Err(e) => {
             return WeekResult::Error {
                 message: format!("Failed to open DB: {}", e),
-            }
+            };
         }
     };
 

@@ -68,7 +68,7 @@ const DOS288_SELECTORS: &[&str] = &[
 const DOS288_OUTPUT_CAPTURE_CAP_BYTES: usize = 64 * 1024;
 const DOS288_OUTPUT_CAPTURE_EDGE_BYTES: usize = DOS288_OUTPUT_CAPTURE_CAP_BYTES / 2;
 const DOS288_SELECTOR_TIMEOUT_SUMMARY: &str = "dos288-selector-timeout-exceeded";
-const W6_FIXTURE_REPORT_NAME: &str = "w6-fixtures.json";
+const W6_FIXTURE_REPORT_NAME: &str = "v144a-w6-fixtures.json";
 
 const SUBSTRATE_ONLY_BUNDLES: &[&str] = &[
     "bundle-14",
@@ -131,64 +131,44 @@ const BUNDLE_INVARIANT_SPECS: &[BundleInvariantSpec] = &[
 
 const W6_FIXTURE_SPECS: &[W6FixtureSpec] = &[
     W6FixtureSpec {
-        id: "w6-01-default-wp-mcp-no-dailyos",
-        surface: "wp_mcp",
+        id: "v144a-w6-01-frontend-surface-contracts",
+        surface: "frontend_surfaces",
     },
     W6FixtureSpec {
-        id: "w6-02-mcp-exposure-none-hidden",
-        surface: "wp_mcp",
+        id: "v144a-w6-02-daily-briefing-bounded-expansion",
+        surface: "daily_briefing",
     },
     W6FixtureSpec {
-        id: "w6-03-frontend-js-no-dailyos-secrets",
-        surface: "frontend_js",
+        id: "v144a-w6-03-daily-briefing-cursor",
+        surface: "daily_briefing",
     },
     W6FixtureSpec {
-        id: "w6-04-gutenberg-rejects-raw-runtime-payloads",
-        surface: "gutenberg_save",
+        id: "v144a-w6-04-entity-claim-read-cap",
+        surface: "entity_intelligence",
     },
     W6FixtureSpec {
-        id: "w6-05-projection-tampered-typed-error",
-        surface: "projection_bridge",
+        id: "v144a-w6-05-mcp-action-redaction",
+        surface: "mcp_actions",
     },
     W6FixtureSpec {
-        id: "w6-06-stale-claim-version-feedback-409",
-        surface: "presence_nonce",
+        id: "v144a-w6-06-entity-fixture-harness",
+        surface: "entity_fixture_harness",
     },
     W6FixtureSpec {
-        id: "w6-07-cross-user-presence-nonce",
-        surface: "presence_nonce",
+        id: "v144a-w6-07-foreground-contention",
+        surface: "foreground_contention",
     },
     W6FixtureSpec {
-        id: "w6-08-presence-nonce-replay-rejected",
-        surface: "presence_nonce",
+        id: "v144a-w6-08-email-refresh-coalescing",
+        surface: "email_surface",
     },
     W6FixtureSpec {
-        id: "w6-09-phase3-budget-charge-fail-closed",
-        surface: "feedback_budget",
+        id: "v144a-w6-09-dos412-render-policy-drift",
+        surface: "render_policy",
     },
     W6FixtureSpec {
-        id: "w6-10-direct-plugin-claim-table-write-lint",
-        surface: "plugin_storage",
-    },
-    W6FixtureSpec {
-        id: "w6-11-payload-json-redaction",
-        surface: "presence_nonce",
-    },
-    W6FixtureSpec {
-        id: "w6-12-stock-theme-account-overview-render",
-        surface: "wp_theme_render",
-    },
-    W6FixtureSpec {
-        id: "w6-13-cold-start-stale-marker-notice",
-        surface: "runtime_lifecycle",
-    },
-    W6FixtureSpec {
-        id: "w6-14-hot-tauri-restart-sentinel-discovery",
-        surface: "runtime_lifecycle",
-    },
-    W6FixtureSpec {
-        id: "w6-15-hot-studio-restart-first-render",
-        surface: "studio_lifecycle",
+        id: "v144a-w6-10-dos168-mcp-migration-drift",
+        surface: "mcp_migration",
     },
 ];
 
@@ -1238,11 +1218,18 @@ struct W6FixtureGateResult {
     invariants: Vec<InvariantResult>,
 }
 
+#[derive(Debug, Clone, PartialEq, Eq)]
+struct W6FixtureRunnerInvocation {
+    script: PathBuf,
+    current_dir: PathBuf,
+    env: Vec<(&'static str, OsString)>,
+}
+
 fn w6_fixture_results(config: &GateConfig, binding: &EvidenceBinding) -> W6FixtureGateResult {
     let started = Instant::now();
     let path = config.output_dir.join(W6_FIXTURE_REPORT_NAME);
     let command_or_report = if config.run_tests {
-        "bash scripts/release-gate/run-w6-fixtures.sh".to_string()
+        "bash scripts/release-gate/run-v144a-w6-fixtures.sh".to_string()
     } else {
         path.display().to_string()
     };
@@ -1302,11 +1289,11 @@ fn run_w6_fixture_runner(
     binding: &EvidenceBinding,
     path: &Path,
 ) -> Result<bool, GateError> {
-    let script = repo_root().join("scripts/release-gate/run-w6-fixtures.sh");
-    if !script.is_file() {
+    let invocation = w6_fixture_runner_invocation(config, binding, path);
+    if !invocation.script.is_file() {
         return Err(GateError::infra(format!(
             "w6-fixture-runner-missing:{}",
-            script.display()
+            invocation.script.display()
         )));
     }
     if let Some(parent) = path.parent() {
@@ -1317,12 +1304,13 @@ fn run_w6_fixture_runner(
             ))
         })?;
     }
-    let output = Command::new("bash")
-        .current_dir(repo_root())
-        .arg(&script)
-        .env("W6_FIXTURE_OUTPUT_DIR", &config.output_dir)
-        .env("W6_FIXTURE_GIT_SHA", &binding.git_sha)
-        .env("W6_FIXTURE_FIXTURES_HASH", &binding.fixtures_hash)
+    let mut command = Command::new("bash");
+    command.current_dir(&invocation.current_dir);
+    command.arg(&invocation.script);
+    for (key, value) in invocation.env {
+        command.env(key, value);
+    }
+    let output = command
         .output()
         .map_err(|error| GateError::infra(format!("w6-fixture-runner-spawn:{error}")))?;
 
@@ -1335,6 +1323,33 @@ fn run_w6_fixture_runner(
         output.status.code().unwrap_or(-1),
         hash_prefix(&String::from_utf8_lossy(&output.stderr))
     )))
+}
+
+fn w6_fixture_runner_invocation(
+    config: &GateConfig,
+    binding: &EvidenceBinding,
+    path: &Path,
+) -> W6FixtureRunnerInvocation {
+    let root = repo_root();
+    W6FixtureRunnerInvocation {
+        script: root.join("scripts/release-gate/run-v144a-w6-fixtures.sh"),
+        current_dir: root,
+        env: vec![
+            (
+                "V144A_W6_FIXTURE_OUTPUT_DIR",
+                config.output_dir.as_os_str().to_os_string(),
+            ),
+            ("V144A_W6_FIXTURE_REPORT", path.as_os_str().to_os_string()),
+            (
+                "V144A_W6_FIXTURE_GIT_SHA",
+                OsString::from(binding.git_sha.clone()),
+            ),
+            (
+                "V144A_W6_FIXTURE_FIXTURES_HASH",
+                OsString::from(binding.fixtures_hash.clone()),
+            ),
+        ],
+    }
 }
 
 fn read_w6_fixture_report(
@@ -2330,6 +2345,55 @@ mod tests {
             dos288_selector_command("dos288_bleed_detection_test"),
             "cargo test --manifest-path src-tauri/Cargo.toml --no-default-features --features release-gate --test dos288_bleed_detection_test -- --nocapture --test-threads=1"
         );
+    }
+
+    #[test]
+    fn release_gate_w6_runner_invocation_uses_v144a_script_and_env() {
+        let temp = tempdir().unwrap();
+        let config = GateConfig {
+            mode: GateMode::Hermetic,
+            bundle_filters: Vec::new(),
+            mandatory_bundles: DEFAULT_MANDATORY_BUNDLES
+                .iter()
+                .map(|bundle| (*bundle).to_string())
+                .collect(),
+            tracked_bundles: DEFAULT_TRACKED_BUNDLES
+                .iter()
+                .map(|bundle| (*bundle).to_string())
+                .collect(),
+            output_dir: temp.path().join("out"),
+            harness_report: None,
+            db_path: None,
+            manual_evidence: None,
+            run_tests: true,
+            git_sha: "abc123".to_string(),
+            dos288_timeout_secs: DEFAULT_DOS288_TIMEOUT_SECS,
+        };
+        let binding = EvidenceBinding {
+            git_sha: "abc123".to_string(),
+            fixtures_hash: "fixturehash".to_string(),
+        };
+        let report_path = temp.path().join("out").join(W6_FIXTURE_REPORT_NAME);
+
+        let invocation = w6_fixture_runner_invocation(&config, &binding, &report_path);
+        let env = invocation.env.iter().cloned().collect::<Vec<_>>();
+
+        assert!(invocation
+            .script
+            .ends_with("scripts/release-gate/run-v144a-w6-fixtures.sh"));
+        assert!(env.contains(&(
+            "V144A_W6_FIXTURE_OUTPUT_DIR",
+            config.output_dir.as_os_str().to_os_string()
+        )));
+        assert!(env.contains(&(
+            "V144A_W6_FIXTURE_REPORT",
+            report_path.as_os_str().to_os_string()
+        )));
+        assert!(env.contains(&("V144A_W6_FIXTURE_GIT_SHA", OsString::from("abc123"))));
+        assert!(env.contains(&(
+            "V144A_W6_FIXTURE_FIXTURES_HASH",
+            OsString::from("fixturehash")
+        )));
     }
 
     #[test]

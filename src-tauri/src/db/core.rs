@@ -12,8 +12,10 @@ use std::sync::Arc;
 
 use super::types::*;
 use crate::db::encryption;
-use crate::db::key_provider::{DbKeyProvider, EncryptionKey, UserIdentity};
+use crate::db::key_provider::{DbKeyProvider, EncryptionKey, LocalKeychain, UserIdentity};
+use ring::hmac;
 use rusqlite::{params, Connection, OpenFlags};
+use sha2::{Digest, Sha256};
 
 // ---------------------------------------------------------------------------
 // Dev DB isolation
@@ -24,6 +26,49 @@ use rusqlite::{params, Connection, OpenFlags};
 /// `ActionDb::open()` independently — the static flag means they automatically
 /// pick up the right path without plumbing config through every thread.
 static DEV_DB_MODE: AtomicBool = AtomicBool::new(false);
+static WRITE_TRANSACTION_GATE: parking_lot::Mutex<()> = parking_lot::const_mutex(());
+static WRITE_TRANSACTION_HOLDER: parking_lot::Mutex<Option<WriteTransactionHolder>> =
+    parking_lot::const_mutex(None);
+const WORKSPACE_GRAPH_DIAGNOSTIC_KEY_DERIVATION_DOMAIN: &[u8] =
+    b"DAILYOS-WORKSPACE-GRAPH-DIAGNOSTIC-HANDLE-V1\n";
+
+#[derive(Clone, Debug)]
+struct WriteTransactionHolder {
+    caller: String,
+    acquired_at: std::time::Instant,
+}
+
+struct WriteTransactionHolderGuard;
+
+impl WriteTransactionHolderGuard {
+    fn set(caller: &'static std::panic::Location<'static>) -> Self {
+        *WRITE_TRANSACTION_HOLDER.lock() = Some(WriteTransactionHolder {
+            caller: format!("{}:{}", caller.file(), caller.line()),
+            acquired_at: std::time::Instant::now(),
+        });
+        Self
+    }
+}
+
+impl Drop for WriteTransactionHolderGuard {
+    fn drop(&mut self) {
+        *WRITE_TRANSACTION_HOLDER.lock() = None;
+    }
+}
+
+fn write_transaction_holder_summary() -> String {
+    WRITE_TRANSACTION_HOLDER
+        .lock()
+        .clone()
+        .map(|holder| {
+            format!(
+                "{} held for {}ms",
+                holder.caller,
+                holder.acquired_at.elapsed().as_millis()
+            )
+        })
+        .unwrap_or_else(|| "unknown holder".to_string())
+}
 
 /// Activate dev-mode DB isolation. All subsequent `ActionDb::open()` calls
 /// will target `~/.dailyos/dailyos-dev.db` instead of `dailyos.db`.
@@ -71,10 +116,69 @@ impl DbKeyProvider for FixtureDbKeyProvider {
     }
 }
 
+pub(crate) fn local_db_keyed_audit_tag(
+    tag_prefix: &str,
+    domain: &str,
+    components: &[&str],
+) -> Result<String, String> {
+    let db_path = ActionDb::db_path_public().map_err(|e| e.to_string())?;
+    let provider = LocalKeychain::new();
+    let key = provider.get_or_create_key(&UserIdentity::local(db_path))?;
+    Ok(keyed_audit_tag(
+        tag_prefix,
+        domain,
+        components,
+        key.as_hex().as_bytes(),
+    ))
+}
+
+pub(crate) fn local_db_workspace_graph_diagnostic_key_bytes() -> Result<[u8; 32], String> {
+    let db_path = ActionDb::db_path_public().map_err(|e| e.to_string())?;
+    let provider = LocalKeychain::new();
+    let key = provider.get_or_create_key(&UserIdentity::local(db_path))?;
+    Ok(workspace_graph_diagnostic_key_bytes(
+        key.as_hex().as_bytes(),
+    ))
+}
+
+#[cfg(test)]
+pub(crate) fn local_db_keyed_audit_tag_for_tests(
+    secret: &str,
+    tag_prefix: &str,
+    domain: &str,
+    components: &[&str],
+) -> String {
+    keyed_audit_tag(tag_prefix, domain, components, secret.as_bytes())
+}
+
+fn keyed_audit_tag(tag_prefix: &str, domain: &str, components: &[&str], secret: &[u8]) -> String {
+    let key = hmac::Key::new(hmac::HMAC_SHA256, secret);
+    let mut context = hmac::Context::with_key(&key);
+    context.update(domain.as_bytes());
+    for component in components {
+        context.update(&[0]);
+        context.update(component.as_bytes());
+    }
+    let tag = context.sign();
+    format!("{tag_prefix}_{}", hex::encode(&tag.as_ref()[..16]))
+}
+
+fn workspace_graph_diagnostic_key_bytes(secret: &[u8]) -> [u8; 32] {
+    let mut hasher = Sha256::new();
+    hasher.update(WORKSPACE_GRAPH_DIAGNOSTIC_KEY_DERIVATION_DOMAIN);
+    hasher.update(secret);
+    hasher.finalize().into()
+}
+
 impl ActionDb {
     /// Borrow the underlying connection for ad-hoc queries.
     pub fn conn_ref(&self) -> &Connection {
         &self.conn
+    }
+
+    /// Consume the wrapper and return the underlying connection.
+    pub fn into_connection(self) -> Connection {
+        self.conn
     }
 
     /// Borrow a `Connection` owned elsewhere as an `ActionDb` view.
@@ -92,6 +196,7 @@ impl ActionDb {
     /// Execute a closure within a SQLite transaction.
     /// Commits on Ok, rolls back on Err.
     #[must_use = "the closure may write to the DB; dropping this Result silently swallows transaction failure or rollback"]
+    #[track_caller]
     pub fn with_transaction<F, T>(&self, f: F) -> Result<T, String>
     where
         F: FnOnce(&Self) -> Result<T, String>,
@@ -102,6 +207,41 @@ impl ActionDb {
         if !self.conn.is_autocommit() {
             return f(self);
         }
+
+        let gate_started = std::time::Instant::now();
+        let mut next_wait_log_at = std::time::Duration::from_secs(5);
+        let wait_limit = std::time::Duration::from_secs(120);
+        let _write_gate = loop {
+            if let Some(gate) =
+                WRITE_TRANSACTION_GATE.try_lock_for(std::time::Duration::from_millis(250))
+            {
+                break gate;
+            }
+            let waited = gate_started.elapsed();
+            if waited >= next_wait_log_at {
+                log::warn!(
+                    "write transaction gate busy for {}ms before BEGIN IMMEDIATE at {}:{}; current holder: {}",
+                    waited.as_millis(),
+                    std::panic::Location::caller().file(),
+                    std::panic::Location::caller().line(),
+                    write_transaction_holder_summary(),
+                );
+                next_wait_log_at += std::time::Duration::from_secs(5);
+            }
+            if waited >= wait_limit {
+                return Err(format!(
+                    "Timed out waiting for process write transaction gate before BEGIN IMMEDIATE; waited={}ms; current holder: {}",
+                    waited.as_millis(),
+                    write_transaction_holder_summary()
+                ));
+            }
+        };
+        let _holder_guard = WriteTransactionHolderGuard::set(std::panic::Location::caller());
+        crate::latency::record_latency(
+            "action_db.write_transaction_gate_wait",
+            gate_started.elapsed().as_millis(),
+            500,
+        );
 
         self.conn
             .execute_batch("BEGIN IMMEDIATE")
@@ -347,14 +487,9 @@ impl ActionDb {
                 .map_err(Self::map_key_error)?;
             let conn = svc.open_fresh_serialized(path.clone(), encryption_key)?;
             drop(rotation_lock);
-            let db = Self { conn };
-            Self::recover_stuck_version_mutations_logged(&db);
-            #[allow(
-                clippy::let_underscore_must_use,
-                reason = "intentional best-effort discard; preserves existing non-blocking behavior"
-            )]
-            let _ = db.run_guarded_init_backfill_account_domains();
-            return Ok(db);
+            // Startup initialization already runs through the global DbService.
+            // Fresh handles should not add best-effort writes outside that path.
+            return Ok(Self { conn });
         }
 
         Self::open_at(path, key_provider)
@@ -439,8 +574,15 @@ impl ActionDb {
 
         // PRAGMA key MUST be first
         conn.execute_batch(&encryption_key.to_pragma())?;
+        conn.query_row("SELECT count(*) FROM sqlite_master LIMIT 1", [], |row| {
+            row.get::<_, i64>(0)
+        })
+        .map_err(|e| {
+            DbError::Encryption(format!(
+                "SQLCipher read-only key verification failed (database unreadable): {e}"
+            ))
+        })?;
 
-        conn.execute_batch("PRAGMA journal_mode=WAL;")?;
         conn.execute_batch("PRAGMA busy_timeout = 5000;")?;
         conn.execute_batch("PRAGMA query_only = ON;")?;
         Ok(Self { conn })
@@ -740,16 +882,13 @@ impl ActionDb {
 pub mod test_utils {
     use super::ActionDb;
 
-    /// Create a temporary database for testing.
+    /// Create an isolated migrated in-memory database for testing.
     ///
-    /// We leak the `TempDir` so the directory persists for the duration of the test.
-    /// Test temp dirs are cleaned up by the OS. FK enforcement is disabled so that
-    /// unit tests can insert rows without satisfying every foreign key constraint.
+    /// FK enforcement is disabled so unit tests can insert rows without satisfying
+    /// every foreign key constraint.
     pub fn test_db() -> ActionDb {
-        let dir = tempfile::tempdir().expect("Failed to create temp dir");
-        let path = dir.path().join("test.db");
-        std::mem::forget(dir);
-        let db = ActionDb::open_at_unencrypted(path).expect("Failed to open test database");
+        let db =
+            ActionDb::from_connection_for_tests(crate::migrations::migrated_in_memory_for_tests());
         db.conn_ref()
             .execute_batch("PRAGMA foreign_keys = OFF;")
             .expect("disable FK for tests");

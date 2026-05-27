@@ -1,0 +1,18 @@
+[
+	{
+		"source_token": "--wp--preset--color--rule-light",
+		"target_token": "wp--preset--color--rule-light"
+	},
+	{
+		"source_token": "--wp--preset--color--text-secondary",
+		"target_token": "wp--preset--color--text-secondary"
+	},
+	{
+		"source_token": "--wp--preset--color--text-tertiary",
+		"target_token": "wp--preset--color--text-tertiary"
+	},
+	{
+		"source_token": "--wp--preset--color--text-quaternary",
+		"target_token": "wp--preset--color--text-quaternary"
+	}
+]

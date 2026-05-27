@@ -34,7 +34,7 @@ Load the role preset vocabulary (role-vocabulary skill activates).
 
 ### Step 3: Load Today's Schedule
 
-Read `data/schedule.json` for today's calendar:
+Use DailyOS schedule/briefing tools for today's calendar. Generated `data/schedule.json` is an export fallback:
 - Count total meetings
 - Identify meeting types (QBR, customer call, one-on-one, etc.)
 - Note any meetings with at-risk entities (cross-reference entity dashboard health)
@@ -42,7 +42,7 @@ Read `data/schedule.json` for today's calendar:
 
 ### Step 4: Load Today's Prep
 
-Read `data/prep.json` for prepared meeting intelligence:
+Use DailyOS meeting-prep tools for prepared meeting intelligence. Generated `data/prep.json` is an export fallback:
 - Note which meetings have prep generated and which do not
 - Identify gaps where deep prep might be needed (QBRs, sensitive meetings)
 
@@ -50,10 +50,10 @@ Read `data/prep.json` for prepared meeting intelligence:
 
 Scan for items requiring immediate attention:
 
-1. **Overdue actions** — Read `data/actions.json`, find items where `due_date` is in the past and `status` is not "completed"
-2. **At-risk entities with meetings today** — Cross-reference schedule with entity dashboards for Yellow/Red health
-3. **Renewals this week** — Scan entity dashboards for `renewal_date` within the next 7 days
-4. **Email signals** — Read `data/emails.json` for escalations or items flagged as `requires_action`
+1. **Overdue actions** — Use DailyOS action/work tools to find items where `due_date` is in the past and `status` is not "completed"
+2. **At-risk entities with meetings today** — Cross-reference schedule with runtime entity health
+3. **Renewals this week** — Use runtime entity facts for `renewal_date` within the next 7 days
+4. **Email signals** — Use DailyOS email/context tools for escalations or items flagged as `requires_action`
 5. **Cooling relationships** — Check People/ profiles for temperature signals on today's meeting attendees
 
 ### Step 6: Output

@@ -26,15 +26,17 @@ function titleCaseSource(source: string): string {
 }
 
 function formatSourceName(source: string): string | null {
-  switch (source) {
+  switch (source.toLowerCase()) {
     case "pty_synthesis":
       return null;
     case "glean":
     case "glean_chat":
       return "from Glean";
-    case "REDACTED":
+    case "salesforce":
+    case "redacted":
     case "glean_crm":
-      return "from REDACTED";
+    case "glean_salesforce":
+      return "from Salesforce";
     case "zendesk":
     case "glean_zendesk":
       return "from Zendesk";
@@ -66,7 +68,8 @@ function formatProvenance(source: ProvenanceTagSource, showSynthesized = false):
     case "user_correction":
       return "you edited this";
     case "glean_crm":
-      return "from REDACTED";
+    case "glean_salesforce":
+      return "from Salesforce";
     case "glean_zendesk":
       return "from Zendesk";
     case "glean_gong":

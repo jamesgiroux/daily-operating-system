@@ -224,7 +224,7 @@ if ( ! function_exists( 'dailyos_account_hero_quality_level_from_envelope' ) ) {
 	 * the envelope's intelligence quality summary. Falls back to "unknown"
 	 * when the envelope hasn't provided a quality signal yet.
 	 *
-	 * @param array<string,mixed>|null $envelope
+	 * @param array<string,mixed>|null $envelope Intelligence envelope.
 	 * @return string
 	 */
 	function dailyos_account_hero_quality_level_from_envelope( ?array $envelope ): string {

@@ -64,7 +64,7 @@ impl crate::db::ActionDb {
     ) -> Result<Vec<(String, String)>, crate::db::DbError> {
         let mut stmt = self.conn_ref().prepare(
             "SELECT me.entity_id, m.attendees
-             FROM meeting_entities me
+             FROM effective_meeting_entities me
              INNER JOIN meetings m ON m.id = me.meeting_id
              WHERE me.entity_type = 'account'
                AND m.attendees IS NOT NULL
@@ -85,7 +85,19 @@ impl crate::db::ActionDb {
     ) -> Result<bool, crate::db::DbError> {
         let already: bool = self
             .conn_ref()
-            .prepare("SELECT 1 FROM meeting_entities WHERE meeting_id = ?1 AND entity_id = ?2")
+            .prepare(
+                "SELECT 1
+                 FROM linked_entities_raw
+                 WHERE owner_type = 'meeting'
+                   AND owner_id = ?1
+                   AND entity_id = ?2
+                 UNION ALL
+                 SELECT 1
+                 FROM meeting_entities
+                 WHERE meeting_id = ?1
+                   AND entity_id = ?2
+                 LIMIT 1",
+            )
             .and_then(|mut s| s.exists(rusqlite::params![meeting_id, entity_id]))
             .unwrap_or(false);
 

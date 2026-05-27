@@ -17,21 +17,16 @@ use serde_json::json;
 
 const TEST_GIT_SHA: &str = RELEASE_GATE_BUILD_GIT_SHA;
 const W6_TEST_FIXTURE_IDS: &[&str] = &[
-    "w6-01-default-wp-mcp-no-dailyos",
-    "w6-02-mcp-exposure-none-hidden",
-    "w6-03-frontend-js-no-dailyos-secrets",
-    "w6-04-gutenberg-rejects-raw-runtime-payloads",
-    "w6-05-projection-tampered-typed-error",
-    "w6-06-stale-claim-version-feedback-409",
-    "w6-07-cross-user-presence-nonce",
-    "w6-08-presence-nonce-replay-rejected",
-    "w6-09-phase3-budget-charge-fail-closed",
-    "w6-10-direct-plugin-claim-table-write-lint",
-    "w6-11-payload-json-redaction",
-    "w6-12-stock-theme-account-overview-render",
-    "w6-13-cold-start-stale-marker-notice",
-    "w6-14-hot-tauri-restart-sentinel-discovery",
-    "w6-15-hot-studio-restart-first-render",
+    "v144a-w6-01-frontend-surface-contracts",
+    "v144a-w6-02-daily-briefing-bounded-expansion",
+    "v144a-w6-03-daily-briefing-cursor",
+    "v144a-w6-04-entity-claim-read-cap",
+    "v144a-w6-05-mcp-action-redaction",
+    "v144a-w6-06-entity-fixture-harness",
+    "v144a-w6-07-foreground-contention",
+    "v144a-w6-08-email-refresh-coalescing",
+    "v144a-w6-09-dos412-render-policy-drift",
+    "v144a-w6-10-dos168-mcp-migration-drift",
 ];
 
 type BundleStatus = (u32, bool, u64);
@@ -278,7 +273,7 @@ fn release_gate_requires_w6_fixture_report() {
     write_dos288_evidence(&output_dir, "dos288_bleed_detection_test", "pass");
     write_dos288_evidence(&output_dir, "dos288_ownership_validator_test", "pass");
     let config = config_for_report(&report_path, &output_dir);
-    fs::remove_file(output_dir.join("w6-fixtures.json")).expect("remove W6 evidence");
+    fs::remove_file(output_dir.join("v144a-w6-fixtures.json")).expect("remove W6 evidence");
 
     let outcome = run_gate_with_db_reader(&config, &UnusedDbReader).expect("gate writes evidence");
     let evidence = read_evidence(&outcome.evidence_json_path);
@@ -303,17 +298,14 @@ fn release_gate_requires_w6_fixture_failures_green() {
     write_dos288_evidence(&output_dir, "dos288_bleed_detection_test", "pass");
     write_dos288_evidence(&output_dir, "dos288_ownership_validator_test", "pass");
     let config = config_for_report(&report_path, &output_dir);
-    write_w6_fixture_evidence(
-        &output_dir,
-        &[("w6-05-projection-tampered-typed-error", "fail")],
-    );
+    write_w6_fixture_evidence(&output_dir, &[("v144a-w6-05-mcp-action-redaction", "fail")]);
 
     let outcome = run_gate_with_db_reader(&config, &UnusedDbReader).expect("gate writes evidence");
     let evidence = read_evidence(&outcome.evidence_json_path);
 
     assert_eq!(outcome.exit_code, EXIT_MANDATORY_FAILURE);
     assert!(evidence.invariants.iter().any(|invariant| {
-        invariant.id == "w6-05-projection-tampered-typed-error"
+        invariant.id == "v144a-w6-05-mcp-action-redaction"
             && invariant.status == GateStatus::Fail
             && invariant.mandatory
     }));
@@ -333,7 +325,7 @@ fn release_gate_treats_w6_skipped_fixture_as_failure() {
     let config = config_for_report(&report_path, &output_dir);
     write_w6_fixture_evidence(
         &output_dir,
-        &[("w6-14-hot-tauri-restart-sentinel-discovery", "skipped")],
+        &[("v144a-w6-08-email-refresh-coalescing", "skipped")],
     );
 
     let outcome = run_gate_with_db_reader(&config, &UnusedDbReader).expect("gate writes evidence");
@@ -341,7 +333,7 @@ fn release_gate_treats_w6_skipped_fixture_as_failure() {
 
     assert_eq!(outcome.exit_code, EXIT_MANDATORY_FAILURE);
     assert!(evidence.invariants.iter().any(|invariant| {
-        invariant.id == "w6-14-hot-tauri-restart-sentinel-discovery"
+        invariant.id == "v144a-w6-08-email-refresh-coalescing"
             && invariant.status == GateStatus::Fail
             && invariant
                 .failure_summary
@@ -478,9 +470,9 @@ fn write_w6_fixture_evidence(output_dir: &Path, overrides: &[(&str, &str)]) {
         "fail"
     };
     fs::write(
-        output_dir.join("w6-fixtures.json"),
+        output_dir.join("v144a-w6-fixtures.json"),
         serde_json::to_string_pretty(&json!({
-            "schema_version": "w6_negative_fixture_results_v1",
+            "schema_version": "v144a_w6_fixture_results_v1",
             "status": status,
             "git_sha": TEST_GIT_SHA,
             "fixtures_hash": live_fixtures_hash(),

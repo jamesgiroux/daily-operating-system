@@ -25,33 +25,39 @@ If these directories exist, you are in a DailyOS workspace. Load this skill auto
 workspace-root/
   Accounts/
     {entity-name}/
-      dashboard.json        # Vitals: ARR, health, renewal, lifecycle stage
-      intelligence.json     # AI-generated assessments, risks, wins, insights
+      dashboard.json        # DailyOS-managed export projection
+      intelligence.json     # DailyOS-managed intelligence export projection
       stakeholders.md       # Champion, exec sponsor, buyer, influencer roles
       actions.md            # Entity-specific action items
   Projects/
     {entity-name}/
-      dashboard.json        # Project vitals: status, milestones, health
-      intelligence.json     # Project-level intelligence and assessment
+      dashboard.json        # DailyOS-managed export projection
+      intelligence.json     # DailyOS-managed intelligence export projection
   People/
     {person-name}/
-      person.json           # Role, organization, classification, relationship type
-      person.md             # Meeting signals, temperature, preferences, arc
+      person.json           # DailyOS-managed export projection
+      person.md             # DailyOS-managed relationship export projection
   _archive/
     YYYY-MM/                # Monthly directories
       {meeting-summary}.md  # Processed meeting outputs
   _inbox/                   # Raw inputs: transcripts, notes, documents
   data/
-    schedule.json           # Today's calendar events
-    prep.json               # Meeting prep data
-    actions.json            # All tracked action items
-    emails.json             # Email signals from Gmail
+    schedule.json           # Derived calendar export
+    prep.json               # Derived meeting prep export
+    actions.json            # Derived action export
+    emails.json             # Derived email export
     manifest.json           # Workspace configuration and role preset
 ```
 
+## Authority Model
+
+DailyOS SQLite, services, and MCP/runtime tools are the source of truth for current intelligence. Generated JSON and markdown files are portability exports. Use them only when runtime tools are unavailable, when performing an explicit import/backfill/recovery workflow, or when the user asks to inspect file artifacts.
+
+User-authored transcripts, notes, documents, and meeting outputs are source material and may be read as evidence. Generated exports should not be read back as authority for runtime answers, prompt inputs, or mutations.
+
 ## Entity Model
 
-The term "entity" refers to either an Account or a Project. Both live in their respective top-level directories and share the same file conventions (dashboard.json, intelligence.json). When a command asks for an "entity," search both `Accounts/` and `Projects/` directories.
+The term "entity" refers to an Account, Project, Person, Meeting, Action, or another DailyOS subject kind exposed by runtime tools. Account and project workspaces live in their respective top-level directories and may include generated export files. When a command asks for an entity, resolve it through DailyOS runtime/MCP first; use directory search only as a fallback locator.
 
 ### Entity Resolution
 
@@ -64,7 +70,7 @@ To find an entity by name:
 
 ### Entity Files
 
-**dashboard.json** — Quantitative vitals:
+**dashboard.json** — Generated quantitative export:
 - `arr` or `revenue` — Financial value
 - `health` — Green/Yellow/Red status
 - `renewal_date` or `end_date` — Key date
@@ -72,7 +78,7 @@ To find an entity by name:
 - `owner` — Internal owner name
 - `tier` — Priority tier
 
-**intelligence.json** — Qualitative intelligence:
+**intelligence.json** — Generated qualitative export:
 - `executive_assessment` — Current narrative summary
 - `risks` — Array of identified risk factors with evidence
 - `wins` — Array of recent wins and positive signals
@@ -80,11 +86,13 @@ To find an entity by name:
 - `stakeholder_insights` — Relationship dynamics and power structures
 - `last_updated` — Staleness indicator
 
-**stakeholders.md** — Markdown document mapping people to roles:
+**stakeholders.md** — Markdown document or generated export mapping people to roles:
 - Champion, Executive Sponsor, Economic Buyer, Technical Buyer
 - Influence level, engagement frequency, sentiment signals
 
-**actions.md** — Entity-specific action items in markdown format
+**actions.md** — Entity-specific action export in markdown format
+
+These files mirror or project runtime data. They are not the primary authority when runtime tools are available.
 
 ## People Files
 
@@ -165,8 +173,8 @@ Read the active preset from `manifest.json` and apply its vocabulary to all outp
 After producing any deliverable, always offer to write results back to the workspace. This is the loop-back convention:
 
 - **Offer, never force.** Present what could be saved and where, then let the user confirm.
-- **Be specific.** Not "Want me to save this?" but "Would you like me to save this risk report to Accounts/Acme Corp/intelligence.json and create 3 actions in data/actions.json?"
-- **Route correctly.** Entity reports go to entity directories. People insights go to People/. Meeting outputs go to _archive/YYYY-MM/. Actions go to data/actions.json.
+- **Be specific.** Not "Want me to save this?" but "Would you like me to save this risk report as a markdown artifact and create 3 DailyOS actions?"
+- **Route correctly.** Durable intelligence updates go through DailyOS runtime/services. Entity reports may be saved as artifacts. People insights go through person intelligence tools when available. Meeting outputs go to `_archive/YYYY-MM/`. Actions go through DailyOS action tools when available.
 
 The loop-back skill provides detailed routing rules. Every command includes loop-back instructions in its workflow.
 

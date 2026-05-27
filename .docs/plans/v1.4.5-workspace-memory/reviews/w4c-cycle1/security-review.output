@@ -1,0 +1,14 @@
+**Findings**
+- HIGH, idempotency replay (same request returns the prior result instead of doing the write again) can leak scope-dependent receipt fields. The plan stores `receipt_json`, while `resolved_path` depends on current `read.entity_names` scope. A replay by a caller without that scope could receive a receipt cached from a caller with it. Store only scope-neutral receipt data and render permission-dependent fields per replay. [L0 packet](/Users/jamesgiroux/Documents/dailyos-repo/.worktrees/codex/v1.4.5-w4-c-dos-474/.docs/plans/v1.4.5-workspace-memory/L0-packet-W4-C-DOS-474.md:171), [idempotency table](/Users/jamesgiroux/Documents/dailyos-repo/.worktrees/codex/v1.4.5-w4-c-dos-474/.docs/plans/v1.4.5-workspace-memory/L0-packet-W4-C-DOS-474.md:211)
+
+- HIGH, concurrent idempotency is not nailed down. The proposed table has no pending/claimed state, so two identical live calls can both write files/run ingestion before one loses the unique insert. L0 needs a `BEGIN IMMEDIATE`/insert-pending fence before any file write, plus replay behavior for in-flight, failed, and succeeded states. [L0 packet](/Users/jamesgiroux/Documents/dailyos-repo/.worktrees/codex/v1.4.5-w4-c-dos-474/.docs/plans/v1.4.5-workspace-memory/L0-packet-W4-C-DOS-474.md:201)
+
+- HIGH, path placement validates the final file after writing. Existing `open_validated` is an open/read trust boundary; the new write path needs pre-write canonical parent validation, no-follow/symlink race handling, `create_new`/collision rules, and cleanup/quarantine choice before bytes land. [service flow](/Users/jamesgiroux/Documents/dailyos-repo/.worktrees/codex/v1.4.5-w4-c-dos-474/.docs/plans/v1.4.5-workspace-memory/L0-packet-W4-C-DOS-474.md:181)
+
+- MEDIUM, dual rate limit is underspecified against current substrate. The packet requires 10/min and 200/hour, but current `ToolRateLimit` supports one window only. Amend with either multi-window gateway support or a second service-level durable limiter, and make clear dry-run consumes quota. [plan](/Users/jamesgiroux/Documents/dailyos-repo/.worktrees/codex/v1.4.5-w4-c-dos-474/.docs/plans/v1.4.5-workspace-memory/L0-packet-W4-C-DOS-474.md:265), [current shape](/Users/jamesgiroux/Documents/dailyos-repo/.worktrees/codex/v1.4.5-w4-c-dos-474/src-tauri/src/services/mcp_v2/actor_policy.rs:33)
+
+- MEDIUM, `Transform + may_publish = true` is still an explicit L0 decision, not a security-accepted boundary. Since `Publish` currently forces confirmation, this needs a named compensating-control decision before implementation. [L0 packet](/Users/jamesgiroux/Documents/dailyos-repo/.worktrees/codex/v1.4.5-w4-c-dos-474/.docs/plans/v1.4.5-workspace-memory/L0-packet-W4-C-DOS-474.md:115)
+
+No unresolved finding on source_asof intent or account/Glean/claim lifecycle/trust/signal-bus scope. The packet correctly keeps caller `source_asof_hint` audit-only and keeps those systems out of scope.
+
+Final verdict: **HOLD**.

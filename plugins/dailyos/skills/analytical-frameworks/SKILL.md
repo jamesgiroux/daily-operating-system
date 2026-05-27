@@ -77,7 +77,7 @@ For each branch of the issue tree:
 3. Assess evidence strength: strong (quantitative, recent), moderate (qualitative, recent), weak (old, indirect)
 4. Note contradictions — when two sources disagree, that is important, not inconvenient
 
-**Quality gate:** Every claim must be sourced to a specific file, meeting, signal, or data point. "Acme Corp health is declining" is not evidence. "Acme Corp health moved from Green to Yellow on January 15, with ARR declining 12% QoQ per dashboard.json" is evidence.
+**Quality gate:** Every claim must be sourced to a specific runtime fact, meeting, signal, file, or data point. "Acme Corp health is declining" is not evidence. "Acme Corp health moved from Green to Yellow on January 15, with ARR declining 12% QoQ per DailyOS runtime facts" is evidence.
 
 ### Step 5: Quality Check — WWHTBT Pass
 

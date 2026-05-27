@@ -72,7 +72,6 @@ if ( ! function_exists( 'dailyos_project_detail_unified_timeline_render' ) ) {
 			}
 		}
 
-
 		if ( ! $any_present ) {
 			$reason = '' !== $first_empty_reason ? $first_empty_reason : 'no_timeline_entries';
 			if ( function_exists( 'dailyos_empty_chip' ) ) {

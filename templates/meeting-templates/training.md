@@ -15,7 +15,7 @@ The distinction is determined by whether external attendees are present on the i
 1. **Meeting event data** -- From directive JSON: title, time, duration, attendee list, calendar description (often contains the training agenda or topic)
 2. **Attendee list** -- All attendees with internal/external classification
 3. **Previous training sessions** -- Search archive for prior meetings with same account/title containing "training" or "workshop" keywords
-4. **Account dashboard** (external training only) -- `Accounts/{account}/dashboard.md` -- For product adoption metrics context
+4. **Account runtime context** (external training only) -- product adoption metrics context from DailyOS runtime/MCP
 5. **Pre-work materials** -- Any files referenced in the calendar description or recently added to the account folder
 
 ## Output Sections

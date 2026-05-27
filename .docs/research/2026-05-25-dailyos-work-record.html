@@ -36,9 +36,15 @@
     .MagazinePageLayout_pageContainer { padding-top: 0 !important; margin-top: 0 !important; }
     .monthly-wrapped_viewportBreakout { margin-top: 0 !important; }
 
-    /* Slides need a bit more breathing room than the default. */
+    /* Fullscreen deck: each slide fills the viewport exactly, click-nav snaps cleanly. */
+    .monthly-wrapped_slideContainer.demo-deck { scroll-snap-type: y mandatory; }
     .demo-deck .monthly-wrapped_slide {
-      padding: 96px 80px 120px;
+      min-height: 100vh;
+      height: 100vh;
+      scroll-margin-top: 0;
+      padding: 80px 80px 80px;
+      box-sizing: border-box;
+      overflow: hidden;
     }
 
     /* ---- Color overrides for module classes that bake white text ---- */
@@ -878,9 +884,9 @@
 
     <!-- 11. WHAT 33 DAYS SHIPPED ============================= -->
     <section class="monthly-wrapped_slide monthly-wrapped_bgWarmWhite">
-      <p class="d-eyebrow">Evidence the substrate is real</p>
+      <p class="d-eyebrow">Substrate, by the numbers</p>
       <h2 class="d-headline d-headline--med">
-        What shipped during RSM.
+        One month. A new substrate.
       </h2>
 
       <div style="display: grid; grid-template-columns: repeat(3, 1fr); gap: 48px; max-width: 940px; width: 100%; margin-top: 16px;">
@@ -916,6 +922,39 @@
         While we were building, the app was running. 10,349 AI calls, 9,576 successes,
         92.5%. Mostly background entity enrichment, email action extraction, meeting
         prep, and today&rsquo;s briefing.
+      </p>
+    </section>
+
+    <!-- 11b. WHAT A CONVENTIONAL TEAM WOULD HAVE SPENT ======== -->
+    <section class="monthly-wrapped_slide monthly-wrapped_bgLinen">
+      <p class="d-eyebrow">If a conventional team had built it</p>
+      <h2 class="d-headline d-headline--med">
+        What the old way would have cost.
+      </h2>
+
+      <div style="display: grid; grid-template-columns: repeat(3, 1fr); gap: 56px; max-width: 940px; width: 100%; margin-top: 56px;">
+        <div>
+          <p class="d-bignum">40</p>
+          <p class="d-bignum-label">people on the team</p>
+        </div>
+        <div>
+          <p class="d-bignum">42mo</p>
+          <p class="d-bignum-label">on the schedule</p>
+        </div>
+        <div>
+          <p class="d-bignum">$19M</p>
+          <p class="d-bignum-label">to develop</p>
+        </div>
+      </div>
+
+      <p class="d-lede d-lede--wide" style="margin-top: 56px;">
+        Industry estimators say a substrate this size needs a sustained team and
+        years of runway. RSM did it in one month. Me, plus agents.
+      </p>
+
+      <p class="d-meta" style="margin-top: 28px;">
+        Industry-standard software estimation against RSM&rsquo;s 508,455-line code delta
+        (scc 3.7.0, COCOMO organic).
       </p>
     </section>
 

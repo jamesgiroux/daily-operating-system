@@ -1,0 +1,9 @@
+VERDICT: BLOCK
+
+- v269 feedback-state index does not match the pinned serde shape. `FeedbackState` is externally tagged, but the migration indexes only `$.recommendation.feedbackState`, so decided states index as whole objects instead of queryable decision kinds. Add `$.recommendation.feedbackState.decided.kind` or a normalized field. Cite: `.docs/plans/v1.4.6-salience-recommendations/L0-packet-W1-A-DOS-329.md:120`, `:212`.
+
+- ADR-0123 bridge is incomplete and ambiguous. `SurfaceInappropriate` requires `payload_json.surface` and `NotRelevantHere` requires `payload_json.invocation_id`, but the packet only specifies recommendation markers; it also duplicates `tooNoisy` and treats `notUseful` like a dismiss reason. Fix the table to define one exact payload per `RecommendationFeedbackDecision`. Cite: `.docs/plans/v1.4.6-salience-recommendations/L0-packet-W1-A-DOS-329.md:230`, `src-tauri/src/services/claims.rs:5486`.
+
+- `RecommendationDraft -> ClaimProposal` mapping is under-specified for replace semantics. ADR-0125 says recommendations are unique by `(subject, recommended_action_kind)`, but the packet does not pin `field_path`/`topic_key` or Custom `actionKind` mapping, while `commit_claim` dedup depends on those fields. Freeze that mapping before implementation. Cite: `.docs/decisions/0125-claim-anatomy-temporal-sensitivity-typeregistry.md:176`, `.docs/plans/v1.4.6-salience-recommendations/L0-packet-W1-A-DOS-329.md:196`, `src-tauri/src/services/claims.rs:6042`.
+
+- Module ownership conflicts on `recommendation.rs`. The packet says W1-A fills helper logic there, while the wave body still lists it among empty placeholders. Carve `recommendation.rs` out as W1-A-owned implementation; keep only later-lane files as placeholders. Cite: `.docs/plans/v1.4.6-salience-recommendations/L0-packet-W1-A-DOS-329.md:58`, `:196`, `.docs/plans/v1.4.6-waves.md:735`.

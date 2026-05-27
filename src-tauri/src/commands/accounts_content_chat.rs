@@ -255,9 +255,12 @@ pub async fn get_account_detail(
     account_id: String,
     state: State<'_, Arc<AppState>>,
 ) -> Result<AccountDetailResult, String> {
+    let started = std::time::Instant::now();
     let app_state = state.inner().clone();
     let ctx = app_state.live_service_context();
-    crate::services::accounts::get_account_detail(&ctx, &account_id, &app_state).await
+    let result = crate::services::accounts::get_account_detail(&ctx, &account_id, &app_state).await;
+    log_command_latency("get_account_detail", started, READ_CMD_LATENCY_BUDGET_MS);
+    result
 }
 
 /// Get account-team members.

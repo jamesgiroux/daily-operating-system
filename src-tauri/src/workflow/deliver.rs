@@ -3075,6 +3075,11 @@ pub fn enrich_emails(
                 entity_type: None,
                 sentiment: sentiment_str,
                 urgency: urgency_str,
+                summary_context_prompt_version: None,
+                summary_context_trust_band: None,
+                summary_context_source_count: None,
+                summary_context_source_keys_json: None,
+                summary_context_generated_at: None,
                 is_noise: None,
             };
 

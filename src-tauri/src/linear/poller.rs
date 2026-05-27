@@ -47,7 +47,7 @@ pub async fn run_linear_poller(state: Arc<AppState>) {
         match client.fetch_my_issues().await {
             Ok(issues) => {
                 let count = issues.len();
-                if let Err(e) = crate::linear::sync::upsert_issues(&state, &issues) {
+                if let Err(e) = crate::linear::sync::upsert_issues(&state, issues).await {
                     log::warn!("Linear poller: issue sync failed: {}", e);
                 } else {
                     log::info!("Linear poller: synced {} issues", count);
@@ -60,7 +60,7 @@ pub async fn run_linear_poller(state: Arc<AppState>) {
         match client.fetch_my_projects().await {
             Ok(projects) => {
                 let count = projects.len();
-                if let Err(e) = crate::linear::sync::upsert_projects(&state, &projects) {
+                if let Err(e) = crate::linear::sync::upsert_projects(&state, projects).await {
                     log::warn!("Linear poller: project sync failed: {}", e);
                 } else {
                     log::info!("Linear poller: synced {} projects", count);

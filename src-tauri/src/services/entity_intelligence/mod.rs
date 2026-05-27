@@ -13,4 +13,5 @@
 
 pub mod auth;
 pub mod envelope_cache;
+pub mod neighborhood;
 pub mod touchpoints;

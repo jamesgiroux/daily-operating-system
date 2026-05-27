@@ -64,8 +64,8 @@ export function useAccountDetailPage(accountId: string | undefined) {
   // revision does exactly that.
   useRevealObserver(!acct.loading && !!acct.detail, activeView);
 
-  // Intelligence field mutations
-  const { updateField: handleUpdateIntelField, saveStatus, setSaveStatus: setFolioSaveStatus,
+  // Folio save status shared by account field mutations.
+  const { saveStatus, setSaveStatus: setFolioSaveStatus,
   } = useIntelligenceFieldUpdate("account", accountId, acct.silentRefresh);
 
   // Account field saves
@@ -266,7 +266,7 @@ export function useAccountDetailPage(accountId: string | undefined) {
 
     // Derived
     detail: acct.detail,
-    intelligence: acct.detail?.intelligence ?? null,
+    intelligence: acct.intelligence,
     sentiment,
     loading: acct.loading,
     error: acct.error,
@@ -276,7 +276,6 @@ export function useAccountDetailPage(accountId: string | undefined) {
     setActiveView,
 
     // Field operations
-    handleUpdateIntelField,
     saveAccountField,
     captureTechnicalFootprintField,
     saveMetadata,

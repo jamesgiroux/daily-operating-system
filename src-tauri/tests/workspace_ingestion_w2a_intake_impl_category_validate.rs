@@ -10,7 +10,9 @@ fn intake_impl_validates_category_before_pipeline_invocation() {
     let validate = source
         .find("WorkspaceCategoryRegistry::validate")
         .expect("validate call");
-    let run = source.find(".run(conn, request)").expect("pipeline run");
+    let run = source
+        .find(".run_with_signal_engine(ctx, &db, propagation, request)")
+        .expect("pipeline run");
     assert!(
         validate < run,
         "category validation must precede pipeline.run"

@@ -525,7 +525,7 @@ fn compute_meeting_cadence(db: &ActionDb, account_id: &str) -> DimensionScore {
             .prepare(
                 "SELECT mid.question_density, mid.decision_maker_active, mid.forward_looking
              FROM meeting_interaction_dynamics mid
-             JOIN meeting_entities me ON me.meeting_id = mid.meeting_id AND me.entity_id = ?1
+             JOIN effective_meeting_entities me ON me.meeting_id = mid.meeting_id AND me.entity_id = ?1
              ORDER BY mid.created_at DESC LIMIT 3",
             )
             .and_then(|mut stmt| {
@@ -725,7 +725,7 @@ fn infer_champion_from_attendance(db: &ActionDb, account_id: &str) -> DimensionS
         .conn
         .query_row(
             "SELECT COUNT(DISTINCT m.id) FROM meetings m
-             JOIN meeting_entities me ON me.meeting_id = m.id
+             JOIN effective_meeting_entities me ON me.meeting_id = m.id
              WHERE me.entity_id = ?1 AND me.entity_type = 'account'
                AND m.start_time >= datetime('now', '-90 days')",
             rusqlite::params![account_id],
@@ -754,7 +754,7 @@ fn infer_champion_from_attendance(db: &ActionDb, account_id: &str) -> DimensionS
                     COUNT(DISTINCT ma.meeting_id) as attended
              FROM meeting_attendees ma
              JOIN meetings m ON m.id = ma.meeting_id
-             JOIN meeting_entities me ON me.meeting_id = m.id
+             JOIN effective_meeting_entities me ON me.meeting_id = m.id
                AND me.entity_id = ?1 AND me.entity_type = 'account'
              LEFT JOIN people p ON p.id = ma.person_id
              WHERE m.start_time >= datetime('now', '-90 days')
@@ -871,7 +871,7 @@ fn compute_key_advocate_health(db: &ActionDb, account_id: &str) -> DimensionScor
             "SELECT m.start_time, mch.champion_status, mch.champion_evidence
          FROM meeting_champion_health mch
          JOIN meetings m ON m.id = mch.meeting_id
-         JOIN meeting_entities me ON me.meeting_id = m.id AND me.entity_id = ?1
+         JOIN effective_meeting_entities me ON me.meeting_id = m.id AND me.entity_id = ?1
          WHERE mch.champion_name IS NOT NULL
          ORDER BY m.start_time DESC LIMIT 5",
         )
@@ -892,7 +892,7 @@ fn compute_key_advocate_health(db: &ActionDb, account_id: &str) -> DimensionScor
             db.conn
                 .query_row(
                     "SELECT COUNT(DISTINCT m.id) FROM meetings m
-                     JOIN meeting_entities me ON me.meeting_id = m.id
+                     JOIN effective_meeting_entities me ON me.meeting_id = m.id
                      JOIN meeting_attendees ma ON ma.meeting_id = m.id AND ma.person_id = ?2
                      WHERE me.entity_id = ?1 AND me.entity_type = 'account'
                        AND m.start_time >= datetime('now', '-90 days')",
@@ -1152,7 +1152,7 @@ fn compute_financial_proximity(db: &ActionDb, account: &DbAccount) -> DimensionS
         "stable".to_string()
     };
 
-    // Augment with Glean CRM signals (REDACTED renewal probability)
+    // Augment with Glean CRM signals (Salesforce renewal probability)
     let crm_signals: Vec<(String, f64)> = db
         .conn
         .prepare(

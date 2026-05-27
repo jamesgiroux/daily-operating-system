@@ -36,7 +36,7 @@ Examples:
 
 Frame the question using the SCQA structure. Ground every element in workspace data.
 
-**Situation** — What is the current state? Read from entity dashboards, intelligence, and portfolio context. This is factual baseline, not interpretation.
+**Situation** — What is the current state? Read from DailyOS runtime entity facts, runtime intelligence, and portfolio context. This is factual baseline, not interpretation.
 
 "Acme Corp is a $2.4M ARR account in the Growth lifecycle stage with Green health as of February. They are 47 days from renewal. Sarah Chen is the champion (warming temperature, weekly engagement), David Park (CTO) is disengaged (has not attended in 4 months)."
 
@@ -105,7 +105,7 @@ For each branch of the issue tree, gather workspace evidence.
 **What Would Have to Be True (WWHTBT) for the hypothesis to be correct:**
 
 1. "David has meaningful decision authority over vendor renewals" — Check stakeholders.md, meeting history. **Evidence:** David is listed as Technical Buyer with veto power. Last vendor decision (CloudVault, per October meeting) was his call.
-2. "The Atlas Analytics evaluation is serious enough to threaten renewal" — Check intelligence.json, recent meeting notes. **Evidence:** Competitive mention in Feb 14 sync was initiated by their side. David's DataConf keynote on vendor sprawl was January 28. Timeline: serious.
+2. "The Atlas Analytics evaluation is serious enough to threaten renewal" — Check runtime intelligence and recent meeting notes. **Evidence:** Competitive mention in Feb 14 sync was initiated by their side. David's DataConf keynote on vendor sprawl was January 28. Timeline: serious.
 3. "A technical CSM can re-engage David within 8 weeks" — Check People/David-Park for preferences, check _archive/ for past engagement success patterns. **Evidence:** David engaged deeply when our platform architect joined the Q3 technical review. He responds to technical depth, not relationship management.
 4. "$2.4M ARR justifies $40K investment" — Calculate ROI. **Evidence:** 60:1 ARR to investment ratio. Even protecting 50% renewal probability makes this net positive.
 
@@ -189,8 +189,8 @@ Present the P2 Memo. Then offer:
 ```
 Would you like me to:
 1. Save this decision memo to Accounts/Acme-Corp/decision-csm-investment-2026-02.md
-2. Create {N} actions from Next Steps in data/actions.json
-3. Update Accounts/Acme-Corp/intelligence.json with the competitive analysis and CTO re-engagement strategy
+2. Create {N} DailyOS actions from Next Steps
+3. Promote durable intelligence updates for the competitive analysis and CTO re-engagement strategy through DailyOS runtime/services
 
 Or adjust the analysis first?
 ```

@@ -10,7 +10,7 @@ export type EntityKind = "account" | "project" | "person" | "meeting";
 
 export type ContextDepth = "shallow" | "standard" | "deep";
 
-export type EnvelopeSection =
+export type EnvelopeSectionV1 =
   | "facts"
   | "health"
   | "metadata_proposals"
@@ -19,15 +19,42 @@ export type EnvelopeSection =
   | "threads"
   | "record";
 
-export const ENVELOPE_SCHEMA_VERSION = 1;
+export type EnvelopeSectionV2 = EnvelopeSectionV1 | "relationships";
 
-export interface EntityIntelligenceInput {
-  schemaVersion: number;
+export type EnvelopeSection = EnvelopeSectionV2;
+
+export const ENVELOPE_SCHEMA_VERSION_V1 = 1;
+export const ENVELOPE_SCHEMA_VERSION_V2 = 2;
+export const ENVELOPE_SCHEMA_VERSION = ENVELOPE_SCHEMA_VERSION_V2;
+
+export type EnvelopeSchemaVersion =
+  | typeof ENVELOPE_SCHEMA_VERSION_V1
+  | typeof ENVELOPE_SCHEMA_VERSION_V2;
+
+export type EnvelopeSectionForSchema<Version extends EnvelopeSchemaVersion> =
+  Version extends typeof ENVELOPE_SCHEMA_VERSION_V1
+    ? EnvelopeSectionV1
+    : EnvelopeSectionV2;
+
+interface EntityIntelligenceInputBase {
   entityType: EntityKind;
   entityId: string;
   depth: ContextDepth;
-  sections?: EnvelopeSection[];
 }
+
+export type EntityIntelligenceInputV1 = EntityIntelligenceInputBase & {
+  schemaVersion: typeof ENVELOPE_SCHEMA_VERSION_V1;
+  sections?: EnvelopeSectionV1[];
+};
+
+export type EntityIntelligenceInputV2 = EntityIntelligenceInputBase & {
+  schemaVersion: typeof ENVELOPE_SCHEMA_VERSION_V2;
+  sections?: EnvelopeSectionV2[];
+};
+
+export type EntityIntelligenceInput =
+  | EntityIntelligenceInputV1
+  | EntityIntelligenceInputV2;
 
 // ---- subject ---------------------------------------------------------------
 
@@ -66,7 +93,7 @@ export interface Paginated<T> {
 
 // ---- empty + section state ------------------------------------------------
 
-export type EmptyReason =
+export type EmptyReasonV1 =
   | "not_connected"
   | "not_processed_yet"
   | "filtered_out_by_subject"
@@ -77,9 +104,25 @@ export type EmptyReason =
   | "not_requested"
   | { partial_failure: { advisory: string } };
 
-export type SectionState =
+export type EmptyReasonV2 = EmptyReasonV1 | "no_relevant_relationships";
+
+export type EmptyReason = EmptyReasonV2;
+
+export type EmptyReasonForSchema<Version extends EnvelopeSchemaVersion> =
+  Version extends typeof ENVELOPE_SCHEMA_VERSION_V1 ? EmptyReasonV1 : EmptyReasonV2;
+
+export type SectionStateV1 =
   | { kind: "present"; item_count: number }
-  | { kind: "empty"; reason: EmptyReason };
+  | { kind: "empty"; reason: EmptyReasonV1 };
+
+export type SectionStateV2 =
+  | { kind: "present"; item_count: number }
+  | { kind: "empty"; reason: EmptyReasonV2 };
+
+export type SectionState = SectionStateV2;
+
+export type SectionStateForSchema<Version extends EnvelopeSchemaVersion> =
+  Version extends typeof ENVELOPE_SCHEMA_VERSION_V1 ? SectionStateV1 : SectionStateV2;
 
 // ---- per-fact provenance reference (ADR-0130 §2 amendment) ----------------
 
@@ -108,9 +151,9 @@ export type TrustBand =
   | "needs_verification"
   | "unscored";
 
-export interface EnvelopeTrustSummary {
+export interface EnvelopeTrustSummary<Section extends EnvelopeSection = EnvelopeSection> {
   aggregateBand: TrustBand;
-  sectionCaveats: Partial<Record<EnvelopeSection, string>>;
+  sectionCaveats: Partial<Record<Section, string>>;
 }
 
 export type ClaimSensitivity =
@@ -288,12 +331,72 @@ export interface SubjectScope {
   alsoIncludes: SubjectRef[];
 }
 
-export interface TouchpointBundle {
+export interface TouchpointBundle<Reason extends EmptyReason = EmptyReason> {
   upcoming: Paginated<Touchpoint>;
   recent: Paginated<Touchpoint>;
   candidateSet: CandidateSetRef;
-  emptyReason: EmptyReason | null;
+  emptyReason: Reason | null;
   subjectScope: SubjectScope;
+}
+
+// ---- relationships + participation ---------------------------------------
+
+export type RelationshipInclusionReason =
+  | "subject_match"
+  | "hierarchy"
+  | "explicit_link"
+  | "attendee_match"
+  | "co_attendance"
+  | "work_item"
+  | "content_link";
+
+export interface RelationshipEdge {
+  edgeId: string;
+  edgeType: string;
+  subjectRef: SubjectRef;
+  relatedSubjectRef: SubjectRef;
+  relatedDisplayLabel: RenderableClaimText | null;
+  observedAt: string | null;
+  sourceAsof: string | null;
+  confidence: number;
+  sensitivity: ClaimSensitivity;
+  inclusionReason: RelationshipInclusionReason;
+  traversalDepth: number;
+  trustBand: TrustBand;
+  freshness: Freshness;
+  provenance: ProvenanceRef;
+  caveats: string[];
+}
+
+export interface RelationshipParticipant {
+  subjectRef: SubjectRef;
+  displayLabel: RenderableClaimText | null;
+  role: RenderableClaimText | null;
+  relationship: RenderableClaimText | null;
+  sensitivity: ClaimSensitivity;
+  normalizedTouchpointCount: number;
+  recentTouchpointIds: string[];
+  lastSeenAt: string | null;
+  trustBand: TrustBand;
+  freshness: Freshness;
+  provenance: ProvenanceRef;
+  caveats: string[];
+}
+
+export interface RelationshipTruncation {
+  edgesTruncated: boolean;
+  participantsTruncated: boolean;
+  perEdgeCap: number;
+}
+
+export interface RelationshipsBundle {
+  edges: Paginated<RelationshipEdge>;
+  participants: Paginated<RelationshipParticipant>;
+  candidateSet: CandidateSetRef;
+  emptyReason: EmptyReasonV2 | null;
+  subjectScope: SubjectScope;
+  truncation: RelationshipTruncation;
+  caveats: string[];
 }
 
 // ---- threads + record ----------------------------------------------------
@@ -319,18 +422,35 @@ export interface RecordEntry {
 
 // ---- envelope --------------------------------------------------------------
 
-export interface EntityIntelligenceEnvelope {
-  schemaVersion: number;
+interface EntityIntelligenceEnvelopeBase<Version extends EnvelopeSchemaVersion> {
   subject: NormalizedSubject;
-  sections: Partial<Record<EnvelopeSection, SectionState>>;
+  sections: Partial<
+    Record<EnvelopeSectionForSchema<Version>, SectionStateForSchema<Version>>
+  >;
   facts: Paginated<EntityFact>;
   healthStory: HealthStory | null;
   metadataProposals: Paginated<MetadataProposal>;
   openLoops: Paginated<OpenLoopWithReceipt>;
-  touchpoints: Paginated<TouchpointBundle>;
+  touchpoints: Paginated<TouchpointBundle<EmptyReasonForSchema<Version>>>;
   threads: Paginated<ThreadSummary>;
   recordEntries: Paginated<RecordEntry>;
-  trust: EnvelopeTrustSummary;
+  trust: EnvelopeTrustSummary<EnvelopeSectionForSchema<Version>>;
   provenance: EnvelopeProvenance;
   sensitivity: ClaimSensitivity;
 }
+
+export interface EntityIntelligenceEnvelopeV1
+  extends EntityIntelligenceEnvelopeBase<typeof ENVELOPE_SCHEMA_VERSION_V1> {
+  schemaVersion: typeof ENVELOPE_SCHEMA_VERSION_V1;
+  relationships?: never;
+}
+
+export interface EntityIntelligenceEnvelopeV2
+  extends EntityIntelligenceEnvelopeBase<typeof ENVELOPE_SCHEMA_VERSION_V2> {
+  schemaVersion: typeof ENVELOPE_SCHEMA_VERSION_V2;
+  relationships?: Paginated<RelationshipsBundle>;
+}
+
+export type EntityIntelligenceEnvelope =
+  | EntityIntelligenceEnvelopeV1
+  | EntityIntelligenceEnvelopeV2;

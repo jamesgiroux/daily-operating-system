@@ -147,7 +147,26 @@ jobs:
             exit 1
           fi
 
+      - name: Detect token-mapping gate inputs
+        id: token_mapping_inputs
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPO: ${{ github.repository }}
+          PR: ${{ github.event.pull_request.number }}
+        run: |
+          set -euo pipefail
+          changed="${RUNNER_TEMP}/block-kit-changed-files.txt"
+          gh api --paginate "repos/${REPO}/pulls/${PR}/files" --jq '.[].filename' | sort -u > "$changed"
+          if grep -Eq '^(wp/dailyos/blocks/[^/]+/(style\.css|\.token-mapping\.json)|wp/dailyos/theme/theme\.json|src/styles/design-tokens\.css|\.docs/design/tokens/|wp/dailyos/tests/token-mapping-manifest-gate\.sh)$' "$changed"; then
+            echo "should_run=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "should_run=false" >> "$GITHUB_OUTPUT"
+            echo "No token-relevant files changed; skipping token-mapping manifest gate."
+          fi
+
       - name: Token-mapping manifest
+        if: steps.token_mapping_inputs.outputs.should_run == 'true'
         shell: bash
         run: |
           set -euo pipefail

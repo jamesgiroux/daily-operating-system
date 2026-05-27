@@ -405,7 +405,7 @@ pub fn backfill_source_asof_for_legacy_claims(
             None => {
                 return Err(BackfillError::Mode(
                     "source_asof backfill transaction did not run".to_string(),
-                ))
+                ));
             }
         },
         Err(message) => match typed_result {

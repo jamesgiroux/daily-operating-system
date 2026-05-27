@@ -130,6 +130,12 @@ pub enum SignalType {
     TranscriptSentiment,
     UserCorrection,
     UserCorrectionSubmitted,
+    WorkspaceFileEntityLinkChanged,
+    WorkspaceFileIngested,
+    WorkspaceFilePendingEntityAssignment,
+    WorkspaceFileQuarantined,
+    WorkspaceFileRejected,
+    WorkspaceSourcePolicyChanged,
     Legacy {
         name: String,
     },
@@ -251,6 +257,14 @@ impl SignalType {
             "transcript_sentiment" => Self::TranscriptSentiment,
             "user_correction" => Self::UserCorrection,
             "user_correction_submitted" => Self::UserCorrectionSubmitted,
+            "workspace_file_entity_link_changed" => Self::WorkspaceFileEntityLinkChanged,
+            "workspace_file_ingested" => Self::WorkspaceFileIngested,
+            "workspace_file_pending_entity_assignment" => {
+                Self::WorkspaceFilePendingEntityAssignment
+            }
+            "workspace_file_quarantined" => Self::WorkspaceFileQuarantined,
+            "workspace_file_rejected" => Self::WorkspaceFileRejected,
+            "workspace_source_policy_changed" => Self::WorkspaceSourcePolicyChanged,
             other => Self::Legacy {
                 name: other.to_string(),
             },
@@ -369,6 +383,14 @@ impl SignalType {
             Self::TranscriptSentiment => "transcript_sentiment",
             Self::UserCorrection => "user_correction",
             Self::UserCorrectionSubmitted => "user_correction_submitted",
+            Self::WorkspaceFileEntityLinkChanged => "workspace_file_entity_link_changed",
+            Self::WorkspaceFileIngested => "workspace_file_ingested",
+            Self::WorkspaceFilePendingEntityAssignment => {
+                "workspace_file_pending_entity_assignment"
+            }
+            Self::WorkspaceFileQuarantined => "workspace_file_quarantined",
+            Self::WorkspaceFileRejected => "workspace_file_rejected",
+            Self::WorkspaceSourcePolicyChanged => "workspace_source_policy_changed",
             Self::Legacy { name } => name.as_str(),
         }
     }
@@ -393,6 +415,10 @@ impl SignalType {
                 // transition and races against the ClaimVerificationStateChanged
                 // fan-out (services/claims.rs:8713 + :8738) became reorder-prone.
                 | Self::MeetingPrepStatusChanged
+                | Self::WorkspaceFileEntityLinkChanged
+                | Self::WorkspaceFileIngested
+                | Self::WorkspaceFileQuarantined
+                | Self::WorkspaceSourcePolicyChanged
         )
     }
 }
@@ -509,6 +535,12 @@ pub fn known_signal_type_names() -> &'static [&'static str] {
         "transcript_sentiment",
         "user_correction",
         "user_correction_submitted",
+        "workspace_file_entity_link_changed",
+        "workspace_file_ingested",
+        "workspace_file_pending_entity_assignment",
+        "workspace_file_quarantined",
+        "workspace_file_rejected",
+        "workspace_source_policy_changed",
     ]
 }
 
@@ -668,6 +700,11 @@ pub fn policy_for(signal: &SignalType) -> SignalPolicy {
         ReadModelMaterialized | PrepInvalidated | IntelligenceRefreshed | EnrichmentComplete => {
             read_model_materialized_policy()
         }
+        WorkspaceFileRejected | WorkspaceFilePendingEntityAssignment => local_observation_policy(),
+        WorkspaceFileEntityLinkChanged
+        | WorkspaceFileIngested
+        | WorkspaceFileQuarantined
+        | WorkspaceSourcePolicyChanged => coalesced_invalidation_policy(),
         MeetingPrepStatusChanged => meeting_prep_status_changed_policy(),
         AccountCreated
         | AccountDomainsUpdated
@@ -994,6 +1031,41 @@ mod tests {
                     coalesce: Some(CoalescingPolicy::EntitySignal { window })
                 } if window == Duration::from_millis(500)
             ));
+        }
+    }
+
+    #[test]
+    fn workspace_signals_have_explicit_policy_coverage() {
+        for name in [
+            "workspace_file_ingested",
+            "workspace_file_quarantined",
+            "workspace_file_entity_link_changed",
+            "workspace_source_policy_changed",
+        ] {
+            let signal = SignalType::from_name(name);
+            assert_eq!(signal.canonical_name(), name);
+            assert!(signal.uses_emit_path_coalescing());
+            let policy = policy_for(&signal);
+            assert_eq!(policy.role, SignalRole::Invalidation);
+            assert_eq!(policy.payload_privacy, PayloadPrivacy::NonPiiMetadata);
+            assert!(matches!(
+                policy.propagation,
+                PropagationPolicy::PropagateAsync {
+                    coalesce: Some(CoalescingPolicy::EntitySignal { window })
+                } if window == Duration::from_millis(500)
+            ));
+        }
+
+        for name in [
+            "workspace_file_rejected",
+            "workspace_file_pending_entity_assignment",
+        ] {
+            let signal = SignalType::from_name(name);
+            assert_eq!(signal.canonical_name(), name);
+            assert!(!signal.uses_emit_path_coalescing());
+            let policy = policy_for(&signal);
+            assert_eq!(policy.role, SignalRole::Observation);
+            assert_eq!(policy.propagation, PropagationPolicy::Local);
         }
     }
 }

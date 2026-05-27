@@ -17,8 +17,8 @@ use crate::entity::EntityType;
 use super::contracts::{FileIdentity, WorkspaceCategory, WorkspaceFileKind};
 use super::pipeline::EntityRef;
 
-/// Seven-state lifecycle per wave plan §Goal + cycle 2 amendment
-/// (`pending_entity_assignment`).
+/// Source lifecycle per wave plan §Goal + cycle 2 amendment
+/// (`pending_entity_assignment`) plus W5 source-management policy states.
 ///
 /// State-machine transitions that will trigger `contracts::SignalEmitter`
 /// calls in W2/W3:
@@ -30,10 +30,9 @@ use super::pipeline::EntityRef;
 /// - `Pending` → `PendingEntityAssignment`: W2-A emits
 ///   `emit_file_pending_entity_assignment` when intake cannot resolve entity
 ///   (maps to `WorkspaceFilePendingEntityAssignment`).
-/// - Any state → `Quarantined`: W2-A's `quarantine_source(file_id, reason,
-///   actor)` emits `emit_file_quarantined` (maps to
-///   `WorkspaceFileQuarantined`; triggers claim retraction for the file's
-///   prior claims).
+/// - Any state → `Quarantined`: W2-A's `quarantine_source(..., file_id,
+///   reason, actor)` emits `emit_file_quarantined` (maps to
+///   `WorkspaceFileQuarantined`; triggers invalidation for derived state).
 /// - `Ingested` → `Superseded`: W2-A on successful re-ingestion of a file at
 ///   the same `(file_id, content_sha256)` key; no signal directly, but the
 ///   subsequent `Ingested` row emits its own `emit_file_ingested`.
@@ -47,6 +46,10 @@ pub enum LifecycleState {
     Superseded,
     Rejected,
     Quarantined,
+    Ignored,
+    Scratchpad,
+    Archived,
+    Deleted,
 }
 
 /// Audit record of a user correction that bypassed automated lifecycle
@@ -377,6 +380,10 @@ fn is_valid_transition(from: LifecycleState, to: LifecycleState) -> bool {
             )
             | (LifecycleState::Ingested, LifecycleState::Superseded)
             | (_, LifecycleState::Quarantined)
+            | (_, LifecycleState::Ignored)
+            | (_, LifecycleState::Scratchpad)
+            | (_, LifecycleState::Archived)
+            | (_, LifecycleState::Deleted)
             | (LifecycleState::Rejected, LifecycleState::Pending)
     )
 }
@@ -390,10 +397,14 @@ pub fn lifecycle_state_slug(state: LifecycleState) -> &'static str {
         LifecycleState::Superseded => "superseded",
         LifecycleState::Rejected => "rejected",
         LifecycleState::Quarantined => "quarantined",
+        LifecycleState::Ignored => "ignored",
+        LifecycleState::Scratchpad => "scratchpad",
+        LifecycleState::Archived => "archived",
+        LifecycleState::Deleted => "deleted",
     }
 }
 
-fn lifecycle_state_from_slug(slug: &str) -> Option<LifecycleState> {
+pub fn lifecycle_state_from_slug(slug: &str) -> Option<LifecycleState> {
     match slug {
         "pending" => Some(LifecycleState::Pending),
         "pending_entity_assignment" => Some(LifecycleState::PendingEntityAssignment),
@@ -402,6 +413,10 @@ fn lifecycle_state_from_slug(slug: &str) -> Option<LifecycleState> {
         "superseded" => Some(LifecycleState::Superseded),
         "rejected" => Some(LifecycleState::Rejected),
         "quarantined" => Some(LifecycleState::Quarantined),
+        "ignored" => Some(LifecycleState::Ignored),
+        "scratchpad" => Some(LifecycleState::Scratchpad),
+        "archived" => Some(LifecycleState::Archived),
+        "deleted" => Some(LifecycleState::Deleted),
         _ => None,
     }
 }

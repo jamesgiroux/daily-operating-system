@@ -197,6 +197,180 @@ final class DailyOS_RuntimeClientTest extends TestCase {
 	}
 
 	/**
+	 * Markdown preview reads use the signed SurfaceClient invoke path.
+	 */
+	public function test_read_markdown_preview_uses_signed_surface_invoke_and_normalizes_data(): void {
+		$this->save_marker();
+		$this->add_session_key_filter();
+
+		$GLOBALS['dailyos_test_remote_post_response'] = [
+			'response' => [
+				'code' => 200,
+			],
+			'body'     => wp_json_encode(
+				[
+					'ok'         => true,
+					'request_id' => 'request-alpha',
+					'ability'    => [
+						'ability_name' => 'markdown_preview',
+						'data'         => [
+							'schemaVersion'          => 1,
+							'previewHtml'            => '<p>Safe</p>',
+							'sourceAsof'             => '2026-05-24T10:00:00Z',
+							'lifecycleState'         => 'ingested',
+							'trustBandSummary'       => 'needs_verification',
+							'sourceLabel'            => 'Workspace source',
+							'blockedAssetCount'      => 0,
+							'assetResolverAvailable' => false,
+							'sanitizerVersion'       => 'markdown-preview-v1',
+						],
+					],
+				]
+			),
+		];
+
+		$client = new DailyOS_Runtime_Client( new DailyOS_Credential_Store(), new DailyOS_Hmac_Signer() );
+		$result = $client->read_markdown_preview( 'source_opaque_123' );
+
+		$this->assertSame( '<p>Safe</p>', $result['data']['previewHtml'] );
+		$this->assertCount( 1, $GLOBALS['dailyos_test_remote_post_calls'] );
+
+		$call    = $GLOBALS['dailyos_test_remote_post_calls'][0];
+		$args    = $call['args'];
+		$headers = $args['headers'];
+		$body    = json_decode( $args['body'], true );
+
+		$this->assertSame( 'http://127.0.0.1:54321/v1/surface/invoke', $call['url'] );
+		$this->assertSame(
+			[
+				'ability' => 'markdown_preview',
+				'input'   => [
+					'schemaVersion' => 1,
+					'sourceHandle'  => 'source_opaque_123',
+				],
+			],
+			$body
+		);
+		$this->assertSame( 'string', gettype( $args['body'] ) );
+		$this->assertArrayHasKey( 'X-DailyOS-Signature', $headers );
+		$this->assertArrayHasKey( 'X-DailyOS-Session-Id', $headers );
+		$this->assertArrayHasKey( 'X-DailyOS-SurfaceClient', $headers );
+		$this->assertArrayHasKey( 'X-DailyOS-Request-Id', $headers );
+		$this->assertArrayHasKey( 'Accept', $headers );
+	}
+
+	/**
+	 * Source-management ledger reads use the signed SurfaceClient invoke path.
+	 */
+	public function test_read_source_management_ledger_uses_signed_surface_invoke_and_normalizes_data(): void {
+		$this->save_marker();
+		$this->add_session_key_filter();
+
+		$GLOBALS['dailyos_test_remote_post_response'] = [
+			'response' => [
+				'code' => 200,
+			],
+			'body'     => wp_json_encode(
+				[
+					'ok'         => true,
+					'request_id' => 'request-source-ledger',
+					'ability'    => [
+						'ability_name' => 'source_management_ledger',
+						'data'         => [
+							'schemaVersion' => 1,
+							'sources'       => [],
+						],
+					],
+				]
+			),
+		];
+
+		$client = new DailyOS_Runtime_Client( new DailyOS_Credential_Store(), new DailyOS_Hmac_Signer() );
+		$result = $client->read_source_management_ledger( 'account', 'acct-test-001', 50 );
+
+		$this->assertSame( 1, $result['data']['schemaVersion'] );
+		$this->assertCount( 1, $GLOBALS['dailyos_test_remote_post_calls'] );
+
+		$call    = $GLOBALS['dailyos_test_remote_post_calls'][0];
+		$args    = $call['args'];
+		$headers = $args['headers'];
+		$body    = json_decode( $args['body'], true );
+
+		$this->assertSame( 'http://127.0.0.1:54321/v1/surface/invoke', $call['url'] );
+		$this->assertSame(
+			[
+				'ability' => 'source_management_ledger',
+				'input'   => [
+					'schemaVersion' => 1,
+					'entityType'    => 'account',
+					'entityId'      => 'acct-test-001',
+					'pageSize'      => 50,
+				],
+			],
+			$body
+		);
+		$this->assertSame( 'string', gettype( $args['body'] ) );
+		$this->assertArrayHasKey( 'X-DailyOS-Signature', $headers );
+		$this->assertArrayHasKey( 'X-DailyOS-Session-Id', $headers );
+		$this->assertArrayHasKey( 'X-DailyOS-SurfaceClient', $headers );
+		$this->assertArrayHasKey( 'X-DailyOS-Request-Id', $headers );
+		$this->assertArrayHasKey( 'Accept', $headers );
+	}
+
+	/**
+	 * Source-management actions use the signed SurfaceClient invoke path.
+	 */
+	public function test_apply_source_management_action_uses_signed_surface_invoke(): void {
+		$this->save_marker();
+		$this->add_session_key_filter();
+
+		$GLOBALS['dailyos_test_remote_post_response'] = [
+			'response' => [
+				'code' => 200,
+			],
+			'body'     => wp_json_encode(
+				[
+					'ok'         => true,
+					'request_id' => 'request-source-action',
+					'ability'    => [
+						'ability_name' => 'source_management_action',
+						'data'         => [
+							'schemaVersion'  => 1,
+							'action'         => 'reingest',
+							'status'         => 'reingested',
+							'sourceKey'      => 'source:v1:abcdefghijklmnopqrstuvwxyzABCDEF0123456789_-',
+							'lifecycleState' => 'ingested',
+						],
+					],
+				]
+			),
+		];
+
+		$client = new DailyOS_Runtime_Client( new DailyOS_Credential_Store(), new DailyOS_Hmac_Signer() );
+		$result = $client->apply_source_management_action( 'reingest', 'account', 'acct-test-001', 'source:v1:abcdefghijklmnopqrstuvwxyzABCDEF0123456789_-' );
+
+		$this->assertSame( 'reingested', $result['data']['status'] );
+		$call = $GLOBALS['dailyos_test_remote_post_calls'][0];
+		$body = json_decode( $call['args']['body'], true );
+
+		$this->assertSame( 'http://127.0.0.1:54321/v1/surface/invoke', $call['url'] );
+		$this->assertSame(
+			[
+				'ability' => 'source_management_action',
+				'input'   => [
+					'schemaVersion' => 1,
+					'action'        => 'reingest',
+					'entityType'    => 'account',
+					'entityId'      => 'acct-test-001',
+					'sourceKey'     => 'source:v1:abcdefghijklmnopqrstuvwxyzABCDEF0123456789_-',
+				],
+			],
+			$body
+		);
+		$this->assertArrayHasKey( 'X-DailyOS-Signature', $call['args']['headers'] );
+	}
+
+	/**
 	 * Local requests refuse to guess a default runtime URL when no marker exists.
 	 */
 	public function test_local_post_returns_not_paired_without_marker(): void {

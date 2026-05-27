@@ -1,0 +1,34 @@
+[
+	{
+		"source_token": "--wp--preset--color--rule-light",
+		"target_token": "wp--preset--color--rule-light"
+	},
+	{
+		"source_token": "--wp--preset--color--trust-needs-verification-12",
+		"target_token": "wp--preset--color--trust-needs-verification-12"
+	},
+	{
+		"source_token": "--wp--preset--color--trust-needs-verification",
+		"target_token": "wp--preset--color--trust-needs-verification"
+	},
+	{
+		"source_token": "--wp--preset--color--text-secondary",
+		"target_token": "wp--preset--color--text-secondary"
+	},
+	{
+		"source_token": "--wp--preset--color--text-tertiary",
+		"target_token": "wp--preset--color--text-tertiary"
+	},
+	{
+		"source_token": "--wp--preset--spacing--sm",
+		"target_token": "wp--preset--spacing--sm"
+	},
+	{
+		"source_token": "--wp--preset--spacing--md",
+		"target_token": "wp--preset--spacing--md"
+	},
+	{
+		"source_token": "--wp--preset--spacing--xs",
+		"target_token": "wp--preset--spacing--xs"
+	}
+]

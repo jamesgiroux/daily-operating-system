@@ -11,6 +11,10 @@ fn workspace_intake_impl_bridges_raw_slugs_through_spawn_blocking() {
     assert!(source.contains("WorkspaceSourceRegistry::open_validated"));
     assert!(source.contains("file_id_from_identity"));
     assert!(source.contains("build_pipeline(workspace_root)"));
-    assert!(source.contains(".run(conn, request)"));
+    assert!(source.contains("run_with_signal_engine"));
+    assert!(source.contains("emit_pre_pipeline_rejection"));
+    assert!(source.contains("workspace intake requires a live signal propagation engine"));
+    assert!(source.contains("workspace placement requires a live signal propagation engine"));
+    assert!(!source.contains("fallback_propagation"));
     assert!(source.contains("resolved_path: receipt.resolved_path"));
 }

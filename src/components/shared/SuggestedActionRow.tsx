@@ -8,6 +8,8 @@
  *
  * ADR-0084 C2.
  */
+import { TrustBandIndicator } from "@/components/ui/TrustBandIndicator";
+import type { TrustBandWire } from "@/lib/trust-band";
 
 interface SuggestedActionRowProps {
   action: {
@@ -18,6 +20,8 @@ interface SuggestedActionRowProps {
     sourceLabel?: string | null;
     accountName?: string | null;
     accountId?: string | null;
+    trustBand?: TrustBandWire | null;
+    commitmentSourceCount?: number | null;
   };
   onAccept: () => void;
   onReject: () => void;
@@ -46,6 +50,11 @@ export function SuggestedActionRow({
     if (action.sourceLabel) contextParts.push(action.sourceLabel);
     if (action.accountName || action.accountId) {
       contextParts.push((action.accountName || action.accountId)!);
+    }
+    if (action.commitmentSourceCount && action.commitmentSourceCount > 0) {
+      contextParts.push(
+        `${action.commitmentSourceCount} source${action.commitmentSourceCount === 1 ? "" : "s"}`,
+      );
     }
   }
 
@@ -94,6 +103,7 @@ export function SuggestedActionRow({
                 {action.priority === 1 ? "Urgent" : action.priority === 2 ? "High" : action.priority === 4 ? "Low" : "Medium"}
               </span>
             )}
+            {action.trustBand && <TrustBandIndicator band={action.trustBand} />}
           </div>
         )}
         <div
@@ -131,6 +141,9 @@ export function SuggestedActionRow({
             }}
           >
             {action.sourceLabel}
+            {action.commitmentSourceCount && action.commitmentSourceCount > 0
+              ? ` · ${action.commitmentSourceCount} source${action.commitmentSourceCount === 1 ? "" : "s"}`
+              : ""}
           </div>
         )}
         {!compact && contextParts.length > 0 && (

@@ -76,7 +76,7 @@
   data-folio-date="MONDAY, MAY 4, 2026"
   data-folio-actions="refresh,reports,tools"
   data-folio-refresh-title="Refresh account"
-  data-chapters="headline:alignleft:The Headline|outlook:compass:Outlook|state-of-play:activity:State of Play|the-room:users:The Room|watch-list:eye:Watch List|value-commitments:star:Value & Commitments|strategic-landscape:compass:Competitive & Strategic|the-record:activity:The Record|the-work:checksquare:The Work|reports:filetext:Reports">
+  data-chapters="headline:alignleft:The Headline|outlook:compass:Outlook|state-of-play:activity:State of Play|the-room:users:The Room|whats-next:arrowright:What's Next|watch-list:eye:Watch List|value-commitments:star:Value & Commitments|strategic-landscape:compass:Competitive & Strategic|the-record:activity:The Record|the-work:checksquare:The Work|reports:filetext:Reports">
 
 <!-- MagazinePageLayout shell — mirrors src/components/layout/MagazinePageLayout.tsx.
      Folio bar, atmosphere, and floating nav are injected by chrome.js. -->
@@ -111,7 +111,7 @@
               <span class="EditableVitalsStrip_fieldRow EditableVitalsStrip_fieldRowGap">
                 <span class="EditableVitalsStrip_clickableFieldValue" data-highlight="turmeric" title="Click to edit arr">$620K ARR</span>
               </span>
-              <span class="EditableVitalsStrip_sourceAttribution">REDACTED</span>
+              <span class="EditableVitalsStrip_sourceAttribution">Salesforce</span>
             </span>
           </span>
           <span class="EditableVitalsStrip_itemWithSeparator">
@@ -268,7 +268,7 @@
                 </span>
               </span>
             </span>
-            <button type="button" class="AccountDetailEditorial_productDismiss" title="Remove — REDACTED · 94% confidence">&times;</button>
+            <button type="button" class="AccountDetailEditorial_productDismiss" title="Remove — Salesforce · 94% confidence">&times;</button>
           </div>
         </div>
         <div class="AccountDetailEditorial_productRow">
@@ -511,6 +511,113 @@
               Add
             </button>
           </div>
+        </div>
+      </section>
+    </div>
+  </div>
+
+  <div id="whats-next" class="editorial-reveal entity-detail_marginLabelSection">
+    <div class="entity-detail_marginLabel">What's<br/>Next</div>
+    <div class="entity-detail_marginContent">
+      <section class="SuggestedNextSteps_section" data-surface="account">
+        <div class="ChapterHeading_heading">
+          <hr class="ChapterHeading_rule" />
+          <div class="ChapterHeading_titleRow">
+            <h2 class="ChapterHeading_title">What's next with Acme Corp</h2>
+          </div>
+          <p class="ChapterHeading_epigraph">Five recommendations to consider this week.</p>
+        </div>
+
+        <div class="suggested-next-steps_list">
+          <article class="suggested-next-steps_row" data-claim-id="rec-claim-1" data-feedback-state="pending">
+            <header class="suggested-next-steps_rowHeader">
+              <h3 class="suggested-next-steps_headline">Schedule kickoff with their new VP of Engineering<span class="TrustBandIndicator TrustBandIndicator_likelyCurrent" title="Likely current">&#9679;</span></h3>
+            </header>
+            <p class="suggested-next-steps_whyThisNow">Urgency this week — first 30 days for the new role, and you don't have a thread open yet.</p>
+            <p class="suggested-next-steps_action">Schedule meeting &middot; next two weeks</p>
+            <div class="suggested-next-steps_affordances" role="group" aria-label="Feedback on this recommendation">
+              <button type="button" class="suggested-next-steps_button" data-feedback-kind="convert" aria-label="Convert this recommendation to an action">Convert to action</button>
+              <button type="button" class="suggested-next-steps_button" data-feedback-kind="dismiss" aria-label="Dismiss this recommendation">Dismiss</button>
+              <button type="button" class="suggested-next-steps_button suggested-next-steps_buttonExpand" aria-expanded="false" aria-controls="rec-claim-1-more" aria-label="More feedback options">More feedback&hellip;</button>
+            </div>
+            <div id="rec-claim-1-more" class="suggested-next-steps_subAffordances" aria-hidden="true">
+              <button type="button" class="suggested-next-steps_button suggested-next-steps_subButton" data-feedback-kind="notUseful">Mark as not useful</button>
+              <button type="button" class="suggested-next-steps_button suggested-next-steps_subButton" data-feedback-kind="tooNoisy">Mark as too noisy</button>
+              <button type="button" class="suggested-next-steps_button suggested-next-steps_subButton" data-feedback-kind="dismissWithReason">Dismiss with reason&hellip;</button>
+            </div>
+          </article>
+
+          <article class="suggested-next-steps_row" data-claim-id="rec-claim-2" data-feedback-state="pending">
+            <header class="suggested-next-steps_rowHeader">
+              <h3 class="suggested-next-steps_headline">Send the H1 expansion follow-up Jen asked for<span class="TrustBandIndicator TrustBandIndicator_useWithCaution" title="Use with caution">&#9679;</span></h3>
+            </header>
+            <p class="suggested-next-steps_whyThisNow">Open loop since the May 12 review — the proposal owner and due date were promised in the meeting recap.</p>
+            <p class="suggested-next-steps_action">Send message &middot; email &middot; Jen Park</p>
+            <div class="suggested-next-steps_affordances" role="group" aria-label="Feedback on this recommendation">
+              <button type="button" class="suggested-next-steps_button" data-feedback-kind="convert" aria-label="Convert this recommendation to an action">Convert to action</button>
+              <button type="button" class="suggested-next-steps_button" data-feedback-kind="dismiss" aria-label="Dismiss this recommendation">Dismiss</button>
+              <button type="button" class="suggested-next-steps_button suggested-next-steps_buttonExpand" aria-expanded="false" aria-controls="rec-claim-2-more" aria-label="More feedback options">More feedback&hellip;</button>
+            </div>
+            <div id="rec-claim-2-more" class="suggested-next-steps_subAffordances" aria-hidden="true">
+              <button type="button" class="suggested-next-steps_button suggested-next-steps_subButton" data-feedback-kind="notUseful">Mark as not useful</button>
+              <button type="button" class="suggested-next-steps_button suggested-next-steps_subButton" data-feedback-kind="tooNoisy">Mark as too noisy</button>
+              <button type="button" class="suggested-next-steps_button suggested-next-steps_subButton" data-feedback-kind="dismissWithReason">Dismiss with reason&hellip;</button>
+            </div>
+          </article>
+
+          <article class="suggested-next-steps_row suggested-next-steps_row--needsVerification" data-claim-id="rec-claim-3" data-feedback-state="pending">
+            <header class="suggested-next-steps_rowHeader">
+              <h3 class="suggested-next-steps_headline">Verify the procurement timeline shift Dan mentioned<span class="TrustBandIndicator TrustBandIndicator_needsVerification" title="Needs verification">&#9679;</span></h3>
+            </header>
+            <p class="suggested-next-steps_whyThisNow">A trust change worth checking — only one source mentions the shift and finance hasn't echoed it.</p>
+            <p class="suggested-next-steps_action">Investigate change &middot; renewal timeline</p>
+            <div class="suggested-next-steps_affordances" role="group" aria-label="Feedback on this recommendation">
+              <button type="button" class="suggested-next-steps_button" data-feedback-kind="convert" aria-label="Convert this recommendation to an action">Convert to action</button>
+              <button type="button" class="suggested-next-steps_button" data-feedback-kind="dismiss" aria-label="Dismiss this recommendation">Dismiss</button>
+              <button type="button" class="suggested-next-steps_button suggested-next-steps_buttonExpand" aria-expanded="false" aria-controls="rec-claim-3-more" aria-label="More feedback options">More feedback&hellip;</button>
+            </div>
+            <div id="rec-claim-3-more" class="suggested-next-steps_subAffordances" aria-hidden="true">
+              <button type="button" class="suggested-next-steps_button suggested-next-steps_subButton" data-feedback-kind="notUseful">Mark as not useful</button>
+              <button type="button" class="suggested-next-steps_button suggested-next-steps_subButton" data-feedback-kind="tooNoisy">Mark as too noisy</button>
+              <button type="button" class="suggested-next-steps_button suggested-next-steps_subButton" data-feedback-kind="dismissWithReason">Dismiss with reason&hellip;</button>
+            </div>
+          </article>
+
+          <article class="suggested-next-steps_row" data-claim-id="rec-claim-4" data-feedback-state="pending">
+            <header class="suggested-next-steps_rowHeader">
+              <h3 class="suggested-next-steps_headline">Confirm Sara's support-workflow rollout dates<span class="TrustBandIndicator TrustBandIndicator_likelyCurrent" title="Likely current">&#9679;</span></h3>
+            </header>
+            <p class="suggested-next-steps_whyThisNow">Open loop on the support workflow rehearsal — dates not yet committed in the renewal package.</p>
+            <p class="suggested-next-steps_action">Send message &middot; Slack &middot; Sara Wu</p>
+            <div class="suggested-next-steps_affordances" role="group" aria-label="Feedback on this recommendation">
+              <button type="button" class="suggested-next-steps_button" data-feedback-kind="convert" aria-label="Convert this recommendation to an action">Convert to action</button>
+              <button type="button" class="suggested-next-steps_button" data-feedback-kind="dismiss" aria-label="Dismiss this recommendation">Dismiss</button>
+              <button type="button" class="suggested-next-steps_button suggested-next-steps_buttonExpand" aria-expanded="false" aria-controls="rec-claim-4-more" aria-label="More feedback options">More feedback&hellip;</button>
+            </div>
+            <div id="rec-claim-4-more" class="suggested-next-steps_subAffordances" aria-hidden="true">
+              <button type="button" class="suggested-next-steps_button suggested-next-steps_subButton" data-feedback-kind="notUseful">Mark as not useful</button>
+              <button type="button" class="suggested-next-steps_button suggested-next-steps_subButton" data-feedback-kind="tooNoisy">Mark as too noisy</button>
+              <button type="button" class="suggested-next-steps_button suggested-next-steps_subButton" data-feedback-kind="dismissWithReason">Dismiss with reason&hellip;</button>
+            </div>
+          </article>
+
+          <article class="suggested-next-steps_row" data-claim-id="rec-claim-5" data-feedback-state="pending">
+            <header class="suggested-next-steps_rowHeader">
+              <h3 class="suggested-next-steps_headline">Update the renewal record with the new VP context<span class="TrustBandIndicator TrustBandIndicator_likelyCurrent" title="Likely current">&#9679;</span></h3>
+            </header>
+            <p class="suggested-next-steps_whyThisNow">New information on the account — the field history hasn't caught up to last week's signal.</p>
+            <p class="suggested-next-steps_action">Update record &middot; account notes</p>
+            <div class="suggested-next-steps_affordances" role="group" aria-label="Feedback on this recommendation">
+              <button type="button" class="suggested-next-steps_button" data-feedback-kind="convert" aria-label="Convert this recommendation to an action">Convert to action</button>
+              <button type="button" class="suggested-next-steps_button" data-feedback-kind="dismiss" aria-label="Dismiss this recommendation">Dismiss</button>
+              <button type="button" class="suggested-next-steps_button suggested-next-steps_buttonExpand" aria-expanded="false" aria-controls="rec-claim-5-more" aria-label="More feedback options">More feedback&hellip;</button>
+            </div>
+            <div id="rec-claim-5-more" class="suggested-next-steps_subAffordances" aria-hidden="true">
+              <button type="button" class="suggested-next-steps_button suggested-next-steps_subButton" data-feedback-kind="notUseful">Mark as not useful</button>
+              <button type="button" class="suggested-next-steps_button suggested-next-steps_subButton" data-feedback-kind="tooNoisy">Mark as too noisy</button>
+              <button type="button" class="suggested-next-steps_button suggested-next-steps_subButton" data-feedback-kind="dismissWithReason">Dismiss with reason&hellip;</button>
+            </div>
+          </article>
         </div>
       </section>
     </div>

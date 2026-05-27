@@ -711,13 +711,30 @@ pub fn upsert_commitment_claim(
     if omit_action_commitment_id {
         action.commitment_id = None;
     }
+    let mut wrote_action = false;
     if action_changed_for_commitment(&before, &action) {
         db.upsert_action(&action).map_err(|e| e.to_string())?;
+        wrote_action = true;
         if !created_action {
             summary.updated += 1;
         }
     } else if created_action {
         db.upsert_action(&action).map_err(|e| e.to_string())?;
+        wrote_action = true;
+    }
+    if wrote_action {
+        let outcome = crate::services::action_claims::sync_action_open_loop_claim(ctx, db, &action)
+            .map_err(|error| format!("commitment action claim sync failed: {error}"))?;
+        if let Some((entity_type, entity_id)) = outcome.changed_subject() {
+            crate::services::action_claims::enqueue_action_claim_recompute(
+                ctx,
+                db,
+                entity_type,
+                entity_id,
+                "commitment_bridge",
+            )
+            .map_err(|error| format!("commitment action recompute enqueue failed: {error}"))?;
+        }
     }
 
     insert_bridge_row(

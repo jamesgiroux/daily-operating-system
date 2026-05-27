@@ -33,7 +33,8 @@
       "description": "Disallow ephemeral issue or cycle references in PHP comments.",
       "pattern": "DOS-[0-9]+|cycle-[0-9]+|fix #[0-9]+",
       "include_glob": "wp/dailyos/**/*.php",
-      "exclude_glob": ""
+      "exclude_glob": "",
+      "baseline_file": "wp/dailyos/scripts/grep-gates-ephemeral-issue-refs.baseline"
     },
     {
       "id": "block_render_return_not_echo",

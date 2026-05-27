@@ -6,11 +6,11 @@ Applied when the meeting title contains "QBR", "Business Review", or "Quarterly 
 
 Title keyword overrides attendee-based classification -- a meeting titled "Acme QBR" will use this template even if the attendee matching would classify it as a regular customer call.
 
-## Required Context (from directive refs)
+## Required Context (from directive refs and DailyOS runtime)
 
-Claude should read ALL of the following. QBR prep demands depth.
+Claude should use DailyOS runtime/MCP for current account intelligence and read source files referenced in the directive. QBR prep demands depth, but generated dashboard and intelligence files are export projections, not authority, when runtime tools are available.
 
-1. **Full account dashboard** -- `Accounts/{account}/dashboard.md` -- Every metric, every section
+1. **Full account runtime context** -- Every available metric and current intelligence section
 2. **90-day meeting history** -- All archived meeting summaries for this account from the past quarter (`_archive/*/XX-HHMM-*{account}*`)
 3. **Account tracker data** -- From Google Sheets (if available in directive's `account_data`) -- ARR changes, user counts, adoption metrics over time
 4. **Stakeholder map** -- `Accounts/{account}/stakeholders.md` -- Full org chart context, especially executive attendees

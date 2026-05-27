@@ -2200,6 +2200,9 @@ async fn signed_route_response(
                             response_actor: BridgeActor::SurfaceClient,
                             surface: BridgeSurface::SurfaceClient,
                             claim_dismissal_surface: ClaimDismissalSurface::LogStructured,
+                            dry_run: false,
+                            confirmation: None,
+                            confirmation_store: None,
                         },
                         &authorization.canonical_ability_name,
                         invoke.input,
@@ -2969,6 +2972,9 @@ async fn surface_project_composition_response(
             response_actor: BridgeActor::SurfaceClient,
             surface: BridgeSurface::SurfaceClient,
             claim_dismissal_surface: ClaimDismissalSurface::LogStructured,
+            dry_run: false,
+            confirmation: None,
+            confirmation_store: None,
         },
         &authorization.canonical_ability_name,
         input,
@@ -5572,6 +5578,7 @@ mod tests {
             SurfaceScope::new("read.account_overview"),
             SurfaceScope::new("read.composition"),
             SurfaceScope::new("submit.feedback"),
+            SurfaceScope::new("write.entity_intake"),
         ];
 
         if let Ok(registry) = AbilityRegistry::global_checked() {

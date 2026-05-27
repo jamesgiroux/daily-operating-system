@@ -60,7 +60,7 @@ if ( ! function_exists( 'dailyos_trend_strip_render' ) ) {
 					'data-ds-tier'  => 'primitive',
 					'data-ds-name'  => 'TrendStrip',
 					'data-ds-spec'  => 'primitives/TrendStrip.md',
-					'data-direction'=> $direction,
+					'data-direction' => $direction,
 					'data-band'     => $band,
 					'role'          => 'img',
 					'aria-label'    => sprintf(

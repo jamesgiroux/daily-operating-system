@@ -36,7 +36,7 @@ pub fn submit_intelligence_feedback(
         other => {
             return Err(format!(
                 "invalid feedback_type '{other}' (expected positive|negative)"
-            ))
+            ));
         }
     };
 
@@ -51,6 +51,7 @@ pub fn submit_intelligence_feedback(
             corrected_value: None,
             annotation: context,
             item_key: None,
+            source_system: None,
         },
     )
 }
@@ -183,6 +184,7 @@ pub struct SubmitIntelligenceCorrectionInput<'a> {
     pub corrected_value: Option<&'a str>,
     pub annotation: Option<&'a str>,
     pub item_key: Option<&'a str>,
+    pub source_system: Option<&'a str>,
 }
 
 /// Submit a consolidated intelligence correction.
@@ -223,6 +225,7 @@ pub fn submit_intelligence_correction(
         corrected_value,
         annotation,
         item_key,
+        source_system,
     } = input;
     // Authoritative backend validation. The Tauri IPC boundary is
     // reachable by any caller, not just the useIntelligenceCorrection
@@ -237,6 +240,19 @@ pub fn submit_intelligence_correction(
     }
     if field.trim().is_empty() {
         return Err("field is required".to_string());
+    }
+    if let Some(source) = source_system {
+        crate::util::validate_enum_string(
+            source,
+            "source_system",
+            &[
+                "unknown",
+                "actions_page",
+                "daily_briefing",
+                "meeting_detail",
+                "account_detail_work",
+            ],
+        )?;
     }
     match action {
         CorrectionAction::Corrected => {
@@ -286,7 +302,7 @@ pub fn submit_intelligence_correction(
         field_key: field,
         item_key,
         feedback_type: action.as_str(),
-        source_system: None, // source_system — intelligence correction UX is app-driven
+        source_system,
         source_kind: prior_source.as_deref(),
         previous_value: previous_value.as_deref(),
         corrected_value,
@@ -643,6 +659,7 @@ mod correction_tests {
                 corrected_value,
                 annotation,
                 item_key,
+                source_system: None,
             },
         )
     }
@@ -730,6 +747,42 @@ mod correction_tests {
             )
             .unwrap();
         assert_eq!(sig_count, 1);
+    }
+
+    #[test]
+    fn correction_persists_source_system() {
+        let db = test_db();
+        seed_account(&db, "acct-work");
+        let clock = FixedClock::new(chrono::Utc.with_ymd_and_hms(2026, 4, 30, 0, 0, 0).unwrap());
+        let rng = SeedableRng::new(42);
+        let ext = ExternalClients::default();
+        let ctx = test_ctx(&clock, &rng, &ext);
+
+        super::submit_intelligence_correction(
+            &ctx,
+            &db,
+            SubmitIntelligenceCorrectionInput {
+                entity_id: "acct-work",
+                entity_type: "account",
+                field: "work_suggestion:act-1",
+                action: CorrectionAction::Dismissed,
+                corrected_value: None,
+                annotation: None,
+                item_key: Some("Review renewal risk"),
+                source_system: Some("account_detail_work"),
+            },
+        )
+        .expect("dismissal submission");
+
+        let source_system: Option<String> = db
+            .conn_ref()
+            .query_row(
+                "SELECT source_system FROM entity_feedback_events WHERE entity_id = 'acct-work'",
+                [],
+                |row| row.get(0),
+            )
+            .unwrap();
+        assert_eq!(source_system.as_deref(), Some("account_detail_work"));
     }
 
     #[test]

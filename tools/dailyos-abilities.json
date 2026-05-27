@@ -128,8 +128,7 @@
       "annotations": {},
       "wp_permission": "none",
       "allowed_actors": [
-        "user",
-        "surface_client"
+        "user"
       ],
       "required_scopes": [
         "read.daily_briefing"
@@ -174,6 +173,7 @@
       "allowed_actors": [
         "user",
         "runtime",
+        "mcp_client",
         "surface_client"
       ],
       "required_scopes": [
@@ -300,6 +300,48 @@
       }
     },
     {
+      "name": "list_suggested_next_steps",
+      "description": "",
+      "category": "read",
+      "annotations": {},
+      "wp_permission": "none",
+      "allowed_actors": [
+        "user",
+        "runtime",
+        "surface_client"
+      ],
+      "required_scopes": [
+        "read.recommendations"
+      ],
+      "mcp_exposure": "none",
+      "client_side_executable": false,
+      "idempotency_class": "idempotent",
+      "composition_kind": {
+        "produces_blocks": false,
+        "block_types": []
+      }
+    },
+    {
+      "name": "markdown_preview",
+      "description": "",
+      "category": "read",
+      "annotations": {},
+      "wp_permission": "none",
+      "allowed_actors": [
+        "surface_client"
+      ],
+      "required_scopes": [
+        "read.markdown_preview"
+      ],
+      "mcp_exposure": "none",
+      "client_side_executable": false,
+      "idempotency_class": "idempotent",
+      "composition_kind": {
+        "produces_blocks": false,
+        "block_types": []
+      }
+    },
+    {
       "name": "prepare_meeting",
       "description": "",
       "category": "transform",
@@ -331,6 +373,111 @@
       "mcp_exposure": "none",
       "client_side_executable": false,
       "idempotency_class": "side_effect",
+      "composition_kind": {
+        "produces_blocks": false,
+        "block_types": []
+      }
+    },
+    {
+      "name": "score_salience",
+      "description": "",
+      "category": "read",
+      "annotations": {},
+      "wp_permission": "none",
+      "allowed_actors": [
+        "user",
+        "runtime"
+      ],
+      "required_scopes": [
+        "read.recommendations"
+      ],
+      "mcp_exposure": "none",
+      "client_side_executable": false,
+      "idempotency_class": "idempotent",
+      "composition_kind": {
+        "produces_blocks": false,
+        "block_types": []
+      }
+    },
+    {
+      "name": "source_management_action",
+      "description": "",
+      "category": "transform",
+      "annotations": {},
+      "wp_permission": "none",
+      "allowed_actors": [
+        "surface_client"
+      ],
+      "required_scopes": [
+        "write.entity_intake"
+      ],
+      "mcp_exposure": "none",
+      "client_side_executable": false,
+      "idempotency_class": "idempotent",
+      "composition_kind": {
+        "produces_blocks": false,
+        "block_types": []
+      }
+    },
+    {
+      "name": "source_management_ledger",
+      "description": "",
+      "category": "read",
+      "annotations": {},
+      "wp_permission": "none",
+      "allowed_actors": [
+        "user",
+        "runtime",
+        "surface_client"
+      ],
+      "required_scopes": [
+        "read.workspace_sources"
+      ],
+      "mcp_exposure": "none",
+      "client_side_executable": false,
+      "idempotency_class": "idempotent",
+      "composition_kind": {
+        "produces_blocks": false,
+        "block_types": []
+      }
+    },
+    {
+      "name": "workspace_graph",
+      "description": "",
+      "category": "read",
+      "annotations": {},
+      "wp_permission": "none",
+      "allowed_actors": [
+        "user",
+        "runtime",
+        "surface_client"
+      ],
+      "required_scopes": [
+        "read.workspace_graph"
+      ],
+      "mcp_exposure": "none",
+      "client_side_executable": false,
+      "idempotency_class": "idempotent",
+      "composition_kind": {
+        "produces_blocks": false,
+        "block_types": []
+      }
+    },
+    {
+      "name": "workspace_place_document",
+      "description": "",
+      "category": "transform",
+      "annotations": {},
+      "wp_permission": "none",
+      "allowed_actors": [
+        "mcp_client"
+      ],
+      "required_scopes": [
+        "write.workspace_place_document"
+      ],
+      "mcp_exposure": "invocable",
+      "client_side_executable": false,
+      "idempotency_class": "idempotent",
       "composition_kind": {
         "produces_blocks": false,
         "block_types": []

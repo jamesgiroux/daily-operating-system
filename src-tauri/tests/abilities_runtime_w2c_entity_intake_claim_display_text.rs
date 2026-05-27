@@ -57,7 +57,10 @@ impl EntityContextClaimReadHandle for FixtureClaimReader {
         Box::pin(async move {
             assert_eq!(entity_type, "account");
             assert_eq!(entity_id, "acct_acme");
-            Ok(vec![claim("claim-1", "Acme budget owner approved the workspace plan")])
+            Ok(vec![claim(
+                "claim-1",
+                "Acme budget owner approved the workspace plan",
+            )])
         })
     }
 }

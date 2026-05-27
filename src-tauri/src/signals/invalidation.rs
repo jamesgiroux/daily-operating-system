@@ -15,7 +15,8 @@ const MIN_CONFIDENCE: f64 = 0.70;
 
 /// Check if a newly-emitted signal should invalidate any upcoming meeting preps.
 ///
-/// For the signal's entity, queries upcoming meetings (48h) via `meeting_entities`.
+/// For the signal's entity, queries upcoming meetings (48h) through the
+/// graph-compatible meeting link view.
 /// If the signal confidence ≥ 0.7 and the meeting exists, pushes the meeting ID
 /// to the prep invalidation queue.
 pub fn check_and_invalidate_preps(
@@ -44,6 +45,10 @@ pub fn check_and_invalidate_preps(
         "relationship_reclassified",
         "transcript_outcomes", // manually attached transcript — invalidate linked future meeting preps
         "field_updated", // DOS-110: account field changes (including sentiment) invalidate prep
+        "entity_intelligence_updated",
+        "workspace_file_quarantined",
+        "workspace_file_entity_link_changed",
+        "workspace_source_policy_changed",
     ];
 
     if !invalidating_types.contains(&signal.signal_type.as_str()) {
@@ -95,7 +100,7 @@ impl ActionDb {
         let hours_param = format!("+{} hours", hours);
         let mut stmt = self.conn_ref().prepare(
             "SELECT DISTINCT me.meeting_id
-             FROM meeting_entities me
+             FROM effective_meeting_entities me
              JOIN meetings mh ON mh.id = me.meeting_id
              WHERE me.entity_id = ?1 AND me.entity_type = ?2
                AND mh.start_time >= datetime('now')
@@ -162,6 +167,26 @@ mod tests {
     }
 
     #[test]
+    fn workspace_audit_only_signals_are_not_invalidating() {
+        for signal_type in [
+            "workspace_file_rejected",
+            "workspace_file_pending_entity_assignment",
+        ] {
+            let db = test_db();
+            let queue = Mutex::new(Vec::<String>::new());
+            let signal = make_signal(signal_type, 0.95);
+
+            check_and_invalidate_preps(&db, &signal, &queue);
+
+            let q = queue.lock();
+            assert!(
+                q.is_empty(),
+                "{signal_type} should not invalidate prep without entity content change"
+            );
+        }
+    }
+
+    #[test]
     fn test_invalidation_with_upcoming_meeting() {
         let db = test_db();
         let conn = db.conn_ref();
@@ -195,14 +220,32 @@ mod tests {
         )
         .unwrap();
 
-        let queue = Mutex::new(Vec::<String>::new());
-        let signal = make_signal("stakeholder_change", 0.85);
+        let raw_ingestion_queue = Mutex::new(Vec::<String>::new());
+        check_and_invalidate_preps(
+            &db,
+            &make_signal("workspace_file_ingested", 0.85),
+            &raw_ingestion_queue,
+        );
+        assert!(
+            raw_ingestion_queue.lock().is_empty(),
+            "workspace_file_ingested should route through entity_intelligence_updated for prep invalidation"
+        );
 
-        check_and_invalidate_preps(&db, &signal, &queue);
+        for signal_type in [
+            "stakeholder_change",
+            "entity_intelligence_updated",
+            "workspace_file_quarantined",
+            "workspace_file_entity_link_changed",
+        ] {
+            let queue = Mutex::new(Vec::<String>::new());
+            let signal = make_signal(signal_type, 0.85);
 
-        let q = queue.lock();
-        assert_eq!(q.len(), 1);
-        assert_eq!(q[0], "m1");
+            check_and_invalidate_preps(&db, &signal, &queue);
+
+            let q = queue.lock();
+            assert_eq!(q.len(), 1, "{signal_type} should invalidate prep");
+            assert_eq!(q[0], "m1");
+        }
     }
 
     #[test]

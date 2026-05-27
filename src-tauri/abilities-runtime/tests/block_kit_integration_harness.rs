@@ -527,6 +527,8 @@ fn escape_pointer_segment(segment: &str) -> String {
 
 #[path = "fixtures/account_detail_integration_fixture.rs"]
 mod account_detail_integration_fixture;
+#[path = "fixtures/account_overview_integration_fixture.rs"]
+mod account_overview_integration_fixture;
 #[path = "fixtures/accounts_index_integration_fixture.rs"]
 mod accounts_index_integration_fixture;
 #[path = "fixtures/avatar_integration_fixture.rs"]
@@ -545,6 +547,8 @@ mod freshness_indicator_integration_fixture;
 mod health_badge_integration_fixture;
 #[path = "fixtures/intelligence_quality_badge_integration_fixture.rs"]
 mod intelligence_quality_badge_integration_fixture;
+#[path = "fixtures/markdown_preview_integration_fixture.rs"]
+mod markdown_preview_integration_fixture;
 #[path = "fixtures/meeting_agenda_draft_integration_fixture.rs"]
 mod meeting_agenda_draft_integration_fixture;
 #[path = "fixtures/meeting_attendees_section_integration_fixture.rs"]
@@ -599,8 +603,12 @@ mod provenance_tag_integration_fixture;
 mod recommended_actions_integration_fixture;
 #[path = "fixtures/score_band_integration_fixture.rs"]
 mod score_band_integration_fixture;
+#[path = "fixtures/source_management_integration_fixture.rs"]
+mod source_management_integration_fixture;
 #[path = "fixtures/status_dot_integration_fixture.rs"]
 mod status_dot_integration_fixture;
+#[path = "fixtures/suggested_next_steps_integration_fixture.rs"]
+mod suggested_next_steps_integration_fixture;
 #[path = "fixtures/the_work_integration_fixture.rs"]
 mod the_work_integration_fixture;
 #[path = "fixtures/touchpoints_feed_integration_fixture.rs"]
@@ -629,6 +637,7 @@ fn expected_block_fixtures_cover_requested_ci_block() {
     }
     let known = [
         account_detail_integration_fixture::account_detail_fixture(),
+        account_overview_integration_fixture::account_overview_fixture(),
         accounts_index_integration_fixture::accounts_index_fixture(),
         entity_chip_integration_fixture::entity_chip_fixture(),
         entity_intake_integration_fixture::entity_intake_fixture(),
@@ -650,6 +659,7 @@ fn expected_block_fixtures_cover_requested_ci_block() {
         meeting_context_bundle_integration_fixture::meeting_context_bundle_fixture(),
         meeting_detail_integration_fixture::meeting_detail_fixture(),
         meeting_header_integration_fixture::meeting_header_fixture(),
+        markdown_preview_integration_fixture::markdown_preview_fixture(),
         meeting_post_meeting_capture_integration_fixture::meeting_post_meeting_capture_fixture(),
         meeting_prep_status_integration_fixture::meeting_prep_status_fixture(),
         meeting_recommended_actions_integration_fixture::meeting_recommended_actions_fixture(),
@@ -668,6 +678,8 @@ fn expected_block_fixtures_cover_requested_ci_block() {
         project_detail_integration_fixture::project_detail_fixture(),
         projects_index_integration_fixture::projects_index_fixture(),
         recommended_actions_integration_fixture::recommended_actions_fixture(),
+        source_management_integration_fixture::source_management_fixture(),
+        suggested_next_steps_integration_fixture::suggested_next_steps_fixture(),
         the_work_integration_fixture::the_work_fixture(),
         touchpoints_feed_integration_fixture::touchpoints_feed_fixture(),
         trend_strip_integration_fixture::trend_strip_fixture(),

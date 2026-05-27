@@ -385,7 +385,7 @@ pub fn boost_with_entity_context(
 /// 3. `List-Unsubscribe` header present AND another automation marker is
 ///    also present (noreply local-part, "newsletter" in sender, or noisy
 ///    subject pattern). List-Unsubscribe alone over-fires —
-///    legitimate 1:1 customer email sent via REDACTED/HubSpot/Outreach
+///    legitimate 1:1 customer email sent via Salesforce/HubSpot/Outreach
 ///    or Google Groups carries this header. Require corroboration.
 ///
 /// `account_domains` are lowercase customer domains from `account_domains`
@@ -948,7 +948,7 @@ mod tests {
 
     #[test]
     fn dos_247_no_suppress_real_person_with_list_unsubscribe() {
-        // Real 1:1 customer email sent via REDACTED / HubSpot / Outreach
+        // Real 1:1 customer email sent via Salesforce / HubSpot / Outreach
         // / Google Groups carries List-Unsubscribe but is not noise.
         // Untracked domain (no account_domains/person_domains entry) — must
         // still not be suppressed when the sender looks like a real person.

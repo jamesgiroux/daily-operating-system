@@ -16,12 +16,17 @@
 //! BEFORE INSERT trigger was removed during integration review (schema-
 //! change creep); v180 is now strictly data repair + comment marker on the
 //! deprecated inactive_expires_at column.
+//!
+//! Workspace placement idempotency, rate, and audit ledgers are not statically
+//! seeded in mock scenarios: they are service-owned operational records and
+//! must be produced through the workspace placement service path.
 
 use std::path::Path;
 
 use chrono::{Datelike, Local, TimeZone, Utc};
 use serde::Serialize;
 
+use crate::db::emails::EMAIL_SUMMARY_CONTEXT_PROMPT_VERSION;
 use crate::db::ActionDb;
 use crate::intelligence::io::{
     AccountHealth, AdoptionSignals, AgreementOutlook, Blocker, CadenceAssessment, CompanyContext,
@@ -424,6 +429,54 @@ pub struct DevState {
     pub has_dev_workspace: bool,
 }
 
+#[derive(Debug, Clone, Default)]
+pub struct DevStateCounts {
+    pub has_database: bool,
+    pub action_count: usize,
+    pub account_count: usize,
+    pub project_count: usize,
+    pub meeting_count: usize,
+    pub people_count: usize,
+}
+
+pub fn read_dev_state_counts(db: &ActionDb) -> DevStateCounts {
+    let actions = db
+        .conn_ref()
+        .query_row("SELECT COUNT(*) FROM actions", [], |r| r.get::<_, usize>(0))
+        .unwrap_or(0);
+    let accounts = db
+        .conn_ref()
+        .query_row("SELECT COUNT(*) FROM accounts", [], |r| {
+            r.get::<_, usize>(0)
+        })
+        .unwrap_or(0);
+    let projects = db
+        .conn_ref()
+        .query_row("SELECT COUNT(*) FROM projects", [], |r| {
+            r.get::<_, usize>(0)
+        })
+        .unwrap_or(0);
+    let meetings = db
+        .conn_ref()
+        .query_row("SELECT COUNT(*) FROM meetings", [], |r| {
+            r.get::<_, usize>(0)
+        })
+        .unwrap_or(0);
+    let people = db
+        .conn_ref()
+        .query_row("SELECT COUNT(*) FROM people", [], |r| r.get::<_, usize>(0))
+        .unwrap_or(0);
+
+    DevStateCounts {
+        has_database: true,
+        action_count: actions,
+        account_count: accounts,
+        project_count: projects,
+        meeting_count: meetings,
+        people_count: people,
+    }
+}
+
 /// Check if the current workspace is the dev sandbox (not a real user workspace).
 pub(crate) fn is_dev_workspace(state: &AppState) -> bool {
     let current = {
@@ -524,7 +577,7 @@ pub fn apply_scenario(scenario: &str, state: &AppState) -> Result<String, String
                 .map_err(|e| format!("DB open failed: {e}"))?;
             seed_intelligence_data(&db)?;
             seed_glean_enriched_data(&db)?;
-            Ok("Glean enriched: Gong summaries + REDACTED context + source attribution".into())
+            Ok("Glean enriched: Gong summaries + Salesforce context + source attribution".into())
         }
         "empty_portfolio" => {
             reset_all(state)?;
@@ -757,6 +810,29 @@ pub fn purge_mock_data(_state: &AppState) -> Result<String, String> {
     let n = delete_mock("signal_events", "entity_id");
     summary.push(format!("signal_events: {}", n));
 
+    // --- Workspace backfill operational state ---
+    let n = delete_mock("workspace_backfill_operations", "run_id");
+    summary.push(format!("workspace_backfill_operations: {}", n));
+
+    let n = delete_mock("workspace_backfill_items", "run_id");
+    summary.push(format!("workspace_backfill_items: {}", n));
+
+    let n = delete_mock("workspace_backfill_runs", "run_id");
+    summary.push(format!("workspace_backfill_runs: {}", n));
+
+    let n = delete_mock("document_entity_links", "file_id");
+    summary.push(format!("document_entity_links: {}", n));
+
+    let n = delete_mock("workspace_file_lifecycle", "file_id");
+    summary.push(format!("workspace_file_lifecycle: {}", n));
+
+    let n = delete_mock("salience_factors", "claim_id");
+    summary.push(format!("salience_factors: {}", n));
+    let n = delete_mock("surfacing_decisions", "claim_id");
+    summary.push(format!("surfacing_decisions: {}", n));
+    let n = delete_mock("triggers_log", "entity_id");
+    summary.push(format!("triggers_log: {}", n));
+
     let n = delete_mock("intelligence_feedback", "entity_id");
     summary.push(format!("intelligence_feedback: {}", n));
 
@@ -838,7 +914,7 @@ pub fn clean_dev_artifacts(include_workspace: bool) -> Result<String, String> {
 }
 
 /// Query current dev state for the panel UI.
-pub fn get_dev_state(state: &AppState) -> Result<DevState, String> {
+pub fn get_dev_state(state: &AppState, counts: DevStateCounts) -> Result<DevState, String> {
     if !cfg!(debug_assertions) {
         return Err("Dev tools not available in release builds".into());
     }
@@ -861,40 +937,6 @@ pub fn get_dev_state(state: &AppState) -> Result<DevState, String> {
         })
         .unwrap_or(false);
 
-    let (has_database, action_count, account_count, project_count, meeting_count, people_count) =
-        match ActionDb::open(std::sync::Arc::new(crate::db::LocalKeychain::new())) {
-            Ok(db) => {
-                let actions = db
-                    .conn_ref()
-                    .query_row("SELECT COUNT(*) FROM actions", [], |r| r.get::<_, usize>(0))
-                    .unwrap_or(0);
-                let accounts = db
-                    .conn_ref()
-                    .query_row("SELECT COUNT(*) FROM accounts", [], |r| {
-                        r.get::<_, usize>(0)
-                    })
-                    .unwrap_or(0);
-                let projects = db
-                    .conn_ref()
-                    .query_row("SELECT COUNT(*) FROM projects", [], |r| {
-                        r.get::<_, usize>(0)
-                    })
-                    .unwrap_or(0);
-                let meetings = db
-                    .conn_ref()
-                    .query_row("SELECT COUNT(*) FROM meetings", [], |r| {
-                        r.get::<_, usize>(0)
-                    })
-                    .unwrap_or(0);
-                let people = db
-                    .conn_ref()
-                    .query_row("SELECT COUNT(*) FROM people", [], |r| r.get::<_, usize>(0))
-                    .unwrap_or(0);
-                (true, actions, accounts, projects, meetings, people)
-            }
-            Err(_) => (false, 0, 0, 0, 0, 0),
-        };
-
     let google_auth_status = {
         let g = state.calendar.google_auth.lock();
         match &*g {
@@ -910,12 +952,12 @@ pub fn get_dev_state(state: &AppState) -> Result<DevState, String> {
         is_debug_build: cfg!(debug_assertions),
         has_config,
         workspace_path,
-        has_database,
-        action_count,
-        account_count,
-        project_count,
-        meeting_count,
-        people_count,
+        has_database: counts.has_database,
+        action_count: counts.action_count,
+        account_count: counts.account_count,
+        project_count: counts.project_count,
+        meeting_count: counts.meeting_count,
+        people_count: counts.people_count,
         has_today_data,
         google_auth_status,
         is_dev_db_mode: crate::db::is_dev_db_mode(),
@@ -1132,7 +1174,7 @@ fn seed_linear_mock_data(db: &ActionDb) -> Result<(), String> {
     Ok(())
 }
 
-/// Seed Glean-enriched intelligence data: Gong summaries, REDACTED context, support health.
+/// Seed Glean-enriched intelligence data: Gong summaries, Salesforce context, support health.
 fn seed_glean_enriched_data(db: &ActionDb) -> Result<(), String> {
     assert_dev_db_connection(db)?;
     let conn = db.conn_ref();
@@ -1150,7 +1192,7 @@ fn seed_glean_enriched_data(db: &ActionDb) -> Result<(), String> {
             "adoptionRate": 0.82, "trend": "growing",
             "featureAdoption": { "cms": 0.95, "analytics": 0.65, "search": 0.35 },
             "lastActive": "2026-04-14",
-            "source": { "source": "glean_crm", "confidence": 0.9, "reference": "REDACTED" }
+            "source": { "source": "glean_crm", "confidence": 0.9, "reference": "Salesforce" }
         },
         "supportHealth": {
             "openTickets": 2, "recentTrend": "stable", "criticalIssues": 0,
@@ -1160,12 +1202,12 @@ fn seed_glean_enriched_data(db: &ActionDb) -> Result<(), String> {
     });
     patch_entity_intelligence(conn, "mock-acme-corp", &acme_patch);
 
-    // Patch Globex with REDACTED context + at-risk signals
+    // Patch Globex with Salesforce context + at-risk signals
     let globex_patch = serde_json::json!({
         "salesforceContext": {
             "renewalProbability": 0.65, "dealStage": "Negotiation",
             "forecastCloseDate": "2026-06-15", "pipelineValue": 840000,
-            "source": { "source": "glean_crm", "confidence": 0.9, "reference": "REDACTED" }
+            "source": { "source": "glean_crm", "confidence": 0.9, "reference": "Salesforce" }
         },
         "gongCallSummaries": [{
             "title": "Renewal Discussion", "date": "2026-04-08",
@@ -1183,12 +1225,12 @@ fn seed_glean_enriched_data(db: &ActionDb) -> Result<(), String> {
             "adoptionRate": 0.45, "trend": "declining",
             "featureAdoption": { "cms": 0.7, "analytics": 0.3, "search": 0.1 },
             "lastActive": "2026-04-11",
-            "source": { "source": "glean_crm", "confidence": 0.9, "reference": "REDACTED" }
+            "source": { "source": "glean_crm", "confidence": 0.9, "reference": "Salesforce" }
         }
     });
     patch_entity_intelligence(conn, "mock-globex-industries", &globex_patch);
 
-    log::info!("seed_glean_enriched_data: Gong + REDACTED + Zendesk data patched");
+    log::info!("seed_glean_enriched_data: Gong + Salesforce + Zendesk data patched");
     Ok(())
 }
 
@@ -1691,7 +1733,7 @@ pub(crate) fn seed_database(db: &ActionDb) -> Result<(), String> {
 
     // --- Source references  ---
     for (account_id, field, system, kind, value) in [
-        ("mock-acme-corp", "arr", "REDACTED", "fact", "1200000"),
+        ("mock-acme-corp", "arr", "Salesforce", "fact", "1200000"),
         (
             "mock-acme-corp",
             "renewal_date",
@@ -1703,7 +1745,7 @@ pub(crate) fn seed_database(db: &ActionDb) -> Result<(), String> {
         (
             "mock-globex-industries",
             "arr",
-            "REDACTED",
+            "Salesforce",
             "fact",
             "800000",
         ),
@@ -4260,6 +4302,30 @@ pub(crate) fn seed_database(db: &ActionDb) -> Result<(), String> {
         ).map_err(|e| format!("Email {}: {}", email_id, e))?;
     }
 
+    conn.execute(
+        "UPDATE emails
+            SET summary_context_prompt_version = ?1,
+                summary_context_trust_band = CASE
+                    WHEN email_id IN ('mock-email-acme-1', 'mock-email-globex-4') THEN 'use_with_caution'
+                    ELSE 'likely_current'
+                END,
+                summary_context_source_count = CASE
+                    WHEN email_id IN ('mock-email-acme-1', 'mock-email-globex-4') THEN 3
+                    ELSE 2
+                END,
+                summary_context_source_keys_json = CASE
+                    WHEN email_id IN ('mock-email-acme-1', 'mock-email-globex-4')
+                        THEN '[\"claim:mock-email:relationship\",\"claim:mock-account:risk\",\"claim:mock-meeting:followup\"]'
+                    ELSE '[\"claim:mock-email:relationship\",\"claim:mock-account:context\"]'
+                END,
+                summary_context_generated_at = ?2
+          WHERE email_id LIKE 'mock-email-%'
+            AND contextual_summary IS NOT NULL
+            AND entity_id IS NOT NULL",
+        rusqlite::params![EMAIL_SUMMARY_CONTEXT_PROMPT_VERSION, &today],
+    )
+    .map_err(|e| format!("Email summary context evidence: {}", e))?;
+
     // ── Pinned emails ──
     conn.execute(
         &format!(
@@ -4667,10 +4733,10 @@ pub(crate) fn seed_database(db: &ActionDb) -> Result<(), String> {
             "Globex Check-in",
             Some("mock-globex-industries"),
             "risk",
-            "Active competitor evaluation with REDACTED",
+            "Active competitor evaluation with Salesforce",
             Some("displacement"),
             Some("red"),
-            Some("We've been piloting REDACTED for the last two weeks"),
+            Some("We've been piloting Salesforce for the last two weeks"),
         ),
         // YELLOW risks
         (
@@ -4992,7 +5058,7 @@ fn seed_intelligence_data(db: &ActionDb) -> Result<(), String> {
         pull_quote: Some("Acme is expanding — new department rollout signals 40% ARR growth opportunity if we land the technical win.".into()),
         risks: vec![
             IntelRisk { render_policy: None, claim_id: None, text: "Alex Torres departing March — critical knowledge transfer gap".into(), source: Some("meeting notes".into()), urgency: "act_now".into(), item_source: Some(ItemSource { source: "transcript".into(), confidence: 0.8, sourced_at: days_ago_rfc(5), reference: Some("meeting Mar 10".into()) }), discrepancy: None, ..Default::default() },
-            IntelRisk { render_policy: None, claim_id: None, text: "NPS trending down: 3 detractors in engineering team".into(), source: Some("NPS survey".into()), urgency: "watch".into(), item_source: Some(ItemSource { source: "glean_crm".into(), confidence: 0.9, sourced_at: days_ago_rfc(7), reference: Some("REDACTED".into()) }), discrepancy: None, ..Default::default() },
+            IntelRisk { render_policy: None, claim_id: None, text: "NPS trending down: 3 detractors in engineering team".into(), source: Some("NPS survey".into()), urgency: "watch".into(), item_source: Some(ItemSource { source: "glean_crm".into(), confidence: 0.9, sourced_at: days_ago_rfc(7), reference: Some("Salesforce".into()) }), discrepancy: None, ..Default::default() },
             IntelRisk { render_policy: None, claim_id: None, text: "Legal review of MSA amendment stalled for 10 days".into(), source: Some("email signal".into()), urgency: "act_now".into(), item_source: Some(ItemSource { source: "user_correction".into(), confidence: 1.0, sourced_at: days_ago_rfc(2), reference: Some("you edited this".into()) }), discrepancy: None, ..Default::default() },
         ],
         recent_wins: vec![
@@ -5010,7 +5076,7 @@ fn seed_intelligence_data(db: &ActionDb) -> Result<(), String> {
             StakeholderInsight { render_policy: None, claim_id: None, name: "Pat Kim".into(), role: Some("CTO".into()), assessment: Some("Strategic decision maker. Focused on APAC and cost consolidation.".into()), engagement: Some("periodic".into()), source: None, person_id: Some("mock-pat-kim".into()), suggested_person_id: None, item_source: Some(ItemSource { source: "glean_chat".into(), confidence: 0.7, sourced_at: days_ago_rfc(5), reference: Some("Glean AI synthesis".into()) }), discrepancy: None, ..Default::default() },
         ],
         value_delivered: vec![
-            ValueItem { render_policy: None, claim_id: None, date: Some(days_ago_rfc(90)), statement: "Phase 1 deployment drove $200K ARR expansion".into(), source: Some("contract".into()), impact: Some("High".into()), item_source: Some(ItemSource { source: "glean_crm".into(), confidence: 0.9, sourced_at: days_ago_rfc(90), reference: Some("REDACTED".into()) }), discrepancy: None },
+            ValueItem { render_policy: None, claim_id: None, date: Some(days_ago_rfc(90)), statement: "Phase 1 deployment drove $200K ARR expansion".into(), source: Some("contract".into()), impact: Some("High".into()), item_source: Some(ItemSource { source: "glean_crm".into(), confidence: 0.9, sourced_at: days_ago_rfc(90), reference: Some("Salesforce".into()) }), discrepancy: None },
             ValueItem { render_policy: None, claim_id: None, date: Some(days_ago_rfc(60)), statement: "Performance benchmarks exceeded targets by 15%".into(), source: Some("analytics".into()), impact: Some("Strong ROI narrative".into()), item_source: None, discrepancy: None },
         ],
         company_context: Some(CompanyContext { render_policy: None, claim_id: None,
@@ -5211,7 +5277,7 @@ fn seed_intelligence_data(db: &ActionDb) -> Result<(), String> {
         pull_quote: Some("Globex is at risk — champion departed, no executive sponsor identified, and renewal is 90 days out.".into()),
         risks: vec![
             IntelRisk { render_policy: None, claim_id: None, text: "Pat Reynolds (executive sponsor) departing Q2 — successor unknown".into(), source: Some("direct communication".into()), urgency: "act_now".into(), item_source: Some(ItemSource { source: "transcript".into(), confidence: 0.8, sourced_at: days_ago_rfc(10), reference: Some("meeting Mar 5".into()) }), discrepancy: Some(true), ..Default::default() },
-            IntelRisk { render_policy: None, claim_id: None, text: "Team B usage declining 20% month-over-month".into(), source: Some("usage analytics".into()), urgency: "act_now".into(), item_source: Some(ItemSource { source: "glean_crm".into(), confidence: 0.9, sourced_at: days_ago_rfc(3), reference: Some("REDACTED".into()) }), discrepancy: None, ..Default::default() },
+            IntelRisk { render_policy: None, claim_id: None, text: "Team B usage declining 20% month-over-month".into(), source: Some("usage analytics".into()), urgency: "act_now".into(), item_source: Some(ItemSource { source: "glean_crm".into(), confidence: 0.9, sourced_at: days_ago_rfc(3), reference: Some("Salesforce".into()) }), discrepancy: None, ..Default::default() },
             IntelRisk { render_policy: None, claim_id: None, text: "Contoso actively pitching to Globex leadership".into(), source: Some("email intel from Jamie Morrison".into()), urgency: "watch".into(), item_source: Some(ItemSource { source: "user_correction".into(), confidence: 1.0, sourced_at: days_ago_rfc(1), reference: Some("you edited this".into()) }), discrepancy: None, ..Default::default() },
         ],
         recent_wins: vec![
@@ -5663,7 +5729,7 @@ fn seed_intelligence_data(db: &ActionDb) -> Result<(), String> {
         pull_quote: Some("Initech is stable but autopilot — usage is flat, engagement is minimal, and we have no expansion signals.".into()),
         risks: vec![
             IntelRisk { render_policy: None, claim_id: None, text: "Phase 2 budget approval pending from finance — 7 days with no response".into(), source: Some("email from Dana Patel".into()), urgency: "watch".into(), item_source: Some(ItemSource { source: "transcript".into(), confidence: 0.8, sourced_at: days_ago_rfc(7), reference: Some("meeting Mar 8".into()) }), discrepancy: None, ..Default::default() },
-            IntelRisk { render_policy: None, claim_id: None, text: "Team bandwidth constraints for Q2 — Priya Sharma flagged".into(), source: Some("meeting notes".into()), urgency: "watch".into(), item_source: Some(ItemSource { source: "glean_crm".into(), confidence: 0.9, sourced_at: days_ago_rfc(5), reference: Some("REDACTED".into()) }), discrepancy: None, ..Default::default() },
+            IntelRisk { render_policy: None, claim_id: None, text: "Team bandwidth constraints for Q2 — Priya Sharma flagged".into(), source: Some("meeting notes".into()), urgency: "watch".into(), item_source: Some(ItemSource { source: "glean_crm".into(), confidence: 0.9, sourced_at: days_ago_rfc(5), reference: Some("Salesforce".into()) }), discrepancy: None, ..Default::default() },
         ],
         recent_wins: vec![
             IntelWin { render_policy: None, claim_id: None, text: "Phase 1 delivered on time and under budget".into(), source: Some("project tracker".into()), impact: Some("Strong proof point for Phase 2 business case".into()), item_source: Some(ItemSource { source: "transcript".into(), confidence: 0.8, sourced_at: days_ago_rfc(10), reference: Some("kickoff meeting".into()) }), discrepancy: None },
@@ -6522,6 +6588,335 @@ fn seed_intelligence_data(db: &ActionDb) -> Result<(), String> {
     .map_err(|e| format!("Seed health_recompute_pending: {}", e))?;
 
     seed_claim_review_deferrals(db)?;
+    seed_salience_factor_weights(db)?;
+    seed_workspace_backfill_state(db)?;
+
+    Ok(())
+}
+
+/// Seed salience factor weights for dev mode. Stored `salience_factors` rows
+/// are recomputation output, so mock scenarios keep those empty and exercise
+/// the score_salience preview path against seeded claims.
+fn seed_salience_factor_weights(db: &ActionDb) -> Result<(), String> {
+    assert_dev_db_connection(db)?;
+
+    let conn = db.conn_ref();
+    conn.execute_batch(
+        "INSERT INTO salience_factors_weights (factor_kind, default_weight, schema_version)
+         VALUES
+           ('importance', 0.20, 1),
+           ('novelty', 0.10, 1),
+           ('urgency', 0.15, 1),
+           ('timing', 0.10, 1),
+           ('userFit', 0.10, 1),
+           ('freshness', 0.10, 1),
+           ('trust', 0.10, 1),
+           ('corroboration', 0.05, 1),
+           ('contradiction', 0.05, 1),
+           ('openLoopRelevance', 0.05, 1)
+         ON CONFLICT(factor_kind, schema_version) DO UPDATE SET
+           default_weight = excluded.default_weight;",
+    )
+    .map_err(|e| format!("Seed salience factor weights: {e}"))?;
+
+    Ok(())
+}
+
+/// Seed representative workspace backfill state so dev mode exercises the new
+/// operational tables without storing raw paths inside the backfill tables.
+fn seed_workspace_backfill_state(db: &ActionDb) -> Result<(), String> {
+    assert_dev_db_connection(db)?;
+
+    let conn = db.conn_ref();
+    let now = chrono::Utc::now();
+    let now_iso = now.to_rfc3339();
+    let five_min_ago = (now - chrono::Duration::minutes(5)).to_rfc3339();
+    let run_id = "mock-w5-backfill-apply";
+
+    conn.execute(
+        "DELETE FROM workspace_backfill_operations WHERE run_id = ?1",
+        rusqlite::params![run_id],
+    )
+    .map_err(|e| format!("Reset workspace_backfill_operations seed rows: {e}"))?;
+    conn.execute(
+        "DELETE FROM workspace_backfill_items WHERE run_id = ?1",
+        rusqlite::params![run_id],
+    )
+    .map_err(|e| format!("Reset workspace_backfill_items seed rows: {e}"))?;
+    conn.execute(
+        "DELETE FROM workspace_backfill_runs WHERE run_id = ?1",
+        rusqlite::params![run_id],
+    )
+    .map_err(|e| format!("Reset workspace_backfill_runs seed row: {e}"))?;
+    // dos7-allowed: devtools-w5-backfill-fixture
+    conn.execute(
+        "DELETE FROM document_entity_links WHERE file_id IN (?1, ?2)",
+        rusqlite::params![
+            "mock-workspace-file-acme-summary",
+            "mock-workspace-file-inbox-note",
+        ],
+    )
+    .map_err(|e| format!("Reset document_entity_links seed rows: {e}"))?;
+    // dos7-allowed: devtools-w5-backfill-fixture
+    conn.execute(
+        "DELETE FROM workspace_file_lifecycle WHERE file_id IN (?1, ?2)",
+        rusqlite::params![
+            "mock-workspace-file-acme-summary",
+            "mock-workspace-file-inbox-note",
+        ],
+    )
+    .map_err(|e| format!("Reset workspace_file_lifecycle seed rows: {e}"))?;
+
+    conn.execute(
+        "INSERT OR REPLACE INTO workspace_backfill_runs (
+            run_id, mode, status, workspace_root_fingerprint, actor,
+            reason_counts_json, source_class_counts_json, divergence_counts_json,
+            started_at, completed_at, updated_at
+        ) VALUES (?1, 'apply', 'completed', ?2, 'system:workspace_backfill:v1',
+            ?3, ?4, ?5, ?6, ?7, ?7)",
+        rusqlite::params![
+            run_id,
+            "mock-workspace-root",
+            r#"{"entity_linked":1,"pending_entity_assignment":1}"#,
+            r#"{"entity_doc":1,"inbox":1}"#,
+            r#"{"duplicate_content_groups":0}"#,
+            &five_min_ago,
+            &now_iso,
+        ],
+    )
+    .map_err(|e| format!("Seed workspace_backfill_runs: {e}"))?;
+
+    let lifecycle_rows = [
+        (
+            "mock-workspace-file-acme-summary",
+            "Accounts/Acme Corp/notes/backfill-summary.md",
+            "entity_doc",
+            r#"{"workspace_file":{"kind":"entity_doc"}}"#,
+            "pending",
+            Some("mock-acme-corp"),
+            Some("account"),
+            Some("notes"),
+            Some("aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"),
+        ),
+        (
+            "mock-workspace-file-inbox-note",
+            "_inbox/backfill-review.md",
+            "inbox",
+            r#"{"workspace_file":{"kind":"inbox"}}"#,
+            "pending_entity_assignment",
+            None,
+            None,
+            None,
+            Some("bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"),
+        ),
+    ];
+
+    for (
+        file_id,
+        canonical_path,
+        source_type,
+        data_source,
+        lifecycle_state,
+        entity_id,
+        entity_type,
+        category,
+        content_sha256,
+    ) in lifecycle_rows
+    {
+        // dos7-allowed: devtools-w5-backfill-fixture
+        conn.execute(
+            "INSERT OR REPLACE INTO workspace_file_lifecycle (
+                file_id, canonical_path, device, inode, source_type, data_source,
+                lifecycle_state, source_asof, entity_id, entity_type, category,
+                content_sha256, updated_at
+            ) VALUES (?1, ?2, 0, 0, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?6)",
+            rusqlite::params![
+                file_id,
+                canonical_path,
+                source_type,
+                data_source,
+                lifecycle_state,
+                &now_iso,
+                entity_id,
+                entity_type,
+                category,
+                content_sha256,
+            ],
+        )
+        .map_err(|e| format!("Seed workspace_file_lifecycle row {file_id}: {e}"))?;
+    }
+
+    // dos7-allowed: devtools-w5-backfill-fixture
+    conn.execute(
+        "INSERT OR REPLACE INTO document_entity_links (
+            link_id, file_id, entity_type, entity_id, attribution_source,
+            confidence, rationale, actor, updated_at
+        ) VALUES (?1, ?2, 'account', 'mock-acme-corp', 'backfill', 0.95,
+            NULL, 'system:workspace_backfill:v1', ?3)",
+        rusqlite::params![
+            "mock-backfill-link-acme-summary",
+            "mock-workspace-file-acme-summary",
+            &now_iso,
+        ],
+    )
+    .map_err(|e| format!("Seed document_entity_links backfill row: {e}"))?;
+
+    let item_rows: [(
+        &str,
+        &str,
+        &str,
+        Option<&str>,
+        Option<&str>,
+        &str,
+        Option<&str>,
+        Option<&str>,
+        Option<&str>,
+        &str,
+        Option<&str>,
+        Option<&str>,
+        Option<&str>,
+    ); 2] = [
+        (
+            "mock-source-handle-acme-summary",
+            "mock-item-handle-acme-summary",
+            "mock-workspace-file-acme-summary",
+            Some("aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"),
+            None,
+            "entity_doc",
+            Some("account"),
+            Some("mock-acme-corp"),
+            Some("notes"),
+            "applied",
+            Some("entity_linked"),
+            Some("filesystem_modified_at"),
+            Some("strong"),
+        ),
+        (
+            "mock-source-handle-inbox-note",
+            "mock-item-handle-inbox-note",
+            "mock-workspace-file-inbox-note",
+            Some("bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"),
+            None,
+            "inbox",
+            None,
+            None,
+            None,
+            "applied",
+            Some("pending_entity_assignment"),
+            Some("filesystem_modified_at"),
+            Some("strong"),
+        ),
+    ];
+
+    for (
+        source_handle,
+        item_handle,
+        file_id,
+        content_sha256,
+        duplicate_group_handle,
+        candidate_kind,
+        entity_type,
+        entity_id,
+        category,
+        status,
+        reason_code,
+        source_time_basis,
+        source_time_confidence,
+    ) in item_rows
+    {
+        conn.execute(
+            "INSERT OR REPLACE INTO workspace_backfill_items (
+                run_id, source_handle, item_handle, file_id, content_sha256,
+                duplicate_group_handle, candidate_kind, entity_type, entity_id,
+                category, exposure_state, source_time_basis, source_time_confidence,
+                backfill_observed_at, status, reason_code, updated_at
+            ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10,
+                'pending_review', ?11, ?12, ?13, ?14, ?15, ?13)",
+            rusqlite::params![
+                run_id,
+                source_handle,
+                item_handle,
+                file_id,
+                content_sha256,
+                duplicate_group_handle,
+                candidate_kind,
+                entity_type,
+                entity_id,
+                category,
+                source_time_basis,
+                source_time_confidence,
+                &now_iso,
+                status,
+                reason_code,
+            ],
+        )
+        .map_err(|e| format!("Seed workspace_backfill_items row {source_handle}: {e}"))?;
+    }
+
+    let operation_rows = [
+        (
+            "mock-source-handle-acme-summary",
+            "register_workspace_file",
+            "applied",
+            1_i64,
+            r#"["content_sha256","category","entity"]"#,
+            Some("mock-backfill-link-acme-summary"),
+            Some("entity_linked"),
+        ),
+        (
+            "mock-source-handle-inbox-note",
+            "register_workspace_file",
+            "applied",
+            1_i64,
+            r#"["lifecycle_state","content_sha256"]"#,
+            None,
+            Some("pending_entity_assignment"),
+        ),
+    ];
+
+    for (
+        source_handle,
+        operation_kind,
+        status,
+        created_lifecycle,
+        updated_lifecycle_fields,
+        created_link_handle,
+        reason_code,
+    ) in operation_rows
+    {
+        conn.execute(
+            "INSERT INTO workspace_backfill_operations (
+                run_id, source_handle, operation_kind, status, created_lifecycle,
+                updated_lifecycle_fields, created_link_handle, reason_code, updated_at
+            ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9)",
+            rusqlite::params![
+                run_id,
+                source_handle,
+                operation_kind,
+                status,
+                created_lifecycle,
+                updated_lifecycle_fields,
+                created_link_handle,
+                reason_code,
+                &now_iso,
+            ],
+        )
+        .map_err(|e| format!("Seed workspace_backfill_operations row {source_handle}: {e}"))?;
+    }
+
+    crate::signals::bus::emit_signal_fixture_event(
+        db,
+        "mock-sig-workspace-backfill-acme-link",
+        "account",
+        "mock-acme-corp",
+        "workspace_file_entity_link_changed",
+        "workspace_backfill",
+        Some(r#"{"file_id":"mock-workspace-file-acme-summary","entity_type":"account","entity_id":"mock-acme-corp","actor_kind":"system"}"#),
+        0.95,
+        Some(90),
+        &now_iso,
+    )
+    .map_err(|e| format!("Seed workspace backfill signal: {e}"))?;
 
     Ok(())
 }

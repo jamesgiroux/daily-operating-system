@@ -78,7 +78,7 @@ When `expandable`, clicking the row (or an explicit drill-in chevron) opens `Rec
     field: "renewal_date",
     value: "2026-06-15",
     band: "likely_current",
-    source: "REDACTED",
+    source: "Salesforce",
     asOf: "2026-05-02T03:00:00Z",
     consistencyState: "ok",
   }}

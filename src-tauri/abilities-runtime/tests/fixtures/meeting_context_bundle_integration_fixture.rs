@@ -4,7 +4,7 @@ pub fn meeting_context_bundle_fixture() -> BlockIntegrationFixture {
     minimal_block_kit_fixture(
         "meeting-context-bundle",
         "span",
-        "dailyos-empty-chip",
+        "dailyos-empty-chip wp-block-dailyos-meeting-context-bundle is-empty",
         &[("data-empty-reason", "missing_meeting_context")],
         "empty-state",
         "No meeting context.",

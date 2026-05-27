@@ -61,7 +61,7 @@ impl ActionDb {
         let count: i64 = self.conn.query_row(
             "SELECT COUNT(*)
              FROM meetings m
-             INNER JOIN meeting_entities me ON m.id = me.meeting_id
+             INNER JOIN effective_meeting_entities me ON m.id = me.meeting_id
              WHERE me.entity_id = ?1
                AND m.start_time >= datetime('now', ?2 || ' days')",
             params![account_id, days_param],
@@ -84,7 +84,7 @@ impl ActionDb {
         let count: i64 = self.conn.query_row(
             "SELECT COUNT(*)
              FROM meetings m
-             INNER JOIN meeting_entities me ON m.id = me.meeting_id
+             INNER JOIN effective_meeting_entities me ON m.id = me.meeting_id
              WHERE me.entity_id = ?1
                AND m.start_time >= datetime('now', ?2 || ' days')
                AND m.start_time < datetime('now', ?3 || ' days')",
@@ -122,7 +122,7 @@ impl ActionDb {
                     m.attendees, m.notes_path, mt.summary, m.created_at,
                     m.calendar_event_id
              FROM meetings m
-             INNER JOIN meeting_entities me ON m.id = me.meeting_id
+             INNER JOIN effective_meeting_entities me ON m.id = me.meeting_id
              LEFT JOIN meeting_transcripts mt ON mt.meeting_id = m.id
              WHERE me.entity_id = ?1
                AND m.start_time >= date('now', ?2 || ' days')
@@ -607,7 +607,7 @@ impl ActionDb {
         let offset = format!("-{} days", days_back);
         let mut stmt = self.conn.prepare(
             "SELECT m.id, m.title, m.start_time,
-                    (SELECT me.entity_id FROM meeting_entities me
+                    (SELECT me.entity_id FROM effective_meeting_entities me
                      WHERE me.meeting_id = m.id LIMIT 1) AS entity_id
              FROM meetings m
              WHERE m.start_time >= datetime('now', ?1)
@@ -649,7 +649,7 @@ impl ActionDb {
         let offset = format!("-{} days", days_back);
         let mut stmt = self.conn.prepare(
             "SELECT m.id FROM meetings m
-             INNER JOIN meeting_entities me ON m.id = me.meeting_id AND me.entity_type = 'account'
+             INNER JOIN effective_meeting_entities me ON m.id = me.meeting_id AND me.entity_type = 'account'
              LEFT JOIN meeting_transcripts mt ON mt.meeting_id = m.id
              WHERE mt.transcript_path IS NULL AND mt.transcript_processed_at IS NULL
                AND m.start_time >= datetime('now', ?1)
@@ -1202,7 +1202,7 @@ impl ActionDb {
         before_date: &str,
     ) -> Result<Option<DbMeeting>, DbError> {
         let sql = format!(
-            "{} INNER JOIN meeting_entities me2 ON m.id = me2.meeting_id
+            "{} INNER JOIN effective_meeting_entities me2 ON m.id = me2.meeting_id
              WHERE me2.entity_id = ?1 AND me2.entity_type = ?2 AND m.start_time < ?3
              ORDER BY m.start_time DESC LIMIT 1",
             full_meeting_join_sql()

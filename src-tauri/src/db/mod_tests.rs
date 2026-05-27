@@ -66,6 +66,11 @@ fn sample_email(id: &str, thread_id: &str, subject: &str) -> DbEmail {
         entity_id: Some("acc-1".to_string()),
         entity_type: Some("account".to_string()),
         contextual_summary: Some("summary".to_string()),
+        summary_context_prompt_version: None,
+        summary_context_trust_band: None,
+        summary_context_source_count: None,
+        summary_context_source_keys_json: None,
+        summary_context_generated_at: None,
         sentiment: None,
         urgency: None,
         user_is_last_sender: false,
@@ -5317,6 +5322,68 @@ fn test_dos74_get_meeting_linked_entities_primary_then_suggestions() {
         "low-confidence sibling must render as suggestion"
     );
     assert!(linked[1].confidence < 0.60);
+}
+
+#[test]
+fn test_current_graph_dismissal_blocks_legacy_meeting_entity_fallback() {
+    let db = test_db();
+    let acct = sample_account("acct-current-graph-dismissed", "Current Graph Dismissed");
+    db.upsert_account(&acct).expect("upsert");
+    setup_meeting(&db, "m_current_graph_dismissed", "Dismissed Link Sync");
+    db.link_meeting_entity_with_confidence(
+        "m_current_graph_dismissed",
+        "acct-current-graph-dismissed",
+        "account",
+        0.95,
+        true,
+    )
+    .expect("seed legacy link");
+    db.conn_ref()
+        .execute(
+            "INSERT OR REPLACE INTO linked_entities_raw
+                (owner_type, owner_id, entity_id, entity_type, role, source, rule_id,
+                 confidence, evidence_json, graph_version, created_at)
+             VALUES
+                ('meeting', ?1, ?2, 'account', 'related', 'user_dismissed', 'user',
+                 1.0, '{}', 1, '2026-05-20T00:00:00Z')",
+            rusqlite::params!["m_current_graph_dismissed", "acct-current-graph-dismissed"],
+        )
+        .expect("seed current graph dismissal");
+
+    let linked = db
+        .get_meeting_linked_entities("m_current_graph_dismissed")
+        .expect("read linked entities");
+    assert!(
+        linked.is_empty(),
+        "current graph dismissal must block legacy meeting_entities fallback"
+    );
+
+    let entities = db
+        .get_meeting_entities("m_current_graph_dismissed")
+        .expect("read meeting entities");
+    assert!(
+        entities.is_empty(),
+        "DbEntity helper must follow the same current-graph fallback rule"
+    );
+
+    assert!(
+        db.is_meeting_entity_dismissed(
+            "m_current_graph_dismissed",
+            "acct-current-graph-dismissed",
+            "account",
+        )
+        .expect("read dismissal state"),
+        "raw current-graph dismissal must count as dismissal state"
+    );
+    assert!(
+        db.list_dismissed_meeting_entities("m_current_graph_dismissed")
+            .expect("list dismissals")
+            .contains(&(
+                "acct-current-graph-dismissed".to_string(),
+                "account".to_string()
+            )),
+        "batch dismissal filter must include raw current-graph dismissals"
+    );
 }
 
 /// Regression: `link_meeting_entity_with_confidence` must NEVER

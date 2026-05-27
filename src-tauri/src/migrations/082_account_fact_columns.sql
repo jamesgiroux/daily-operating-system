@@ -1,6 +1,6 @@
 -- Account fact columns for Outlook chapter commercial intelligence.
 
--- ARR range (low/high bounds from REDACTED or Glean)
+-- ARR range (low/high bounds from Salesforce or Glean)
 ALTER TABLE accounts ADD COLUMN arr_range_low REAL;
 ALTER TABLE accounts ADD COLUMN arr_range_high REAL;
 
@@ -18,7 +18,7 @@ ALTER TABLE accounts ADD COLUMN support_tier TEXT;
 ALTER TABLE accounts ADD COLUMN support_tier_source TEXT;
 ALTER TABLE accounts ADD COLUMN support_tier_updated_at TEXT;
 
--- Active subscription count (integer, from REDACTED or Glean)
+-- Active subscription count (integer, from Salesforce or Glean)
 ALTER TABLE accounts ADD COLUMN active_subscription_count INTEGER;
 
 -- Growth potential score (0.0-1.0, AI/Glean-derived)

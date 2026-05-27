@@ -204,7 +204,7 @@ CREATE TABLE account_source_refs (
   id TEXT PRIMARY KEY,
   account_id TEXT NOT NULL,
   field TEXT NOT NULL,           -- "arr", "renewal_date", "lifecycle", "nps", "champion"
-  source_system TEXT NOT NULL,   -- "REDACTED", "zendesk", "gong", "user"
+  source_system TEXT NOT NULL,   -- "Salesforce", "zendesk", "gong", "user"
   source_kind TEXT NOT NULL DEFAULT 'inference',  -- "fact", "signal", "inference"
   source_value TEXT,             -- the actual value
   observed_at TEXT NOT NULL,

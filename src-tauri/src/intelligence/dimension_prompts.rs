@@ -30,6 +30,62 @@ pub const DIMENSION_NAMES: &[&str] = &[
     "engagement_signals",
 ];
 
+pub(crate) const ACCOUNT_ONLY_ENGAGEMENT_FIELDS_CLEAR: &str = "account_only_engagement_fields";
+
+/// Dimension selection for a specific entity refresh.
+///
+/// The six canonical dimensions still define the complete account shape, but
+/// non-account entities should not be asked to synthesize account-only fields.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct DimensionApplicability {
+    pub applicable: Vec<&'static str>,
+    pub skipped: Vec<&'static str>,
+}
+
+pub fn dimension_applicability(
+    entity_type: &str,
+    relationship: Option<&str>,
+) -> DimensionApplicability {
+    let applicable: Vec<&'static str> = DIMENSION_NAMES
+        .iter()
+        .copied()
+        .filter(|dimension| is_dimension_applicable(dimension, entity_type, relationship))
+        .collect();
+    let skipped: Vec<&'static str> = DIMENSION_NAMES
+        .iter()
+        .copied()
+        .filter(|dimension| !applicable.contains(dimension))
+        .collect();
+    DimensionApplicability {
+        applicable,
+        skipped,
+    }
+}
+
+pub fn is_dimension_applicable(
+    dimension: &str,
+    entity_type: &str,
+    relationship: Option<&str>,
+) -> bool {
+    let entity_type = entity_type.to_ascii_lowercase();
+    let relationship = relationship.unwrap_or_default().trim().to_ascii_lowercase();
+    let is_account = entity_type == "account";
+    let is_project = entity_type == "project";
+    let is_person = entity_type == "person";
+    let is_commercial_excluded_relationship = matches!(
+        relationship.as_str(),
+        "internal" | "employee" | "partner" | "vendor"
+    );
+
+    match dimension {
+        "core_assessment" => true,
+        "engagement_signals" => true,
+        "commercial_financial" => is_account && !is_commercial_excluded_relationship,
+        "stakeholder_champion" | "strategic_context" | "value_success" => is_account || is_project,
+        _ => !is_person,
+    }
+}
+
 // =============================================================================
 // PTY dimension prompt builder
 // =============================================================================
@@ -100,6 +156,7 @@ pub fn build_dimension_prompt(
         "Return ONLY a JSON object — no other text before or after. \
          The JSON must conform exactly to this schema:\n\n",
     );
+    prompt.push_str(PROMPT_QUALITY_RULES);
     prompt.push_str(&dimension_json_schema(dimension, entity_type, ctx));
 
     // Source attribution instructions
@@ -146,7 +203,7 @@ pub fn build_glean_dimension_prompt(
     // System role — Glean-specific with entity grounding
     prompt.push_str(&format!(
         "You are {} for the {} \"{}\". \
-         Search ALL available data sources (REDACTED, Zendesk, Gong, Slack, \
+         Search ALL available data sources (Salesforce, Zendesk, Gong, Slack, \
          internal docs, org directory) for this dimension.\n\n",
         role_desc, entity_label, entity_name,
     ));
@@ -154,7 +211,7 @@ pub fn build_glean_dimension_prompt(
     // Structured entity disambiguation — replaces the soft
     // "do not include other companies" instruction with an inclusion filter
     // keyed on explicit identifiers (domains, stakeholder emails, parent,
-    // REDACTED ID). Followed by an explicit retrieval-scope exclusion
+    // Salesforce ID). Followed by an explicit retrieval-scope exclusion
     // heuristic and a grounding rule requiring every output sentence to
     // trace back to a document mentioning one of these identifiers.
     push_disambiguation_block(&mut prompt, entity_name, entity_type, ctx);
@@ -216,8 +273,8 @@ pub fn build_glean_dimension_prompt(
     // Dimension-specific instructions for commercial_financial
     if dimension == "commercial_financial" && entity_type == "account" {
         prompt.push_str(
-            "## Product Classification (REDACTED)\n\n\
-             For the `productClassification.products` array, search REDACTED for:\n\
+            "## Product Classification (Salesforce)\n\n\
+             For the `productClassification.products` array, search Salesforce for:\n\
              - Customer Account Subscription Status (current active subscriptions)\n\
              - Support Package (tier level: Enhanced, Signature, Standard, Basic, Premier)\n\
              - Estimated ARR or Estimated CMS ARR (annual recurring revenue)\n\
@@ -225,7 +282,7 @@ pub fn build_glean_dimension_prompt(
              - Parsely Customer flag (include if true; if false, omit analytics)\n\
              - Parsely Premier flag (include if true)\n\n\
              Return one product object per active subscription:\n\
-             - type: \"cms\" or \"analytics\" (match REDACTED product names)\n\
+             - type: \"cms\" or \"analytics\" (match Salesforce product names)\n\
              - tier: null or one of (enhanced|signature|standard|basic|premier|unknown)\n\
              - arr: null or the annual revenue number as a float\n\
              - billingTerms: null or one of (annual|monthly|multi_year)\n\n\
@@ -242,15 +299,16 @@ pub fn build_glean_dimension_prompt(
          parseable by `JSON.parse()`.\n\n",
     );
     prompt.push_str("The JSON object must have these fields:\n\n");
+    prompt.push_str(PROMPT_QUALITY_RULES);
     prompt.push_str(&dimension_json_schema(dimension, entity_type, ctx));
 
     // Source attribution for Glean
     prompt.push_str(
         "\nFor every array item, include an `\"itemSource\"` object:\n\
          ```json\n\
-         \"itemSource\": { \"source\": \"glean_crm|glean_zendesk|glean_gong|glean_chat|transcript\", \
+         \"itemSource\": { \"source\": \"glean_crm|glean_zendesk|glean_gong|glean_chat\", \
          \"confidence\": 0.9, \"sourcedAt\": \"2026-03-15T00:00:00Z\", \
-         \"reference\": \"REDACTED opportunity\" }\n\
+         \"reference\": \"Salesforce opportunity\" }\n\
          ```\n\n",
     );
 
@@ -285,6 +343,7 @@ pub fn merge_dimension_into(
     dimension: &str,
     partial: &IntelligenceJson,
 ) -> Result<(), String> {
+    merge_refreshed_fields(existing, partial);
     match dimension {
         "core_assessment" => {
             if partial.executive_assessment.is_some() {
@@ -296,25 +355,29 @@ pub fn merge_dimension_into(
             if partial.current_state.is_some() {
                 existing.current_state = partial.current_state.clone();
             }
-            if !partial.risks.is_empty() {
+            if !partial.risks.is_empty() || field_was_refreshed(partial, "risks") {
                 existing.risks = partial.risks.clone();
             }
-            if !partial.recent_wins.is_empty() {
+            if !partial.recent_wins.is_empty() || field_was_refreshed(partial, "recentWins") {
                 existing.recent_wins = partial.recent_wins.clone();
             }
         }
 
         "stakeholder_champion" => {
-            if !partial.stakeholder_insights.is_empty() {
+            if !partial.stakeholder_insights.is_empty()
+                || field_was_refreshed(partial, "stakeholderInsights")
+            {
                 existing.stakeholder_insights = partial.stakeholder_insights.clone();
             }
             if partial.coverage_assessment.is_some() {
                 existing.coverage_assessment = partial.coverage_assessment.clone();
             }
-            if !partial.organizational_changes.is_empty() {
+            if !partial.organizational_changes.is_empty()
+                || field_was_refreshed(partial, "organizationalChanges")
+            {
                 existing.organizational_changes = partial.organizational_changes.clone();
             }
-            if !partial.internal_team.is_empty() {
+            if !partial.internal_team.is_empty() || field_was_refreshed(partial, "internalTeam") {
                 existing.internal_team = partial.internal_team.clone();
             }
             // relationship_depth is stakeholder-adjacent
@@ -333,10 +396,12 @@ pub fn merge_dimension_into(
             if partial.agreement_outlook.is_some() {
                 existing.agreement_outlook = partial.agreement_outlook.clone();
             }
-            if !partial.expansion_signals.is_empty() {
+            if !partial.expansion_signals.is_empty()
+                || field_was_refreshed(partial, "expansionSignals")
+            {
                 existing.expansion_signals = partial.expansion_signals.clone();
             }
-            if !partial.blockers.is_empty() {
+            if !partial.blockers.is_empty() || field_was_refreshed(partial, "blockers") {
                 existing.blockers = partial.blockers.clone();
             }
             // Product classification from Glean
@@ -349,23 +414,30 @@ pub fn merge_dimension_into(
             if partial.company_context.is_some() {
                 existing.company_context = partial.company_context.clone();
             }
-            if !partial.competitive_context.is_empty() {
+            if !partial.competitive_context.is_empty()
+                || field_was_refreshed(partial, "competitiveContext")
+            {
                 existing.competitive_context = partial.competitive_context.clone();
             }
-            if !partial.strategic_priorities.is_empty() {
+            if !partial.strategic_priorities.is_empty()
+                || field_was_refreshed(partial, "strategicPriorities")
+            {
                 existing.strategic_priorities = partial.strategic_priorities.clone();
             }
-            if !partial.market_context.is_empty() {
+            if !partial.market_context.is_empty() || field_was_refreshed(partial, "marketContext") {
                 existing.market_context = partial.market_context.clone();
             }
             // Merge regulatory items emitted by strategic_context.
-            if !partial.regulatory_context.is_empty() {
+            if !partial.regulatory_context.is_empty()
+                || field_was_refreshed(partial, "regulatoryContext")
+            {
                 existing.regulatory_context = partial.regulatory_context.clone();
             }
         }
 
         "value_success" => {
-            if !partial.value_delivered.is_empty() {
+            if !partial.value_delivered.is_empty() || field_was_refreshed(partial, "valueDelivered")
+            {
                 existing.value_delivered = partial.value_delivered.clone();
             }
             if partial.success_metrics.is_some() {
@@ -392,7 +464,9 @@ pub fn merge_dimension_into(
             if partial.support_health.is_some() {
                 existing.support_health = partial.support_health.clone();
             }
-            if !partial.gong_call_summaries.is_empty() {
+            if !partial.gong_call_summaries.is_empty()
+                || field_was_refreshed(partial, "gongCallSummaries")
+            {
                 existing.gong_call_summaries = partial.gong_call_summaries.clone();
             }
             if partial.nps_csat.is_some() {
@@ -408,6 +482,103 @@ pub fn merge_dimension_into(
     Ok(())
 }
 
+fn field_was_refreshed(intel: &IntelligenceJson, field: &str) -> bool {
+    intel
+        .refreshed_fields
+        .iter()
+        .any(|candidate| candidate == field)
+}
+
+fn merge_refreshed_fields(existing: &mut IntelligenceJson, partial: &IntelligenceJson) {
+    for field in &partial.refreshed_fields {
+        if !existing
+            .refreshed_fields
+            .iter()
+            .any(|candidate| candidate == field)
+        {
+            existing.refreshed_fields.push(field.clone());
+        }
+    }
+}
+
+/// Clear fields for dimensions that should not apply to this entity shape.
+///
+/// Reconciliation preserves missing fields by design, so non-applicable
+/// dimensions need an explicit clear after a refresh changes entity shape or
+/// relationship context.
+pub fn clear_inapplicable_dimension_fields(
+    intel: &mut IntelligenceJson,
+    entity_type: &str,
+    relationship: Option<&str>,
+) -> Vec<&'static str> {
+    let applicability = dimension_applicability(entity_type, relationship);
+    let mut cleared = applicability.skipped;
+    for dimension in &cleared {
+        clear_dimension_fields(intel, dimension);
+    }
+    if !entity_type.eq_ignore_ascii_case("account") {
+        clear_account_only_engagement_fields(intel);
+        cleared.push(ACCOUNT_ONLY_ENGAGEMENT_FIELDS_CLEAR);
+    }
+    cleared
+}
+
+fn clear_dimension_fields(intel: &mut IntelligenceJson, dimension: &str) {
+    match dimension {
+        "core_assessment" => {
+            intel.executive_assessment = None;
+            intel.pull_quote = None;
+            intel.current_state = None;
+            intel.risks.clear();
+            intel.recent_wins.clear();
+        }
+        "stakeholder_champion" => {
+            intel.stakeholder_insights.clear();
+            intel.coverage_assessment = None;
+            intel.organizational_changes.clear();
+            intel.internal_team.clear();
+            intel.relationship_depth = None;
+        }
+        "commercial_financial" => {
+            intel.health = None;
+            intel.contract_context = None;
+            intel.agreement_outlook = None;
+            intel.expansion_signals.clear();
+            intel.blockers.clear();
+            intel.product_classification = None;
+        }
+        "strategic_context" => {
+            intel.company_context = None;
+            intel.competitive_context.clear();
+            intel.strategic_priorities.clear();
+            intel.market_context.clear();
+            intel.regulatory_context.clear();
+        }
+        "value_success" => {
+            intel.value_delivered.clear();
+            intel.success_metrics = None;
+            intel.success_plan_signals = None;
+            intel.open_commitments = None;
+        }
+        "engagement_signals" => {
+            intel.meeting_cadence = None;
+            intel.email_responsiveness = None;
+            intel.product_adoption = None;
+            intel.support_health = None;
+            intel.gong_call_summaries.clear();
+            intel.nps_csat = None;
+        }
+        _ => {}
+    }
+}
+
+fn clear_account_only_engagement_fields(intel: &mut IntelligenceJson) {
+    intel.product_adoption = None;
+    intel.support_health = None;
+    intel.gong_call_summaries.clear();
+    intel.nps_csat = None;
+}
+
 // =============================================================================
 // Internal helpers
 // =============================================================================
@@ -419,7 +590,7 @@ pub fn merge_dimension_into(
 // These three blocks ship together as the preamble for every dimension prompt:
 //
 //   ## Entity disambiguation      — known identifiers (name, domains, contacts,
-//                                    parent, REDACTED ID)
+//                                    parent, Salesforce ID)
 //   ## Retrieval scope            — inclusion bias + exclusion heuristics
 //                                    (foreign vip-*.com hosts, shared bot emails)
 //   ## Grounding rule             — every output sentence must cite a document
@@ -474,8 +645,8 @@ fn push_disambiguation_block(
     // for account entities — it's meaningless for person/project.
     if entity_type == "account" {
         match d.account_id.as_deref() {
-            Some(id) => prompt.push_str(&format!("- REDACTED account ID: {}\n", id)),
-            None => prompt.push_str("- REDACTED account ID: not provided\n"),
+            Some(id) => prompt.push_str(&format!("- Salesforce account ID: {}\n", id)),
+            None => prompt.push_str("- Salesforce account ID: not provided\n"),
         }
     }
 
@@ -489,14 +660,14 @@ fn push_retrieval_scope_block(prompt: &mut String, entity_name: &str, ctx: &Inte
     prompt.push_str(&format!(
         "- Prefer documents that reference at least one identifier listed \
          under Entity disambiguation above (name \"{}\", a known domain, a \
-         known contact email, the parent company, or the REDACTED account \
+         known contact email, the parent company, or the Salesforce account \
          ID). Treat those as first-class evidence.\n",
         entity_name
     ));
     prompt.push_str(
         "- EXCLUDE documents whose only signal is a different customer's \
          identifier. A document mentioning a different `vip-*.com` host, a \
-         different REDACTED account ID, a different customer name, or a \
+         different Salesforce account ID, a different customer name, or a \
          different company domain is evidence that document is NOT about this \
          entity — do not draw from it even if a shared tool or bot appears in \
          the thread.\n",
@@ -748,7 +919,7 @@ RECONCILIATION RULES:\n\
 - If your data CONTRADICTS an existing item, include BOTH with \"discrepancy\": true on yours\n\
 - Tag every item in your output with \"itemSource\": {\"source\": \"pty_synthesis\", \"confidence\": 0.5, \"sourcedAt\": \"ISO timestamp\"}\n\n\
 ACCOUNT TRUTH rules:\n\
-- Fields marked \"(source: REDACTED, fact)\" or \"(source: user, fact)\" are ground truth. Do not contradict them.\n\
+- Fields marked \"(source: Salesforce, fact)\" or \"(source: user, fact)\" are ground truth. Do not contradict them.\n\
 - Fields marked \"(source: user, fact \u{2014} do not reassign)\" are explicitly locked by the user. Never change the assignment.\n\
 - You may add context, evidence, or assessments about these fields but do not change the underlying value.\n\n";
 
@@ -757,11 +928,18 @@ RECONCILIATION RULES:\n\
 - Items tagged [user_correction] are SACRED — include them verbatim in your output, never modify or drop\n\
 - Items tagged [transcript] are personal observations — preserve even if you have no corroborating data\n\
 - If your data CONTRADICTS an existing item, include BOTH with \"discrepancy\": true on yours\n\
-- Tag every item with \"itemSource\": {\"source\": \"glean_crm|glean_zendesk|glean_gong|glean_chat\", \"confidence\": 0.7-0.9, \"sourcedAt\": \"ISO timestamp\", \"reference\": \"data source name\"}\n\n\
+- Tag every item with \"itemSource\": {\"source\": \"glean_crm|glean_zendesk|glean_gong|glean_chat\", \"confidence\": 0.8, \"sourcedAt\": \"ISO timestamp\", \"reference\": \"data source name\"}\n\n\
 ACCOUNT TRUTH rules:\n\
-- Fields marked \"(source: REDACTED, fact)\" or \"(source: user, fact)\" are ground truth. Do not contradict them.\n\
+- Fields marked \"(source: Salesforce, fact)\" or \"(source: user, fact)\" are ground truth. Do not contradict them.\n\
 - Fields marked \"(source: user, fact \u{2014} do not reassign)\" are explicitly locked by the user. Never change the assignment.\n\
 - You may add context, evidence, or assessments about these fields but do not change the underlying value.\n\n";
+
+const PROMPT_QUALITY_RULES: &str = "\
+## Quality Rules\n\n\
+- Prefer empty arrays or null over unsupported claims.\n\
+- If evidence is stale or timing is unknown, say so in the relevant unknowns or narrative field instead of sounding current.\n\
+- Do not write generic summaries. Every sentence should add a concrete source-grounded fact, risk, opportunity, or unknown.\n\
+- Do not invent commercial state, stakeholder sentiment, product usage, or relationship strength from metadata alone.\n\n";
 
 /// Inject source-tagged existing intelligence items into the prompt.
 ///
@@ -900,7 +1078,7 @@ fn dimension_json_schema(dimension: &str, entity_type: &str, ctx: &IntelligenceC
         "core_assessment" => {
             s.push_str(
                 r#"  "executiveAssessment": "2-4 paragraphs. P1: one-sentence verdict. P2: top risk. P3: biggest opportunity. P4 (optional): key unknowns. Max 250 words.",
-  "risks": [{"text": "full risk paragraph (multi-sentence)", "headline": "punchy 1-liner ≤80 chars — the triage card heading", "evidence": "supporting detail: named people, timelines, data points (optional)", "urgency": "critical|watch|low", "kindLabel": "specific label like 'Renewal drag · compliance gap' or 'Active friction · unresolved' or 'Expansion window · question unanswered'", "itemSource": {"source": "...", "confidence": 0.7, "sourcedAt": "...", "reference": "..."}}],
+  "risks": [{"text": "full risk paragraph (multi-sentence)", "headline": "punchy 1-liner under 80 chars, used as the triage card heading", "evidence": "supporting detail: named people, timelines, data points (optional)", "urgency": "critical|watch|low", "kindLabel": "specific label like 'Renewal drag / compliance gap' or 'Active friction / unresolved'", "itemSource": {"source": "...", "confidence": 0.7, "sourcedAt": "...", "reference": "..."}}],
   "recentWins": [{"text": "verifiable win", "impact": "high|medium|low", "itemSource": {"source": "...", "confidence": 0.7, "sourcedAt": "...", "reference": "..."}}],
   "pullQuote": "One impactful sentence — the single most important thing about this account right now. Written as an editorial pull quote, not a summary. Max 30 words.",
   "currentState": {
@@ -913,7 +1091,7 @@ fn dimension_json_schema(dimension: &str, entity_type: &str, ctx: &IntelligenceC
         }
         "stakeholder_champion" => {
             s.push_str(
-                r#"  "stakeholderInsights": [{"name": "full name", "role": "job title", "assessment": "1-2 sentences about engagement", "engagement": "high|medium|low|unknown", "verified": "true ONLY when the assessment is grounded in an actual customer-conversation transcript; false when the assessment is inferred from meeting attendance or metadata alone", "verifiedSource": "meeting|glean|user or null when verified=false", "verifiedAt": "ISO date of verification or null when verified=false", "itemSource": {"source": "...", "confidence": 0.7, "sourcedAt": "...", "reference": "..."}}],
+                r#"  "stakeholderInsights": [{"name": "full name", "role": "job title", "assessment": "1-2 sentences about engagement", "engagement": "high|medium|low|unknown", "verified": false, "verifiedSource": null, "verifiedAt": null, "itemSource": {"source": "...", "confidence": 0.7, "sourcedAt": "...", "reference": "..."}}],
   "coverageAssessment": {"roleFillRate": 0.0, "gaps": ["missing role"], "covered": ["filled role"], "level": "strong|adequate|thin|critical"},
   "organizationalChanges": [{"changeType": "departure|hire|promotion|reorg|role_change", "person": "name", "from": "...", "to": "...", "detectedAt": "ISO date", "itemSource": {"source": "...", "confidence": 0.7, "sourcedAt": "...", "reference": "..."}}],
   "internalTeam": [{"name": "...", "role": "RM|AE|TAM|Division Lead|etc", "source": "glean|user|crm"}],
@@ -934,9 +1112,9 @@ fn dimension_json_schema(dimension: &str, entity_type: &str, ctx: &IntelligenceC
             } else {
                 s.push_str(
                     r#"  "health": {
-    "score": "0-100", "band": "green|yellow|red", "source": "computed",
-    "confidence": "0.0-1.0",
-    "trend": {"direction": "improving|stable|declining|volatile", "rationale": "1 sentence", "timeframe": "30d|90d", "confidence": "0.0-1.0"},
+    "score": 72.0, "band": "green", "source": "computed",
+    "confidence": 0.7,
+    "trend": {"direction": "stable", "rationale": "1 sentence", "timeframe": "30d", "confidence": 0.7},
     "recommendedActions": ["specific next action"]
   },
 "#,
@@ -944,16 +1122,12 @@ fn dimension_json_schema(dimension: &str, entity_type: &str, ctx: &IntelligenceC
             }
             s.push_str(
                 r#"  "contractContext": {"contractType": "annual|multi_year|month_to_month", "autoRenew": true, "renewalDate": "ISO date", "currentArr": 0.0},
-<<<<<<< HEAD
-  "agreementOutlook": {"confidence": "high|moderate|low", "riskFactors": ["..."], "expansionPotential": "...", "recommendedStart": "ISO date"},
-=======
-  "renewalOutlook": {"confidence": "high|moderate|low", "riskFactors": ["..."], "expansionPotential": "...", "renewalNarrative": "One-paragraph editorial read on the renewal outlook — the single most important thing to know about this account's next commercial moment. 2-4 sentences. Rendered as a pull-quote below the grid.", "recommendedStart": "ISO date"},
->>>>>>> dc45a795 (DOS-249: Extend health + renewal schema with accuracy fields)
+  "agreementOutlook": {"confidence": "high|moderate|low", "riskFactors": ["..."], "expansionPotential": "...", "renewalNarrative": "One-paragraph editorial read on the renewal outlook — the single most important thing to know about this account's next commercial moment. 2-4 sentences. Rendered as a pull-quote below the grid.", "recommendedStart": "ISO date"},
   "expansionSignals": [{"opportunity": "...", "arrImpact": 0.0, "stage": "exploring|evaluating|committed|blocked", "strength": "strong|moderate|early", "itemSource": {"source": "...", "confidence": 0.7, "sourcedAt": "...", "reference": "..."}}],
   "blockers": [{"description": "...", "owner": "...", "since": "ISO date", "impact": "critical|high|moderate|low"}],
   "productClassification": {
     "products": [
-      {"type": "cms|analytics", "tier": "enhanced|signature|standard|basic|premier|unknown|null", "arr": 0.0, "billingTerms": "annual|monthly|multi_year|null"}
+      {"type": "cms", "tier": "enhanced", "arr": 0.0, "billingTerms": "annual"}
     ]
   }
 "#,
@@ -968,7 +1142,7 @@ fn dimension_json_schema(dimension: &str, entity_type: &str, ctx: &IntelligenceC
                 s.push_str(
                     r#"
   "competitiveContext": [{"competitor": "name", "threatLevel": "displacement|evaluation|mentioned|incumbent", "context": "1 sentence", "detectedAt": "ISO date or null", "itemSource": {"source": "...", "confidence": 0.7, "sourcedAt": "...", "reference": "..."}}],
-  "strategicPriorities": [{"priority": "short name, ≤80 chars", "status": "active|exploring|evaluating|paused|completed|at_risk", "owner": "short party name only — e.g. 'Chris Anderson & Diego Martinez' or 'Globex commercial team'. NOT a rationale.", "timeline": "short phrase only — e.g. 'Ongoing', 'Q2 2026', 'Beta March 2026'. NOT a rationale.", "context": "optional one sentence (≤180 chars) of rationale explaining why this matters or how it's evolving; leave null if you'd have nothing new to add beyond the priority name"}],
+  "strategicPriorities": [{"priority": "short name under 80 chars", "status": "active|exploring|evaluating|paused|completed|at_risk", "owner": "short party name only, not a rationale", "timeline": "short phrase only, not a rationale", "context": "optional one sentence under 180 chars of rationale, or null"}],
   "marketContext": [{"title": "short title (e.g. 'DORA compliance + SOC 2 Type II')", "body": "1-3 sentence narrative explaining why this regulatory/market/compliance force shapes this account's buying, renewal, or usage decisions", "category": "regulatory|market|geopolitical|compliance|industry|other", "effectiveDate": "ISO date or null", "itemSource": {"source": "...", "confidence": 0.7, "sourcedAt": "...", "reference": "..."}}],
   "regulatoryContext": [{"standard": "DORA|SOC_2_TYPE_II|HIPAA|GDPR|CUSTOM (or other framework name)", "status": "required|in_progress|met|gap — use 'gap' when the customer has signalled a compliance need that is not yet satisfied", "evidence": "one sentence of concrete evidence from the transcript/email/Glean source", "sourceReference": "meeting id, email id, or Glean document URI — null if not available", "detectedAt": "ISO date of first detection", "itemSource": {"source": "...", "confidence": 0.85, "sourcedAt": "...", "reference": "..."}}]
 "#,
@@ -1024,6 +1198,9 @@ fn dimension_json_schema(dimension: &str, entity_type: &str, ctx: &IntelligenceC
 
 #[cfg(test)]
 mod tests {
+    use super::super::io::{
+        AdoptionSignals, CadenceAssessment, GongCallSummary, SatisfactionData, SupportHealth,
+    };
     use super::*;
 
     fn empty_intel() -> IntelligenceJson {
@@ -1039,6 +1216,126 @@ mod tests {
             recent_captures: "Win: reduced churn 20%".to_string(),
             ..Default::default()
         }
+    }
+
+    fn schema_json(schema: &str) -> &str {
+        schema
+            .trim()
+            .strip_prefix("```json")
+            .expect("dimension schema should use a json fence")
+            .trim()
+            .strip_suffix("```")
+            .expect("dimension schema should close its fence")
+            .trim()
+    }
+
+    #[test]
+    fn dimension_applicability_skips_account_only_dimensions_for_people() {
+        let applicability = dimension_applicability("person", Some("internal"));
+
+        assert_eq!(
+            applicability.applicable,
+            vec!["core_assessment", "engagement_signals"]
+        );
+        assert_eq!(
+            applicability.skipped,
+            vec![
+                "stakeholder_champion",
+                "commercial_financial",
+                "strategic_context",
+                "value_success"
+            ]
+        );
+    }
+
+    #[test]
+    fn dimension_applicability_keeps_account_shape_for_customer_accounts() {
+        let applicability = dimension_applicability("account", Some("customer"));
+
+        assert_eq!(applicability.applicable, DIMENSION_NAMES);
+        assert!(applicability.skipped.is_empty());
+    }
+
+    #[test]
+    fn clear_inapplicable_fields_reports_account_only_engagement_clears_for_people() {
+        let mut intel = empty_intel();
+        intel.product_adoption = Some(AdoptionSignals::default());
+        intel.support_health = Some(SupportHealth::default());
+        intel.gong_call_summaries = vec![GongCallSummary {
+            title: "Account QBR".to_string(),
+            date: "2026-05-22".to_string(),
+            participants: vec!["account team".to_string()],
+            key_topics: "account usage".to_string(),
+            sentiment: "neutral".to_string(),
+        }];
+        intel.nps_csat = Some(SatisfactionData::default());
+        intel.meeting_cadence = Some(CadenceAssessment::default());
+
+        let cleared = clear_inapplicable_dimension_fields(&mut intel, "person", Some("internal"));
+
+        assert!(cleared.contains(&ACCOUNT_ONLY_ENGAGEMENT_FIELDS_CLEAR));
+        assert!(intel.product_adoption.is_none());
+        assert!(intel.support_health.is_none());
+        assert!(intel.gong_call_summaries.is_empty());
+        assert!(intel.nps_csat.is_none());
+        assert!(
+            intel.meeting_cadence.is_some(),
+            "person engagement cadence remains applicable"
+        );
+    }
+
+    #[test]
+    fn dimension_applicability_preserves_partner_account_context_dimensions() {
+        let applicability = dimension_applicability("account", Some("partner"));
+
+        assert_eq!(
+            applicability.applicable,
+            vec![
+                "core_assessment",
+                "stakeholder_champion",
+                "strategic_context",
+                "value_success",
+                "engagement_signals"
+            ]
+        );
+        assert_eq!(applicability.skipped, vec!["commercial_financial"]);
+    }
+
+    #[test]
+    fn dimension_schema_examples_are_valid_json() {
+        let ctx = make_ctx();
+
+        for dimension in DIMENSION_NAMES {
+            let schema = dimension_json_schema(dimension, "account", &ctx);
+            serde_json::from_str::<serde_json::Value>(schema_json(&schema))
+                .unwrap_or_else(|err| panic!("{dimension} schema should parse as JSON: {err}"));
+        }
+    }
+
+    #[test]
+    fn dimension_prompts_include_quality_rules_for_local_and_glean() {
+        let ctx = make_ctx();
+        let local_prompt = build_dimension_prompt(
+            "core_assessment",
+            "Test Account",
+            "account",
+            None,
+            &ctx,
+            false,
+            None,
+        );
+        let glean_prompt = build_glean_dimension_prompt(
+            "core_assessment",
+            "Test Account",
+            "account",
+            None,
+            &ctx,
+            false,
+            None,
+        );
+
+        assert!(local_prompt.contains("Prefer empty arrays or null over unsupported claims"));
+        assert!(glean_prompt.contains("Prefer empty arrays or null over unsupported claims"));
     }
 
     // -----------------------------------------------------------------------
@@ -1302,6 +1599,31 @@ mod tests {
         // Should NOT wipe because partial is empty
         assert_eq!(existing.executive_assessment, Some("Existing".to_string()));
         assert_eq!(existing.risks.len(), 1);
+    }
+
+    #[test]
+    fn merge_explicit_empty_refreshed_array_clears_existing_items() {
+        let mut existing = empty_intel();
+        existing.risks = vec![super::super::io::IntelRisk {
+            render_policy: None,
+            claim_id: None,
+            text: "Existing risk".to_string(),
+            source: None,
+            urgency: "critical".to_string(),
+            item_source: None,
+            headline: None,
+            evidence: None,
+            kind_label: None,
+            discrepancy: None,
+        }];
+
+        let mut partial = empty_intel();
+        partial.refreshed_fields = vec!["risks".to_string()];
+
+        merge_dimension_into(&mut existing, "core_assessment", &partial).unwrap();
+
+        assert!(existing.risks.is_empty());
+        assert!(existing.refreshed_fields.contains(&"risks".to_string()));
     }
 
     #[test]
@@ -1579,7 +1901,7 @@ mod tests {
             false,
             None,
         );
-        assert!(p.contains("REDACTED account ID: 001Abc000012345"));
+        assert!(p.contains("Salesforce account ID: 001Abc000012345"));
     }
 
     #[test]
@@ -1594,7 +1916,7 @@ mod tests {
             false,
             None,
         );
-        assert!(p.contains("REDACTED account ID: not provided"));
+        assert!(p.contains("Salesforce account ID: not provided"));
     }
 
     #[test]
@@ -1652,7 +1974,7 @@ mod tests {
         );
         assert!(p.contains("## Entity disambiguation"));
         assert!(p.contains("Known domains: acme.com"));
-        assert!(p.contains("REDACTED account ID: 001xyz"));
+        assert!(p.contains("Salesforce account ID: 001xyz"));
         assert!(p.contains("## Grounding rule"));
         assert!(p.contains("OMIT the claim"));
     }
@@ -1672,7 +1994,7 @@ mod tests {
         assert!(!p.contains("Known domains:"));
         assert!(!p.contains("Known contacts:"));
         assert!(!p.contains("Parent company:"));
-        assert!(p.contains("REDACTED account ID: not provided"));
+        assert!(p.contains("Salesforce account ID: not provided"));
     }
 
     #[test]
@@ -1767,7 +2089,7 @@ mod eval_tests {
             "TestCo", "account", None, &ctx, false, None,
         );
         assert!(
-            prompt.contains("CRM") || prompt.contains("REDACTED"),
+            prompt.contains("CRM") || prompt.contains("Salesforce"),
             "Glean prompt must reference CRM source"
         );
         assert!(

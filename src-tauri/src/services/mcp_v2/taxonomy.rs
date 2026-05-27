@@ -663,6 +663,26 @@ mod tests {
     }
 
     #[test]
+    fn account_status_host_selection_positive_negative() {
+        let catalog = YamlTaxonomyCatalog::load_embedded().expect("embedded catalog loads");
+        let fixtures = catalog
+            .fixtures_for(&ScopedName::new("dailyos.read.account_status"))
+            .expect("account status fixtures");
+
+        assert!(fixtures.positive.iter().all(|fixture| {
+            fixture.expected_tool.as_ref() == Some(&ScopedName::new("dailyos.read.account_status"))
+                && fixture.expected_tool_class.is_none()
+        }));
+        assert!(fixtures.negative_broad_corpus.iter().all(|fixture| {
+            fixture.expected_tool.is_none()
+                && fixture.expected_tool_class.as_deref() == Some("external")
+        }));
+        assert!(fixtures.negative_adjacent_tool.iter().any(|fixture| {
+            fixture.expected_tool == ScopedName::new("dailyos.search.workspace_memory")
+        }));
+    }
+
+    #[test]
     fn nearest_candidate_returned_for_typo() {
         let catalog = YamlTaxonomyCatalog::load_embedded().expect("embedded catalog loads");
         let near = catalog.nearest_name("dailyos.read.accont_status"); // typo

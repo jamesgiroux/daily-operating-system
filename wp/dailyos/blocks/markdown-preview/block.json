@@ -1,0 +1,23 @@
+{
+	"$schema": "https://schemas.wp.org/trunk/block.json",
+	"apiVersion": 3,
+	"name": "dailyos/markdown-preview",
+	"title": "Markdown Preview",
+	"category": "dailyos",
+	"description": "Renders a safe read-only preview for DailyOS workspace markdown.",
+	"supports": {
+		"html": false,
+		"reusable": false,
+		"inserter": true
+	},
+	"attributes": {
+		"source_handle": {
+			"type": "string",
+			"default": ""
+		}
+	},
+	"render": "file:./render.php",
+	"editorScript": "file:./edit.js",
+	"style": "file:./style.css",
+	"editorStyle": "file:./editor.css"
+}

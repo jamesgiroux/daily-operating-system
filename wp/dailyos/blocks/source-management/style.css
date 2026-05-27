@@ -1,0 +1,126 @@
+.wp-block-dailyos-source-management,
+.dailyos-source-management {
+	border-block: 1px solid var(--wp--preset--color--rule-light);
+	color: inherit;
+	font-family: inherit;
+	padding: 1rem 0;
+}
+
+.dailyos-source-management__header {
+	align-items: start;
+	display: flex;
+	gap: 1rem;
+	justify-content: space-between;
+	margin-block-end: 1rem;
+}
+
+.dailyos-source-management__eyebrow {
+	font-size: 0.75rem;
+	font-weight: 600;
+	letter-spacing: 0;
+	margin: 0 0 0.25rem;
+	text-transform: uppercase;
+}
+
+.dailyos-source-management__title {
+	font-size: 1.25rem;
+	line-height: 1.2;
+	margin: 0;
+}
+
+.dailyos-source-management__policy,
+.dailyos-source-management__empty,
+.dailyos-source-management__trust {
+	color: var(--wp--preset--color--text-secondary);
+	font-size: 0.875rem;
+	margin: 0;
+}
+
+.dailyos-source-management__list {
+	display: grid;
+	gap: 0;
+	list-style: none;
+	margin: 0;
+	padding: 0;
+}
+
+.dailyos-source-management__item {
+	align-items: start;
+	border-block-start: 1px solid var(--wp--preset--color--rule-light);
+	display: grid;
+	gap: 1rem;
+	grid-template-columns: minmax( 0, 1fr ) auto;
+	padding: 1rem 0;
+}
+
+.dailyos-source-management__sourceKind {
+	font-size: 1rem;
+	font-weight: 600;
+	margin: 0 0 0.625rem;
+}
+
+.dailyos-source-management__meta {
+	display: flex;
+	flex-wrap: wrap;
+	gap: 0.75rem 1.25rem;
+	margin: 0 0 0.625rem;
+}
+
+.dailyos-source-management__metaItem dt {
+	color: var(--wp--preset--color--text-tertiary);
+	font-size: 0.75rem;
+	margin: 0;
+}
+
+.dailyos-source-management__metaItem dd {
+	font-size: 0.875rem;
+	margin: 0;
+}
+
+.dailyos-source-management__runs {
+	color: var(--wp--preset--color--text-secondary);
+	font-size: 0.8125rem;
+	margin: 0 0 0.625rem 1rem;
+	padding: 0;
+}
+
+.dailyos-source-management__runs li + li {
+	margin-block-start: 0.25rem;
+}
+
+.dailyos-source-management__actions {
+	display: flex;
+	flex-wrap: wrap;
+	gap: 0.375rem;
+	justify-content: end;
+}
+
+.dailyos-source-management__action {
+	background: transparent;
+	border: 1px solid var(--wp--preset--color--rule-light);
+	border-radius: 4px;
+	color: var(--wp--preset--color--text-secondary);
+	font: inherit;
+	font-size: 0.8125rem;
+	padding: 0.375rem 0.625rem;
+}
+
+.dailyos-source-management__action:disabled {
+	color: var(--wp--preset--color--text-quaternary);
+}
+
+@media ( max-width: 640px ) {
+	.dailyos-source-management__header,
+	.dailyos-source-management__item {
+		display: block;
+	}
+
+	.dailyos-source-management__policy,
+	.dailyos-source-management__actions {
+		margin-block-start: 0.75rem;
+	}
+
+	.dailyos-source-management__actions {
+		justify-content: start;
+	}
+}

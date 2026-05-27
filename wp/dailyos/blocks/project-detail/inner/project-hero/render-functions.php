@@ -72,7 +72,6 @@ if ( ! function_exists( 'dailyos_project_hero_render' ) ) {
 			}
 		}
 
-
 		if ( ! $any_present ) {
 			$reason = '' !== $first_empty_reason ? $first_empty_reason : 'no_project_facts';
 			if ( function_exists( 'dailyos_empty_chip' ) ) {

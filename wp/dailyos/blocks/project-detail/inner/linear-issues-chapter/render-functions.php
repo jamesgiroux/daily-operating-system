@@ -72,7 +72,6 @@ if ( ! function_exists( 'dailyos_linear_issues_chapter_render' ) ) {
 			}
 		}
 
-
 		if ( ! $any_present ) {
 			$reason = '' !== $first_empty_reason ? $first_empty_reason : 'no_linear_issues';
 			if ( function_exists( 'dailyos_empty_chip' ) ) {

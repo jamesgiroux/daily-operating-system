@@ -4,6 +4,7 @@ use abilities_runtime::abilities::provenance::source::{EntityId, WorkspaceFileKi
 use chrono::{DateTime, Utc};
 use dailyos_lib::db::{ActionDb, DbAccount};
 use dailyos_lib::entity::EntityType;
+use dailyos_lib::services::context::{ExternalClients, ServiceContext, SystemClock, SystemRng};
 use dailyos_lib::services::workspace_ingestion::contracts::RejectionReason;
 use dailyos_lib::services::workspace_ingestion::lifecycle::LifecycleState;
 use dailyos_lib::services::workspace_ingestion::pipeline::{
@@ -43,7 +44,7 @@ fn real_workspace_edit_creates_lifecycle_run_preserves_emit_and_markdown_shape()
     let pipeline = wiring::build_pipeline(workspace_root.clone());
     let file_id = run_pipeline(
         &pipeline,
-        &conn,
+        &db,
         &workspace_root,
         &file_path,
         WorkspaceFileKind::EntityDoc,
@@ -72,7 +73,7 @@ fn real_workspace_edit_creates_lifecycle_run_preserves_emit_and_markdown_shape()
 
 fn run_pipeline(
     pipeline: &IngestPipeline,
-    conn: &Connection,
+    db: &ActionDb,
     workspace_root: &Path,
     path: &Path,
     source_type: WorkspaceFileKind,
@@ -98,8 +99,17 @@ fn run_pipeline(
         entity,
         mode: IngestionMode::Realtime,
         category_hint: None,
+        invocation_actor: "system:test".to_string(),
+        validated_content: None,
     };
-    pipeline.run(conn, request).map(|_| file_id)
+    let clock = SystemClock;
+    let rng = SystemRng;
+    let external = ExternalClients::default();
+    let ctx = ServiceContext::new_live(&clock, &rng, &external).with_actor("system:test");
+    let signal_engine = dailyos_lib::signals::propagation::default_engine();
+    pipeline
+        .run_with_signal_engine(&ctx, db, &signal_engine, request)
+        .map(|_| file_id)
 }
 
 fn entity_ref(entity_type: EntityType, id: &str, name: Option<&str>) -> EntityRef {

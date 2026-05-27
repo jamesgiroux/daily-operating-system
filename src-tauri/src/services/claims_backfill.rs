@@ -547,7 +547,11 @@ fn run_structured_claim_backfill_if_pending(
         return Err(format!(
             "{context}: structured claim backfill produced {} error(s); refusing to continue until they are resolved. First error: {}",
             report.errors.len(),
-            report.errors.first().map(String::as_str).unwrap_or("(none)"),
+            report
+                .errors
+                .first()
+                .map(String::as_str)
+                .unwrap_or("(none)"),
         ));
     }
 
@@ -1445,7 +1449,11 @@ fn run_dos7_cutover_after_fence(
         return Err(format!(
             "DOS-7 cutover: m1-m9 rekey produced {} error(s); refusing to mark cutover complete until they are resolved. First error: {}",
             rekey_report.errors.len(),
-            rekey_report.errors.first().map(String::as_str).unwrap_or("(none)"),
+            rekey_report
+                .errors
+                .first()
+                .map(String::as_str)
+                .unwrap_or("(none)"),
         ));
     }
     report.rekey_report = rekey_report;
@@ -1466,7 +1474,11 @@ fn run_dos7_cutover_after_fence(
         return Err(format!(
             "DOS-7 cutover: structured claim backfill produced {} error(s); refusing to mark cutover complete until they are resolved. First error: {}",
             structured_report.errors.len(),
-            structured_report.errors.first().map(String::as_str).unwrap_or("(none)"),
+            structured_report
+                .errors
+                .first()
+                .map(String::as_str)
+                .unwrap_or("(none)"),
         ));
     }
     report.structured_claim_backfill_report = structured_report;
@@ -1638,7 +1650,8 @@ fn prepare_dos7_cutover_startup_plan(db: &ActionDb) -> Result<CutoverStartupPlan
         CutoverClaimDecision::InFlightElsewhere { started_ts } => {
             log::info!(
                 "[DOS-7 cutover] in flight elsewhere since unix={}; this process defers (stale-after={}s)",
-                started_ts, DOS7_CUTOVER_STALE_AFTER_SECS
+                started_ts,
+                DOS7_CUTOVER_STALE_AFTER_SECS
             );
             Ok(CutoverStartupPlan::Noop)
         }
@@ -1905,7 +1918,8 @@ pub fn run_dos7_cutover_if_pending(
         CutoverClaimDecision::InFlightElsewhere { started_ts } => {
             log::info!(
                 "[DOS-7 cutover] in flight elsewhere since unix={}; this process defers (stale-after={}s)",
-                started_ts, DOS7_CUTOVER_STALE_AFTER_SECS
+                started_ts,
+                DOS7_CUTOVER_STALE_AFTER_SECS
             );
             return Ok(None);
         }
@@ -3319,9 +3333,7 @@ mod tests {
     // ---------------------------------------------------------------------
 
     fn fresh_full_db() -> Connection {
-        let conn = Connection::open_in_memory().unwrap();
-        crate::migrations::run_migrations(&conn).unwrap();
-        conn
+        crate::migrations::migrated_in_memory_for_tests()
     }
 
     #[test]

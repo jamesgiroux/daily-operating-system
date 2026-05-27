@@ -787,7 +787,7 @@ impl ActionDb {
              FROM meetings m
              LEFT JOIN meeting_transcripts mt ON mt.meeting_id = m.id
              LEFT JOIN meeting_attendees ma ON m.id = ma.meeting_id
-             LEFT JOIN meeting_entities me ON m.id = me.meeting_id
+             LEFT JOIN effective_meeting_entities me ON m.id = me.meeting_id
              WHERE ma.person_id = ?1
                 OR (me.entity_type = 'person' AND me.entity_id = ?1)
              ORDER BY m.start_time DESC
@@ -839,7 +839,7 @@ impl ActionDb {
                             WHERE ma.meeting_id = m.id AND ma.person_id = ?1
                         )
                         OR EXISTS (
-                            SELECT 1 FROM meeting_entities me
+                            SELECT 1 FROM effective_meeting_entities me
                             WHERE me.meeting_id = m.id
                               AND me.entity_type = 'person'
                               AND me.entity_id = ?1
@@ -861,7 +861,7 @@ impl ActionDb {
                             WHERE ma.meeting_id = m.id AND ma.person_id = ?1
                         )
                         OR EXISTS (
-                            SELECT 1 FROM meeting_entities me
+                            SELECT 1 FROM effective_meeting_entities me
                             WHERE me.meeting_id = m.id
                               AND me.entity_type = 'person'
                               AND me.entity_id = ?1
@@ -883,7 +883,7 @@ impl ActionDb {
                             WHERE ma.meeting_id = m.id AND ma.person_id = ?1
                         )
                         OR EXISTS (
-                            SELECT 1 FROM meeting_entities me
+                            SELECT 1 FROM effective_meeting_entities me
                             WHERE me.meeting_id = m.id
                               AND me.entity_type = 'person'
                               AND me.entity_id = ?1

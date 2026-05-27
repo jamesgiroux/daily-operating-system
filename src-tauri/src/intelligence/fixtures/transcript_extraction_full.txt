@@ -7,7 +7,7 @@ DISCUSSION:
 - Sarah Chen presented Q4 adoption metrics showing 85% utilization in NA
 - David Park asked about integration roadmap and competitive differentiation
 - Lisa Wong requested updated ROI analysis before approving EMEA budget
-- Team agreed to accelerate REDACTED integration timeline
+- Team agreed to accelerate Salesforce integration timeline
 - EMEA pilot scope discussed — targeting 3 teams in UK and Germany
 END_DISCUSSION
 ACTIONS:
@@ -27,7 +27,7 @@ RISKS:
 - [GREEN_WATCH] APAC team adoption declining — only 30% utilization, no regional admin assigned
 END_RISKS
 DECISIONS:
-- [JOINT_AGREEMENT] Accelerate REDACTED integration to April deadline @engineering
+- [JOINT_AGREEMENT] Accelerate Salesforce integration to April deadline @engineering
 - [CUSTOMER_COMMITMENT] Sarah to present expansion case to board by end of March @sarah_chen
 END_DECISIONS
 CHAMPION_HEALTH:

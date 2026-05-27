@@ -7,12 +7,17 @@
 
 use std::{collections::HashSet, sync::Arc};
 
+use abilities_runtime::abilities::recommendations::contracts as runtime_salience;
+
 pub use abilities_runtime::services::context::*;
 
 use crate::abilities::temporal::{
     DetectRoleChangeInput, DetectRoleChangeResult, RefreshEngagementCurveInput,
     RefreshEngagementCurveResult, TemporalMaintenanceFuture, TemporalMaintenanceHandle,
     TrajectoryQueryDepth, TrajectoryReadFuture, TrajectoryReadHandle,
+};
+use crate::services::recommendations::{
+    contracts as app_recommendations, salience as app_salience,
 };
 
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
@@ -48,8 +53,17 @@ pub struct LiveListOpenLoopsReader;
 pub struct LiveAccountListReader;
 pub struct LivePersonListReader;
 pub struct LiveProjectListReader;
+pub struct LiveMarkdownPreviewReader;
+pub struct LiveWorkspaceGraphReader;
+pub struct LiveSourceManagementLedgerReader;
+pub struct LiveSalienceReader;
+pub struct LiveSuggestedNextStepsReader;
+pub struct LiveSourceManagementActionHandler {
+    signal_engine: Option<Arc<crate::signals::propagation::PropagationEngine>>,
+}
 pub struct LiveEntityContextClaimReader;
 pub struct LivePrepareMeetingContextReader;
+pub struct LiveDailyReadinessContextReader;
 pub struct LiveTemporalWorkspaceReader;
 pub struct LiveCompositionCommitter;
 /// Live adapter projecting `services::meeting_prep_status::read`
@@ -63,23 +77,42 @@ pub struct LiveMeetingPrepStatusReader;
 pub struct LiveClaimReceiptReader;
 
 pub fn attach_live_workspace_readers(ctx: ServiceContext<'_>) -> ServiceContext<'_> {
+    attach_live_workspace_readers_with_signal_engine(ctx, None)
+}
+
+pub fn attach_live_workspace_readers_with_signal_engine(
+    ctx: ServiceContext<'_>,
+    signal_engine: Option<Arc<crate::signals::propagation::PropagationEngine>>,
+) -> ServiceContext<'_> {
     ctx.with_entity_context_reader(Arc::new(LiveEntityContextReader))
         .with_list_open_loops_reader(Arc::new(LiveListOpenLoopsReader))
         .with_account_list_reader(Arc::new(LiveAccountListReader))
         .with_person_list_reader(Arc::new(LivePersonListReader))
         .with_project_list_reader(Arc::new(LiveProjectListReader))
+        .with_markdown_preview_reader(Arc::new(LiveMarkdownPreviewReader))
+        .with_workspace_graph_reader(Arc::new(LiveWorkspaceGraphReader))
+        .with_source_management_ledger_reader(Arc::new(LiveSourceManagementLedgerReader))
+        .with_salience_reader(Arc::new(LiveSalienceReader))
+        .with_suggested_next_steps_reader(Arc::new(LiveSuggestedNextStepsReader))
+        .with_source_management_action_handler(Arc::new(LiveSourceManagementActionHandler {
+            signal_engine: signal_engine.clone(),
+        }))
         .with_entity_context_claim_reader(Arc::new(LiveEntityContextClaimReader))
         .with_prepare_meeting_context_reader(Arc::new(LivePrepareMeetingContextReader))
+        .with_daily_readiness_context_reader(Arc::new(LiveDailyReadinessContextReader))
         .with_trajectory_reader(Arc::new(LiveTemporalWorkspaceReader))
         .with_temporal_maintenance(Arc::new(LiveTemporalWorkspaceReader))
         .with_composition_commit_handle(Arc::new(LiveCompositionCommitter))
         .with_entity_touchpoints_reader(Arc::new(
             crate::services::entity_intelligence::touchpoints::LiveEntityTouchpointsReader,
         ))
+        .with_entity_neighborhood_reader(Arc::new(
+            crate::services::entity_intelligence::neighborhood::LiveEntityNeighborhoodReader,
+        ))
         .with_meeting_prep_status_reader(Arc::new(LiveMeetingPrepStatusReader))
         .with_claim_receipt_reader(Arc::new(LiveClaimReceiptReader))
         .with_workspace_intake(Arc::new(
-            crate::services::workspace_ingestion::workspace_intake_impl::IngestPipelineWorkspaceIntake::from_config_or_empty(),
+            crate::services::workspace_ingestion::workspace_intake_impl::IngestPipelineWorkspaceIntake::from_config_or_empty_with_signal_engine(signal_engine),
         ))
 }
 
@@ -91,9 +124,10 @@ impl EntityContextReadHandle for LiveEntityContextReader {
     ) -> EntityContextReadFuture<'a> {
         Box::pin(async move {
             tokio::task::spawn_blocking(move || {
-                let db =
-                    crate::db::ActionDb::open(std::sync::Arc::new(crate::db::LocalKeychain::new()))
-                        .map_err(|error| format!("Database unavailable: {error}"))?;
+                let db = crate::db::ActionDb::open_readonly(std::sync::Arc::new(
+                    crate::db::LocalKeychain::new(),
+                ))
+                .map_err(|error| format!("Database unavailable: {error}"))?;
                 read_entity_context_entries_from_db(&db, &entity_type, &entity_id)
             })
             .await
@@ -107,13 +141,7 @@ impl ListOpenLoopsReadHandle for LiveListOpenLoopsReader {
         Box::pin(async move {
             tokio::task::spawn_blocking(move || {
                 let db = open_action_db().map_err(ListOpenLoopsReadError::ReadFailed)?;
-                let actions = load_open_loop_actions(&db, &query)?;
-                let claims = actions
-                    .into_iter()
-                    .filter(is_open_loop_action)
-                    .filter_map(|action| open_loop_claim_for_action(action, &query))
-                    .collect::<Vec<_>>();
-                Ok(ListOpenLoopsSnapshot { claims })
+                read_open_loops_from_db(&db, &query)
             })
             .await
             .map_err(|error| {
@@ -262,8 +290,368 @@ impl ProjectListReadHandle for LiveProjectListReader {
     }
 }
 
+impl WorkspaceGraphReadHandle for LiveWorkspaceGraphReader {
+    fn read_workspace_graph<'a>(
+        &'a self,
+        request: WorkspaceGraphReadRequest,
+    ) -> WorkspaceGraphReadFuture<'a> {
+        Box::pin(async move {
+            tokio::task::spawn_blocking(move || {
+                let db = open_action_db().map_err(WorkspaceGraphReadError::ReadFailed)?;
+                let diagnostic_key =
+                    crate::services::workspace_ingestion::graph::local_install_diagnostic_key()
+                        .map_err(WorkspaceGraphReadError::ReadFailed)?;
+                crate::services::workspace_ingestion::graph::read_workspace_graph(
+                    db.conn_ref(),
+                    request,
+                    &diagnostic_key,
+                )
+            })
+            .await
+            .map_err(|error| {
+                WorkspaceGraphReadError::ReadFailed(format!(
+                    "workspace graph read task failed: {error}"
+                ))
+            })?
+        })
+    }
+}
+
+impl SourceManagementLedgerReadHandle for LiveSourceManagementLedgerReader {
+    fn read_source_management_ledger<'a>(
+        &'a self,
+        request: SourceManagementLedgerReadRequest,
+    ) -> SourceManagementLedgerReadFuture<'a> {
+        Box::pin(async move {
+            tokio::task::spawn_blocking(move || {
+                let db = open_action_db().map_err(SourceManagementLedgerReadError::ReadFailed)?;
+                let diagnostic_key =
+                    crate::services::workspace_ingestion::graph::local_install_diagnostic_key()
+                        .map_err(SourceManagementLedgerReadError::ReadFailed)?;
+                crate::services::source_management_ledger::read_source_management_ledger(
+                    db.conn_ref(),
+                    request,
+                    &diagnostic_key,
+                )
+            })
+            .await
+            .map_err(|error| {
+                SourceManagementLedgerReadError::ReadFailed(format!(
+                    "source management ledger read task failed: {error}"
+                ))
+            })?
+        })
+    }
+}
+
+impl SalienceReadHandle for LiveSalienceReader {
+    fn score_salience<'a>(
+        &'a self,
+        request: runtime_salience::ScoreSalienceReadRequest,
+    ) -> SalienceReadFuture<'a> {
+        Box::pin(async move {
+            tokio::task::spawn_blocking(move || {
+                let db =
+                    open_action_db().map_err(runtime_salience::SalienceReadError::ReadFailed)?;
+                let clock = SystemClock;
+                let rng = SystemRng;
+                let external = ExternalClients::default();
+                let actor = match request.actor {
+                    abilities_runtime::abilities::registry::ActorKind::User => {
+                        "user:score_salience"
+                    }
+                    abilities_runtime::abilities::registry::ActorKind::System => {
+                        "system:score_salience"
+                    }
+                    _ => "system:score_salience",
+                };
+                let service_ctx = ServiceContext::new_live(&clock, &rng, &external)
+                    .with_actor(actor)
+                    .with_ability_id(runtime_salience::SCORE_SALIENCE_ABILITY_NAME);
+                let result = app_salience::score_salience(
+                    &service_ctx,
+                    &db,
+                    app_salience::ScoreSalienceRequest {
+                        schema_version: request.schema_version,
+                        claim_id: app_recommendations::ClaimId(request.claim_id.0),
+                    },
+                )
+                .map_err(salience_error_to_read_error)?;
+
+                Ok(salience_result_to_runtime(result))
+            })
+            .await
+            .map_err(|error| {
+                runtime_salience::SalienceReadError::ReadFailed(format!(
+                    "salience read task failed: {error}"
+                ))
+            })?
+        })
+    }
+}
+
+impl SuggestedNextStepsReadHandle for LiveSuggestedNextStepsReader {
+    fn list_suggested_next_steps<'a>(
+        &'a self,
+        input: runtime_salience::ListSuggestedNextStepsInput,
+        actor: abilities_runtime::abilities::registry::ActorKind,
+    ) -> SuggestedNextStepsReadFuture<'a> {
+        Box::pin(async move {
+            let state = crate::state::AppState::new();
+            crate::services::recommendations::render::list_suggested_next_steps_projection(
+                &state, input, actor,
+            )
+            .await
+            .map_err(|error| {
+                runtime_salience::SuggestedNextStepsReadError::ReadFailed(error.to_string())
+            })
+        })
+    }
+}
+
+impl SourceManagementActionHandle for LiveSourceManagementActionHandler {
+    fn apply_source_management_action<'a>(
+        &'a self,
+        request: SourceManagementActionRequest,
+    ) -> SourceManagementActionFuture<'a> {
+        let signal_engine = self.signal_engine.clone();
+        Box::pin(async move {
+            tokio::task::spawn_blocking(move || {
+                let db = open_action_db().map_err(SourceManagementActionError::ActionFailed)?;
+                let workspace_root = crate::state::load_config()
+                    .map(|config| std::path::PathBuf::from(config.workspace_path))
+                    .map_err(|error| {
+                        SourceManagementActionError::ActionFailed(error.to_string())
+                    })?;
+                let diagnostic_key =
+                    crate::services::workspace_ingestion::graph::local_install_diagnostic_key()
+                        .map_err(SourceManagementActionError::ActionFailed)?;
+                let clock = SystemClock;
+                let rng = SystemRng;
+                let external = ExternalClients::default();
+                let service_ctx = ServiceContext::new_live(&clock, &rng, &external)
+                    .with_actor("system:source_management_action");
+                crate::services::source_management_ledger::apply_source_management_action(
+                    &service_ctx,
+                    &db,
+                    workspace_root,
+                    signal_engine,
+                    request,
+                    &diagnostic_key,
+                )
+            })
+            .await
+            .map_err(|error| {
+                SourceManagementActionError::ActionFailed(format!(
+                    "source management action task failed: {error}"
+                ))
+            })?
+        })
+    }
+}
+
+impl MarkdownPreviewReadHandle for LiveMarkdownPreviewReader {
+    fn read_markdown_preview<'a>(
+        &'a self,
+        request: MarkdownPreviewReadRequest,
+    ) -> MarkdownPreviewReadFuture<'a> {
+        Box::pin(async move {
+            tokio::task::spawn_blocking(move || {
+                let db = open_action_db().map_err(MarkdownPreviewReadError::SourceUnavailable)?;
+                let config = crate::state::load_config()
+                    .map_err(MarkdownPreviewReadError::SourceUnavailable)?;
+                let workspace_root = std::path::PathBuf::from(config.workspace_path);
+                crate::services::markdown_preview::read_markdown_preview(
+                    db.conn_ref(),
+                    &workspace_root,
+                    request,
+                )
+            })
+            .await
+            .map_err(|error| {
+                MarkdownPreviewReadError::SourceUnavailable(format!(
+                    "markdown preview read task failed: {error}"
+                ))
+            })?
+        })
+    }
+}
+
+fn salience_error_to_read_error(
+    error: app_salience::SalienceError,
+) -> runtime_salience::SalienceReadError {
+    match error {
+        app_salience::SalienceError::UnsupportedSchemaVersion(schema_version) => {
+            runtime_salience::SalienceReadError::UnsupportedSchemaVersion(schema_version)
+        }
+        app_salience::SalienceError::ClaimNotFound(claim_id) => {
+            runtime_salience::SalienceReadError::ClaimNotFound(claim_id)
+        }
+        app_salience::SalienceError::ClaimNotVisible(claim_id) => {
+            runtime_salience::SalienceReadError::ClaimNotVisible(claim_id)
+        }
+        other => runtime_salience::SalienceReadError::ReadFailed(other.to_string()),
+    }
+}
+
+fn salience_result_to_runtime(
+    result: app_salience::ScoreSalienceResult,
+) -> runtime_salience::ScoreSalienceResponse {
+    runtime_salience::ScoreSalienceResponse {
+        schema_version: result.schema_version,
+        claim_id: runtime_salience::ClaimId(result.claim_id.0),
+        computed_at: salience_datetime_wire(result.computed_at),
+        persistence: salience_persistence_to_runtime(result.persistence),
+        salience: salience_score_to_runtime(result.salience),
+    }
+}
+
+fn salience_persistence_to_runtime(
+    persistence: app_salience::SaliencePersistence,
+) -> runtime_salience::SaliencePersistence {
+    match persistence {
+        app_salience::SaliencePersistence::Preview => {
+            runtime_salience::SaliencePersistence::Preview
+        }
+        app_salience::SaliencePersistence::Stored { evaluation_id } => {
+            runtime_salience::SaliencePersistence::Stored { evaluation_id }
+        }
+    }
+}
+
+fn salience_score_to_runtime(
+    score: app_recommendations::SalienceScore,
+) -> runtime_salience::SalienceScore {
+    runtime_salience::SalienceScore {
+        total: score.total,
+        factors: score
+            .factors
+            .into_iter()
+            .map(salience_factor_to_runtime)
+            .collect(),
+    }
+}
+
+fn salience_factor_to_runtime(
+    factor: app_recommendations::SalienceFactor,
+) -> runtime_salience::SalienceFactor {
+    runtime_salience::SalienceFactor {
+        kind: salience_factor_kind_to_runtime(factor.kind),
+        value: factor.value,
+        weight: factor.weight,
+        rationale: salience_rationale_to_runtime(factor.rationale),
+    }
+}
+
+fn salience_factor_kind_to_runtime(
+    kind: app_recommendations::SalienceFactorKind,
+) -> runtime_salience::SalienceFactorKind {
+    match kind {
+        app_recommendations::SalienceFactorKind::Importance => {
+            runtime_salience::SalienceFactorKind::Importance
+        }
+        app_recommendations::SalienceFactorKind::Novelty => {
+            runtime_salience::SalienceFactorKind::Novelty
+        }
+        app_recommendations::SalienceFactorKind::Urgency => {
+            runtime_salience::SalienceFactorKind::Urgency
+        }
+        app_recommendations::SalienceFactorKind::Timing => {
+            runtime_salience::SalienceFactorKind::Timing
+        }
+        app_recommendations::SalienceFactorKind::UserFit => {
+            runtime_salience::SalienceFactorKind::UserFit
+        }
+        app_recommendations::SalienceFactorKind::Freshness => {
+            runtime_salience::SalienceFactorKind::Freshness
+        }
+        app_recommendations::SalienceFactorKind::Trust => {
+            runtime_salience::SalienceFactorKind::Trust
+        }
+        app_recommendations::SalienceFactorKind::Corroboration => {
+            runtime_salience::SalienceFactorKind::Corroboration
+        }
+        app_recommendations::SalienceFactorKind::Contradiction => {
+            runtime_salience::SalienceFactorKind::Contradiction
+        }
+        app_recommendations::SalienceFactorKind::OpenLoopRelevance => {
+            runtime_salience::SalienceFactorKind::OpenLoopRelevance
+        }
+    }
+}
+
+fn salience_rationale_to_runtime(
+    rationale: app_recommendations::FactorRationale,
+) -> runtime_salience::FactorRationale {
+    match rationale {
+        app_recommendations::FactorRationale::Importance {
+            trust_band,
+            source_authority,
+        } => runtime_salience::FactorRationale::Importance {
+            trust_band,
+            source_authority,
+        },
+        app_recommendations::FactorRationale::Novelty {
+            vector_distance,
+            neighbor_count,
+        } => runtime_salience::FactorRationale::Novelty {
+            vector_distance,
+            neighbor_count,
+        },
+        app_recommendations::FactorRationale::Urgency {
+            deadline,
+            decay_factor,
+        } => runtime_salience::FactorRationale::Urgency {
+            deadline: deadline.map(salience_datetime_wire),
+            decay_factor,
+        },
+        app_recommendations::FactorRationale::Timing {
+            signal_age_secs,
+            calendar_proximity_secs,
+        } => runtime_salience::FactorRationale::Timing {
+            signal_age_secs,
+            calendar_proximity_secs,
+        },
+        app_recommendations::FactorRationale::UserFit {
+            feedback_history_score,
+        } => runtime_salience::FactorRationale::UserFit {
+            feedback_history_score,
+        },
+        app_recommendations::FactorRationale::Freshness { decay_factor } => {
+            runtime_salience::FactorRationale::Freshness { decay_factor }
+        }
+        app_recommendations::FactorRationale::Trust { trust_band } => {
+            runtime_salience::FactorRationale::Trust { trust_band }
+        }
+        app_recommendations::FactorRationale::Corroboration {
+            corroboration_count,
+        } => runtime_salience::FactorRationale::Corroboration {
+            corroboration_count,
+        },
+        app_recommendations::FactorRationale::Contradiction {
+            contradiction_count,
+        } => runtime_salience::FactorRationale::Contradiction {
+            contradiction_count,
+        },
+        app_recommendations::FactorRationale::OpenLoopRelevance {
+            open_loop_count,
+            has_action,
+        } => runtime_salience::FactorRationale::OpenLoopRelevance {
+            open_loop_count,
+            has_action,
+        },
+    }
+}
+
+fn salience_datetime_wire(value: chrono::DateTime<chrono::Utc>) -> String {
+    serde_json::to_value(value)
+        .ok()
+        .and_then(|value| value.as_str().map(ToString::to_string))
+        .unwrap_or_else(|| value.to_rfc3339())
+}
+
 fn open_action_db() -> Result<crate::db::ActionDb, String> {
-    crate::db::ActionDb::open(Arc::new(crate::db::LocalKeychain::new()))
+    crate::db::ActionDb::open_readonly(Arc::new(crate::db::LocalKeychain::new()))
         .map_err(|error| format!("Database unavailable: {error}"))
 }
 
@@ -309,60 +697,63 @@ fn health_band_for_account(
     }
 }
 
-fn load_open_loop_actions(
+pub(crate) fn read_open_loops_from_db(
     db: &crate::db::ActionDb,
     query: &ListOpenLoopsQuery,
-) -> Result<Vec<crate::db::DbAction>, ListOpenLoopsReadError> {
-    match (query.entity_type.as_deref(), query.entity_id.as_deref()) {
-        (None, None) => db
-            .get_due_actions(36_500)
-            .map_err(|error| ListOpenLoopsReadError::ReadFailed(error.to_string())),
-        (Some("account"), Some(entity_id)) => {
-            let mut seen = HashSet::new();
-            let mut rows = Vec::new();
-            for action in db
-                .get_account_actions(entity_id)
-                .map_err(|error| ListOpenLoopsReadError::ReadFailed(error.to_string()))?
-                .into_iter()
-                .chain(
-                    db.get_account_commitments(entity_id)
-                        .map_err(|error| ListOpenLoopsReadError::ReadFailed(error.to_string()))?,
-                )
-            {
-                if seen.insert(action.id.clone()) {
-                    rows.push(action);
-                }
-            }
-            Ok(rows)
+) -> Result<ListOpenLoopsSnapshot, ListOpenLoopsReadError> {
+    let claims = load_open_loop_claims_from_substrate(db, query)?;
+    Ok(ListOpenLoopsSnapshot { claims })
+}
+
+fn load_open_loop_claims_from_substrate(
+    db: &crate::db::ActionDb,
+    query: &ListOpenLoopsQuery,
+) -> Result<Vec<abilities_runtime::types::IntelligenceClaim>, ListOpenLoopsReadError> {
+    const OPEN_LOOP_TYPES: &[&str] = &["open_loop", "commitment"];
+    const OPEN_LOOP_LIMIT: usize = 500;
+
+    let claims = match (query.entity_type.as_deref(), query.entity_id.as_deref()) {
+        (None, None) => {
+            crate::services::claims::load_prompt_claims_by_types_active_for_surface_limited(
+                db,
+                OPEN_LOOP_TYPES,
+                query.surface.as_str(),
+                OPEN_LOOP_LIMIT,
+            )
+            .map_err(|error| ListOpenLoopsReadError::ReadFailed(error.to_string()))?
         }
-        (Some("person"), Some(entity_id)) => db
-            .get_person_actions(entity_id)
-            .map_err(|error| ListOpenLoopsReadError::ReadFailed(error.to_string())),
-        (Some("project"), Some(entity_id)) => db
-            .get_project_actions(entity_id)
-            .map_err(|error| ListOpenLoopsReadError::ReadFailed(error.to_string())),
-        (Some("meeting"), Some(entity_id)) => db
-            .get_actions_for_meeting(entity_id)
-            .map_err(|error| ListOpenLoopsReadError::ReadFailed(error.to_string())),
-        (Some(entity_type), Some(entity_id)) => Err(ListOpenLoopsReadError::SubjectNotOwned {
-            entity_type: entity_type.to_string(),
-            entity_id: entity_id.to_string(),
-        }),
-        (entity_type, entity_id) => Err(ListOpenLoopsReadError::ReadFailed(format!(
-            "incomplete open loop subject filter: entity_type={entity_type:?}, entity_id={entity_id:?}"
-        ))),
-    }
+        (Some(entity_type), Some(entity_id)) => {
+            let entity_type = entity_type.trim();
+            if !matches!(entity_type, "account" | "project" | "person" | "meeting") {
+                return Err(ListOpenLoopsReadError::SubjectNotOwned {
+                    entity_type: entity_type.to_string(),
+                    entity_id: entity_id.to_string(),
+                });
+            }
+            crate::services::claims::load_entity_context_prompt_claims_active_for_surface_limited(
+                db,
+                entity_type,
+                entity_id,
+                1,
+                query.surface.as_str(),
+                OPEN_LOOP_LIMIT,
+            )
+            .map_err(|error| ListOpenLoopsReadError::ReadFailed(error.to_string()))?
+            .into_iter()
+            .filter(|claim| OPEN_LOOP_TYPES.contains(&claim.claim_type.as_str()))
+            .collect()
+        }
+        (entity_type, entity_id) => {
+            return Err(ListOpenLoopsReadError::ReadFailed(format!(
+                "incomplete open loop subject filter: entity_type={entity_type:?}, entity_id={entity_id:?}"
+            )));
+        }
+    };
+
+    Ok(claims)
 }
 
-fn is_open_loop_action(action: &crate::db::DbAction) -> bool {
-    matches!(
-        action.status.as_str(),
-        crate::action_status::BACKLOG
-            | crate::action_status::UNSTARTED
-            | crate::action_status::STARTED
-    )
-}
-
+#[cfg(test)]
 fn open_loop_claim_for_action(
     action: crate::db::DbAction,
     query: &ListOpenLoopsQuery,
@@ -383,6 +774,7 @@ fn open_loop_claim_for_action(
         "status": action.status,
         "owner": action.owner_raw.or(action.waiting_on),
         "due_date": action.due_date,
+        "source_type": action.source_type,
         "source_label": action.source_label,
         "surface": query.surface.as_str(),
     });
@@ -421,13 +813,14 @@ fn open_loop_claim_for_action(
         trust_version: None,
         thread_id: None,
         temporal_scope: abilities_runtime::types::TemporalScope::State,
-        sensitivity: abilities_runtime::types::ClaimSensitivity::Public,
+        sensitivity: abilities_runtime::types::ClaimSensitivity::Internal,
         verification_state: abilities_runtime::ClaimVerificationState::Active,
         verification_reason: None,
         needs_user_decision_at: None,
     })
 }
 
+#[cfg(test)]
 fn open_loop_subject_for_action(
     action: &crate::db::DbAction,
     query: &ListOpenLoopsQuery,
@@ -464,15 +857,74 @@ impl EntityContextClaimReadHandle for LiveEntityContextClaimReader {
     ) -> EntityContextClaimReadFuture<'a> {
         Box::pin(async move {
             tokio::task::spawn_blocking(move || {
-                let db =
-                    crate::db::ActionDb::open(std::sync::Arc::new(crate::db::LocalKeychain::new()))
-                        .map_err(|error| format!("Database unavailable: {error}"))?;
+                let db = crate::db::ActionDb::open_readonly(std::sync::Arc::new(
+                    crate::db::LocalKeychain::new(),
+                ))
+                .map_err(|error| format!("Database unavailable: {error}"))?;
                 crate::services::claims::load_entity_context_claims_active_for_surface(
                     &db,
                     &entity_type,
                     &entity_id,
                     depth,
                     surface.as_str(),
+                )
+                .map_err(|error| format!("Entity context claim read failed: {error}"))
+            })
+            .await
+            .map_err(|error| format!("Entity context claim read task failed: {error}"))?
+        })
+    }
+
+    fn read_entity_context_claims_limited<'a>(
+        &'a self,
+        entity_type: String,
+        entity_id: String,
+        surface: ClaimDismissalSurface,
+        depth: usize,
+        limit: usize,
+    ) -> EntityContextClaimReadFuture<'a> {
+        Box::pin(async move {
+            tokio::task::spawn_blocking(move || {
+                let db = crate::db::ActionDb::open_readonly(std::sync::Arc::new(
+                    crate::db::LocalKeychain::new(),
+                ))
+                .map_err(|error| format!("Database unavailable: {error}"))?;
+                crate::services::claims::load_entity_context_claims_active_for_surface_limited(
+                    &db,
+                    &entity_type,
+                    &entity_id,
+                    depth,
+                    surface.as_str(),
+                    limit,
+                )
+                .map_err(|error| format!("Entity context claim read failed: {error}"))
+            })
+            .await
+            .map_err(|error| format!("Entity context claim read task failed: {error}"))?
+        })
+    }
+
+    fn read_entity_context_prompt_claims_limited<'a>(
+        &'a self,
+        entity_type: String,
+        entity_id: String,
+        surface: ClaimDismissalSurface,
+        depth: usize,
+        limit: usize,
+    ) -> EntityContextClaimReadFuture<'a> {
+        Box::pin(async move {
+            tokio::task::spawn_blocking(move || {
+                let db = crate::db::ActionDb::open_readonly(std::sync::Arc::new(
+                    crate::db::LocalKeychain::new(),
+                ))
+                .map_err(|error| format!("Database unavailable: {error}"))?;
+                crate::services::claims::load_entity_context_prompt_claims_active_for_surface_limited(
+                    &db,
+                    &entity_type,
+                    &entity_id,
+                    depth,
+                    surface.as_str(),
+                    limit,
                 )
                 .map_err(|error| format!("Entity context claim read failed: {error}"))
             })
@@ -571,14 +1023,492 @@ impl PrepareMeetingContextReadHandle for LivePrepareMeetingContextReader {
     ) -> PrepareMeetingContextReadFuture<'a> {
         Box::pin(async move {
             tokio::task::spawn_blocking(move || {
-                let db =
-                    crate::db::ActionDb::open(std::sync::Arc::new(crate::db::LocalKeychain::new()))
-                        .map_err(|error| format!("Database unavailable: {error}"))?;
+                let db = crate::db::ActionDb::open_readonly(std::sync::Arc::new(
+                    crate::db::LocalKeychain::new(),
+                ))
+                .map_err(|error| format!("Database unavailable: {error}"))?;
                 crate::services::meetings::load_prepare_meeting_context_snapshot(&db, &meeting_id)
             })
             .await
             .map_err(|error| format!("prepare_meeting context read task failed: {error}"))?
         })
+    }
+}
+
+impl DailyReadinessContextReadHandle for LiveDailyReadinessContextReader {
+    fn read_daily_readiness_context<'a>(
+        &'a self,
+        workspace_scope: String,
+        date: String,
+        intent: MeetingsViewIntent,
+    ) -> DailyReadinessContextReadFuture<'a> {
+        // Resolve the user's local-day boundaries in their configured TZ. Without
+        // this the SQL query below would naively compare UTC-stored start_time
+        // against bare date strings, so meetings between local-midnight and
+        // UTC-midnight (e.g. an evening call on PDT yesterday stored as today
+        // UTC) would leak into "today" and cross-day meetings on the user's
+        // actual today would silently drop. Defaults match `dashboard.rs`.
+        let tz: chrono_tz::Tz = crate::state::load_config()
+            .ok()
+            .map(|c| c.schedules.today.timezone)
+            .and_then(|t| t.parse().ok())
+            .unwrap_or(chrono_tz::America::New_York);
+        Box::pin(async move {
+            tokio::task::spawn_blocking(move || {
+                let db = open_action_db()?;
+                project_daily_readiness_context_snapshot(&db, &workspace_scope, &date, &tz, intent)
+            })
+            .await
+            .map_err(|error| format!("daily readiness context read task failed: {error}"))?
+        })
+    }
+}
+
+fn project_daily_readiness_context_snapshot(
+    db: &crate::db::ActionDb,
+    workspace_scope: &str,
+    date: &str,
+    tz: &chrono_tz::Tz,
+    intent: MeetingsViewIntent,
+) -> Result<DailyReadinessContextSnapshot, String> {
+    let parsed_date = chrono::NaiveDate::parse_from_str(date, "%Y-%m-%d")
+        .map_err(|error| format!("invalid daily readiness date `{date}`: {error}"))?;
+    // Meetings projection is service-owned (see services/meetings_view.rs).
+    // TZ-aware window resolution, the transcript-archive JOIN, and the
+    // per-intent type filter all live there so future consumers (dashboard,
+    // executive intelligence) can share the same policy without re-deriving it.
+    let meetings = crate::services::meetings_view::read_surface_meetings(
+        db,
+        workspace_scope,
+        parsed_date,
+        tz,
+        intent,
+    )?;
+    let meeting_ids = meetings
+        .iter()
+        .map(|meeting| meeting.id.clone())
+        .collect::<Vec<_>>();
+    let mut coverage_warnings = Vec::new();
+    let entity_map = match db.get_linked_entities_map_for_meetings(&meeting_ids) {
+        Ok(entity_map) => entity_map,
+        Err(_) => {
+            coverage_warnings.push(DailyReadinessCoverageWarningSnapshot {
+                kind: "linked_entities_read_failed".to_string(),
+                message: "Linked meeting subjects could not be read for this briefing.".to_string(),
+                count: meeting_ids.len() as u32,
+                workspace_scope: workspace_scope.to_string(),
+            });
+            Default::default()
+        }
+    };
+    let mut seen_subjects = HashSet::new();
+    let mut tracked_subjects = Vec::new();
+    for linked_entities in entity_map.values() {
+        for entity in linked_entities {
+            let key = format!("{}:{}", entity.entity_type, entity.id);
+            if !seen_subjects.insert(key) {
+                continue;
+            }
+            tracked_subjects.push(DailyReadinessSubjectSnapshot {
+                kind: entity.entity_type.clone(),
+                id: entity.id.clone(),
+                display_name: entity.name.clone(),
+                workspace_scope: workspace_scope.to_string(),
+            });
+        }
+    }
+
+    Ok(DailyReadinessContextSnapshot {
+        workspace_scope: workspace_scope.to_string(),
+        date: date.to_string(),
+        meetings,
+        tracked_subjects,
+        overnight_changes: Vec::new(),
+        risk_shifts: Vec::new(),
+        open_loops: Vec::new(),
+        coverage_warnings,
+    })
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use chrono::TimeZone;
+    use rusqlite::params;
+
+    fn fixture_action() -> crate::db::DbAction {
+        crate::db::DbAction {
+            id: "action-1".to_string(),
+            title: "Follow up on renewal risk".to_string(),
+            priority: 1,
+            status: crate::action_status::UNSTARTED.to_string(),
+            created_at: "2026-05-23T08:00:00Z".to_string(),
+            due_date: None,
+            completed_at: None,
+            account_id: Some("acct-1".to_string()),
+            project_id: None,
+            source_type: Some("transcript".to_string()),
+            source_id: Some("meeting-1".to_string()),
+            source_label: Some("meeting".to_string()),
+            action_kind: crate::action_status::KIND_TASK.to_string(),
+            commitment_id: None,
+            owner_raw: Some("Alex".to_string()),
+            owner_entity_id: None,
+            owner_confidence: None,
+            owner_source: None,
+            trust_score: Some(0.8),
+            trust_band: Some("likely_current".to_string()),
+            commitment_source_count: Some(1),
+            context: None,
+            waiting_on: None,
+            updated_at: "2026-05-23T08:00:00Z".to_string(),
+            person_id: None,
+            account_name: None,
+            next_meeting_title: None,
+            next_meeting_start: None,
+            needs_decision: false,
+            decision_owner: None,
+            decision_stakes: None,
+            linear_identifier: None,
+            linear_url: None,
+        }
+    }
+
+    #[test]
+    fn action_open_loop_synthesis_is_mcp_visible_as_internal_runtime_evidence() {
+        let action = fixture_action();
+        let mcp_query = ListOpenLoopsQuery {
+            entity_type: Some("account".to_string()),
+            entity_id: Some("acct-1".to_string()),
+            surface: ClaimDismissalSurface::McpTool,
+        };
+        let mcp_claim = open_loop_claim_for_action(action.clone(), &mcp_query)
+            .expect("action rows should become bounded MCP runtime evidence");
+        assert_eq!(
+            mcp_claim.sensitivity,
+            abilities_runtime::types::ClaimSensitivity::Internal,
+            "local MCP runs under the first-party OS/keychain boundary, so action evidence is internal"
+        );
+        let mcp_detail_query = ListOpenLoopsQuery {
+            entity_type: Some("account".to_string()),
+            entity_id: Some("acct-1".to_string()),
+            surface: ClaimDismissalSurface::McpToolDetail,
+        };
+        let mcp_detail_claim = open_loop_claim_for_action(action.clone(), &mcp_detail_query)
+            .expect("MCP detail should expose the same bounded runtime evidence");
+        assert_eq!(
+            mcp_detail_claim.sensitivity,
+            abilities_runtime::types::ClaimSensitivity::Internal
+        );
+
+        let tauri_query = ListOpenLoopsQuery {
+            entity_type: Some("account".to_string()),
+            entity_id: Some("acct-1".to_string()),
+            surface: ClaimDismissalSurface::TauriEntityDetail,
+        };
+        let tauri_claim = open_loop_claim_for_action(action, &tauri_query)
+            .expect("first-party Tauri surfaces can still render local action open loops");
+        assert_eq!(
+            tauri_claim.sensitivity,
+            abilities_runtime::types::ClaimSensitivity::Internal
+        );
+    }
+
+    #[test]
+    fn open_loop_reader_reads_claim_backed_action_evidence_not_raw_actions() {
+        let db = crate::db::ActionDb::from_connection_for_tests(
+            crate::migrations::migrated_in_memory_for_tests(),
+        );
+        db.upsert_account(&crate::db::DbAccount {
+            id: "acct-1".to_string(),
+            name: "Example Account".to_string(),
+            account_type: crate::db::AccountType::Customer,
+            updated_at: "2026-05-20T00:00:00Z".to_string(),
+            ..Default::default()
+        })
+        .expect("seed account");
+        let action = fixture_action();
+        db.upsert_action(&action).expect("seed action");
+        let query = ListOpenLoopsQuery {
+            entity_type: Some("account".to_string()),
+            entity_id: Some("acct-1".to_string()),
+            surface: ClaimDismissalSurface::McpTool,
+        };
+
+        let before = read_open_loops_from_db(&db, &query).expect("read open loops before sync");
+        assert!(
+            before.claims.is_empty(),
+            "open-loop reader must not synthesize raw action rows when no claim exists"
+        );
+
+        let clock = FixedClock::new(chrono::Utc.with_ymd_and_hms(2026, 5, 22, 12, 0, 0).unwrap());
+        let rng = SeedableRng::new(44);
+        let ext = ExternalClients::default();
+        let ctx = ServiceContext::test_live(&clock, &rng, &ext);
+        crate::services::action_claims::sync_action_open_loop_claim(&ctx, &db, &action)
+            .expect("sync action claim");
+
+        let after = read_open_loops_from_db(&db, &query).expect("read open loops after sync");
+        assert_eq!(after.claims.len(), 1);
+        assert_eq!(after.claims[0].claim_type, "open_loop");
+        assert_eq!(
+            after.claims[0].field_path.as_deref(),
+            Some("actions.action-1")
+        );
+    }
+
+    #[test]
+    fn daily_readiness_context_warns_when_linked_subjects_cannot_be_read() {
+        let tempdir = tempfile::tempdir().expect("tempdir");
+        let db = crate::db::ActionDb::open_at_unencrypted(
+            tempdir.path().join("daily-readiness-context.db"),
+        )
+        .expect("open db");
+        db.conn_ref()
+            .execute(
+                "INSERT INTO meetings (id, title, meeting_type, start_time, end_time, created_at)
+                 VALUES (?1, ?2, ?3, ?4, ?5, ?6)",
+                params![
+                    "meeting-1",
+                    "Daily Review",
+                    "customer",
+                    "2026-05-23T09:00:00Z",
+                    "2026-05-23T09:30:00Z",
+                    "2026-05-23T08:00:00Z",
+                ],
+            )
+            .expect("insert meeting");
+        db.conn_ref()
+            .execute_batch("DROP VIEW IF EXISTS linked_entities;")
+            .expect("drop linked_entities view");
+
+        let tz: chrono_tz::Tz = "UTC".parse().expect("parse UTC tz");
+        let snapshot = project_daily_readiness_context_snapshot(
+            &db,
+            "local",
+            "2026-05-23",
+            &tz,
+            MeetingsViewIntent::Briefing,
+        )
+        .expect("read daily readiness context");
+
+        assert_eq!(snapshot.meetings.len(), 1);
+        assert!(snapshot.tracked_subjects.is_empty());
+        assert_eq!(snapshot.coverage_warnings.len(), 1);
+        assert_eq!(
+            snapshot.coverage_warnings[0].kind,
+            "linked_entities_read_failed"
+        );
+        assert_eq!(
+            snapshot.coverage_warnings[0].message,
+            "Linked meeting subjects could not be read for this briefing."
+        );
+        assert_eq!(snapshot.coverage_warnings[0].count, 1);
+        assert_eq!(snapshot.coverage_warnings[0].workspace_scope, "local");
+    }
+
+    /// Regression: a calendar day with N personal blocks and zero customer
+    /// meetings must yield zero rows under `Briefing` intent, so the briefing
+    /// producer doesn't emit phantom "needs prep" / "link N meetings"
+    /// advisories. `AllRows` keeps the rows for callers that want the raw set.
+    #[test]
+    fn personal_blocks_excluded_under_briefing_intent() {
+        let tempdir = tempfile::tempdir().expect("tempdir");
+        let db = crate::db::ActionDb::open_at_unencrypted(
+            tempdir.path().join("personal-block-projection.db"),
+        )
+        .expect("open db");
+
+        // 4 personal blocks (matches the phantom-row shape) + 1 customer
+        // meeting. The customer meeting is the only row Briefing should return.
+        let rows = [
+            ("meet-personal-1", "Lunch", "personal", "2026-05-23T12:00:00Z"),
+            ("meet-personal-2", "Gym", "personal", "2026-05-23T07:00:00Z"),
+            (
+                "meet-personal-3",
+                "School pickup",
+                "personal",
+                "2026-05-23T15:00:00Z",
+            ),
+            (
+                "meet-personal-4",
+                "Doctor",
+                "personal",
+                "2026-05-23T16:00:00Z",
+            ),
+            (
+                "meet-customer-1",
+                "Customer sync",
+                "customer",
+                "2026-05-23T10:00:00Z",
+            ),
+        ];
+        for (id, title, meeting_type, start) in rows {
+            db.conn_ref()
+                .execute(
+                    "INSERT INTO meetings (id, title, meeting_type, start_time, end_time, created_at)
+                     VALUES (?1, ?2, ?3, ?4, ?5, ?6)",
+                    params![
+                        id,
+                        title,
+                        meeting_type,
+                        start,
+                        "2026-05-23T23:59:59Z",
+                        "2026-05-23T00:00:00Z",
+                    ],
+                )
+                .expect("insert meeting");
+        }
+
+        let tz: chrono_tz::Tz = "UTC".parse().expect("parse UTC tz");
+        let date = chrono::NaiveDate::from_ymd_opt(2026, 5, 23).expect("date");
+
+        let briefing = crate::services::meetings_view::read_surface_meetings(
+            &db,
+            "local",
+            date,
+            &tz,
+            MeetingsViewIntent::Briefing,
+        )
+        .expect("briefing projection");
+        assert_eq!(
+            briefing.len(),
+            1,
+            "Briefing intent must exclude personal blocks; got {briefing:?}"
+        );
+        assert_eq!(briefing[0].id, "meet-customer-1");
+
+        let all_rows = crate::services::meetings_view::read_surface_meetings(
+            &db,
+            "local",
+            date,
+            &tz,
+            MeetingsViewIntent::AllRows,
+        )
+        .expect("all-rows projection");
+        let all_ids: Vec<&str> = all_rows.iter().map(|m| m.id.as_str()).collect();
+        assert_eq!(
+            all_ids,
+            vec![
+                "meet-personal-2",
+                "meet-customer-1",
+                "meet-personal-1",
+                "meet-personal-3",
+                "meet-personal-4",
+            ],
+            "AllRows must include every row in start_time order; got {all_ids:?}"
+        );
+    }
+
+    #[test]
+    fn salience_runtime_adapter_preserves_app_dto_wire_shape() {
+        use abilities_runtime::abilities::trust::types::TrustBand;
+        use app_recommendations::{FactorRationale, SalienceFactor, SalienceFactorKind};
+
+        let result = app_salience::ScoreSalienceResult {
+            schema_version: app_salience::SCORE_SALIENCE_SCHEMA_VERSION,
+            claim_id: app_recommendations::ClaimId("claim-1".to_string()),
+            computed_at: chrono::Utc.with_ymd_and_hms(2026, 5, 26, 12, 0, 0).unwrap(),
+            persistence: app_salience::SaliencePersistence::Stored {
+                evaluation_id: "salience-eval-1".to_string(),
+            },
+            salience: app_recommendations::SalienceScore {
+                total: 0.72,
+                factors: vec![
+                    SalienceFactor {
+                        kind: SalienceFactorKind::Importance,
+                        value: Some(0.75),
+                        weight: 0.2,
+                        rationale: FactorRationale::Importance {
+                            trust_band: TrustBand::LikelyCurrent,
+                            source_authority: 0.8,
+                        },
+                    },
+                    SalienceFactor {
+                        kind: SalienceFactorKind::Novelty,
+                        value: Some(0.5),
+                        weight: 0.1,
+                        rationale: FactorRationale::Novelty {
+                            vector_distance: 0.5,
+                            neighbor_count: 1,
+                        },
+                    },
+                    SalienceFactor {
+                        kind: SalienceFactorKind::Urgency,
+                        value: Some(0.85),
+                        weight: 0.15,
+                        rationale: FactorRationale::Urgency {
+                            deadline: Some(
+                                chrono::Utc.with_ymd_and_hms(2026, 5, 27, 12, 0, 0).unwrap(),
+                            ),
+                            decay_factor: 0.85,
+                        },
+                    },
+                    SalienceFactor {
+                        kind: SalienceFactorKind::Timing,
+                        value: Some(0.7),
+                        weight: 0.1,
+                        rationale: FactorRationale::Timing {
+                            signal_age_secs: 3600,
+                            calendar_proximity_secs: None,
+                        },
+                    },
+                    SalienceFactor {
+                        kind: SalienceFactorKind::UserFit,
+                        value: Some(0.9),
+                        weight: 0.1,
+                        rationale: FactorRationale::UserFit {
+                            feedback_history_score: 0.8,
+                        },
+                    },
+                    SalienceFactor {
+                        kind: SalienceFactorKind::Freshness,
+                        value: Some(0.95),
+                        weight: 0.1,
+                        rationale: FactorRationale::Freshness { decay_factor: 0.95 },
+                    },
+                    SalienceFactor {
+                        kind: SalienceFactorKind::Trust,
+                        value: Some(0.9),
+                        weight: 0.1,
+                        rationale: FactorRationale::Trust {
+                            trust_band: TrustBand::LikelyCurrent,
+                        },
+                    },
+                    SalienceFactor {
+                        kind: SalienceFactorKind::Corroboration,
+                        value: Some(0.25),
+                        weight: 0.05,
+                        rationale: FactorRationale::Corroboration {
+                            corroboration_count: 2,
+                        },
+                    },
+                    SalienceFactor {
+                        kind: SalienceFactorKind::Contradiction,
+                        value: Some(1.0),
+                        weight: 0.05,
+                        rationale: FactorRationale::Contradiction {
+                            contradiction_count: 0,
+                        },
+                    },
+                    SalienceFactor {
+                        kind: SalienceFactorKind::OpenLoopRelevance,
+                        value: Some(0.75),
+                        weight: 0.05,
+                        rationale: FactorRationale::OpenLoopRelevance {
+                            open_loop_count: 1,
+                            has_action: true,
+                        },
+                    },
+                ],
+            },
+        };
+
+        let app_json = serde_json::to_value(&result).expect("serialize app salience result");
+        let runtime_json = serde_json::to_value(salience_result_to_runtime(result))
+            .expect("serialize runtime salience result");
+
+        assert_eq!(runtime_json, app_json);
     }
 }
 
@@ -589,13 +1519,12 @@ impl MeetingPrepStatusReadHandle for LiveMeetingPrepStatusReader {
     ) -> MeetingPrepStatusReadFuture<'a> {
         Box::pin(async move {
             tokio::task::spawn_blocking(move || {
-                let db =
-                    crate::db::ActionDb::open(std::sync::Arc::new(crate::db::LocalKeychain::new()))
-                        .map_err(|error| {
-                            MeetingPrepStatusReadError::ReadFailed(format!(
-                                "Database unavailable: {error}"
-                            ))
-                        })?;
+                let db = crate::db::ActionDb::open_readonly(std::sync::Arc::new(
+                    crate::db::LocalKeychain::new(),
+                ))
+                .map_err(|error| {
+                    MeetingPrepStatusReadError::ReadFailed(format!("Database unavailable: {error}"))
+                })?;
                 project_meeting_prep_status_snapshot(&db, &meeting_id)
             })
             .await
@@ -693,9 +1622,10 @@ impl TrajectoryReadHandle for LiveTemporalWorkspaceReader {
     ) -> TrajectoryReadFuture<'a> {
         Box::pin(async move {
             tokio::task::spawn_blocking(move || {
-                let db =
-                    crate::db::ActionDb::open(std::sync::Arc::new(crate::db::LocalKeychain::new()))
-                        .map_err(|error| format!("Database unavailable: {error}"))?;
+                let db = crate::db::ActionDb::open_readonly(std::sync::Arc::new(
+                    crate::db::LocalKeychain::new(),
+                ))
+                .map_err(|error| format!("Database unavailable: {error}"))?;
                 crate::services::temporal::read_trajectory_bundle_from_db(
                     &db,
                     &entity_type,
@@ -817,10 +1747,11 @@ fn live_render_claim_receipt(
         }
     }
 
-    let db = crate::db::ActionDb::open(std::sync::Arc::new(crate::db::LocalKeychain::new()))
-        .map_err(|error| {
-            ClaimReceiptReadError::ReadFailed(format!("Database unavailable: {error}"))
-        })?;
+    let db =
+        crate::db::ActionDb::open_readonly(std::sync::Arc::new(crate::db::LocalKeychain::new()))
+            .map_err(|error| {
+                ClaimReceiptReadError::ReadFailed(format!("Database unavailable: {error}"))
+            })?;
     let audience = audience_for_surface(app_surface);
     let mut receipt = match build_receipt_for_audience(&app_target, audience, db.conn_ref()) {
         Ok(receipt) => receipt,

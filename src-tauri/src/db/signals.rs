@@ -39,12 +39,12 @@ impl ActionDb {
     /// Compute stakeholder signals for an account: meeting frequency, last contact,
     /// and relationship temperature. Returns `None` if account not found.
     pub fn get_stakeholder_signals(&self, account_id: &str) -> Result<StakeholderSignals, DbError> {
-        // Meeting counts for 30/90 day windows (via junction table)
+        // Meeting counts for 30/90 day windows (via graph-compatible link view)
         let count_30d: i32 = self
             .conn
             .query_row(
                 "SELECT COUNT(*) FROM meetings m
-                 INNER JOIN meeting_entities me ON m.id = me.meeting_id
+                 INNER JOIN effective_meeting_entities me ON m.id = me.meeting_id
                  WHERE me.entity_id = ?1
                    AND m.start_time >= date('now', '-30 days')",
                 params![account_id],
@@ -56,7 +56,7 @@ impl ActionDb {
             .conn
             .query_row(
                 "SELECT COUNT(*) FROM meetings m
-                 INNER JOIN meeting_entities me ON m.id = me.meeting_id
+                 INNER JOIN effective_meeting_entities me ON m.id = me.meeting_id
                  WHERE me.entity_id = ?1
                    AND m.start_time >= date('now', '-90 days')",
                 params![account_id],
@@ -69,7 +69,7 @@ impl ActionDb {
             .conn
             .query_row(
                 "SELECT MAX(m.start_time) FROM meetings m
-                 INNER JOIN meeting_entities me ON m.id = me.meeting_id
+                 INNER JOIN effective_meeting_entities me ON m.id = me.meeting_id
                  WHERE me.entity_id = ?1
                    AND m.start_time <= datetime('now')",
                 params![account_id],
@@ -808,22 +808,23 @@ impl ActionDb {
         if email_ids.is_empty() {
             return Ok(0);
         }
-        let now = chrono::Utc::now().to_rfc3339();
-        let placeholders: Vec<String> = (1..=email_ids.len()).map(|i| format!("?{i}")).collect();
-        let sql = format!(
-            "UPDATE email_signals SET deactivated_at = '{}' WHERE email_id IN ({}) AND deactivated_at IS NULL",
-            now,
-            placeholders.join(", ")
-        );
-        let param_values: Vec<&dyn rusqlite::types::ToSql> = email_ids
-            .iter()
-            .map(|id| id as &dyn rusqlite::types::ToSql)
-            .collect();
-        let rows = self
-            .conn
-            .execute(&sql, param_values.as_slice())
-            .map_err(|e| format!("Failed to deactivate email signals: {e}"))?;
-        Ok(rows)
+        self.with_transaction(|tx| {
+            let now = chrono::Utc::now().to_rfc3339();
+            let placeholders: Vec<String> =
+                (1..=email_ids.len()).map(|i| format!("?{i}")).collect();
+            let sql = format!(
+                "UPDATE email_signals SET deactivated_at = '{}' WHERE email_id IN ({}) AND deactivated_at IS NULL",
+                now,
+                placeholders.join(", ")
+            );
+            let param_values: Vec<&dyn rusqlite::types::ToSql> = email_ids
+                .iter()
+                .map(|id| id as &dyn rusqlite::types::ToSql)
+                .collect();
+            tx.conn
+                .execute(&sql, param_values.as_slice())
+                .map_err(|e| format!("Failed to deactivate email signals: {e}"))
+        })
     }
 
     /// Check if a Glean document signal already exists for a URL.

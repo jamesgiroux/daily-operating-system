@@ -59,7 +59,7 @@ if ( ! function_exists( 'dailyos_divergence_section_render' ) ) {
 		}
 
 		$envelope = dailyos_resolve_envelope( $handle, 'account', $entity_id, $scope_set );
-		$projected_sections = ['facts'];
+		$projected_sections = [ 'facts' ];
 		$any_present = false;
 		$first_empty_reason = '';
 		foreach ( $projected_sections as $section_key ) {
@@ -72,7 +72,7 @@ if ( ! function_exists( 'dailyos_divergence_section_render' ) ) {
 				$first_empty_reason = $state['reason'];
 			}
 		}
-		$out  = '<div data-ds-tier="pattern" data-ds-name="DivergenceSection" data-ds-spec="patterns/DivergenceSection.md" data-dailyos-projection="divergence-section" data-dailyos-envelope-sections="' . esc_attr( implode( ',', ['facts'] ) ) . '">';
+		$out  = '<div data-ds-tier="pattern" data-ds-name="DivergenceSection" data-ds-spec="patterns/DivergenceSection.md" data-dailyos-projection="divergence-section" data-dailyos-envelope-sections="' . esc_attr( implode( ',', [ 'facts' ] ) ) . '">';
 		$out .= '<div class="health_divergenceHeader">';
 		$out .= '<span class="health_divergenceLabel">' . esc_html__( 'Divergences', 'dailyos' ) . ' &middot; ' . esc_html__( 'data/narrative mismatches', 'dailyos' ) . '</span>';
 		$out .= '<span class="health_divergenceNote">' . esc_html__( 'The story does not match the data.', 'dailyos' ) . '</span>';

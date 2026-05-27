@@ -1,11 +1,11 @@
 //! Granola integration for local cache transcript sync.
 //!
-//! Reads meeting data from Granola's local cache file at
-//! `~/Library/Application Support/Granola/cache-v*.json`.
-//! No API keys or authentication required — purely local file access.
+//! Reads meeting data from Granola's local companion bridge when available,
+//! with a legacy fallback to `~/Library/Application Support/Granola/cache-v*.json`.
 //! The cache filename is auto-detected (highest version number wins).
 
 pub mod cache;
+pub mod companion;
 pub mod matcher;
 pub mod poller;
 
@@ -41,10 +41,11 @@ impl Default for GranolaConfig {
 }
 
 /// Return the Granola Application Support directory.
-fn granola_dir() -> PathBuf {
-    dirs::home_dir()
+pub(crate) fn granola_dir() -> PathBuf {
+    dirs::data_dir()
+        .or_else(dirs::home_dir)
         .unwrap_or_default()
-        .join("Library/Application Support/Granola")
+        .join("Granola")
 }
 
 /// Find the highest-versioned `cache-v*.json` in the Granola directory.
@@ -61,6 +62,28 @@ pub fn detect_cache_path() -> Option<PathBuf> {
             let version = name
                 .strip_prefix("cache-v")?
                 .strip_suffix(".json")?
+                .parse::<u32>()
+                .ok()?;
+            Some((version, e.path()))
+        })
+        .max_by_key(|(v, _)| *v)
+        .map(|(_, path)| path)
+}
+
+/// Find the highest-versioned encrypted `cache-v*.json.enc` in the Granola directory.
+/// DailyOS does not read this directly; it is used to explain why the legacy
+/// plain JSON fallback may be stale while Granola still has current data.
+pub fn detect_encrypted_cache_path() -> Option<PathBuf> {
+    let dir = granola_dir();
+    let entries = std::fs::read_dir(&dir).ok()?;
+
+    entries
+        .filter_map(|e| e.ok())
+        .filter_map(|e| {
+            let name = e.file_name().to_string_lossy().to_string();
+            let version = name
+                .strip_prefix("cache-v")?
+                .strip_suffix(".json.enc")?
                 .parse::<u32>()
                 .ok()?;
             Some((version, e.path()))

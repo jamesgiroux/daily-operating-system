@@ -822,7 +822,6 @@ final class DailyOS_Plugin {
 				'permission_callback' => [ $this, 'can_issue_presence_nonce' ],
 			]
 		);
-
 	}
 
 	/**

@@ -176,10 +176,12 @@ impl WorkspaceSourceRegistry {
             let normalized_components: Vec<String> = path
                 .components()
                 .map(|c| {
-                    let s: String = c.as_os_str().to_string_lossy().nfkc().collect();
-                    s
+                    c.as_os_str()
+                        .to_str()
+                        .map(|s| s.nfkc().collect())
+                        .ok_or(RejectionReason::PathTraversalAttempt)
                 })
-                .collect();
+                .collect::<Result<_, _>>()?;
             for c in &normalized_components {
                 if c == ".." || c.contains("\\..\\") || c.contains("/..") || c.contains("../") {
                     return Err(RejectionReason::PathTraversalAttempt);
@@ -859,6 +861,19 @@ mod tests {
         let ws = make_workspace();
         let bad = std::path::PathBuf::from("foo\0bar");
         let err = WorkspaceSourceRegistry::open_validated(ws.path(), &bad).expect_err("NUL");
+        assert!(matches!(err, RejectionReason::PathTraversalAttempt));
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn open_validated_rejects_non_utf8_path_component() {
+        use std::ffi::OsStr;
+        use std::os::unix::ffi::OsStrExt;
+
+        let ws = make_workspace();
+        let bad = std::path::Path::new(OsStr::from_bytes(b"bad-\xff.md"));
+        let err =
+            WorkspaceSourceRegistry::open_validated(ws.path(), bad).expect_err("non-UTF8 path");
         assert!(matches!(err, RejectionReason::PathTraversalAttempt));
     }
 

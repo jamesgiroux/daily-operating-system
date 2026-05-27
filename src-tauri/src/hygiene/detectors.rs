@@ -332,7 +332,7 @@ pub(super) fn count_empty_shell_accounts(db: &ActionDb) -> usize {
             "SELECT COUNT(*) FROM accounts a
              WHERE a.archived = 0
                AND a.updated_at <= datetime('now', '-30 days')
-               AND NOT EXISTS (SELECT 1 FROM meeting_entities me WHERE me.entity_id = a.id AND me.entity_type = 'account')
+               AND NOT EXISTS (SELECT 1 FROM effective_meeting_entities me WHERE me.entity_id = a.id AND me.entity_type = 'account')
                AND NOT EXISTS (SELECT 1 FROM actions act WHERE act.account_id = a.id)
                AND NOT EXISTS (SELECT 1 FROM account_stakeholders as_ WHERE as_.account_id = a.id)
                AND NOT EXISTS (SELECT 1 FROM account_events ae WHERE ae.account_id = a.id)

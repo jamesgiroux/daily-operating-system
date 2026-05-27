@@ -37,7 +37,7 @@ pub fn build_glean_enrichment_prompt(
     });
     prompt.push_str(&format!(" \"{}\"", entity_name));
     prompt.push_str(
-        " using ALL available data sources (REDACTED, Zendesk, Gong, Slack, internal docs, org directory).\n\n",
+        " using ALL available data sources (Salesforce, Zendesk, Gong, Slack, internal docs, org directory).\n\n",
     );
 
     // Relationship context
@@ -242,7 +242,7 @@ fn build_json_schema(entity_type: &str) -> String {
 /// be in the local database yet. Returns prose-friendly structured JSON.
 pub fn build_ephemeral_query_prompt(name: &str) -> String {
     format!(
-        r#"Tell me everything you know about the company or account "{name}" from ALL available data sources (REDACTED, Zendesk, Gong, Slack, internal documents, org directory).
+        r#"Tell me everything you know about the company or account "{name}" from ALL available data sources (Salesforce, Zendesk, Gong, Slack, internal documents, org directory).
 
 Return ONLY a JSON object (no markdown, no commentary):
 {{
@@ -251,7 +251,7 @@ Return ONLY a JSON object (no markdown, no commentary):
     {{
       "title": "section title (e.g. Relationship Overview, Support History, Recent Activity, Key Contacts, Product Usage)",
       "content": "detailed content for this section",
-      "source": "primary data source for this section (REDACTED, zendesk, gong, slack, docs, or null)"
+      "source": "primary data source for this section (Salesforce, zendesk, gong, slack, docs, or null)"
     }}
   ],
   "sourceCount": 3
@@ -271,7 +271,7 @@ Instructions:
 /// Build the account discovery prompt for a user email.
 pub fn build_account_discovery_prompt(user_email: &str, user_name: &str) -> String {
     format!(
-        r#"I am {} ({}). Find all customer accounts I own, manage, or am actively involved with. Search REDACTED account ownership, Gong call participation, Zendesk ticket assignments, and internal documents.
+        r#"I am {} ({}). Find all customer accounts I own, manage, or am actively involved with. Search Salesforce account ownership, Gong call participation, Zendesk ticket assignments, and internal documents.
 
 Return ONLY a JSON object (no markdown, no commentary):
 {{
@@ -279,7 +279,7 @@ Return ONLY a JSON object (no markdown, no commentary):
     "name": "account name",
     "myRole": "owner|tam|csm|involved",
     "evidence": "how you know I'm involved (specific source)",
-    "source": "REDACTED|gong|zendesk|slack|docs",
+    "source": "Salesforce|gong|zendesk|slack|docs",
     "domain": "company domain if known",
     "industry": "industry if known",
     "contextPreview": "1-2 sentence summary of the account"

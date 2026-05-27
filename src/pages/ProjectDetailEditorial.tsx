@@ -153,9 +153,8 @@ export default function ProjectDetailEditorial() {
   const preset = useActivePreset();
   useRevealObserver(!proj.loading && !!proj.detail);
 
-  // Shared intelligence field update hook (must be before shellConfig useMemo)
+  // Shared folio save status hook (must be before shellConfig useMemo)
   const {
-    updateField: handleUpdateIntelField,
     saveStatus,
     setSaveStatus: setFolioSaveStatus,
   } = useIntelligenceFieldUpdate("project", projectId, proj.silentRefresh);
@@ -431,7 +430,6 @@ export default function ProjectDetailEditorial() {
         <TrajectoryChapter
           detail={detail}
           intelligence={intelligence}
-          onUpdateField={handleUpdateIntelField}
           feedbackSlot={
             <IntelligenceFeedback
               value={feedback.getFeedback("trajectory")}
@@ -446,7 +444,6 @@ export default function ProjectDetailEditorial() {
         <HorizonChapter
           detail={detail}
           intelligence={intelligence}
-          onUpdateField={handleUpdateIntelField}
           feedbackSlot={
             <IntelligenceFeedback
               value={feedback.getFeedback("horizon")}
@@ -460,7 +457,6 @@ export default function ProjectDetailEditorial() {
       <div id="the-landscape" className={`editorial-reveal ${shared.chapterSection}`}>
         <WatchList
           intelligence={intelligence}
-          onUpdateField={handleUpdateIntelField}
           sectionId="the-landscape"
           chapterTitle="The Landscape"
           getItemFeedback={(fieldPath) => feedback.getFeedback(fieldPath)}

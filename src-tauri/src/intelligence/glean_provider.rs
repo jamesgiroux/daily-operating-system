@@ -2,7 +2,7 @@
 //!
 //! When Glean is connected, this provider uses the MCP `chat` tool as the
 //! primary intelligence computation engine. It produces the same `IntelligenceJson`
-//! output as the PTY path, but with data from REDACTED, Zendesk, Gong, Slack,
+//! output as the PTY path, but with data from Salesforce, Zendesk, Gong, Slack,
 //! and org directories that local-only enrichment can't access.
 //!
 //! The provider is called from `intel_queue.rs` when `context_provider.is_remote()`.
@@ -178,11 +178,26 @@ impl GleanIntelligenceProvider {
 
         let overall_start = Instant::now();
         let is_incremental = ctx.prior_intelligence.is_some();
-        let total_dimensions = DIMENSION_NAMES.len() as u32;
+        let applicability = dimension_prompts::dimension_applicability(entity_type, relationship);
+        let total_dimensions = applicability.applicable.len() as u32;
+        let canonical_total_dimensions = DIMENSION_NAMES.len() as u32;
+        let skipped_dimensions: Vec<String> = applicability
+            .skipped
+            .iter()
+            .map(|dimension| (*dimension).to_string())
+            .collect();
 
-        // Build 6 dimension prompts
+        if total_dimensions == 0 {
+            return Err(format!(
+                "No applicable Glean dimensions for {} ({})",
+                entity_name, entity_type
+            ));
+        }
+
+        // Build dimension prompts for the dimensions that apply to this entity.
         let prompts: Vec<(String, String)> = DIMENSION_NAMES
             .iter()
+            .filter(|dim| applicability.applicable.contains(dim))
             .map(|dim| {
                 let prompt = dimension_prompts::build_glean_dimension_prompt(
                     dim,
@@ -198,10 +213,11 @@ impl GleanIntelligenceProvider {
             .collect();
 
         log::info!(
-            "[I574] Glean parallel enrichment for {} ({}) — {} dimensions, incremental={}",
+            "[I574] Glean parallel enrichment for {} ({}) — {}/{} applicable dimensions, incremental={}",
             entity_name,
             entity_type,
             prompts.len(),
+            canonical_total_dimensions,
             is_incremental,
         );
 
@@ -213,8 +229,9 @@ impl GleanIntelligenceProvider {
 
         // Use tokio::sync::mpsc channel to receive dimension results as they
         // complete, enabling progressive DB writes and event emission.
-        let (tx, mut rx) =
-            tokio::sync::mpsc::channel::<(String, Result<IntelligenceJson, String>)>(6);
+        let (tx, mut rx) = tokio::sync::mpsc::channel::<(String, Result<IntelligenceJson, String>)>(
+            prompts.len().max(1),
+        );
         let mut wrote_debug_file = false;
 
         for (dim_name, prompt) in prompts {
@@ -276,7 +293,7 @@ impl GleanIntelligenceProvider {
                             reason = "intentional best-effort discard; preserves existing non-blocking behavior"
                         )]
                         let _ = sender
-                            .send((dim_name, Err("timed out after 30s".to_string())))
+                            .send((dim_name, Err("timed out after 240s".to_string())))
                             .await;
                         return;
                     }
@@ -388,23 +405,29 @@ impl GleanIntelligenceProvider {
                             }
                         }
 
-                        // Progressive DB write + event emission
+                        // Progressive UI cache write + event emission
                         if let Some(handle) = app_handle {
-                            write_progressive_glean_dimension(entity_id, entity_type, &combined);
-                            #[allow(
-                                clippy::let_underscore_must_use,
-                                reason = "intentional best-effort discard; preserves existing non-blocking behavior"
-                            )]
-                            let _ = handle.emit(
-                                "enrichment-progress",
-                                EnrichmentProgress {
-                                    entity_id: entity_id.to_string(),
-                                    entity_type: entity_type.to_string(),
-                                    completed: succeeded,
-                                    total: total_dimensions,
-                                    last_dimension: dim_name,
-                                },
-                            );
+                            if write_progressive_glean_dimension(
+                                entity_id,
+                                entity_type,
+                                relationship,
+                                &combined,
+                            ) {
+                                #[allow(
+                                    clippy::let_underscore_must_use,
+                                    reason = "intentional best-effort discard; preserves existing non-blocking behavior"
+                                )]
+                                let _ = handle.emit(
+                                    "enrichment-progress",
+                                    EnrichmentProgress {
+                                        entity_id: entity_id.to_string(),
+                                        entity_type: entity_type.to_string(),
+                                        completed: succeeded,
+                                        total: total_dimensions,
+                                        last_dimension: dim_name,
+                                    },
+                                );
+                            }
                         }
                     }
                 }
@@ -416,10 +439,12 @@ impl GleanIntelligenceProvider {
 
         let total_ms = overall_start.elapsed().as_millis();
         log::info!(
-            "[I574] Glean parallel: {}/6 dimensions succeeded for {} in {}ms (failed: {:?})",
+            "[I574] Glean parallel: {}/{} applicable dimensions succeeded for {} in {}ms (skipped: {:?}, failed: {:?})",
             succeeded,
+            total_dimensions,
             entity_name,
             total_ms,
+            skipped_dimensions,
             failed_dims,
         );
 
@@ -437,6 +462,9 @@ impl GleanIntelligenceProvider {
                     succeeded,
                     failed: failed_dims.len() as u32,
                     failed_dimensions: failed_dims.clone(),
+                    total_dimensions: canonical_total_dimensions,
+                    applicable_total: total_dimensions,
+                    skipped_dimensions: skipped_dimensions.clone(),
                     wall_clock_ms: total_ms as u64,
                 },
             );
@@ -474,7 +502,12 @@ impl GleanIntelligenceProvider {
                             "entity_type": entity_type,
                             "succeeded": succeeded,
                             "failed": failed_dims.len(),
-                            "failed_dimensions": failed_dims,
+                            "failed_dimensions": failed_dims.clone(),
+                            "required_failed_dimensions": failed_dims.clone(),
+                            "optional_failed_dimensions": Vec::<String>::new(),
+                            "total_dimensions": canonical_total_dimensions,
+                            "applicable_total": total_dimensions,
+                            "skipped_dimensions": skipped_dimensions.clone(),
                             "wall_clock_ms": total_ms,
                         }),
                     );
@@ -496,6 +529,11 @@ impl GleanIntelligenceProvider {
                             "succeeded": succeeded,
                             "failed": failed_dims.len(),
                             "failed_dimensions": failed_dims.clone(),
+                            "required_failed_dimensions": failed_dims.clone(),
+                            "optional_failed_dimensions": Vec::<String>::new(),
+                            "total_dimensions": canonical_total_dimensions,
+                            "applicable_total": total_dimensions,
+                            "skipped_dimensions": skipped_dimensions.clone(),
                             "wall_clock_ms": total_ms,
                             "will_fall_back": succeeded == 0,
                         }),
@@ -505,7 +543,10 @@ impl GleanIntelligenceProvider {
         }
 
         if succeeded == 0 {
-            return Err(format!("All 6 Glean dimensions failed for {}", entity_name));
+            return Err(format!(
+                "All {} applicable Glean dimensions failed for {}",
+                total_dimensions, entity_name
+            ));
         }
 
         // Set metadata on combined result.
@@ -723,7 +764,7 @@ impl GleanIntelligenceProvider {
 
     /// Discover accounts associated with a user's email.
     ///
-    /// Searches REDACTED, Gong, Zendesk for account associations.
+    /// Searches Salesforce, Gong, Zendesk for account associations.
     /// Returns a list of accounts with role attribution and evidence.
     pub async fn discover_accounts(
         &self,
@@ -1035,15 +1076,16 @@ fn extract_domains_for_glean_enrichment(_intel: &mut IntelligenceJson) {
     // This hook is in place for easy future enhancement.
 }
 
-/// Write progressive dimension state to DB during Glean parallel enrichment.
+/// Write progressive dimension state to the UI cache during Glean parallel enrichment.
 ///
 /// Similar to `write_progressive_dimension` in `intel_queue.rs` but for the Glean path.
 /// Non-fatal on error — the final merge+write after all dimensions is authoritative.
 fn write_progressive_glean_dimension(
     entity_id: &str,
     entity_type: &str,
+    relationship: Option<&str>,
     combined: &IntelligenceJson,
-) {
+) -> bool {
     let db = match crate::db::ActionDb::open(std::sync::Arc::new(crate::db::LocalKeychain::new())) {
         Ok(db) => db,
         Err(e) => {
@@ -1052,57 +1094,41 @@ fn write_progressive_glean_dimension(
                 entity_id,
                 e
             );
-            return;
+            return false;
         }
     };
 
-    // Progressive writes within a single enrichment cycle use simple dimension
-    // merge, NOT reconciliation. Reconciliation is for cross-cycle merges
-    // (e.g., Glean refresh on top of existing PTY data). Within one cycle,
-    // the combined state is authoritative — just overlay it on existing.
-    let existing = db.get_entity_intelligence(entity_id).ok().flatten();
-    let mut merged = if let Some(mut existing) = existing {
-        for dim in crate::intelligence::dimension_prompts::DIMENSION_NAMES {
-            #[allow(
-                clippy::let_underscore_must_use,
-                reason = "intentional best-effort discard; preserves existing non-blocking behavior"
-            )]
-            let _ = crate::intelligence::dimension_prompts::merge_dimension_into(
-                &mut existing,
-                dim,
-                combined,
-            );
-        }
-        existing
-    } else {
-        combined.clone()
-    };
-
-    merged.entity_id = entity_id.to_string();
-    merged.entity_type = entity_type.to_string();
-    // dos259-grandfathered: progressive-write enrichment timestamp; migrates to ctx.clock.now() when W2-A lands ServiceContext.
-    merged.enriched_at = chrono::Utc::now().to_rfc3339();
+    let merged = crate::intel_queue::prepare_progressive_dimension_snapshot(
+        &db,
+        entity_id,
+        entity_type,
+        relationship,
+        combined,
+    );
 
     let clock = crate::services::context::SystemClock;
     let rng = crate::services::context::SystemRng;
     let ext = crate::services::context::ExternalClients::default();
     let ctx = crate::services::context::ServiceContext::new_live(&clock, &rng, &ext);
-    if let Err(e) = crate::services::intelligence::upsert_assessment_snapshot(&ctx, &db, &merged) {
+    if let Err(e) =
+        crate::services::intelligence::upsert_progressive_assessment_snapshot(&ctx, &db, &merged)
+    {
         log::warn!(
             "[I575] Glean progressive write failed for {}: {}",
             entity_id,
             e
         );
+        false
     } else {
         log::debug!("[I575] Glean progressive write succeeded for {}", entity_id,);
+        true
     }
 }
 
-/// Emit tiered signals from Glean enrichment output.
+/// Compatibility wrapper for shared Glean finalization.
 ///
-/// After Glean enrichment writes to entity_assessment, emit source-specific
-/// signals at ADR-0100 confidence tiers so they flow through the Intelligence Loop
-/// (propagation rules, health scoring, callouts, Bayesian feedback).
+/// Glean retrieval and parsing stay in this provider; substrate writes belong
+/// to `services::glean_finalization`.
 pub fn emit_glean_signals(
     db: &crate::db::ActionDb,
     engine: &crate::signals::propagation::PropagationEngine,
@@ -1111,478 +1137,26 @@ pub fn emit_glean_signals(
     intel: &IntelligenceJson,
     preset: Option<&RolePreset>,
 ) {
-    use crate::signals::bus::{emit_signal, emit_signal_and_propagate};
-
-    fn source_mentions_slack(source: Option<&str>) -> bool {
-        source
-            .map(|value| value.to_lowercase())
-            .is_some_and(|value| value.contains("slack"))
-    }
-
-    let mut slack_context: Vec<String> = Vec::new();
-
-    // CRM / REDACTED data at 0.9 — system of record
-    if let Some(ref org) = intel.org_health {
-        if let Ok(value) = serde_json::to_string(org) {
-            if let Err(e) = emit_signal_and_propagate(
-                db,
-                engine,
-                entity_type,
-                entity_id,
-                "renewal_data_updated",
-                "glean_crm",
-                Some(&value),
-                0.9,
-            ) {
-                log::warn!("[I535] Failed to emit renewal_data_updated: {}", e);
-            }
-        }
-    }
-
-    // Support health from Zendesk at 0.85
-    if let Some(ref support) = intel.support_health {
-        if let Ok(value) = serde_json::to_string(support) {
-            if let Err(e) = emit_signal_and_propagate(
-                db,
-                engine,
-                entity_type,
-                entity_id,
-                "support_health_updated",
-                "glean_zendesk",
-                Some(&value),
-                0.85,
-            ) {
-                log::warn!("[I535] Failed to emit support_health_updated: {}", e);
-            }
-        }
-    }
-
-    // Write technical footprint from org_health + support_health
-    if entity_type == "account" {
-        let support_tier = intel
-            .org_health
-            .as_ref()
-            .and_then(|oh| oh.support_tier.clone());
-        let support_health_data = intel.support_health.as_ref();
-        let has_footprint_data = support_tier.is_some() || support_health_data.is_some();
-        if has_footprint_data {
-            let csat = support_health_data.and_then(|sh| sh.csat);
-            let open_tickets = support_health_data
-                .and_then(|sh| sh.open_tickets)
-                .unwrap_or(0) as i64;
-            if let Err(e) = db.upsert_account_technical_footprint(
-                entity_id,
-                None, // integrations_json
-                None, // usage_tier
-                None, // adoption_score
-                None, // active_users
-                support_tier.as_deref(),
-                csat,
-                open_tickets,
-                None, // services_stage
-                "glean_zendesk",
-            ) {
-                log::warn!(
-                    "[I649] Failed to upsert technical footprint for {}: {}",
-                    entity_id,
-                    e
-                );
-            } else if let Err(e) = emit_signal(
-                db,
-                entity_type,
-                entity_id,
-                "technical_footprint_updated",
-                "glean_zendesk",
-                None,
-                0.85,
-            ) {
-                log::warn!("[I649] Failed to emit technical_footprint_updated: {}", e);
-            }
-        }
-    }
-
-    // Competitive mentions at 0.7
-    if !intel.competitive_context.is_empty() {
-        if let Ok(value) = serde_json::to_string(&intel.competitive_context) {
-            #[allow(
-                clippy::let_underscore_must_use,
-                reason = "intentional best-effort discard; preserves existing non-blocking behavior"
-            )]
-            let _ = emit_signal(
-                db,
-                entity_type,
-                entity_id,
-                "competitor_mentioned",
-                "glean_chat",
-                Some(&value),
-                0.7,
-            );
-        }
-        slack_context.extend(
-            intel
-                .competitive_context
-                .iter()
-                .filter(|item| {
-                    source_mentions_slack(item.source.as_deref())
-                        || item
-                            .item_source
-                            .as_ref()
-                            .is_some_and(|source| source.source == "glean_slack")
-                })
-                .map(|item| format!("competitive: {}", item.competitor)),
-        );
-    }
-
-    // Org changes at 0.8 — stakeholder movements
-    if !intel.organizational_changes.is_empty() {
-        if let Ok(value) = serde_json::to_string(&intel.organizational_changes) {
-            #[allow(
-                clippy::let_underscore_must_use,
-                reason = "intentional best-effort discard; preserves existing non-blocking behavior"
-            )]
-            let _ = emit_signal_and_propagate(
-                db,
-                engine,
-                entity_type,
-                entity_id,
-                "glean_org_change",
-                "glean_chat",
-                Some(&value),
-                0.8,
-            );
-        }
-        slack_context.extend(
-            intel
-                .organizational_changes
-                .iter()
-                .filter(|item| {
-                    source_mentions_slack(item.source.as_deref())
-                        || item
-                            .item_source
-                            .as_ref()
-                            .is_some_and(|source| source.source == "glean_slack")
-                })
-                .map(|item| format!("org_change: {}", item.person)),
-        );
-    }
-
-    // Gong call summaries at 0.8 — engagement patterns from recorded calls
-    if !intel.gong_call_summaries.is_empty() {
-        if let Ok(value) = serde_json::to_string(&intel.gong_call_summaries) {
-            #[allow(
-                clippy::let_underscore_must_use,
-                reason = "intentional best-effort discard; preserves existing non-blocking behavior"
-            )]
-            let _ = emit_signal_and_propagate(
-                db,
-                engine,
-                entity_type,
-                entity_id,
-                "gong_engagement_updated",
-                "glean_gong",
-                Some(&value),
-                0.8,
-            );
-        }
-    }
-
-    slack_context.extend(
-        intel
-            .risks
-            .iter()
-            .filter(|item| {
-                source_mentions_slack(item.source.as_deref())
-                    || item
-                        .item_source
-                        .as_ref()
-                        .is_some_and(|source| source.source == "glean_slack")
-            })
-            .map(|item| format!("risk: {}", item.text)),
-    );
-    slack_context.extend(
-        intel
-            .recent_wins
-            .iter()
-            .filter(|item| {
-                source_mentions_slack(item.source.as_deref())
-                    || item
-                        .item_source
-                        .as_ref()
-                        .is_some_and(|source| source.source == "glean_slack")
-            })
-            .map(|item| format!("win: {}", item.text)),
-    );
-    slack_context.extend(
-        intel
-            .stakeholder_insights
-            .iter()
-            .filter(|item| {
-                source_mentions_slack(item.source.as_deref())
-                    || item
-                        .item_source
-                        .as_ref()
-                        .is_some_and(|source| source.source == "glean_slack")
-            })
-            .map(|item| format!("stakeholder: {}", item.name)),
-    );
-    if let Some(open_commitments) = intel.open_commitments.as_ref() {
-        slack_context.extend(
-            open_commitments
-                .iter()
-                .filter(|item| {
-                    source_mentions_slack(item.source.as_deref())
-                        || item
-                            .item_source
-                            .as_ref()
-                            .is_some_and(|source| source.source == "glean_slack")
-                })
-                .map(|item| format!("commitment: {}", item.description)),
-        );
-    }
-    slack_context.extend(
-        intel
-            .expansion_signals
-            .iter()
-            .filter(|item| {
-                source_mentions_slack(item.source.as_deref())
-                    || item
-                        .item_source
-                        .as_ref()
-                        .is_some_and(|source| source.source == "glean_slack")
-            })
-            .map(|item| format!("expansion: {}", item.opportunity)),
-    );
-
-    if !slack_context.is_empty() {
-        let payload = serde_json::json!({
-            "items": slack_context,
-            "count": slack_context.len(),
-        })
-        .to_string();
-        #[allow(
-            clippy::let_underscore_must_use,
-            reason = "intentional best-effort discard; preserves existing non-blocking behavior"
-        )]
-        let _ = emit_signal_and_propagate(
-            db,
-            engine,
+    let clock = crate::services::context::SystemClock;
+    let rng = crate::services::context::SystemRng;
+    let ext = crate::services::context::ExternalClients::default();
+    let ctx = crate::services::context::ServiceContext::new_live(&clock, &rng, &ext);
+    if let Err(error) = crate::services::glean_finalization::finalize_glean_enrichment(
+        &ctx,
+        db,
+        engine,
+        crate::services::glean_finalization::GleanFinalizationInput {
             entity_type,
             entity_id,
-            "slack_context_updated",
-            "glean_slack",
-            Some(&payload),
-            0.5,
-        );
-    }
-
-    // Champion health at 0.8 — if champion is weak or lost, emit risk signal
-    if let Some(ref health) = intel.health {
-        let dims = &health.dimensions;
-        {
-            // Check champion dimension for concerning score
-            if dims.key_advocate_health.score < 40.0 && dims.key_advocate_health.weight > 0.0 {
-                #[allow(
-                    clippy::let_underscore_must_use,
-                    reason = "intentional best-effort discard; preserves existing non-blocking behavior"
-                )]
-                let _ = emit_signal_and_propagate(
-                    db,
-                    engine,
-                    entity_type,
-                    entity_id,
-                    "glean_champion_departed",
-                    "glean_chat",
-                    Some(
-                        &serde_json::json!({
-                            "score": dims.key_advocate_health.score,
-                            "evidence": dims.key_advocate_health.evidence,
-                        })
-                        .to_string(),
-                    ),
-                    0.8,
-                );
-            }
-        }
-    }
-
-    // Promote high-confidence facts from Glean enrichment into accounts table
-    // columns with source tracking and provenance references.
-    if entity_type == "account" {
-        promote_glean_facts_to_accounts(db, entity_id, intel);
-    }
-
-    // Recompute health after Glean signals are emitted so that new CRM/Gong/Zendesk
-    // data flows immediately into the 6 health dimensions.
-    if entity_type == "account" {
-        let clock = crate::services::context::SystemClock;
-        let rng = crate::services::context::SystemRng;
-        let ext = crate::services::context::ExternalClients::default();
-        let ctx = crate::services::context::ServiceContext::new_live(&clock, &rng, &ext);
-        if let Err(e) = crate::services::intelligence::recompute_entity_health_with_preset(
-            &ctx, db, entity_id, "account", preset,
-        ) {
-            log::warn!(
-                "Health recompute failed for {} after Glean signals: {}",
-                entity_id,
-                e
-            );
-        }
-    }
-}
-
-/// Promote high-confidence facts from Glean enrichment into accounts table columns.
-///
-/// Extracts structured data from `IntelligenceJson` (contract context, renewal outlook,
-/// org health, support health, product classification) and upserts each fact into the
-/// accounts table via `upsert_account_fact`. Each promoted fact also gets a source
-/// reference row in `account_source_refs` for provenance tracking.
-///
-/// Source attribution follows ADR-0100 confidence tiers:
-/// - CRM/REDACTED data (contract, ARR, renewal) → source "REDACTED"
-/// - Zendesk data (support tier, CSAT) → source "zendesk"
-/// - Glean AI synthesis (scores, status) → source "glean"
-///
-/// The `upsert_account_fact` function handles source priority (user:4 > REDACTED:3 >
-/// zendesk:2 > glean:1) so user edits are never overwritten.
-fn promote_glean_facts_to_accounts(
-    db: &crate::db::ActionDb,
-    entity_id: &str,
-    intel: &IntelligenceJson,
-) {
-    use crate::db::types::AccountSourceRef;
-    // dos259-grandfathered: fact-promotion observed_at timestamp; migrates to ctx.clock.now() when W2-A lands ServiceContext.
-    let now = chrono::Utc::now().to_rfc3339();
-    let mut promoted = 0u32;
-    let mut skipped = 0u32;
-
-    // Helper: upsert a fact + source ref, logging results.
-    macro_rules! promote_fact {
-        ($field:expr, $value:expr, $source_system:expr, $source_kind:expr) => {
-            match db.upsert_account_fact(entity_id, $field, $value, $source_system, &now) {
-                Ok(true) => {
-                    promoted += 1;
-                    // Write provenance row
-                    if let Err(e) = db.upsert_account_source_ref(&AccountSourceRef {
-                        account_id: entity_id,
-                        field: $field,
-                        source_system: $source_system,
-                        source_kind: $source_kind,
-                        source_value: Some($value),
-                        observed_at: &now,
-                        reference_id: None,
-                    }) {
-                        log::warn!(
-                            "[I644] Source ref write failed for {}.{}: {}",
-                            entity_id,
-                            $field,
-                            e
-                        );
-                    }
-                }
-                Ok(false) => {
-                    skipped += 1;
-                    log::debug!(
-                        "[I644] Skipped {}.{} — higher-priority source exists",
-                        entity_id,
-                        $field
-                    );
-                }
-                Err(e) => {
-                    log::warn!(
-                        "[I644] Fact upsert failed for {}.{}: {}",
-                        entity_id,
-                        $field,
-                        e
-                    );
-                }
-            }
-        };
-    }
-
-    // --- Financial dimension: contract_context ---
-    if let Some(ref ctx) = intel.contract_context {
-        if let Some(arr) = ctx.current_arr {
-            // ARR goes to arr_range_low = arr_range_high (exact value)
-            let arr_str = format!("{:.0}", arr);
-            promote_fact!("arr_range_low", &arr_str, "REDACTED", "fact");
-            promote_fact!("arr_range_high", &arr_str, "REDACTED", "fact");
-        }
-    }
-
-    // --- Financial dimension: agreement_outlook ---
-    if let Some(ref outlook) = intel.agreement_outlook {
-        if let Some(ref confidence) = outlook.confidence {
-            // Map "high"/"moderate"/"low" to numeric likelihood
-            let likelihood = match confidence.to_lowercase().as_str() {
-                "high" => "0.85",
-                "moderate" => "0.55",
-                "low" => "0.25",
-                _ => confidence.as_str(),
-            };
-            promote_fact!("renewal_likelihood", likelihood, "REDACTED", "inference");
-        }
-    }
-
-    // --- Org health (CRM overlay) ---
-    if let Some(ref org) = intel.org_health {
-        if let Some(ref tier) = org.support_tier {
-            promote_fact!("support_tier", tier, "zendesk", "fact");
-        }
-        if let Some(ref likelihood) = org.renewal_likelihood {
-            // Only promote if agreement_outlook didn't already set it —
-            // both are "REDACTED" priority so upsert_account_fact
-            // keeps the first write (same priority = overwrite).
-            promote_fact!("renewal_likelihood", likelihood, "REDACTED", "fact");
-        }
-        if let Some(ref stage) = org.customer_stage {
-            promote_fact!("customer_status", stage, "REDACTED", "fact");
-        }
-        if let Some(ref fit) = org.icp_fit {
-            // Parse ICP fit string to a numeric score if possible
-            let score = match fit.to_lowercase().as_str() {
-                "strong" | "high" => "85",
-                "moderate" | "medium" => "55",
-                "weak" | "low" => "25",
-                _ => fit.as_str(),
-            };
-            promote_fact!("icp_fit_score", score, "glean", "inference");
-        }
-        if let Some(ref growth) = org.growth_tier {
-            let score = match growth.to_lowercase().as_str() {
-                "high" => "85",
-                "moderate" | "medium" => "55",
-                "low" => "25",
-                _ => growth.as_str(),
-            };
-            promote_fact!("growth_potential_score", score, "glean", "inference");
-        }
-    }
-
-    // --- Product classification → primary_product + subscription count ---
-    if let Some(ref classification) = intel.product_classification {
-        if !classification.products.is_empty() {
-            let count_str = classification.products.len().to_string();
-            promote_fact!("active_subscription_count", &count_str, "REDACTED", "fact");
-
-            // Primary product = highest-ARR product, or first product if no ARR data
-            let primary = classification
-                .products
-                .iter()
-                .filter_map(|p| p.type_.as_ref().map(|t| (t.clone(), p.arr.unwrap_or(0.0))))
-                .max_by(|a, b| a.1.partial_cmp(&b.1).unwrap_or(std::cmp::Ordering::Equal))
-                .map(|(t, _)| t);
-            if let Some(ref product) = primary {
-                promote_fact!("primary_product", product, "REDACTED", "fact");
-            }
-        }
-    }
-
-    if promoted > 0 || skipped > 0 {
-        log::info!(
-            "[I644] Fact promotion for {}: {} promoted, {} skipped (source priority)",
+            intel,
+            preset,
+        },
+    ) {
+        log::warn!(
+            "glean finalization wrapper failed for entity_type={} entity_id={}: {}",
+            entity_type,
             entity_id,
-            promoted,
-            skipped,
+            error
         );
     }
 }
@@ -1602,6 +1176,7 @@ pub fn reconcile_enrichment(
 ) -> IntelligenceJson {
     let mut result = existing.clone();
     let dismissed = &existing.dismissed_items;
+    let refreshed_fields = new_output.refreshed_fields.clone();
 
     // Helper: check if a vec field (or any of its items' sub-fields) has user edits.
     // When a user edits an individual field like stakeholderInsights[0].engagement,
@@ -1613,6 +1188,8 @@ pub fn reconcile_enrichment(
             e.field_path == field_name || e.field_path.starts_with(&format!("{}[", field_name))
         })
     };
+    let field_refreshed =
+        |field_name: &str| -> bool { refreshed_fields.iter().any(|field| field == field_name) };
 
     // --- Vec fields: source-aware item reconciliation ---
     // Skip reconciliation for fields with user edits — preserve_user_edits
@@ -1623,7 +1200,9 @@ pub fn reconcile_enrichment(
     // against existing pty_synthesis items would wipe them all. Reconcile only
     // when the new output actually has data, or when existing is also empty
     // (nothing to preserve).
-    if !has_user_edits("risks") && (!new_output.risks.is_empty() || existing.risks.is_empty()) {
+    if !has_user_edits("risks")
+        && (field_refreshed("risks") || !new_output.risks.is_empty() || existing.risks.is_empty())
+    {
         result.risks = reconcile_vec_items(
             &existing.risks,
             &new_output.risks,
@@ -1635,7 +1214,9 @@ pub fn reconcile_enrichment(
     }
 
     if !has_user_edits("recentWins")
-        && (!new_output.recent_wins.is_empty() || existing.recent_wins.is_empty())
+        && (field_refreshed("recentWins")
+            || !new_output.recent_wins.is_empty()
+            || existing.recent_wins.is_empty())
     {
         result.recent_wins = reconcile_vec_items(
             &existing.recent_wins,
@@ -1654,7 +1235,9 @@ pub fn reconcile_enrichment(
     result.stakeholder_insights = new_output.stakeholder_insights;
 
     if !has_user_edits("valueDelivered")
-        && (!new_output.value_delivered.is_empty() || existing.value_delivered.is_empty())
+        && (field_refreshed("valueDelivered")
+            || !new_output.value_delivered.is_empty()
+            || existing.value_delivered.is_empty())
     {
         result.value_delivered = reconcile_vec_items(
             &existing.value_delivered,
@@ -1667,7 +1250,9 @@ pub fn reconcile_enrichment(
     }
 
     if !has_user_edits("competitiveContext")
-        && (!new_output.competitive_context.is_empty() || existing.competitive_context.is_empty())
+        && (field_refreshed("competitiveContext")
+            || !new_output.competitive_context.is_empty()
+            || existing.competitive_context.is_empty())
     {
         result.competitive_context = reconcile_vec_items(
             &existing.competitive_context,
@@ -1684,7 +1269,9 @@ pub fn reconcile_enrichment(
     // prior regulatory/market items that user corrections or earlier
     // enrichments accumulated.
     if !has_user_edits("marketContext")
-        && (!new_output.market_context.is_empty() || existing.market_context.is_empty())
+        && (field_refreshed("marketContext")
+            || !new_output.market_context.is_empty()
+            || existing.market_context.is_empty())
     {
         result.market_context = reconcile_vec_items(
             &existing.market_context,
@@ -1697,7 +1284,8 @@ pub fn reconcile_enrichment(
     }
 
     if !has_user_edits("organizationalChanges")
-        && (!new_output.organizational_changes.is_empty()
+        && (field_refreshed("organizationalChanges")
+            || !new_output.organizational_changes.is_empty()
             || existing.organizational_changes.is_empty())
     {
         result.organizational_changes = reconcile_vec_items(
@@ -1711,7 +1299,9 @@ pub fn reconcile_enrichment(
     }
 
     if !has_user_edits("expansionSignals")
-        && (!new_output.expansion_signals.is_empty() || existing.expansion_signals.is_empty())
+        && (field_refreshed("expansionSignals")
+            || !new_output.expansion_signals.is_empty()
+            || existing.expansion_signals.is_empty())
     {
         result.expansion_signals = reconcile_vec_items(
             &existing.expansion_signals,
@@ -1729,7 +1319,7 @@ pub fn reconcile_enrichment(
             (&existing.open_commitments, &new_output.open_commitments)
         {
             // Non-destructive-empty: if new dimension returned empty, keep existing.
-            if !new_oc.is_empty() || existing_oc.is_empty() {
+            if field_refreshed("openCommitments") || !new_oc.is_empty() || existing_oc.is_empty() {
                 let reconciled = reconcile_vec_items(
                     existing_oc,
                     new_oc,
@@ -1786,23 +1376,24 @@ pub fn reconcile_enrichment(
     // Non-source-attributed vecs: strategic_priorities, internal_team, blockers, gong_call_summaries
     // These already use an "only-overwrite-if-non-empty" guard via the is_empty checks below,
     // which preserves existing values when the dimension returns nothing.
-    if !new_output.strategic_priorities.is_empty() {
+    if field_refreshed("strategicPriorities") || !new_output.strategic_priorities.is_empty() {
         result.strategic_priorities = new_output.strategic_priorities;
     }
-    if !new_output.internal_team.is_empty() {
+    if field_refreshed("internalTeam") || !new_output.internal_team.is_empty() {
         result.internal_team =
             reconcile_internal_team(&existing.internal_team, &new_output.internal_team);
     }
-    if !new_output.blockers.is_empty() {
+    if field_refreshed("blockers") || !new_output.blockers.is_empty() {
         result.blockers = new_output.blockers;
     }
-    if !new_output.gong_call_summaries.is_empty() {
+    if field_refreshed("gongCallSummaries") || !new_output.gong_call_summaries.is_empty() {
         result.gong_call_summaries = new_output.gong_call_summaries;
     }
 
     // Carry forward user_edits and dismissed_items from existing
     result.user_edits = existing.user_edits;
     result.dismissed_items = existing.dismissed_items;
+    result.refreshed_fields = refreshed_fields;
 
     // Update metadata
     result.enriched_at = new_output.enriched_at;
@@ -2017,6 +1608,53 @@ mod provider_trait_tests {
     }
 }
 
+#[cfg(test)]
+mod reconciliation_tests {
+    use super::*;
+    use crate::intelligence::io::{IntelRisk, IntelligenceJson, ItemSource};
+
+    #[test]
+    fn explicit_empty_refreshed_risks_remove_existing_glean_items() {
+        let existing = IntelligenceJson {
+            risks: vec![
+                IntelRisk {
+                    text: "Stale Glean risk".to_string(),
+                    urgency: "watch".to_string(),
+                    item_source: Some(ItemSource {
+                        source: "glean_crm".to_string(),
+                        confidence: 0.9,
+                        sourced_at: "2026-05-20T00:00:00Z".to_string(),
+                        reference: Some("CRM fixture".to_string()),
+                    }),
+                    ..Default::default()
+                },
+                IntelRisk {
+                    text: "Local transcript risk".to_string(),
+                    urgency: "watch".to_string(),
+                    item_source: Some(ItemSource {
+                        source: "pty_synthesis".to_string(),
+                        confidence: 0.5,
+                        sourced_at: "2026-05-19T00:00:00Z".to_string(),
+                        reference: Some("local fixture".to_string()),
+                    }),
+                    ..Default::default()
+                },
+            ],
+            ..Default::default()
+        };
+        let new_output = IntelligenceJson {
+            refreshed_fields: vec!["risks".to_string()],
+            ..Default::default()
+        };
+
+        let result = reconcile_enrichment(existing, new_output, &["glean_crm"]);
+
+        assert_eq!(result.risks.len(), 1);
+        assert_eq!(result.risks[0].text, "Local transcript risk");
+        assert!(result.refreshed_fields.contains(&"risks".to_string()));
+    }
+}
+
 /// Upsert extracted products to the database.
 ///
 /// For each (account_id, product_type, data_source) tuple, inserts or updates
@@ -2028,36 +1666,38 @@ pub fn upsert_products_to_db(
     account_id: &str,
     products: Vec<(String, Option<String>, Option<f64>, Option<String>)>,
 ) -> Result<usize, String> {
-    let mut count = 0;
-    for (product_type, tier, arr, billing_terms) in products {
-        match db.upsert_product_classification(
-            account_id,
-            &product_type,
-            tier.as_deref(),
-            arr,
-            billing_terms.as_deref(),
-            "REDACTED",
-        ) {
-            Ok(_) => {
-                count += 1;
-                log::info!(
-                    "I651: Upserted product {} ({:?} tier, ${:?} ARR) for {}",
-                    product_type,
-                    tier,
-                    arr,
-                    account_id
-                );
-            }
-            Err(e) => {
-                log::warn!(
-                    "I651: Failed to upsert product {} for {}: {}",
-                    product_type,
-                    account_id,
-                    e
-                );
-                return Err(format!("Product upsert failed for {}: {}", product_type, e));
+    db.with_transaction(|tx| {
+        let mut count = 0;
+        for (product_type, tier, arr, billing_terms) in products {
+            match tx.upsert_product_classification(
+                account_id,
+                &product_type,
+                tier.as_deref(),
+                arr,
+                billing_terms.as_deref(),
+                "Salesforce",
+            ) {
+                Ok(_) => {
+                    count += 1;
+                    log::info!(
+                        "I651: Upserted product {} ({:?} tier, ${:?} ARR) for {}",
+                        product_type,
+                        tier,
+                        arr,
+                        account_id
+                    );
+                }
+                Err(e) => {
+                    log::warn!(
+                        "I651: Failed to upsert product {} for {}: {}",
+                        product_type,
+                        account_id,
+                        e
+                    );
+                    return Err(format!("Product upsert failed for {}: {}", product_type, e));
+                }
             }
         }
-    }
-    Ok(count)
+        Ok(count)
+    })
 }

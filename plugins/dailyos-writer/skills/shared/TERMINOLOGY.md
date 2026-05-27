@@ -11,10 +11,10 @@ Universal terminology rules that apply to all content types.
 
 **Usage**: Always use full "WordPress VIP" on first reference. Can use "VIP" on subsequent references within same paragraph if context is clear.
 
-### REDACTED Products
+### Salesforce Products
 
 **Agentforce** (not Agent Force, AgentForce)
-**Data Cloud** (not DataCloud; "REDACTED Data Cloud" on first reference)
+**Data Cloud** (not DataCloud; "Salesforce Data Cloud" on first reference)
 **Marketing Cloud** (specific product line)
 
 ### WordPress Core

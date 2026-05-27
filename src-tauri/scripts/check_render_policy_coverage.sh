@@ -38,7 +38,7 @@ if not re.search(r"ActionDb::open_readonly\s*\(", bridge) or "render_mcp_ability
     violations.append("src-tauri/src/bridges/types.rs: MCP ability data redactor does not pass ActionDb and provenance into render_mcp_ability_data_for_surface_with_provenance")
 if "render_mcp_ability_data_without_claim_lookup(data)" not in bridge:
     violations.append("src-tauri/src/bridges/types.rs: MCP ability data redactor lacks fail-closed no-claim-lookup fallback")
-if not re.search(r"BridgeSurface::TauriApp\s*\|\s*BridgeSurface::Worker\s*\|\s*BridgeSurface::Eval(?:\s*\|\s*BridgeSurface::SurfaceClient)?\s*=>\s*data", bridge):
+if not re.search(r"BridgeSurface::TauriApp\s*\|\s*BridgeSurface::Worker\s*\|\s*BridgeSurface::Eval\s*\|\s*BridgeSurface::SurfaceClient\s*\|\s*BridgeSurface::LocalLoopback\s*=>\s*data", bridge):
     violations.append("src-tauri/src/bridges/types.rs: non-MCP surfaces must pass ability data through unchanged")
 if "string leaf has exactly three possible outcomes" not in service:
     violations.append("src-tauri/src/services/sensitivity.rs: MCP ability data redactor lacks deny-by-default documentation")
@@ -177,7 +177,9 @@ import re
 
 ROOTS = [
     Path("src-tauri/abilities-runtime/src/abilities"),
+    Path("src-tauri/abilities-runtime/src/services/context.rs"),
     Path("src-tauri/abilities-runtime/src/types.rs"),
+    Path("src-tauri/abilities-runtime/src/services/context.rs"),
 ]
 source_by_path = {path: path.read_text() for root in ROOTS for path in ([root] if root.is_file() else root.rglob("*.rs"))}
 combined = "\n".join(source_by_path.values())
@@ -334,6 +336,169 @@ SAFE_STRING_FIELDS = {
         "kind": "enum metadata",
         "id": "identifier metadata",
     },
+    "WorkspaceGraphNotModified": {
+        "graph_version": "opaque graph version metadata",
+    },
+    "WorkspaceGraphProjection": {
+        "graph_version": "opaque graph version metadata",
+    },
+    "WorkspaceGraphEntity": {
+        "entity_type": "enum metadata",
+        "entity_id": "identifier metadata",
+        "entity_name": "entity name metadata",
+    },
+    "WorkspaceGraphFileLink": {
+        "link_handle": "opaque diagnostic handle metadata",
+        "source_handle": "opaque source handle metadata",
+        "data_source_kind": "enum metadata",
+        "workspace_file_kind": "enum metadata",
+        "lifecycle_state": "enum metadata",
+        "category": "controlled category metadata",
+        "source_asof": "timestamp metadata",
+        "attribution_source": "attribution metadata",
+    },
+    "WorkspaceGraphUserOverride": {
+        "at": "timestamp metadata",
+    },
+    "WorkspaceGraphAudit": {
+        "graph_version": "opaque graph version metadata",
+    },
+    "WorkspaceGraphAuditGap": {
+        "category": "controlled gap category metadata",
+        "gap_id": "opaque diagnostic gap identifier metadata",
+        "workspace_source_handle": "opaque workspace source handle metadata",
+        "source_handle": "opaque source handle metadata",
+        "link_handle": "opaque link handle metadata",
+        "claim_handle": "opaque claim handle metadata",
+        "entity_type": "enum metadata",
+        "entity_id": "identifier metadata",
+        "linked_entity_type": "enum metadata",
+        "linked_entity_id": "identifier metadata",
+        "claim_entity_type": "enum metadata",
+        "claim_entity_id": "identifier metadata",
+        "workspace_file_kind": "enum metadata",
+        "lifecycle_state": "enum metadata",
+        "reason": "controlled audit reason metadata",
+    },
+    "Paginated": {},
+    "CursorState": {
+        "advisory": "pagination advisory metadata",
+        "reason": "pagination invalidation metadata",
+    },
+    "EmptyReason": {
+        "advisory": "constant empty-state advisory metadata",
+    },
+    "NormalizedSubject": {
+        "id": "identifier metadata",
+        "display_label": "entity name metadata",
+    },
+    "EnvelopeProvenanceSource": {
+        "id": "source identifier metadata",
+        "label": "render-policy-safe provenance label",
+        "source_type": "enum metadata",
+    },
+    "EnvelopeProvenance": {},
+    "EnvelopeTrustSummary": {},
+    "SectionState": {},
+    "ProvenanceRef": {
+        "source_ids": "source identifier metadata",
+    },
+    "EntityFact": {
+        "claim_id": "identifier metadata",
+        "field_path": "schema path metadata",
+        "claim_type": "enum metadata",
+    },
+    "HealthStory": {
+        "headline": "claim/provenance-attested",
+    },
+    "HealthStoryRow": {
+        "label": "claim/provenance-attested",
+        "body": "claim/provenance-attested",
+        "evidence_claim_ids": "identifier metadata",
+    },
+    "MetadataProposal": {
+        "proposal_id": "identifier metadata",
+        "field_path": "schema path metadata",
+        "current_value": "render-policy-gated metadata value",
+        "proposed_value": "render-policy-gated metadata value",
+    },
+    "ReceiptTargetRef": {
+        "claim_id": "identifier metadata",
+        "field_path": "schema path metadata",
+    },
+    "Touchpoint": {
+        "meeting_id": "identifier metadata",
+    },
+    "RelationshipEdge": {
+        "edge_id": "identifier metadata",
+        "edge_type": "enum metadata",
+        "caveats": "constant relationship caveat metadata",
+    },
+    "RelationshipParticipant": {
+        "relationship": "relationship metadata",
+        "recent_touchpoint_ids": "identifier metadata",
+        "caveats": "constant relationship caveat metadata",
+    },
+    "RelationshipTruncation": {},
+    "RelationshipsBundle": {
+        "caveats": "constant relationship caveat metadata",
+    },
+    "CandidateSetRef": {
+        "filter_description": "query/filter metadata",
+    },
+    "SubjectScope": {},
+    "ThreadSummary": {
+        "thread_id": "identifier metadata",
+        "title": "claim/provenance-attested",
+    },
+    "RecordEntry": {
+        "claim_id": "identifier metadata",
+        "claim_type": "enum metadata",
+    },
+    "ClaimReceiptTarget": {
+        "claim_id": "identifier metadata",
+        "proposal_id": "identifier metadata",
+        "action_id": "identifier metadata",
+    },
+    "ClaimReceiptTrust": {
+        "caveat": "claim/provenance-attested",
+        "rationale": "claim/provenance-attested",
+    },
+    "ClaimReceiptLifecycle": {},
+    "ClaimReceiptProvenanceSource": {
+        "label": "render-policy-safe provenance label",
+        "source_type": "enum metadata",
+        "href": "render-policy-gated link metadata",
+    },
+    "ClaimReceiptProvenance": {
+        "field_path": "schema path metadata",
+        "evidence_summary": "claim/provenance-attested",
+    },
+    "ClaimReceiptAction": {
+        "label": "constant action label metadata",
+        "disabled_reason": "constant action state metadata",
+    },
+    "ClaimReceiptSnapshot": {},
+    "AccountSummary": {
+        "account_id": "identifier metadata",
+        "name": "entity name metadata",
+        "status": "enum metadata",
+        "last_touchpoint_at": "timestamp metadata",
+    },
+    "PersonSummary": {
+        "person_id": "identifier metadata",
+        "display_name": "entity name metadata",
+        "primary_account_id": "identifier metadata",
+        "role": "role metadata",
+        "last_touchpoint_at": "timestamp metadata",
+    },
+    "ProjectSummary": {
+        "project_id": "identifier metadata",
+        "name": "entity name metadata",
+        "parent_account_id": "identifier metadata",
+        "status": "enum metadata",
+        "last_touchpoint_at": "timestamp metadata",
+    },
 }
 
 NESTED_OUTPUT_STRUCTS = {
@@ -388,14 +553,81 @@ NESTED_OUTPUT_STRUCTS = {
     ],
     "RiskIndicator": ["EvidenceSummary"],
     "RiskShiftClaimDraft": ["RiskShiftSubjectRef", "EvidenceSummary"],
+    "Paginated": ["CursorState"],
+    "EntityIntelligenceEnvelope": [
+        "NormalizedSubject",
+        "SectionState",
+        "EntityFact",
+        "HealthStory",
+        "MetadataProposal",
+        "OpenLoopWithReceipt",
+        "RelationshipsBundle",
+        "TouchpointBundle",
+        "ThreadSummary",
+        "RecordEntry",
+        "EnvelopeTrustSummary",
+        "EnvelopeProvenance",
+    ],
+    "SectionState": ["EmptyReason"],
+    "EntityFact": ["ProvenanceRef"],
+    "HealthStory": ["HealthStoryRow"],
+    "HealthStoryRow": ["ProvenanceRef"],
+    "MetadataProposal": ["ProvenanceRef"],
+    "OpenLoopWithReceipt": ["OpenLoop", "ReceiptTargetRef", "ProvenanceRef"],
+    "RelationshipsBundle": [
+        "RelationshipEdge",
+        "RelationshipParticipant",
+        "CandidateSetRef",
+        "SubjectScope",
+        "EmptyReason",
+        "RelationshipTruncation",
+    ],
+    "RelationshipEdge": ["ProvenanceRef"],
+    "RelationshipParticipant": ["ProvenanceRef"],
+    "TouchpointBundle": ["Touchpoint", "CandidateSetRef", "SubjectScope", "EmptyReason"],
+    "Touchpoint": ["ProvenanceRef"],
+    "ThreadSummary": ["ProvenanceRef"],
+    "RecordEntry": ["ProvenanceRef"],
+    "EnvelopeProvenance": ["EnvelopeProvenanceSource"],
+    "ClaimReceiptSnapshot": [
+        "ClaimReceiptTarget",
+        "ClaimReceiptTrust",
+        "ClaimReceiptLifecycle",
+        "ClaimReceiptProvenance",
+        "ClaimReceiptAction",
+    ],
+    "ClaimReceiptProvenance": ["ClaimReceiptProvenanceSource"],
+    "WorkspaceGraphResponse": [
+        "WorkspaceGraphProjection",
+        "WorkspaceGraphNotModified",
+    ],
+    "WorkspaceGraphProjection": [
+        "WorkspaceGraphPage",
+        "WorkspaceGraphProjectionBody",
+        "WorkspaceGraphAudit",
+    ],
+    "WorkspaceGraphProjectionBody": ["WorkspaceGraphEntity"],
+    "WorkspaceGraphEntity": [
+        "WorkspaceGraphFileLink",
+        "WorkspaceGraphClaimSummary",
+    ],
+    "WorkspaceGraphFileLink": ["WorkspaceGraphUserOverride"],
+    "WorkspaceGraphClaimSummary": ["WorkspaceGraphTrustBandSummary"],
+    "WorkspaceGraphAudit": ["WorkspaceGraphAuditGap"],
 }
 
 EXPECTED_AGENT_OUTPUTS = {
+    "claim_receipt": "ClaimReceiptSnapshot",
     "get_entity_context": "GetEntityContextOutput",
+    "get_entity_intelligence": "EntityIntelligenceEnvelope",
+    "list_accounts": "Paginated<AccountSummary>",
+    "list_people": "Paginated<PersonSummary>",
+    "list_projects": "Paginated<ProjectSummary>",
     "prepare_meeting": "MeetingBrief",
     "list_open_loops": "OpenLoopsResult",
     "get_daily_readiness": "DailyReadiness",
     "detect_risk_shift": "RiskShiftResult",
+    "workspace_graph": "WorkspaceGraphResponse",
 }
 
 SAFE_WRAPPERS = ("RenderableMcpClaimText", "RenderableMcpEntityName")
@@ -481,8 +713,15 @@ def inspect_struct(struct_name: str, seen: set[str], violations: list[str]):
     if struct_name in seen:
         return
     seen.add(struct_name)
+    generic = re.fullmatch(r"Paginated<(.+)>", struct_name)
+    if generic:
+        inspect_struct("Paginated", seen, violations)
+        inspect_struct(normalize_type(generic.group(1)), seen, violations)
+        return
     fields = struct_fields(struct_name)
-    if not fields and struct_name != "BriefTemporalScope":
+    enum_fields = enum_string_fields(struct_name)
+    has_enum_body = enum_body(struct_name) is not None
+    if not fields and not enum_fields and not has_enum_body and struct_name != "BriefTemporalScope":
         violations.append(f"{struct_name}: output struct not found for Agent-allowed ability audit")
         return
     for field_name, type_text in fields:
@@ -491,9 +730,13 @@ def inspect_struct(struct_name: str, seen: set[str], violations: list[str]):
                 f"{struct_name}.{field_name}: raw `{type_text.strip()}` is not RenderableMcpClaimText, RenderableMcpEntityName, or an audited metadata/fail-closed field"
             )
         nested = normalize_type(type_text)
-        if nested in SAFE_STRING_FIELDS or nested in NESTED_OUTPUT_STRUCTS:
+        if (
+            re.fullmatch(r"Paginated<.+>", nested)
+            or nested in SAFE_STRING_FIELDS
+            or nested in NESTED_OUTPUT_STRUCTS
+        ):
             inspect_struct(nested, seen, violations)
-    for field_name in enum_string_fields(struct_name):
+    for field_name in enum_fields:
         if field_name not in SAFE_STRING_FIELDS.get(struct_name, {}):
             violations.append(f"{struct_name}.{field_name}: enum string field is not audited for MCP")
     for nested in NESTED_OUTPUT_STRUCTS.get(struct_name, []):

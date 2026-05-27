@@ -2,13 +2,16 @@
 
 use std::path::PathBuf;
 
-use super::contracts::{NullExtractor, NullSignalEmitter};
+use super::extract::WorkspaceExtractor;
 use super::pipeline::IngestPipeline;
+use super::signals::WorkspaceSignalEmitter;
 
 pub fn build_pipeline(workspace_root: PathBuf) -> IngestPipeline {
-    IngestPipeline::default_with(
-        Box::new(NullExtractor),
-        Box::new(NullSignalEmitter),
+    IngestPipeline::new(
+        Box::new(WorkspaceExtractor),
+        Box::new(WorkspaceSignalEmitter),
+        super::pipeline::DEFAULT_MAX_FILE_BYTES,
+        "workspace-extractor-v1",
         workspace_root,
     )
 }

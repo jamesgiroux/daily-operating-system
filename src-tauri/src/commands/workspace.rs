@@ -7,16 +7,22 @@ use super::*;
 use abilities_runtime::abilities::provenance::source::{EntityId, WorkspaceFileKind};
 use chrono::{DateTime, Utc};
 use rusqlite::{params, OptionalExtension};
+use std::io::{Read, Seek, SeekFrom};
 
 use crate::entity::EntityType;
+use crate::services::context::{ExternalClients, ServiceContext, SystemClock, SystemRng};
+use crate::services::workspace_ingestion::contracts::{RejectionReason, SignalEmitContext};
 use crate::services::workspace_ingestion::lifecycle::{LifecycleRepo, LifecycleState};
 use crate::services::workspace_ingestion::link::{LinkAttributionSource, LinkError, LinkRepo};
 use crate::services::workspace_ingestion::pipeline::{
     file_id_from_identity, EntityRef, IngestError, IngestReceipt, IngestRequest,
+    DEFAULT_MAX_FILE_BYTES,
 };
 use crate::services::workspace_ingestion::registry::WorkspaceSourceRegistry;
 use crate::services::workspace_ingestion::runs::IngestionMode;
+use crate::services::workspace_ingestion::signals::emit_pre_pipeline_rejection;
 use crate::services::workspace_ingestion::wiring;
+use crate::signals::propagation::PropagationEngine;
 
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -269,11 +275,11 @@ pub async fn process_inbox_file(
         .canonicalize()
         .map_err(|e| format!("workspace_root: {e}"))?;
 
-    // Validate filename before processing (path traversal guard)
-    crate::util::validate_inbox_path(&workspace_root, &filename)?;
-
+    let signal_engine = Arc::clone(&state.signals.engine);
     state
-        .db_write(move |db| process_inbox_file_in_db(db, &workspace_root, &filename))
+        .db_write(move |db| {
+            process_inbox_file_in_db(db, &workspace_root, &filename, signal_engine.as_ref())
+        })
         .await
         .map_err(String::from)
 }
@@ -285,16 +291,32 @@ pub fn process_inbox_file_for_tests(
     workspace_root: &std::path::Path,
     filename: &str,
 ) -> Result<serde_json::Value, String> {
-    serde_json::to_value(process_inbox_file_in_db(db, workspace_root, filename)?)
-        .map_err(|e| e.to_string())
+    let signal_engine = crate::signals::propagation::default_engine();
+    serde_json::to_value(process_inbox_file_in_db(
+        db,
+        workspace_root,
+        filename,
+        &signal_engine,
+    )?)
+    .map_err(|e| e.to_string())
 }
 
 fn process_inbox_file_in_db(
     db: &crate::db::ActionDb,
     workspace_root: &std::path::Path,
     filename: &str,
+    signal_engine: &PropagationEngine,
 ) -> Result<crate::processor::ProcessingResult, String> {
-    let inbox_path = crate::util::validate_inbox_path(workspace_root, filename)?;
+    let inbox_path = match crate::util::validate_inbox_path(workspace_root, filename) {
+        Ok(path) => path,
+        Err(error) => {
+            emit_workspace_command_pre_pipeline_rejection(
+                db,
+                RejectionReason::PathTraversalAttempt,
+            )?;
+            return Err(error);
+        }
+    };
     let existing_file_id = lifecycle_file_id_for_path(db.conn_ref(), &inbox_path)?;
     if let Some(file_id) = existing_file_id.as_deref() {
         if let Some(row) =
@@ -306,7 +328,7 @@ fn process_inbox_file_in_db(
         }
     }
 
-    match run_staged_inbox_ingestion(db.conn_ref(), workspace_root, &inbox_path) {
+    match run_staged_inbox_ingestion(db, workspace_root, &inbox_path, signal_engine) {
         Ok(receipt) => Ok(processing_result_for_receipt(&receipt, filename)),
         Err(IngestError::AlreadyProcessed { .. }) => {
             let file_id = existing_file_id
@@ -325,6 +347,19 @@ fn process_inbox_file_in_db(
             message: format!("pipeline: {error}"),
         }),
     }
+}
+
+fn emit_workspace_command_pre_pipeline_rejection(
+    db: &crate::db::ActionDb,
+    reason: RejectionReason,
+) -> Result<(), String> {
+    let clock = SystemClock;
+    let rng = SystemRng;
+    let external = ExternalClients::default();
+    let ctx =
+        ServiceContext::new_live(&clock, &rng, &external).with_actor("system:workspace_command");
+    let signal_ctx = SignalEmitContext::new(&ctx, db, None);
+    emit_pre_pipeline_rejection(&signal_ctx, reason).map_err(|e| e.to_string())
 }
 
 fn lifecycle_file_id_for_path(
@@ -346,23 +381,44 @@ fn lifecycle_file_id_for_path(
 }
 
 fn run_staged_inbox_ingestion(
-    conn: &rusqlite::Connection,
+    db: &crate::db::ActionDb,
     workspace_root: &std::path::Path,
     inbox_path: &std::path::Path,
+    signal_engine: &PropagationEngine,
 ) -> Result<IngestReceipt, IngestError> {
-    let (file, identity) = WorkspaceSourceRegistry::open_validated(workspace_root, inbox_path)
-        .map_err(|e| IngestError::DbError(format!("open_validated: {e:?}")))?;
+    let clock = SystemClock;
+    let rng = SystemRng;
+    let external = ExternalClients::default();
+    let ctx =
+        ServiceContext::new_live(&clock, &rng, &external).with_actor("system:workspace_command");
+    let (file, identity) = match WorkspaceSourceRegistry::open_validated(workspace_root, inbox_path)
+    {
+        Ok(opened) => opened,
+        Err(reason) => {
+            let signal_ctx = SignalEmitContext::new(&ctx, db, None);
+            emit_pre_pipeline_rejection(&signal_ctx, reason.clone())?;
+            return Err(IngestError::Rejected(reason));
+        }
+    };
     let source_asof: DateTime<Utc> = identity
         .canonical_path
         .metadata()
         .and_then(|metadata| metadata.modified())
         .map_err(IngestError::Io)?
         .into();
-    let file_id = file_id_from_identity(&identity, workspace_root)
-        .map_err(|e| IngestError::DbError(format!("file_id: {e:?}")))?;
+    let file_id = match file_id_from_identity(&identity, workspace_root) {
+        Ok(file_id) => file_id,
+        Err(_error) => {
+            let signal_ctx = SignalEmitContext::new(&ctx, db, None);
+            emit_pre_pipeline_rejection(&signal_ctx, RejectionReason::OutsideWorkspace)?;
+            return Err(IngestError::Rejected(RejectionReason::OutsideWorkspace));
+        }
+    };
     let pipeline = wiring::build_pipeline(workspace_root.to_path_buf());
-    pipeline.run(
-        conn,
+    pipeline.run_with_signal_engine(
+        &ctx,
+        db,
+        signal_engine,
         IngestRequest {
             file,
             identity,
@@ -372,6 +428,8 @@ fn run_staged_inbox_ingestion(
             entity: None,
             mode: IngestionMode::Realtime,
             category_hint: None,
+            invocation_actor: "system:workspace_command".to_string(),
+            validated_content: None,
         },
     )
 }
@@ -622,7 +680,16 @@ pub fn copy_to_inbox(
         home.join("Downloads"),
     ];
 
-    state.with_db(|db| copy_to_inbox_in_db(db, &workspace_root, paths, &allowed_source_dirs))
+    let signal_engine = Arc::clone(&state.signals.engine);
+    state.with_db(|db| {
+        copy_to_inbox_in_db(
+            db,
+            &workspace_root,
+            paths,
+            &allowed_source_dirs,
+            signal_engine.as_ref(),
+        )
+    })
 }
 
 #[cfg(any(test, debug_assertions, feature = "test-harness"))]
@@ -633,7 +700,14 @@ pub fn copy_to_inbox_for_tests(
     paths: Vec<String>,
     allowed_source_dirs: &[std::path::PathBuf],
 ) -> Result<CopyToInboxReport, String> {
-    copy_to_inbox_in_db(db, workspace_root, paths, allowed_source_dirs)
+    let signal_engine = crate::signals::propagation::default_engine();
+    copy_to_inbox_in_db(
+        db,
+        workspace_root,
+        paths,
+        allowed_source_dirs,
+        &signal_engine,
+    )
 }
 
 fn copy_to_inbox_in_db(
@@ -641,6 +715,7 @@ fn copy_to_inbox_in_db(
     workspace_root: &std::path::Path,
     paths: Vec<String>,
     allowed_source_dirs: &[std::path::PathBuf],
+    signal_engine: &PropagationEngine,
 ) -> Result<CopyToInboxReport, String> {
     let inbox_dir = workspace_root.join("_inbox");
 
@@ -714,7 +789,7 @@ fn copy_to_inbox_in_db(
         match std::fs::copy(source, &dest) {
             Ok(_) => {
                 log::info!("Copied '{}' to inbox", filename.to_string_lossy());
-                stage_copied_inbox_file(db, workspace_root, &dest)?;
+                stage_copied_inbox_file(db, workspace_root, &dest, signal_engine)?;
                 copied_filenames.push(
                     dest.file_name()
                         .and_then(|name| name.to_str())
@@ -738,8 +813,9 @@ fn stage_copied_inbox_file(
     db: &crate::db::ActionDb,
     workspace_root: &std::path::Path,
     dest: &std::path::Path,
+    signal_engine: &PropagationEngine,
 ) -> Result<(), String> {
-    match run_staged_inbox_ingestion(db.conn_ref(), workspace_root, dest) {
+    match run_staged_inbox_ingestion(db, workspace_root, dest, signal_engine) {
         Ok(_) | Err(IngestError::AlreadyProcessed { .. }) | Err(IngestError::Rejected(_)) => Ok(()),
         Err(error) => Err(format!("pipeline: {error}")),
     }
@@ -753,6 +829,14 @@ pub struct AssignInboxEntityReceipt {
     pub content_sha256: String,
     pub lifecycle_state_after: String,
     pub resolved_path: Option<String>,
+}
+
+struct AssignInboxEntityInput {
+    file_id: String,
+    entity_type_slug: String,
+    entity_id: String,
+    entity_name: String,
+    source_type_slug: String,
 }
 
 #[allow(
@@ -777,16 +861,20 @@ pub async fn assign_inbox_entity(
         .canonicalize()
         .map_err(|e| format!("workspace_root: {e}"))?;
 
+    let signal_engine = Arc::clone(&state.signals.engine);
     state
         .db_write(move |db| {
             assign_inbox_entity_in_db(
                 db,
                 &workspace_root,
-                file_id,
-                entity_type_slug,
-                entity_id,
-                entity_name,
-                source_type_slug,
+                AssignInboxEntityInput {
+                    file_id,
+                    entity_type_slug,
+                    entity_id,
+                    entity_name,
+                    source_type_slug,
+                },
+                signal_engine.as_ref(),
             )
         })
         .await
@@ -804,26 +892,34 @@ pub fn assign_inbox_entity_for_tests(
     entity_name: String,
     source_type_slug: String,
 ) -> Result<AssignInboxEntityReceipt, String> {
+    let signal_engine = crate::signals::propagation::default_engine();
     assign_inbox_entity_in_db(
         db,
         workspace_root,
-        file_id,
-        entity_type_slug,
-        entity_id,
-        entity_name,
-        source_type_slug,
+        AssignInboxEntityInput {
+            file_id,
+            entity_type_slug,
+            entity_id,
+            entity_name,
+            source_type_slug,
+        },
+        &signal_engine,
     )
 }
 
 fn assign_inbox_entity_in_db(
     db: &crate::db::ActionDb,
     workspace_root: &std::path::Path,
-    file_id: String,
-    entity_type_slug: String,
-    entity_id: String,
-    entity_name: String,
-    source_type_slug: String,
+    input: AssignInboxEntityInput,
+    signal_engine: &PropagationEngine,
 ) -> Result<AssignInboxEntityReceipt, String> {
+    let AssignInboxEntityInput {
+        file_id,
+        entity_type_slug,
+        entity_id,
+        entity_name,
+        source_type_slug,
+    } = input;
     let entity_type = EntityType::from_str_lossy(&entity_type_slug);
     if matches!(entity_type, EntityType::Other) {
         return Err("invalid_entity_type".to_string());
@@ -840,7 +936,36 @@ fn assign_inbox_entity_in_db(
         return Err("not_inbox_file".to_string());
     }
 
-    db.with_transaction(|tx_db| {
+    let existing = LifecycleRepo::get(db.conn_ref(), &file_id)
+        .map_err(|e| format!("lifecycle_get: {e}"))?
+        .ok_or_else(|| "not_found".to_string())?;
+    if existing.lifecycle_state != LifecycleState::PendingEntityAssignment {
+        return Err("invalid_lifecycle_state".to_string());
+    }
+    if existing.source_type != WorkspaceFileKind::Inbox {
+        return Err("not_inbox_file".to_string());
+    }
+    let canonical_path = std::path::PathBuf::from(&existing.canonical_path);
+    let (mut file, identity) =
+        WorkspaceSourceRegistry::open_validated(workspace_root, &canonical_path)
+            .map_err(|e| format!("open_validated: {e:?}"))?;
+    let reopened_file_id =
+        file_id_from_identity(&identity, workspace_root).map_err(|e| format!("file_id: {e:?}"))?;
+    if reopened_file_id != file_id {
+        return Err("file_id_mismatch".to_string());
+    }
+    let source_asof: DateTime<Utc> = identity
+        .canonical_path
+        .metadata()
+        .and_then(|metadata| metadata.modified())
+        .map_err(|e| format!("source_asof: {e}"))?
+        .into();
+    let validated_content =
+        prevalidate_pipeline_text(&mut file).map_err(|e| format!("pipeline: {e}"))?;
+    file.seek(SeekFrom::Start(0))
+        .map_err(|e| format!("pipeline: {e}"))?;
+
+    let request = db.with_transaction(|tx_db| {
         let conn = tx_db.conn_ref();
         let row = LifecycleRepo::get(conn, &file_id)
             .map_err(|e| format!("lifecycle_get: {e}"))?
@@ -851,22 +976,6 @@ fn assign_inbox_entity_in_db(
         if row.source_type != WorkspaceFileKind::Inbox {
             return Err("not_inbox_file".to_string());
         }
-
-        let canonical_path = std::path::PathBuf::from(&row.canonical_path);
-        let (file, identity) =
-            WorkspaceSourceRegistry::open_validated(workspace_root, &canonical_path)
-                .map_err(|e| format!("open_validated: {e:?}"))?;
-        let reopened_file_id = file_id_from_identity(&identity, workspace_root)
-            .map_err(|e| format!("file_id: {e:?}"))?;
-        if reopened_file_id != file_id {
-            return Err("file_id_mismatch".to_string());
-        }
-        let source_asof: DateTime<Utc> = identity
-            .canonical_path
-            .metadata()
-            .and_then(|metadata| metadata.modified())
-            .map_err(|e| format!("source_asof: {e}"))?
-            .into();
 
         LifecycleRepo::set_entity(conn, &file_id, entity_type, &entity_id, Some(&entity_name))
             .map_err(|e| format!("set_entity: {e}"))?;
@@ -892,36 +1001,54 @@ fn assign_inbox_entity_in_db(
         )
         .map_err(|e| format!("prepare_pipeline: {e}"))?;
 
-        let pipeline = wiring::build_pipeline(workspace_root.to_path_buf());
-        let receipt = pipeline
-            .run(
-                conn,
-                IngestRequest {
-                    file,
-                    identity,
-                    file_id: file_id.clone(),
-                    source_asof,
-                    source_type,
-                    entity: Some(EntityRef {
-                        entity_type,
-                        entity_id: EntityId::new(entity_id.clone()),
-                        entity_name: Some(entity_name.clone()),
-                    }),
-                    mode: IngestionMode::Realtime,
-                    category_hint: None,
-                },
-            )
-            .map_err(|e| format!("pipeline: {e}"))?;
-
-        Ok(AssignInboxEntityReceipt {
-            file_id: receipt.file_id,
-            ingestion_run_id: receipt.ingestion_run_id.0,
-            content_sha256: receipt.content_sha256,
-            lifecycle_state_after: lifecycle_state_to_slug(receipt.lifecycle_state_after)
-                .to_string(),
-            resolved_path: receipt.resolved_path,
+        Ok(IngestRequest {
+            file,
+            identity,
+            file_id: file_id.clone(),
+            source_asof,
+            source_type,
+            entity: Some(EntityRef {
+                entity_type,
+                entity_id: EntityId::new(entity_id.clone()),
+                entity_name: Some(entity_name.clone()),
+            }),
+            mode: IngestionMode::EntitySeeded,
+            category_hint: None,
+            invocation_actor: "user".to_string(),
+            validated_content: Some(validated_content),
         })
+    })?;
+
+    let pipeline = wiring::build_pipeline(workspace_root.to_path_buf());
+    let clock = SystemClock;
+    let rng = SystemRng;
+    let external = ExternalClients::default();
+    let ctx =
+        ServiceContext::new_live(&clock, &rng, &external).with_actor("system:workspace_command");
+    let receipt = pipeline
+        .run_with_signal_engine(&ctx, db, signal_engine, request)
+        .map_err(|e| format!("pipeline: {e}"))?;
+
+    Ok(AssignInboxEntityReceipt {
+        file_id: receipt.file_id,
+        ingestion_run_id: receipt.ingestion_run_id.0,
+        content_sha256: receipt.content_sha256,
+        lifecycle_state_after: lifecycle_state_to_slug(receipt.lifecycle_state_after).to_string(),
+        resolved_path: receipt.resolved_path,
     })
+}
+
+fn prevalidate_pipeline_text(file: &mut std::fs::File) -> Result<String, IngestError> {
+    let file_size = file.metadata().map_err(IngestError::Io)?.len();
+    if file_size > DEFAULT_MAX_FILE_BYTES {
+        return Err(IngestError::Rejected(RejectionReason::FileTooLarge));
+    }
+    let mut bytes = Vec::with_capacity(file_size as usize);
+    file.read_to_end(&mut bytes).map_err(IngestError::Io)?;
+    if bytes.contains(&0) || std::str::from_utf8(&bytes).is_err() {
+        return Err(IngestError::Rejected(RejectionReason::UnsupportedFormat));
+    }
+    String::from_utf8(bytes).map_err(|_| IngestError::Rejected(RejectionReason::UnsupportedFormat))
 }
 
 fn map_link_error_for_assign(error: LinkError) -> String {
@@ -968,6 +1095,10 @@ fn lifecycle_state_to_slug(state: LifecycleState) -> &'static str {
         LifecycleState::Superseded => "superseded",
         LifecycleState::Rejected => "rejected",
         LifecycleState::Quarantined => "quarantined",
+        LifecycleState::Ignored => "ignored",
+        LifecycleState::Scratchpad => "scratchpad",
+        LifecycleState::Archived => "archived",
+        LifecycleState::Deleted => "deleted",
     }
 }
 
@@ -1027,6 +1158,8 @@ fn db_email_to_email(dbe: crate::db::DbEmail) -> crate::types::Email {
         is_unread: dbe.is_unread,
         avatar_url: None,
         summary: dbe.contextual_summary,
+        summary_context_trust_band: None,
+        summary_context_source_count: None,
         recommended_action: None,
         conversation_arc: None,
         email_type: None,

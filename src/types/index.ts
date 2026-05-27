@@ -476,6 +476,10 @@ export interface Email {
   avatarUrl?: string;
   /** AI-generated one-line summary of the email */
   summary?: string;
+  /** Trust band for the claim-backed context used by the AI-generated summary. */
+  summaryContextTrustBand?: TrustBandWire;
+  /** Number of prompt-safe claim sources available for the summary's linked entity. */
+  summaryContextSourceCount?: number;
   /** Suggested next action (e.g. "Reply with counter-proposal") */
   recommendedAction?: string;
   /** Thread history arc (e.g. "Initial outreach → follow-up → this response") */
@@ -3082,6 +3086,10 @@ export interface GranolaStatus {
   enabled: boolean;
   cacheExists: boolean;
   cachePath: string;
+  source: "companion" | "cache" | "encrypted_cache" | "none";
+  companionAvailable: boolean;
+  companionMessage: string | null;
+  encryptedCacheExists: boolean;
   documentCount: number;
   pendingSyncs: number;
   failedSyncs: number;

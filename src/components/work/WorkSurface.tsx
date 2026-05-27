@@ -436,6 +436,8 @@ export interface SuggestionCardProps {
   headline: string;
   rationale: string;
   provenance?: { label: string; href?: string }[];
+  trustBand?: TrustBandWire | null;
+  sourceCount?: number | null;
   onAccept?: () => void;
   accepting?: boolean;
   /**
@@ -454,12 +456,17 @@ export function SuggestionCard({
   headline,
   rationale,
   provenance,
+  trustBand,
+  sourceCount,
   onAccept,
   accepting,
   onDismiss,
   dismissing,
   feedbackSlot,
 }: SuggestionCardProps) {
+  const displayTrustBand = trustBand && trustBand !== "likely_current" ? trustBand : null;
+  const showSourceCount = Boolean(sourceCount && sourceCount > 0);
+
   return (
     <article className={s.recCard}>
       <div className={s.recLabel}>{label}</div>
@@ -473,6 +480,17 @@ export function SuggestionCard({
               {p.label}
             </CiteChip>
           ))}
+        </div>
+      )}
+      {(displayTrustBand || showSourceCount) && (
+        <div className={s.recProvenance}>
+          <span>Evidence</span>
+          {displayTrustBand && <TrustBandIndicator band={displayTrustBand} />}
+          {showSourceCount && (
+            <span>
+              {sourceCount} source{sourceCount === 1 ? "" : "s"}
+            </span>
+          )}
         </div>
       )}
       <div className={s.recActions}>
@@ -497,7 +515,7 @@ export function SuggestionCard({
 
 /* ─────────────────────────────────────────────────────────────────────────
  * SharedRefRow — Chapter 5 "Shared with the team".
- * Mirror of externally-visible state — Linear, REDACTED, Slack.
+ * Mirror of externally-visible state — Linear, Salesforce, Slack.
  * ──────────────────────────────────────────────────────────────────────── */
 export interface SharedRefRowProps {
   id: string;

@@ -211,8 +211,28 @@ fn setup_migration_runner_state(conn: &Connection) {
         );
         INSERT INTO schema_version (version) VALUES (143);
 
-        CREATE TABLE IF NOT EXISTS meetings (id TEXT PRIMARY KEY);
-        CREATE TABLE IF NOT EXISTS meeting_prep (id TEXT PRIMARY KEY);
+        CREATE TABLE IF NOT EXISTS meetings (
+            id TEXT PRIMARY KEY,
+            calendar_event_id TEXT,
+            title TEXT,
+            start_time TEXT,
+            end_time TEXT
+        );
+        CREATE TABLE IF NOT EXISTS meeting_entities (
+            meeting_id TEXT NOT NULL,
+            entity_id TEXT NOT NULL,
+            entity_type TEXT NOT NULL DEFAULT 'account',
+            PRIMARY KEY (meeting_id, entity_id)
+        );
+        CREATE TABLE IF NOT EXISTS meeting_prep (
+            id TEXT PRIMARY KEY,
+            meeting_id TEXT,
+            prep_context_json TEXT,
+            user_agenda_json TEXT,
+            user_notes TEXT,
+            prep_frozen_at TEXT,
+            prep_snapshot_hash TEXT
+        );
         CREATE TABLE IF NOT EXISTS meeting_transcripts (id TEXT PRIMARY KEY);
         CREATE TABLE IF NOT EXISTS account_stakeholders (
             id TEXT PRIMARY KEY,
@@ -239,6 +259,45 @@ fn setup_migration_runner_state(conn: &Connection) {
         CREATE TABLE IF NOT EXISTS email_signals (
             id TEXT PRIMARY KEY,
             source TEXT
+        );
+        CREATE TABLE IF NOT EXISTS emails (
+            email_id TEXT PRIMARY KEY,
+            thread_id TEXT,
+            sender_email TEXT,
+            sender_name TEXT,
+            subject TEXT,
+            snippet TEXT,
+            priority TEXT,
+            is_unread INTEGER DEFAULT 1,
+            received_at TEXT,
+            enrichment_state TEXT DEFAULT 'pending',
+            enrichment_attempts INTEGER DEFAULT 0,
+            last_enrichment_at TEXT,
+            enriched_at DATETIME,
+            last_seen_at TEXT,
+            resolved_at TEXT,
+            entity_id TEXT,
+            entity_type TEXT,
+            contextual_summary TEXT,
+            sentiment TEXT,
+            urgency TEXT,
+            user_is_last_sender INTEGER DEFAULT 0,
+            last_sender_email TEXT,
+            message_count INTEGER DEFAULT 1,
+            created_at TEXT NOT NULL DEFAULT (datetime('now')),
+            updated_at TEXT NOT NULL DEFAULT (datetime('now')),
+            relevance_score REAL,
+            score_reason TEXT,
+            pinned_at TEXT,
+            commitments TEXT,
+            questions TEXT,
+            retry_batch_id TEXT,
+            retry_started_at TEXT,
+            is_noise INTEGER NOT NULL DEFAULT 0,
+            auto_retry_count INTEGER DEFAULT 0,
+            to_recipients TEXT,
+            cc_recipients TEXT,
+            claim_version INTEGER NOT NULL DEFAULT 0
         );
         CREATE TABLE IF NOT EXISTS people (
             id TEXT PRIMARY KEY,
@@ -276,6 +335,9 @@ fn setup_migration_runner_state(conn: &Connection) {
             confidence REAL NOT NULL,
             decay_half_life_days REAL NOT NULL
         );
+        CREATE TABLE IF NOT EXISTS emails (
+            email_id TEXT PRIMARY KEY
+        );
         CREATE TABLE IF NOT EXISTS intelligence_claims (
             id TEXT PRIMARY KEY,
             text TEXT NOT NULL DEFAULT '',
@@ -286,6 +348,27 @@ fn setup_migration_runner_state(conn: &Connection) {
             trust_score REAL,
             trust_computed_at TEXT,
             trust_version INTEGER
+        );
+        CREATE TABLE IF NOT EXISTS claim_feedback (
+            id              TEXT PRIMARY KEY,
+            claim_id        TEXT NOT NULL REFERENCES intelligence_claims(id),
+            feedback_type   TEXT NOT NULL
+                              CHECK (feedback_type IN (
+                                  'confirm_current',
+                                  'mark_outdated',
+                                  'mark_false',
+                                  'wrong_subject',
+                                  'wrong_source',
+                                  'cannot_verify',
+                                  'needs_nuance',
+                                  'surface_inappropriate',
+                                  'not_relevant_here'
+                              )),
+            actor           TEXT NOT NULL,
+            actor_id        TEXT,
+            payload_json    TEXT,
+            submitted_at    TEXT NOT NULL DEFAULT (datetime('now')),
+            applied_at      TEXT NULL
         );",
     )
     .expect("create migration runner fixture state");

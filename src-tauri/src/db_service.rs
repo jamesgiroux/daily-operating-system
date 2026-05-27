@@ -26,6 +26,7 @@ use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::{mpsc, Arc, Mutex as StdMutex};
 use std::thread;
+use std::time::Instant;
 
 use rusqlite::Connection;
 use tokio::sync::oneshot;
@@ -37,6 +38,8 @@ use crate::db::DbError;
 
 /// Number of read connections in the pool.
 const NUM_READERS: usize = 2;
+const DB_QUEUE_LATENCY_BUDGET_MS: u128 = 100;
+const DB_EXECUTION_LATENCY_BUDGET_MS: u128 = 250;
 
 type CallResult = Result<Box<dyn Any + Send>, PooledCallError>;
 type WorkerTask =
@@ -44,10 +47,14 @@ type WorkerTask =
 
 enum CallMessage {
     Async {
+        label: &'static str,
+        enqueued_at: Instant,
         task: WorkerTask,
         respond_to: oneshot::Sender<CallResult>,
     },
     Sync {
+        label: &'static str,
+        enqueued_at: Instant,
         task: WorkerTask,
         respond_to: mpsc::Sender<CallResult>,
     },
@@ -105,7 +112,9 @@ impl DbAccessError {
             Some(rusqlite::Error::SqliteFailure(sqlite_error, _))
                 if matches!(
                     sqlite_error.code,
-                    rusqlite::ErrorCode::DatabaseBusy | rusqlite::ErrorCode::DatabaseLocked
+                    rusqlite::ErrorCode::DatabaseBusy
+                        | rusqlite::ErrorCode::DatabaseLocked
+                        | rusqlite::ErrorCode::NotADatabase
                 ) =>
             {
                 DbAccessErrorClass::Retryable
@@ -226,6 +235,33 @@ fn run_task(task: WorkerTask, conn: &mut Connection) -> CallResult {
     }
 }
 
+fn record_worker_latency(label: &'static str, phase: &str, elapsed_ms: u128, budget_ms: u128) {
+    crate::latency::record_latency(&format!("{label}.{phase}"), elapsed_ms, budget_ms);
+}
+
+fn run_timed_task(
+    label: &'static str,
+    enqueued_at: Instant,
+    task: WorkerTask,
+    conn: &mut Connection,
+) -> CallResult {
+    record_worker_latency(
+        label,
+        "queue_wait",
+        enqueued_at.elapsed().as_millis(),
+        DB_QUEUE_LATENCY_BUDGET_MS,
+    );
+    let started = Instant::now();
+    let result = run_task(task, conn);
+    record_worker_latency(
+        label,
+        "execution",
+        started.elapsed().as_millis(),
+        DB_EXECUTION_LATENCY_BUDGET_MS,
+    );
+    result
+}
+
 impl PooledConnection {
     fn new(conn: Connection) -> Result<Self, DbError> {
         let (sender, receiver) = mpsc::channel();
@@ -235,13 +271,23 @@ impl PooledConnection {
                 let mut conn = conn;
                 while let Ok(message) = receiver.recv() {
                     match message {
-                        CallMessage::Async { task, respond_to } => {
+                        CallMessage::Async {
+                            label,
+                            enqueued_at,
+                            task,
+                            respond_to,
+                        } => {
                             #[allow(clippy::let_underscore_must_use, reason = "intentional best-effort discard; preserves existing non-blocking behavior")]
-                            let _ = respond_to.send(run_task(task, &mut conn));
+                            let _ = respond_to.send(run_timed_task(label, enqueued_at, task, &mut conn));
                         }
-                        CallMessage::Sync { task, respond_to } => {
+                        CallMessage::Sync {
+                            label,
+                            enqueued_at,
+                            task,
+                            respond_to,
+                        } => {
                             #[allow(clippy::let_underscore_must_use, reason = "intentional best-effort discard; preserves existing non-blocking behavior")]
-                            let _ = respond_to.send(run_task(task, &mut conn));
+                            let _ = respond_to.send(run_timed_task(label, enqueued_at, task, &mut conn));
                         }
                         CallMessage::Shutdown => {
                             break;
@@ -273,11 +319,22 @@ impl PooledConnection {
         F: FnOnce(&mut Connection) -> rusqlite::Result<T> + Send + 'static,
         T: Send + 'static,
     {
+        self.call_labeled("db.call", f).await
+    }
+
+    /// Async call with a stable PII-free latency label.
+    pub async fn call_labeled<F, T>(&self, label: &'static str, f: F) -> Result<T, PooledCallError>
+    where
+        F: FnOnce(&mut Connection) -> rusqlite::Result<T> + Send + 'static,
+        T: Send + 'static,
+    {
         let (tx, rx) = oneshot::channel();
         let task: WorkerTask = Box::new(move |conn| f(conn).map(|value| Box::new(value) as Box<_>));
         self.inner
             .sender
             .send(CallMessage::Async {
+                label,
+                enqueued_at: Instant::now(),
                 task,
                 respond_to: tx,
             })
@@ -292,11 +349,22 @@ impl PooledConnection {
         F: FnOnce(&mut Connection) -> rusqlite::Result<T> + Send + 'static,
         T: Send + 'static,
     {
+        self.call_sync_labeled("db.call_sync", f)
+    }
+
+    /// Sync call with a stable PII-free latency label.
+    pub fn call_sync_labeled<F, T>(&self, label: &'static str, f: F) -> Result<T, PooledCallError>
+    where
+        F: FnOnce(&mut Connection) -> rusqlite::Result<T> + Send + 'static,
+        T: Send + 'static,
+    {
         let (tx, rx) = mpsc::channel();
         let task: WorkerTask = Box::new(move |conn| f(conn).map(|value| Box::new(value) as Box<_>));
         self.inner
             .sender
             .send(CallMessage::Sync {
+                label,
+                enqueued_at: Instant::now(),
                 task,
                 respond_to: tx,
             })
@@ -554,9 +622,17 @@ impl DbService {
         path: PathBuf,
         encryption_key: EncryptionKey,
     ) -> Result<Connection, DbError> {
+        let started = Instant::now();
         let path = path.to_string_lossy().to_string();
         let writer = self.writer();
-        let result = writer.call_sync(move |_| open_encrypted_fresh(&path, &encryption_key, false));
+        let result = writer.call_sync_labeled("open_fresh_serialized", move |_| {
+            open_encrypted_fresh(&path, &encryption_key, false)
+        });
+        crate::latency::record_latency(
+            "open_fresh_serialized.total",
+            started.elapsed().as_millis(),
+            500,
+        );
         match result {
             Ok(conn) => Ok(conn),
             Err(PooledCallError::Rusqlite(error)) => Err(DbError::Sqlite(error)),
@@ -709,6 +785,11 @@ mod tests {
             entity_id: Some(entity_id.to_string()),
             entity_type: Some("account".to_string()),
             contextual_summary: Some("ctx".to_string()),
+            summary_context_prompt_version: None,
+            summary_context_trust_band: None,
+            summary_context_source_count: None,
+            summary_context_source_keys_json: None,
+            summary_context_generated_at: None,
             sentiment: None,
             urgency: None,
             user_is_last_sender: false,
@@ -807,6 +888,15 @@ mod tests {
     #[test]
     fn db_access_error_classifies_database_locked_as_retryable() {
         let error = DbAccessError::from(sqlite_error(rusqlite::ffi::SQLITE_LOCKED, "locked"));
+
+        assert_eq!(error.class(), DbAccessErrorClass::Retryable);
+        assert!(error.is_retryable());
+    }
+
+    #[test]
+    fn db_access_error_classifies_notadb_as_retryable() {
+        let error =
+            DbAccessError::from(sqlite_error(rusqlite::ffi::SQLITE_NOTADB, "not a database"));
 
         assert_eq!(error.class(), DbAccessErrorClass::Retryable);
         assert!(error.is_retryable());
@@ -957,13 +1047,16 @@ mod tests {
             .await
             .expect("writer call before rotation");
 
-        install_global(svc.clone());
-        let _global_guard = GlobalServiceGuard;
-        let rotated = provider
-            .rotate_key(&UserIdentity::local(path.clone()))
-            .expect("rotate through global DbService");
-        assert_eq!(rotated, EncryptionKey::from_hex(new_key.to_string()));
-        uninstall_global();
+        {
+            let _rotation_test_guard = crate::db::key_provider::rotation_test_guard();
+            install_global(svc.clone());
+            let _global_guard = GlobalServiceGuard;
+            let rotated = provider
+                .rotate_key(&UserIdentity::local(path.clone()))
+                .expect("rotate through global DbService");
+            assert_eq!(rotated, EncryptionKey::from_hex(new_key.to_string()));
+            uninstall_global();
+        }
 
         let email = sample_email("em-rotate-after", "acc-after");
         svc.writer()
@@ -1005,59 +1098,62 @@ mod tests {
             .await
             .expect("open svc");
 
-        install_global(svc);
-        let _global_guard = GlobalServiceGuard;
+        {
+            let _rotation_test_guard = crate::db::key_provider::rotation_test_guard();
+            install_global(svc);
+            let _global_guard = GlobalServiceGuard;
 
-        let (key_fetched_tx, key_fetched_rx) = mpsc::channel();
-        let (release_get_tx, release_get_rx) = mpsc::channel();
-        provider.block_next_get(key_fetched_tx, release_get_rx);
+            let (key_fetched_tx, key_fetched_rx) = mpsc::channel();
+            let (release_get_tx, release_get_rx) = mpsc::channel();
+            provider.block_next_get(key_fetched_tx, release_get_rx);
 
-        let open_provider = provider.clone();
-        let open_path = path.clone();
-        let open_handle = std::thread::spawn(move || {
-            let db = ActionDb::open_resolved_path_for_tests(open_path, open_provider)?;
-            drop(db);
-            Ok::<(), DbError>(())
-        });
+            let open_provider = provider.clone();
+            let open_path = path.clone();
+            let open_handle = std::thread::spawn(move || {
+                let db = ActionDb::open_resolved_path_for_tests(open_path, open_provider)?;
+                drop(db);
+                Ok::<(), DbError>(())
+            });
 
-        key_fetched_rx
-            .recv_timeout(Duration::from_secs(2))
-            .expect("open fetched key before rotation attempt");
+            key_fetched_rx
+                .recv_timeout(Duration::from_secs(2))
+                .expect("open fetched key before rotation attempt");
 
-        let rotate_provider = provider.clone();
-        let rotate_user = UserIdentity::local(path.clone());
-        let (rotation_started_tx, rotation_started_rx) = mpsc::channel();
-        let (rotation_done_tx, rotation_done_rx) = mpsc::channel();
-        let rotate_handle = std::thread::spawn(move || {
-            rotation_started_tx
-                .send(())
-                .expect("signal rotation started");
-            let result = rotate_provider.rotate_key(&rotate_user);
-            rotation_done_tx.send(()).expect("signal rotation done");
-            result
-        });
+            let rotate_provider = provider.clone();
+            let rotate_user = UserIdentity::local(path.clone());
+            let (rotation_started_tx, rotation_started_rx) = mpsc::channel();
+            let (rotation_done_tx, rotation_done_rx) = mpsc::channel();
+            let rotate_handle = std::thread::spawn(move || {
+                rotation_started_tx
+                    .send(())
+                    .expect("signal rotation started");
+                let result = rotate_provider.rotate_key(&rotate_user);
+                rotation_done_tx.send(()).expect("signal rotation done");
+                result
+            });
 
-        rotation_started_rx
-            .recv_timeout(Duration::from_secs(2))
-            .expect("rotation thread started");
-        assert!(
-            rotation_done_rx
-                .recv_timeout(Duration::from_millis(100))
-                .is_err(),
-            "rotation completed while ActionDb::open held a fetched key"
-        );
+            rotation_started_rx
+                .recv_timeout(Duration::from_secs(2))
+                .expect("rotation thread started");
+            assert!(
+                rotation_done_rx
+                    .recv_timeout(Duration::from_millis(100))
+                    .is_err(),
+                "rotation completed while ActionDb::open held a fetched key"
+            );
 
-        release_get_tx.send(()).expect("release blocked key fetch");
-        open_handle
-            .join()
-            .expect("open thread joined")
-            .expect("open should complete with the pre-rotation key");
+            release_get_tx.send(()).expect("release blocked key fetch");
+            open_handle
+                .join()
+                .expect("open thread joined")
+                .expect("open should complete with the pre-rotation key");
 
-        let rotated = rotate_handle
-            .join()
-            .expect("rotation thread joined")
-            .expect("rotation completed after open connection acquisition");
-        assert_eq!(rotated, EncryptionKey::from_hex(new_key.to_string()));
+            let rotated = rotate_handle
+                .join()
+                .expect("rotation thread joined")
+                .expect("rotation completed after open connection acquisition");
+            assert_eq!(rotated, EncryptionKey::from_hex(new_key.to_string()));
+        }
         assert!(!encrypted_db_can_read(
             &path,
             &EncryptionKey::from_hex(old_key.to_string())

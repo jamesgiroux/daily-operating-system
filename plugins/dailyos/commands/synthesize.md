@@ -17,10 +17,10 @@ Read across multiple entities to detect cross-cutting patterns and generate port
 
 **"all" or no argument:**
 - Read every entity directory under Accounts/ and Projects/
-- Load dashboard.json for each
+- Use DailyOS runtime/MCP to load entity vitals for each
 
 **Segment name:**
-- Filter entities by tier, lifecycle stage, health status, or owner (from dashboard.json fields)
+- Filter entities by tier, lifecycle stage, health status, or owner from runtime entity fields
 - Example: "at-risk" filters to entities with Red or Yellow health
 
 **Named list:**
@@ -29,14 +29,14 @@ Read across multiple entities to detect cross-cutting patterns and generate port
 ### Step 2: Portfolio-Wide Data Read
 
 For each entity in scope, load:
-- `dashboard.json` — Health, ARR/value, lifecycle, key dates, owner
-- `intelligence.json` — Risks, wins, current state (read executive_assessment for each)
-- Recent actions from `data/actions.json` filtered by entity
+- Runtime entity facts — Health, ARR/value, lifecycle, key dates, owner
+- Runtime entity intelligence — Risks, wins, current state, executive assessment
+- Recent actions from DailyOS action/work tools filtered by entity
 - Recent `_archive/` entries mentioning the entity (last 1-2 months)
 
 Also read portfolio-level data:
-- `data/emails.json` — Cross-entity email signal patterns
-- `data/actions.json` — Portfolio-wide action completion rates
+- DailyOS email/context tools — Cross-entity email signal patterns
+- DailyOS action/work tools — Portfolio-wide action completion rates
 
 ### Step 3: Pattern Detection
 
@@ -160,7 +160,7 @@ Present the synthesis. Then offer:
 Would you like me to:
 1. Save this synthesis to data/portfolio-synthesis-2026-02.md
 2. Create {N} actions from the strategic recommendations
-3. Update intelligence.json for specific entities flagged in the watch items
+3. Promote durable intelligence updates for specific entities through DailyOS runtime/services
 
 Or adjust the analysis first?
 ```

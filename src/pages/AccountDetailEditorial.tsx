@@ -58,7 +58,7 @@ export default function AccountDetailEditorial() {
   const preset = useActivePreset();
   useRevealObserver(!acct.loading && !!acct.detail);
 
-  const { updateField: handleUpdateIntelField, saveStatus, setSaveStatus: setFolioSaveStatus,
+  const { saveStatus, setSaveStatus: setFolioSaveStatus,
   } = useIntelligenceFieldUpdate("account", accountId, acct.silentRefresh);
 
   const { saveMetadata, saveAccountField, conflictsForStrip } = useAccountFieldSave({
@@ -124,7 +124,7 @@ export default function AccountDetailEditorial() {
   const feedback = useIntelligenceFeedback(accountId, "account");
   const entityCtx = useEntityContextEntries("account", accountId ?? null);
   const detail = acct.detail;
-  const intelligence = detail?.intelligence ?? null;
+  const intelligence = acct.intelligence;
   const fb = { get: feedback.getFeedback, submit: feedback.submitFeedback };
 
   if (acct.loading) return <EditorialLoading />;
@@ -163,7 +163,7 @@ export default function AccountDetailEditorial() {
       {intelligence && (intelligence.agreementOutlook || intelligence.expansionSignals?.length || intelligence.contractContext) ? (
         <MarginSection id="outlook" label="Outlook">
           <ChapterHeading title="Outlook" />
-          <AccountOutlook intelligence={intelligence} onUpdateField={handleUpdateIntelField} getItemFeedback={fb.get} onItemFeedback={fb.submit} />
+          <AccountOutlook intelligence={intelligence} getItemFeedback={fb.get} onItemFeedback={fb.submit} />
         </MarginSection>
       ) : null}
 
@@ -175,7 +175,7 @@ export default function AccountDetailEditorial() {
       )}
 
       <MarginSection id="state-of-play" label={<>State of<br/>Play</>}>
-        <StateOfPlay intelligence={intelligence} sectionId="" onUpdateField={handleUpdateIntelField} getItemFeedback={fb.get} onItemFeedback={fb.submit} />
+        <StateOfPlay intelligence={intelligence} sectionId="" getItemFeedback={fb.get} onItemFeedback={fb.submit} />
         {detail.technicalFootprint && <AccountTechnicalFootprint footprint={detail.technicalFootprint} />}
       </MarginSection>
 
@@ -196,7 +196,7 @@ export default function AccountDetailEditorial() {
       </MarginSection>
 
       <MarginSection id="watch-list" label={<>Watch<br/>List</>}>
-        <WatchList intelligence={intelligence} sectionId="" onUpdateField={handleUpdateIntelField}
+        <WatchList intelligence={intelligence} sectionId=""
           getItemFeedback={fb.get} onItemFeedback={fb.submit}
           bottomSection={<WatchListPrograms programs={acct.programs} onProgramUpdate={acct.handleProgramUpdate}
             onProgramDelete={acct.handleProgramDelete} onAddProgram={acct.handleAddProgram} />} />
@@ -205,14 +205,14 @@ export default function AccountDetailEditorial() {
       {intelligence && (intelligence.valueDelivered?.length || intelligence.successMetrics?.length || intelligence.openCommitments?.length) ? (
         <MarginSection id="value-commitments" label={<>Value &amp;<br/>Commitments</>}>
           <ChapterHeading title="Value & Commitments" />
-          <ValueCommitments intelligence={intelligence} onUpdateField={handleUpdateIntelField} onItemFeedback={fb.submit} />
+          <ValueCommitments intelligence={intelligence} onItemFeedback={fb.submit} />
         </MarginSection>
       ) : null}
 
       {intelligence && (intelligence.strategicPriorities?.length || intelligence.competitiveContext?.length || intelligence.marketContext?.length) ? (
         <MarginSection id="strategic-landscape" label={<>Competitive &amp;<br/>Strategic</>}>
           <ChapterHeading title="Competitive & Strategic" />
-          <StrategicLandscape intelligence={intelligence} onUpdateField={handleUpdateIntelField} onItemFeedback={fb.submit} />
+          <StrategicLandscape intelligence={intelligence} onItemFeedback={fb.submit} />
         </MarginSection>
       ) : null}
 

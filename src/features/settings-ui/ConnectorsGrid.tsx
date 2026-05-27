@@ -117,7 +117,7 @@ export default function ConnectorsGrid() {
             margin: "0 0 16px 0",
           }}
         >
-          REDACTED, Zendesk, Gong, and directory context are currently managed through Glean.
+          Salesforce, Zendesk, Gong, and directory context are currently managed through Glean.
           The connectors below still control local-device sources and optional enrichers.
         </p>
       )}

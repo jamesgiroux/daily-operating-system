@@ -5,9 +5,11 @@ use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 
 use super::prompts;
-use crate::abilities::get_entity_context::{
-    get_entity_context, ContextDepth, GetEntityContextInput,
+use crate::abilities::get_entity_intelligence::contracts::{
+    ContextDepth as EntityIntelligenceDepth, EntityFact, EntityIntelligenceInput, EntityKind,
+    EnvelopeSection, ENVELOPE_SCHEMA_VERSION,
 };
+use crate::abilities::get_entity_intelligence::producer::build_entity_intelligence;
 use crate::abilities::provenance::source_time::{parse_source_timestamp, SourceTimestampStatus};
 use crate::abilities::provenance::trust::claim_trust_band_from_score;
 use crate::abilities::provenance::{
@@ -26,7 +28,7 @@ use crate::services::context::{
 };
 use crate::types::{
     claim_allowed_for_prompt_input, prompt_input_sensitivity_name_allowed, subject_ref_from_json,
-    ClaimSensitivity, ClaimSubjectRef, EntityContextEntry, IntelligenceClaim, TemporalScope,
+    ClaimSensitivity, ClaimSubjectRef, IntelligenceClaim, TemporalScope,
 };
 
 const ABILITY_NAME: &str = "prepare_meeting";
@@ -261,36 +263,30 @@ async fn build_meeting_brief_from_context(
     let mut composed_children = Vec::new();
     let briefing_ctx = ctx.for_entity_context_claim_surface(ClaimDismissalSurface::Briefing);
     for entity_context in &context.entity_contexts {
-        let depth = context_depth(input.depth);
-        let child = get_entity_context(
+        let entity_kind = entity_kind_from_subject(&entity_context.subject)?;
+        let child = build_entity_intelligence(
             &briefing_ctx,
-            GetEntityContextInput {
-                schema_version: 2,
-                entity_type: entity_context.subject.kind.clone(),
+            EntityIntelligenceInput {
+                schema_version: ENVELOPE_SCHEMA_VERSION,
+                entity_type: entity_kind,
                 entity_id: entity_context.subject.id.clone(),
-                depth: depth.clone(),
+                // Meeting prep prompt input is a provider boundary. Keep child
+                // reads to the explicitly requested entity; meeting-scope
+                // filters below remain the final guard against subject bleed.
+                depth: EntityIntelligenceDepth::Shallow,
+                sections: Some(vec![EnvelopeSection::Facts, EnvelopeSection::Record]),
             },
         )
         .await?;
-        let (context_output, provenance) = child.into_parts();
-        let entry_claims = ctx
-            .services()
-            .read_entity_context_claims(
-                entity_context.subject.kind.clone(),
-                entity_context.subject.id.clone(),
-                ClaimDismissalSurface::Briefing,
-                context_depth_levels(input.depth),
-            )
-            .await
-            .map_err(|error| AbilityError {
-                kind: AbilityErrorKind::HardError("entity_context_claim_read".into()),
-                message: error,
-            })?;
-        let entries = filter_prompt_entity_entries(
-            context_output.entries,
-            &entry_claims,
-            &prompt_allowed_subjects,
-        );
+        let (envelope, provenance) = child.into_parts();
+        let entries = envelope
+            .facts
+            .items
+            .into_iter()
+            .filter(prompt_entity_fact_allowed_for_prompt_input)
+            .filter_map(PromptEntityContextEntry::from_fact)
+            .filter(|entry| prompt_allowed_subjects.contains(&entry.subject_key))
+            .collect();
         composed_children.push(ComposedEntityContext {
             subject: entity_context.subject.clone(),
             entries,
@@ -392,7 +388,7 @@ pub fn draft_claims_for_publish(brief: &MeetingBrief) -> Vec<ClaimDraft> {
 
 struct ComposedEntityContext {
     subject: BriefSubjectRef,
-    entries: Vec<EntityContextEntry>,
+    entries: Vec<PromptEntityContextEntry>,
     provenance: crate::abilities::provenance::Provenance,
 }
 
@@ -406,19 +402,21 @@ struct PromptContext<'a> {
 #[derive(Debug, Serialize)]
 struct PromptEntityContext<'a> {
     subject: &'a BriefSubjectRef,
-    entries: Vec<PromptEntityContextEntry<'a>>,
+    entries: Vec<PromptEntityContextEntry>,
 }
 
-#[derive(Debug, Serialize)]
+#[derive(Debug, Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
-struct PromptEntityContextEntry<'a> {
-    id: &'a str,
-    entity_type: &'a str,
-    entity_id: &'a str,
-    title: &'a str,
-    content: &'a str,
-    created_at: &'a str,
-    updated_at: &'a str,
+struct PromptEntityContextEntry {
+    id: String,
+    entity_type: String,
+    entity_id: String,
+    title: String,
+    content: String,
+    created_at: String,
+    updated_at: String,
+    #[serde(skip)]
+    subject_key: String,
 }
 
 impl<'a> PromptContext<'a> {
@@ -433,56 +431,55 @@ impl<'a> PromptContext<'a> {
                 .iter()
                 .map(|child| PromptEntityContext {
                     subject: &child.subject,
-                    entries: child
-                        .entries
-                        .iter()
-                        .map(PromptEntityContextEntry::from)
-                        .collect(),
+                    entries: child.entries.clone(),
                 })
                 .collect(),
         }
     }
 }
 
-impl<'a> From<&'a EntityContextEntry> for PromptEntityContextEntry<'a> {
-    fn from(entry: &'a EntityContextEntry) -> Self {
-        Self {
-            id: &entry.id,
-            entity_type: &entry.entity_type,
-            entity_id: &entry.entity_id,
-            title: entry.title.as_str(),
-            content: entry.content.as_str(),
-            created_at: &entry.created_at,
-            updated_at: &entry.updated_at,
+impl PromptEntityContextEntry {
+    fn from_fact(fact: EntityFact) -> Option<Self> {
+        let fact_subject = BriefSubjectRef::from_subject_ref(&fact.subject_ref)?;
+        let content = fact.rendered_text.text.trim();
+        if content.is_empty() {
+            return None;
         }
+        let source_asof = fact
+            .source_asof
+            .map(|timestamp| timestamp.to_rfc3339())
+            .unwrap_or_else(|| "unknown".to_string());
+        let subject_key = fact_subject.key();
+        Some(Self {
+            id: fact.claim_id,
+            entity_type: fact_subject.kind,
+            entity_id: fact_subject.id,
+            title: fact.claim_type,
+            content: content.to_string(),
+            created_at: source_asof.clone(),
+            updated_at: source_asof,
+            subject_key,
+        })
     }
 }
 
-fn filter_prompt_entity_entries(
-    entries: Vec<EntityContextEntry>,
-    claims: &[IntelligenceClaim],
-    allowed_subjects: &BTreeSet<String>,
-) -> Vec<EntityContextEntry> {
-    let prompt_allowed_claim_ids: BTreeSet<&str> = claims
-        .iter()
-        .filter(|claim| claim_allowed_for_prompt_input(claim))
-        .map(|claim| claim.id.as_str())
-        .collect();
+fn entity_kind_from_subject(subject: &BriefSubjectRef) -> Result<EntityKind, AbilityError> {
+    match subject.kind.as_str() {
+        "account" => Ok(EntityKind::Account),
+        "project" => Ok(EntityKind::Project),
+        "person" => Ok(EntityKind::Person),
+        "meeting" => Ok(EntityKind::Meeting),
+        other => Err(validation_error(format!(
+            "prepare_meeting cannot compose get_entity_intelligence for `{other}`"
+        ))),
+    }
+}
 
-    entries
-        .into_iter()
-        .filter(|entry| {
-            let subject = BriefSubjectRef {
-                kind: entry.entity_type.clone(),
-                id: entry.entity_id.clone(),
-            };
-            if !allowed_subjects.contains(&subject.key()) {
-                return false;
-            }
-
-            prompt_allowed_claim_ids.contains(entry.id.as_str())
-        })
-        .collect()
+fn prompt_entity_fact_allowed_for_prompt_input(fact: &EntityFact) -> bool {
+    matches!(
+        fact.sensitivity,
+        ClaimSensitivity::Public | ClaimSensitivity::Internal
+    )
 }
 
 impl MeetingBriefContext {
@@ -803,7 +800,7 @@ impl<'a> BriefAssembler<'a> {
 
         for child in &self.children {
             let composition_id =
-                CompositionId::new(format!("get_entity_context:{}", child.subject.key()));
+                CompositionId::new(format!("get_entity_intelligence:{}", child.subject.key()));
             self.child_ref_by_subject
                 .insert(child.subject.key(), composition_id.clone());
             builder
@@ -1614,6 +1611,19 @@ impl BriefSubjectRef {
         }
     }
 
+    fn from_subject_ref(subject: &SubjectRef) -> Option<Self> {
+        match subject {
+            SubjectRef::Account(id) => Some(Self::account(id)),
+            SubjectRef::Project(id) => Some(Self::project(id)),
+            SubjectRef::Person(id) => Some(Self::person(id)),
+            SubjectRef::Meeting(id) => Some(Self::meeting(id)),
+            SubjectRef::User(_)
+            | SubjectRef::Global
+            | SubjectRef::Multi(_)
+            | SubjectRef::Unknown => None,
+        }
+    }
+
     fn key(&self) -> String {
         format!("{}:{}", self.kind, self.id)
     }
@@ -1795,22 +1805,6 @@ fn source_identifier(evidence: &EvidenceSource) -> SourceIdentifier {
     }
 }
 
-fn context_depth(depth: u8) -> ContextDepth {
-    match depth {
-        0 | 1 => ContextDepth::Shallow,
-        2 => ContextDepth::Standard,
-        _ => ContextDepth::Deep,
-    }
-}
-
-fn context_depth_levels(depth: u8) -> usize {
-    match depth {
-        0 | 1 => 1,
-        2 => 2,
-        _ => 3,
-    }
-}
-
 fn evidence_source_allowed_for_prompt_input(evidence: &EvidenceSource) -> bool {
     prompt_input_sensitivity_name_allowed(&evidence.sensitivity)
 }
@@ -1942,10 +1936,12 @@ mod tests {
 
     use super::*;
     use crate::abilities::feedback::ClaimVerificationState;
+    use crate::abilities::get_entity_intelligence::contracts::{Freshness, ProvenanceRef};
     use crate::abilities::{AbilityRegistry, Actor, NOOP_ABILITY_TRACER};
     use crate::intelligence::provider::{
         Completion, FingerprintMetadata, IntelligenceProvider, ModelName, PromptInput, ProviderKind,
     };
+    use crate::sensitivity::{RenderPolicy, RenderPolicyKind, RenderSurface, RenderableClaimText};
     use crate::services::context::{
         EntityContextClaimReadFuture, EntityContextClaimReadHandle, ExternalClients, FixedClock,
         PrepareMeetingAttendeeSnapshot, PrepareMeetingContextReadFuture,
@@ -2211,6 +2207,40 @@ mod tests {
                 .invoke_by_name_json(&ctx, "prepare_meeting", input_json)
                 .await
         }
+    }
+
+    #[test]
+    fn prompt_entity_context_entry_uses_fact_subject_for_scope_filtering() {
+        let fact = EntityFact {
+            claim_id: "claim-acct-b".into(),
+            subject_ref: SubjectRef::Account("acct-b".into()),
+            field_path: None,
+            claim_type: "entity_summary".into(),
+            rendered_text: RenderableClaimText {
+                text: "Account B should keep its own prompt scope.".into(),
+                policy: RenderPolicy {
+                    kind: RenderPolicyKind::Render,
+                    sensitivity: ClaimSensitivity::Internal,
+                    surface: RenderSurface::TauriBriefingPrep,
+                    claim_id: Some("claim-acct-b".into()),
+                    affordance: None,
+                },
+            },
+            trust_band: TrustBand::LikelyCurrent,
+            freshness: Freshness::Current,
+            source_asof: Some(Utc.with_ymd_and_hms(2026, 5, 6, 12, 0, 0).unwrap()),
+            sensitivity: ClaimSensitivity::Internal,
+            lifecycle_state: ClaimState::Active,
+            surfacing_state: SurfacingState::Active,
+            verification_state: ClaimVerificationState::Active,
+            provenance: ProvenanceRef::empty(),
+        };
+
+        let entry = PromptEntityContextEntry::from_fact(fact).expect("supported subject");
+
+        assert_eq!(entry.entity_type, "account");
+        assert_eq!(entry.entity_id, "acct-b");
+        assert_eq!(entry.subject_key, "account:acct-b");
     }
 
     #[tokio::test]

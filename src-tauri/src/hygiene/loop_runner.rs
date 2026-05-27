@@ -87,7 +87,7 @@ pub async fn run_hygiene_loop(state: Arc<AppState>, app: AppHandle) {
 
         // Check for overnight window -- use expanded scan with higher AI budget
         if is_overnight_window() {
-            let overnight = try_run_overnight(&state);
+            let overnight = try_run_overnight(&state).await;
             if let Some(report) = overnight {
                 log::info!(
                     "HygieneLoop: overnight scan -- {} entities refreshed, {} names resolved",
@@ -98,7 +98,7 @@ pub async fn run_hygiene_loop(state: Arc<AppState>, app: AppHandle) {
         }
 
         // Run regular scan synchronously (all locks drop before the next await)
-        let report = try_run_scan(&state);
+        let report = try_run_scan(&state).await;
 
         // Release permit after scan completes
         drop(permit);
@@ -118,7 +118,7 @@ pub async fn run_hygiene_loop(state: Arc<AppState>, app: AppHandle) {
         }
 
         // Run proactive detection scan after hygiene fixes
-        match crate::proactive::scanner::run_proactive_scan(&state) {
+        match crate::proactive::scanner::run_proactive_scan(&state).await {
             Ok(n) if n > 0 => log::info!("HygieneLoop: {} proactive insights detected", n),
             Err(e) => log::warn!("HygieneLoop: proactive scan failed: {}", e),
             _ => {}
@@ -137,7 +137,7 @@ pub async fn run_hygiene_loop(state: Arc<AppState>, app: AppHandle) {
         let today = chrono::Local::now().date_naive();
         let should_purge = last_purge_date.is_none_or(|d| d < today);
         if should_purge {
-            run_daily_purge(&state, &app);
+            run_daily_purge(&state, &app).await;
             last_purge_date = Some(today);
         }
 
@@ -189,85 +189,118 @@ fn log_scan_report(report: &HygieneReport) {
     }
 }
 
-fn run_daily_purge(state: &AppState, app: &AppHandle) {
-    if let Ok(db) = crate::db::ActionDb::open(std::sync::Arc::new(crate::db::LocalKeychain::new()))
+async fn run_daily_purge(state: &AppState, app: &AppHandle) {
+    match state
+        .db_write(|db| {
+            let purge_report = crate::db::data_lifecycle::run_age_based_purge(db);
+            let size = crate::db::data_lifecycle::db_file_size_bytes();
+            Ok((purge_report, size))
+        })
+        .await
     {
-        let purge_report = crate::db::data_lifecycle::run_age_based_purge(&db);
-        if purge_report.total() > 0 {
-            log::info!(
+        Ok((purge_report, size)) => {
+            if purge_report.total() > 0 {
+                log::info!(
                 "HygieneLoop: age-based purge -- signals={}, email_signals={}, emails={}, embeddings={}",
                 purge_report.signals_purged,
                 purge_report.email_signals_purged,
                 purge_report.emails_purged,
                 purge_report.embeddings_purged,
             );
-            {
-                let mut audit = state.audit_log.lock();
+                {
+                    let mut audit = state.audit_log.lock();
+                    #[allow(
+                        clippy::let_underscore_must_use,
+                        reason = "intentional best-effort discard; preserves existing non-blocking behavior"
+                    )]
+                    let _ = audit.append(
+                        "system",
+                        "age_based_purge",
+                        serde_json::json!({
+                            "signals_purged": purge_report.signals_purged,
+                            "email_signals_purged": purge_report.email_signals_purged,
+                            "emails_purged": purge_report.emails_purged,
+                            "embeddings_purged": purge_report.embeddings_purged,
+                        }),
+                    );
+                }
+            } else {
+                log::debug!("HygieneLoop: age-based purge -- nothing to purge");
+            }
+
+            if size >= 500_000_000 {
                 #[allow(
                     clippy::let_underscore_must_use,
                     reason = "intentional best-effort discard; preserves existing non-blocking behavior"
                 )]
-                let _ = audit.append(
-                    "system",
-                    "age_based_purge",
-                    serde_json::json!({
-                        "signals_purged": purge_report.signals_purged,
-                        "email_signals_purged": purge_report.email_signals_purged,
-                        "emails_purged": purge_report.emails_purged,
-                        "embeddings_purged": purge_report.embeddings_purged,
-                    }),
-                );
+                let _ = app.emit("db-size-warning", size);
             }
-        } else {
-            log::debug!("HygieneLoop: age-based purge -- nothing to purge");
         }
-
-        let size = crate::db::data_lifecycle::db_file_size_bytes();
-        if size >= 500_000_000 {
-            #[allow(
-                clippy::let_underscore_must_use,
-                reason = "intentional best-effort discard; preserves existing non-blocking behavior"
-            )]
-            let _ = app.emit("db-size-warning", size);
+        Err(error) => {
+            log::debug!("HygieneLoop: age-based purge skipped: {error}");
         }
     }
 }
 
 /// Run overnight scan with expanded budget.
-fn try_run_overnight(state: &AppState) -> Option<narrative::OvernightReport> {
+async fn try_run_overnight(state: &AppState) -> Option<narrative::OvernightReport> {
     let config = state.config.read().clone()?;
-    let db =
-        crate::db::ActionDb::open(std::sync::Arc::new(crate::db::LocalKeychain::new())).ok()?;
-    let workspace = std::path::Path::new(&config.workspace_path);
-    Some(narrative::run_overnight_scan(
-        &db,
-        &config,
-        workspace,
-        &state.intel_queue,
-    ))
+    let workspace = std::path::PathBuf::from(&config.workspace_path);
+    let queue = state.intel_queue.clone();
+    match state
+        .db_write(move |db| {
+            Ok(narrative::run_overnight_scan(
+                db, &config, &workspace, &queue,
+            ))
+        })
+        .await
+    {
+        Ok(report) => Some(report),
+        Err(error) => {
+            log::debug!("HygieneLoop: overnight scan skipped: {error}");
+            None
+        }
+    }
 }
 
 /// Synchronous scan attempt — releases everything when done.
-fn try_run_scan(state: &AppState) -> Option<HygieneReport> {
+async fn try_run_scan(state: &AppState) -> Option<HygieneReport> {
     let config = state.config.read().clone()?;
-    let db =
-        crate::db::ActionDb::open(std::sync::Arc::new(crate::db::LocalKeychain::new())).ok()?;
-
     let first_run = !state
         .hygiene
         .full_orphan_scan_done
         .swap(true, std::sync::atomic::Ordering::AcqRel);
 
-    let workspace = std::path::Path::new(&config.workspace_path);
-    Some(run_hygiene_scan(
-        &db,
-        &config,
-        workspace,
-        Some(&state.hygiene.budget),
-        Some(&state.intel_queue),
-        first_run,
-        Some(state.embedding_model.as_ref()),
-    ))
+    let workspace = std::path::PathBuf::from(&config.workspace_path);
+    let budget = state.hygiene.budget.clone();
+    let queue = state.intel_queue.clone();
+    let embedding_model = state.embedding_model.clone();
+    match state
+        .db_write(move |db| {
+            Ok(run_hygiene_scan(
+                db,
+                &config,
+                &workspace,
+                Some(budget.as_ref()),
+                Some(&queue),
+                first_run,
+                Some(embedding_model.as_ref()),
+            ))
+        })
+        .await
+    {
+        Ok(report) => Some(report),
+        Err(error) => {
+            if first_run {
+                state
+                    .hygiene
+                    .full_orphan_scan_done
+                    .store(false, std::sync::atomic::Ordering::Release);
+            }
+            log::debug!("HygieneLoop: scan skipped: {error}");
+            None
+        }
+    }
 }
 
 #[cfg(test)]

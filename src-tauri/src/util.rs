@@ -163,9 +163,9 @@ pub fn bootstrap_entity_directory(
     let root_readme = entity_dir.join("README.md");
     if !root_readme.exists() {
         let file_list = if entity_type == "person" {
-            "- `person.json` — Structured person data (contact, role, relationships). Machine-readable.\n- `person.md` — Generated person overview. Human and AI readable. Do not edit directly.\n- `dashboard.json` — Structured metrics and activity data. Machine-readable."
+            "- `person.json` — DailyOS-managed export projection. Do not treat as runtime authority.\n- `person.md` — Generated person overview export. Do not edit directly.\n- `dashboard.json` — DailyOS-managed export projection. Do not treat as runtime authority."
         } else {
-            "- `dashboard.json` — Structured data (factual fields, metrics). Machine-readable.\n- `dashboard.md` — Generated overview. Human and AI readable. Do not edit directly."
+            "- `dashboard.json` — DailyOS-managed export projection. Do not treat as runtime authority.\n- `dashboard.md` — Generated overview export. Do not edit directly."
         };
         let content = format!(
             r#"# {name}
@@ -175,14 +175,14 @@ This directory is managed by [DailyOS](https://dailyos.dev). It contains operati
 ## Structure
 
 {files}
-- `intelligence.json` — AI-synthesized intelligence. Auto-updated when content changes.
+- `intelligence.json` — DailyOS-managed export projection of synthesized intelligence. Do not treat as runtime authority.
 - `Call-Transcripts/` — Meeting call transcripts with YAML frontmatter.
 - `Meeting-Notes/` — Meeting summaries, notes, and outcomes.
 - `Documents/` — General documents related to this {etype}.
 
 ## For AI Tools
 
-Read the generated overview for a comprehensive summary of this {etype}. For structured data, read the JSON files and `intelligence.json`. All markdown files in this directory tree are indexed for intelligence enrichment — adding files here improves the AI's understanding of this {etype}.
+Use DailyOS runtime or MCP tools for current account, project, person, action, and briefing intelligence. Generated JSON and markdown files are export projections for portability; read them only when runtime tools are unavailable or when the user explicitly asks for file artifacts. User-authored transcripts, notes, and documents in this tree are source material and may be read when needed.
 "#,
             name = entity_name,
             etype = entity_type,
@@ -237,6 +237,12 @@ Read the generated overview for a comprehensive summary of this {etype}. For str
 
 const APP_VERSION: &str = env!("CARGO_PKG_VERSION");
 
+const CLAUDE_MD_LEGACY_AUTHORITY_PHRASES: &[&str] = &[
+    "Read `Accounts/<name>/intelligence.json`",
+    "Intelligence files are current",
+    "read the JSON files and `intelligence.json`",
+];
+
 /// CLAUDE.md template written to workspace root.
 /// First line is a version sentinel so we can detect staleness.
 const CLAUDE_MD_TEMPLATE: &str = r#"<!-- dailyos:{{VERSION}} — managed by DailyOS, do not edit -->
@@ -250,42 +256,45 @@ You have access to rich operational intelligence. Use it to help with meeting pr
 
 ### Quick Start
 
-- **Today's briefing:** Read `_today/data/briefing.json` for your daily narrative
-- **Today's meetings:** Read `_today/data/schedule.json` for timeline and context
-- **Account intelligence:** Read `Accounts/<name>/intelligence.json` for AI assessment
-- **Open actions:** Read `_today/data/actions.json` for prioritized tasks
+- **Use DailyOS MCP/runtime tools first.** They read the local SQLite database and abilities runtime, which are authoritative.
+- **Today's briefing:** Use the DailyOS briefing tool or app surface for the current briefing.
+- **Today's meetings and actions:** Use DailyOS tools or app surfaces for current schedule and work state.
+- **Account, project, and person intelligence:** Use DailyOS entity tools, such as `query_entity` or `dailyos.read.*` tools when available.
+- **Workspace files:** Read user-authored transcripts, notes, and documents as source material when needed. Generated JSON and markdown artifacts are derived exports, not primary authority.
 
 ### Workspace Structure
 
 ```
-_today/data/           → Today's briefing, schedule, actions, emails
+_today/data/           → Derived briefing, schedule, actions, emails exports
 _archive/YYYY-MM-DD/   → Historical briefings
-Accounts/<name>/       → Account intelligence (dashboard.json, intelligence.json, dashboard.md)
-Projects/<name>/       → Project intelligence (same structure)
-People/<slug>.md       → Stakeholder profiles
+Accounts/<name>/       → Account workspace: source files plus derived exports
+Projects/<name>/       → Project workspace: source files plus derived exports
+People/<slug>.md       → Generated stakeholder profile export
 _inbox/                → Incoming files for processing
 ```
 
-### Intelligence Files
+### Generated Export Files
 
-Each entity (account or project) has up to three files:
+Each entity may have generated export files:
 
-- **intelligence.json** — AI-synthesized assessment: executive summary, risks, wins, stakeholder insights, meeting readiness
-- **dashboard.json** — Mechanical data: lifecycle, health, team, domains, metadata
-- **dashboard.md** — Rich human-readable artifact combining both
+- **intelligence.json** — Derived projection of synthesized intelligence
+- **dashboard.json** — Derived projection of structured entity data
+- **dashboard.md** — Derived human-readable overview
+
+These files exist for portability and external archival. Do not use them as the source of truth when DailyOS runtime or MCP tools are available.
 
 ### Schedule & Actions
 
-- **schedule.json** — Array of today's meetings with `id`, `title`, `start_time`, `end_time`, `meeting_type`, `attendees`, `account_id`, `prep_status`
-- **actions.json** — Prioritized open actions with `id`, `title`, `priority`, `status`, `due_date`, `account_id`, `project_id`, `context`
-- **briefing.json** — Narrative daily briefing with `focus`, `sections[]`, AI-written synthesis
+- **schedule.json** — Derived export of today's meetings
+- **actions.json** — Derived export of prioritized open actions
+- **briefing.json** — Derived export of the narrative daily briefing
 
 ### Principles
 
-- Intelligence files are current — trust them as the source of truth
-- JSON files are for structured queries, markdown files are for narrative context
+- DailyOS SQLite and abilities runtime are the source of truth
+- Generated JSON and markdown files are write-only projections from DailyOS unless the user asks to inspect files
 - Lead with conclusions, not data — the intelligence already synthesizes meaning
-- Actions have entity context — follow `entity_id` links for full background
+- Actions have entity context — use DailyOS tools to follow `entity_id` links for full background
 
 ### Writing Deliverables
 
@@ -316,7 +325,16 @@ fn write_workspace_claude_md(workspace: &Path) -> Result<(), String> {
     if claude_md_path.exists() {
         if let Ok(first_line) = read_first_line(&claude_md_path) {
             if first_line.contains(&sentinel) {
-                return Ok(()); // Already current
+                let has_legacy_authority_language = std::fs::read_to_string(&claude_md_path)
+                    .ok()
+                    .is_some_and(|content| {
+                        CLAUDE_MD_LEGACY_AUTHORITY_PHRASES
+                            .iter()
+                            .any(|phrase| content.contains(phrase))
+                    });
+                if !has_legacy_authority_language {
+                    return Ok(()); // Already current
+                }
             }
         }
     }
@@ -1056,6 +1074,9 @@ mod tests {
         assert!(claude_md.starts_with(&format!("<!-- dailyos:{}", APP_VERSION)));
         assert!(claude_md.contains("DailyOS Workspace"));
         assert!(claude_md.contains("briefing.json"));
+        assert!(claude_md.contains("SQLite and abilities runtime are the source of truth"));
+        assert!(!claude_md.contains("Intelligence files are current"));
+        assert!(!claude_md.contains("Read `Accounts/<name>/intelligence.json`"));
 
         // .claude/settings.json exists with version
         let settings = std::fs::read_to_string(dir.path().join(".claude/settings.json")).unwrap();
@@ -1080,6 +1101,26 @@ mod tests {
 
         assert_eq!(md1, md2);
         assert_eq!(settings1, settings2);
+    }
+
+    #[test]
+    fn test_managed_files_rewrites_legacy_json_authority_guidance() {
+        let dir = tempfile::tempdir().expect("tempdir");
+        let stale_content = format!(
+            "<!-- dailyos:{} — managed by DailyOS, do not edit -->\n\
+             # DailyOS Workspace\n\
+             - **Account intelligence:** Read `Accounts/<name>/intelligence.json` for AI assessment\n\
+             - Intelligence files are current — trust them as the source of truth\n",
+            APP_VERSION
+        );
+        std::fs::write(dir.path().join("CLAUDE.md"), stale_content).unwrap();
+
+        write_workspace_claude_md(dir.path()).unwrap();
+
+        let claude_md = std::fs::read_to_string(dir.path().join("CLAUDE.md")).unwrap();
+        assert!(claude_md.contains("SQLite and abilities runtime are the source of truth"));
+        assert!(!claude_md.contains("Read `Accounts/<name>/intelligence.json`"));
+        assert!(!claude_md.contains("Intelligence files are current"));
     }
 
     #[test]
@@ -1231,6 +1272,10 @@ mod tests {
             "README should reference dashboard.json"
         );
         assert!(
+            readme.contains("Do not treat as runtime authority"),
+            "README should make generated JSON non-authoritative"
+        );
+        assert!(
             !readme.contains("dashboard.md"),
             "README should NOT reference dashboard.md for persons"
         );
@@ -1243,6 +1288,8 @@ mod tests {
         let readme = std::fs::read_to_string(dir.path().join("README.md")).unwrap();
         assert!(readme.contains("dashboard.json"));
         assert!(readme.contains("dashboard.md"));
+        assert!(readme.contains("Use DailyOS runtime or MCP tools"));
+        assert!(!readme.contains("read the JSON files and `intelligence.json`"));
     }
 
     #[test]

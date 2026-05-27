@@ -107,6 +107,17 @@ while IFS= read -r -d '' file; do
     function is_function_decl(text) {
       return text ~ /(^|[^[:alnum:]_])((pub(\([^)]*\))?|async|unsafe|extern|const)[[:space:]]+)*fn[[:space:]]+[A-Za-z_][A-Za-z0-9_]*[[:space:]]*(<|\()/
     }
+    function extract_function_name(text,    rest) {
+      rest = text
+      sub(/^.*fn[[:space:]]+/, "", rest)
+      sub(/[[:space:]]*(<|\().*$/, "", rest)
+      return rest
+    }
+    function is_test_fixture_function(fn_idx) {
+      return fn_idx > 0 &&
+        (fn_has_test_attr[fn_idx] ||
+         (fn_in_cfg_test[fn_idx] && fn_name[fn_idx] ~ /^(seed|insert|make|setup|populate)_/))
+    }
     function is_stakeholder_write_wrapper_call(line) {
       return syntax_lines[line] ~ /(^|[^[:alnum:]_:])((crate::services::)?stakeholder_writer::)?write_with_stakeholders_changed(_for_entities)?[[:space:]]*\(/
     }
@@ -214,10 +225,17 @@ while IFS= read -r -d '' file; do
         pending_cfg_test = 1
         in_cfg_test_line[NR] = 1
       }
+      if (syntax_line ~ /^[[:space:]]*#\[[^]]*test[^]]*\]/) {
+        pending_test_attr = 1
+      }
 
       if (!pending_fn && is_function_decl(syntax_line)) {
         pending_fn = 1
         pending_fn_line = NR
+        pending_fn_name = extract_function_name(syntax_line)
+        pending_fn_has_test_attr = pending_test_attr
+        pending_fn_in_cfg_test = test_stack_len > 0 || pending_cfg_test
+        pending_test_attr = 0
       }
 
       opens = count_char(syntax_line, "{")
@@ -226,12 +244,18 @@ while IFS= read -r -d '' file; do
         fn_count++
         fn_start[fn_count] = NR
         fn_decl[fn_count] = pending_fn_line
+        fn_name[fn_count] = pending_fn_name
+        fn_has_test_attr[fn_count] = pending_fn_has_test_attr
+        fn_in_cfg_test[fn_count] = pending_fn_in_cfg_test
         fn_depth[fn_count] = brace_depth + 1
         stack_len++
         fn_stack[stack_len] = fn_count
         pending_fn = 0
       } else if (pending_fn && syntax_line ~ /;/) {
         pending_fn = 0
+      }
+      if (pending_test_attr && syntax_line !~ /^[[:space:]]*#\[/ && syntax_line !~ /^[[:space:]]*$/ && !is_function_decl(syntax_line)) {
+        pending_test_attr = 0
       }
 
       if (pending_cfg_test && syntax_line ~ /(^|[^[:alnum:]_])mod[[:space:]]+[A-Za-z_][A-Za-z0-9_]*[[:space:]]*\{/ && opens > 0) {
@@ -268,6 +292,7 @@ while IFS= read -r -d '' file; do
         stop = min(n, i + 30)
         fn_idx = enclosing_function(i)
         if (allowlisted_writer || is_non_graph_update(i, stop) ||
+            is_test_fixture_function(fn_idx) ||
             has_write_level_stakeholder_signal(i, fn_idx)) {
           continue
         }
@@ -280,7 +305,8 @@ while IFS= read -r -d '' file; do
           continue
         }
         fn_idx = enclosing_function(i)
-        if (in_cfg_test_line[i] || allowlisted_writer || helper_file ||
+        if (allowlisted_writer || helper_file ||
+            is_test_fixture_function(fn_idx) ||
             has_write_level_stakeholder_signal(i, fn_idx)) {
           continue
         }
@@ -291,6 +317,10 @@ while IFS= read -r -d '' file; do
       if (!helper_file) {
         for (i = 1; i <= n; i++) {
           if (code_lines[i] !~ /emit_in_transaction[[:space:]]*\(|STAKEHOLDERS_CHANGED_SIGNAL|stakeholders_changed/) {
+            continue
+          }
+          fn_idx = enclosing_function(i)
+          if (is_test_fixture_function(fn_idx)) {
             continue
           }
           stop = min(n, i + 12)

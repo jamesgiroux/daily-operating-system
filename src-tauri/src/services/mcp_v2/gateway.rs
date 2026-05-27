@@ -5,7 +5,7 @@
 //! implementations; records audit attribution on success; emits
 //! `McpToolInvoked` / `McpInvocationRejected` signals on success / rejection
 //! respectively via the [`SignalEmitter`] trait (W2+ wires a production
-//! emitter that calls `crate::signals::bus::emit_signal_and_propagate`).
+//! service-layer signal emitter through the service signal facade).
 //!
 //! Per ADR-0102 §C authorization machinery and the local MCP trust model:
 //! authorization and operational controls live here; local transport ceremony
@@ -43,8 +43,8 @@ const MUTATION_CURSOR_TRUNCATION_SENTINEL: &str = "truncated_oversize";
 /// Abstract signal-emission seam between the gateway and the production
 /// signals bus. The default `StderrSignalEmitter` is for tests and dev
 /// dispatch (so the gateway doesn't take a hard `ActionDb` dependency in
-/// W1-A); W2+ supplies a real emitter that calls
-/// `crate::signals::bus::emit_signal_and_propagate` with a real `ActionDb`.
+/// W1-A); W2+ supplies a real service-layer signal emitter with a real
+/// `ActionDb`.
 ///
 /// Both methods MUST be infallible from the gateway's perspective — the
 /// emit-or-log discipline (L0 packet AC-7) means emission failure logs +
@@ -243,6 +243,42 @@ impl Gateway {
         }
     }
 
+    /// Handle a local stdio MCP invocation without consulting or mutating the
+    /// SQLite auth tables. Local stdio runs inside the same macOS user boundary;
+    /// the registered process-local grant set is the authority for exposure.
+    pub fn handle_local_stdio_tool_call(
+        &self,
+        asserted_client_id: &McpClientId,
+        envelope: McpToolRequestEnvelope,
+        grants: &[ToolGrant],
+    ) -> McpToolResponseEnvelope {
+        match self.dispatch_local_stdio(asserted_client_id, &envelope, grants) {
+            Ok(dispatched) => McpToolResponseEnvelope {
+                conversation_handle: dispatched.conversation_handle,
+                result: dispatched.result,
+            },
+            Err(failure) => {
+                let GatewayFailure {
+                    error,
+                    reject_reason,
+                    tool_name_for_signal,
+                    client_id_for_signal,
+                } = *failure;
+                self.emitter.emit_rejected(
+                    client_id_for_signal.as_ref(),
+                    tool_name_for_signal.as_ref(),
+                    &reject_reason,
+                );
+                McpToolResponseEnvelope {
+                    conversation_handle: OpaqueConversationHandle::new(
+                        envelope_handle_str(&envelope).to_string(),
+                    ),
+                    result: McpToolResult::Error { error },
+                }
+            }
+        }
+    }
+
     /// Inner per-dispatch flow. On success: handler result + active
     /// conversation handle. On failure: `GatewayFailure` with attribution for
     /// the rejection signal.
@@ -375,9 +411,123 @@ impl Gateway {
             }
         }
 
-        // Construct the runtime actor and dispatch.
+        Ok(self.invoke_authorized_handler(
+            handler.as_ref(),
+            asserted_client_id,
+            envelope,
+            &grant,
+            conversation_handle,
+        ))
+    }
+
+    fn dispatch_local_stdio(
+        &self,
+        asserted_client_id: &McpClientId,
+        envelope: &McpToolRequestEnvelope,
+        grants: &[ToolGrant],
+    ) -> Result<Dispatched, Box<GatewayFailure>> {
+        let Some(grant) = grants
+            .iter()
+            .find(|grant| grant.tool_name == envelope.tool_name)
+        else {
+            return Err(Box::new(GatewayFailure {
+                error: ToolError::ExposureForbidden {
+                    tool_name: envelope.tool_name.clone(),
+                },
+                reject_reason: "absent_local_stdio_grant".to_string(),
+                tool_name_for_signal: Some(envelope.tool_name.clone()),
+                client_id_for_signal: Some(asserted_client_id.clone()),
+            }));
+        };
+
+        if !matches!(
+            grant.exposure,
+            abilities_runtime::abilities::registry::McpExposure::Invocable
+        ) {
+            return Err(Box::new(GatewayFailure {
+                error: ToolError::ExposureForbidden {
+                    tool_name: envelope.tool_name.clone(),
+                },
+                reject_reason: "non_invocable_local_stdio_grant".to_string(),
+                tool_name_for_signal: Some(envelope.tool_name.clone()),
+                client_id_for_signal: Some(asserted_client_id.clone()),
+            }));
+        }
+
+        let Some(handler) = self.handlers.get(&envelope.tool_name) else {
+            return Err(Box::new(GatewayFailure {
+                error: ToolError::BadParams {
+                    detail: "unknown tool name".to_string(),
+                },
+                reject_reason: "unknown_tool".to_string(),
+                tool_name_for_signal: Some(envelope.tool_name.clone()),
+                client_id_for_signal: Some(asserted_client_id.clone()),
+            }));
+        };
+
+        let required: &[Scope] = &handler.description().scopes_required;
+        if !scope_is_subset(required, &grant.scopes_granted) {
+            let missing = required
+                .iter()
+                .find(|r| !grant.scopes_granted.contains(r))
+                .cloned()
+                .unwrap_or_else(|| Scope::new(""));
+            return Err(Box::new(GatewayFailure {
+                error: ToolError::Unauthorized {
+                    missing_scope: missing.clone(),
+                },
+                reject_reason: format!("missing_scope:{}", missing.as_str()),
+                tool_name_for_signal: Some(envelope.tool_name.clone()),
+                client_id_for_signal: Some(asserted_client_id.clone()),
+            }));
+        }
+
+        if let Some(params_obj) = envelope.params.as_object() {
+            if params_obj.contains_key("granted_scopes") {
+                return Err(Box::new(GatewayFailure {
+                    error: ToolError::BadParams {
+                        detail: "granted_scopes not accepted in params".to_string(),
+                    },
+                    reject_reason: "caller_asserted_scopes".to_string(),
+                    tool_name_for_signal: Some(envelope.tool_name.clone()),
+                    client_id_for_signal: Some(asserted_client_id.clone()),
+                }));
+            }
+            if params_obj.contains_key("conversation_id") {
+                return Err(Box::new(GatewayFailure {
+                    error: ToolError::BadParams {
+                        detail: "use envelope conversation_handle".to_string(),
+                    },
+                    reject_reason: "caller_asserted_conversation_id".to_string(),
+                    tool_name_for_signal: Some(envelope.tool_name.clone()),
+                    client_id_for_signal: Some(asserted_client_id.clone()),
+                }));
+            }
+        }
+
+        let conversation_handle = envelope.conversation_handle.clone().unwrap_or_else(|| {
+            OpaqueConversationHandle::new(format!("local-stdio-{}", uuid::Uuid::new_v4()))
+        });
+
+        Ok(self.invoke_authorized_handler(
+            handler.as_ref(),
+            asserted_client_id,
+            envelope,
+            grant,
+            conversation_handle,
+        ))
+    }
+
+    fn invoke_authorized_handler(
+        &self,
+        handler: &dyn McpToolHandler,
+        asserted_client_id: &McpClientId,
+        envelope: &McpToolRequestEnvelope,
+        grant: &ToolGrant,
+        conversation_handle: OpaqueConversationHandle,
+    ) -> Dispatched {
         let runtime_actor =
-            actor_policy::project_actor(asserted_client_id, &grant, Some(&conversation_handle));
+            actor_policy::project_actor(asserted_client_id, grant, Some(&conversation_handle));
         let wire_actor = McpActor::Client {
             client_id: asserted_client_id.clone(),
             conversation_handle: Some(conversation_handle.clone()),
@@ -389,7 +539,6 @@ impl Gateway {
 
         let result = match invocation {
             Ok(value) => {
-                // Extract + cap mutation_cursor for write-class tools per AC-6.
                 let mutation_cursor = if matches!(side, Side::Write | Side::SubmitCorrection) {
                     let extracted = value.get("mutation_cursor").cloned();
                     if extracted.is_none() {
@@ -429,14 +578,14 @@ impl Gateway {
                 {
                     if matches!(err, audit::AuditError::DoubleFailure { .. }) {
                         emit_double_failure_alert();
-                        return Ok(Dispatched {
+                        return Dispatched {
                             result: McpToolResult::Error {
                                 error: ToolError::Internal {
                                     trace_id: "mcp_audit_double_failure".to_string(),
                                 },
                             },
                             conversation_handle,
-                        });
+                        };
                     }
                     eprintln!("mcp_v2 audit single-failure: {err}");
                 }
@@ -451,10 +600,10 @@ impl Gateway {
             Err(error) => McpToolResult::Error { error },
         };
 
-        Ok(Dispatched {
+        Dispatched {
             result,
             conversation_handle,
-        })
+        }
     }
 }
 

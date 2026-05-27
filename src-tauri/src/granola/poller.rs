@@ -1,8 +1,9 @@
-//! Granola polling loop — reads local cache file and syncs transcripts.
+//! Granola polling loop — reads Granola companion IPC or local cache and syncs transcripts.
 //!
-//! Runs as a background task. Unlike Quill (which connects to an MCP server),
-//! Granola reads a local JSON file so there's no connection/fetch step.
-//! The state machine is mainly for tracking and retry on AI pipeline failures.
+//! Runs as a background task. The preferred source is Granola's companion IPC
+//! bridge; the legacy plaintext JSON cache remains as a fallback for older
+//! Granola installs. The state machine is mainly for tracking and retry on AI
+//! pipeline failures.
 
 use std::sync::Arc;
 use std::time::Duration;
@@ -14,7 +15,10 @@ use tauri::{AppHandle, Emitter};
 use crate::state::AppState;
 
 use super::cache;
+use super::companion;
 use super::matcher;
+
+const COMPANION_SCAN_DAYS_BACK: i32 = 90;
 
 /// Background loop that polls the Granola cache file for new transcripts.
 ///
@@ -49,21 +53,7 @@ pub async fn run_granola_poller(state: Arc<AppState>, app_handle: AppHandle) {
 
         let poll_interval = Duration::from_secs((config.poll_interval_minutes as u64) * 60);
 
-        // Read and process the cache
-        let cache_path = match super::resolve_cache_path(&config) {
-            Some(p) => p,
-            None => {
-                log::debug!("Granola poller: no cache file found");
-                tokio::select! {
-                    _ = tokio::time::sleep(poll_interval) => {}
-                    _ = state.integrations.granola_poller_wake.notified() => {
-                        log::info!("Granola poller: woken by signal (meeting ended)");
-                    }
-                }
-                continue;
-            }
-        };
-        match poll_once(&state, &app_handle, &cache_path) {
+        match poll_once_prefer_companion(&state, &app_handle, &config) {
             Ok(events) => {
                 // Re-run entity linking with the post-transcript context for
                 // each meeting we successfully ingested. The calendar poller
@@ -104,6 +94,89 @@ pub async fn run_granola_poller(state: Arc<AppState>, app_handle: AppHandle) {
     }
 }
 
+fn poll_once_prefer_companion(
+    state: &AppState,
+    app_handle: &AppHandle,
+    config: &super::GranolaConfig,
+) -> Result<Vec<crate::types::CalendarEvent>, String> {
+    if companion::CompanionClient::status().available {
+        match poll_once_companion(state, app_handle, COMPANION_SCAN_DAYS_BACK) {
+            Ok(events) => return Ok(events),
+            Err(error) => {
+                log::warn!(
+                    "Granola poller: companion source failed, falling back to cache: {}",
+                    error
+                );
+            }
+        }
+    }
+
+    let cache_path = super::resolve_cache_path(config).ok_or_else(|| {
+        let companion_message = companion::CompanionClient::status()
+            .message
+            .unwrap_or_else(|| "Granola companion bridge is unavailable".to_string());
+        if super::detect_encrypted_cache_path().is_some() {
+            format!(
+                "{companion_message}; legacy plaintext cache is unavailable or stale while encrypted cache exists"
+            )
+        } else {
+            format!("{companion_message}; Granola cache file not found")
+        }
+    })?;
+
+    poll_once(state, app_handle, &cache_path)
+}
+
+fn poll_once_companion(
+    state: &AppState,
+    app_handle: &AppHandle,
+    days_back: i32,
+) -> Result<Vec<crate::types::CalendarEvent>, String> {
+    let client = companion::CompanionClient::new().map_err(|e| e.to_string())?;
+    let notes = client
+        .list_recent_notes(days_back)
+        .map_err(|e| e.to_string())?;
+    if notes.is_empty() {
+        return Ok(Vec::new());
+    }
+
+    let meetings_for_matching =
+        state.with_db(|db| get_recent_meetings_for_matching(db, days_back))?;
+
+    let mut synced = 0;
+    let mut linkable_events = Vec::new();
+
+    for note in &notes {
+        let match_doc = note.as_match_document();
+        let Some(matched) = matcher::match_to_meeting(&match_doc, &meetings_for_matching) else {
+            continue;
+        };
+
+        let doc = match client.fetch_document(note) {
+            Ok(doc) => doc,
+            Err(error) => {
+                log::warn!(
+                    "Granola companion: failed to fetch note content for '{}': {}",
+                    note.title,
+                    error
+                );
+                continue;
+            }
+        };
+
+        if let Some(event) = sync_matched_document(state, app_handle, &doc, &matched)? {
+            synced += 1;
+            linkable_events.push(event);
+        }
+    }
+
+    if synced > 0 {
+        log::info!("Granola companion poller: synced {} documents", synced);
+    }
+
+    Ok(linkable_events)
+}
+
 /// Single poll cycle: read cache, match documents, sync new ones.
 ///
 /// Returns the calendar events for meetings whose transcripts were
@@ -120,11 +193,7 @@ fn poll_once(
     }
 
     // Get recent meetings from DB for matching (last 90 days)
-    let meetings_for_matching = {
-        let db = crate::db::ActionDb::open(std::sync::Arc::new(crate::db::LocalKeychain::new()))
-            .map_err(|e| format!("DB open failed: {e}"))?;
-        get_recent_meetings_for_matching(&db, 90)?
-    };
+    let meetings_for_matching = state.with_db(|db| get_recent_meetings_for_matching(db, 90))?;
 
     let mut synced = 0;
     let mut linkable_events: Vec<crate::types::CalendarEvent> = Vec::new();
@@ -137,91 +206,8 @@ fn poll_once(
             None => continue,
         };
 
-        // Resolve sync row for this meeting/source. Unlike the previous behavior
-        // (which skipped any existing row), we must resume non-completed rows so
-        // app restarts don't strand pending Granola transcripts forever.
-        let sync_id = {
-            let db =
-                crate::db::ActionDb::open(std::sync::Arc::new(crate::db::LocalKeychain::new()))
-                    .map_err(|e| format!("DB open failed: {e}"))?;
-
-            match db
-                .get_quill_sync_state_by_source(&matched.meeting_id, "granola")
-                .map_err(|e| e.to_string())?
-            {
-                Some(existing) => {
-                    if !should_process_existing_sync(&existing) {
-                        continue;
-                    }
-
-                    // Reset any stale in-flight/failed row so this poll cycle can resume it.
-                    if existing.state != "pending" {
-                        #[allow(
-                            clippy::let_underscore_must_use,
-                            reason = "intentional best-effort discard; preserves existing non-blocking behavior"
-                        )]
-                        // dos7-allowed: transcript-db-write - transcript sync-state write; not workspace-file ingestion
-                        let _ = crate::quill::sync::transition_state(
-                            &db,
-                            &existing.id,
-                            "pending",
-                            None,
-                            None,
-                            None,
-                            Some("Granola resume/retry"),
-                        );
-                    }
-                    existing.id
-                }
-                None => db
-                    .insert_quill_sync_state_with_source(&matched.meeting_id, "granola")
-                    .map_err(|e| e.to_string())?,
-            }
-        };
-
-        // Process through the shared transcript pipeline
-        let content_kind = match doc.content_type {
-            cache::GranolaContentType::Transcript => {
-                crate::processor::transcript::TranscriptContentKind::Transcript
-            }
-            cache::GranolaContentType::Notes => {
-                crate::processor::transcript::TranscriptContentKind::Notes
-            }
-        };
-        let result = process_granola_document(
-            state,
-            &sync_id,
-            &matched.meeting_id,
-            &doc.content,
-            content_kind,
-        );
-
-        match &result {
-            Ok((dest, _)) => {
-                log::info!(
-                    "Granola sync: processed '{}' → {} ({} chars, {:?})",
-                    doc.title,
-                    dest,
-                    doc.content.len(),
-                    matched.method,
-                );
-                synced += 1;
-            }
-            Err(e) => {
-                log::warn!("Granola sync: processing failed for '{}': {}", doc.title, e);
-            }
-        }
-
-        // Notify frontend with normalized payload (fallback to meeting ID if unavailable).
-        emit_transcript_processed(state, app_handle, &matched.meeting_id);
-
-        if let Ok((_, calendar_event)) = result {
-            #[allow(
-                clippy::let_underscore_must_use,
-                reason = "intentional best-effort discard; preserves existing non-blocking behavior"
-            )]
-            let _ =
-                crate::notification::notify_transcript_ready(app_handle, &doc.title, None, state);
+        if let Some(calendar_event) = sync_matched_document(state, app_handle, doc, &matched)? {
+            synced += 1;
             linkable_events.push(calendar_event);
         }
     }
@@ -231,6 +217,133 @@ fn poll_once(
     }
 
     Ok(linkable_events)
+}
+
+fn sync_matched_document(
+    state: &AppState,
+    app_handle: &AppHandle,
+    doc: &cache::GranolaDocument,
+    matched: &matcher::GranolaMatchResult,
+) -> Result<Option<crate::types::CalendarEvent>, String> {
+    let Some(sync_id) = prepare_poll_sync_id(state, &matched.meeting_id)? else {
+        return Ok(None);
+    };
+
+    let content_kind = match doc.content_type {
+        cache::GranolaContentType::Transcript => {
+            crate::processor::transcript::TranscriptContentKind::Transcript
+        }
+        cache::GranolaContentType::Notes => {
+            crate::processor::transcript::TranscriptContentKind::Notes
+        }
+    };
+    let result = process_granola_document(
+        state,
+        &sync_id,
+        &matched.meeting_id,
+        &doc.content,
+        content_kind,
+    );
+
+    match &result {
+        Ok((dest, _)) => {
+            log::info!(
+                "Granola sync: processed '{}' → {} ({} chars, {:?})",
+                doc.title,
+                dest,
+                doc.content.len(),
+                matched.method,
+            );
+        }
+        Err(e) => {
+            log::warn!("Granola sync: processing failed for '{}': {}", doc.title, e);
+        }
+    }
+
+    emit_transcript_processed(state, app_handle, &matched.meeting_id);
+
+    if let Ok((_, calendar_event)) = result {
+        #[allow(
+            clippy::let_underscore_must_use,
+            reason = "intentional best-effort discard; preserves existing non-blocking behavior"
+        )]
+        let _ = crate::notification::notify_transcript_ready(app_handle, &doc.title, None, state);
+        return Ok(Some(calendar_event));
+    }
+
+    Ok(None)
+}
+
+fn prepare_poll_sync_id(state: &AppState, meeting_id: &str) -> Result<Option<String>, String> {
+    // Resolve sync row for this meeting/source. Unlike the previous behavior
+    // (which skipped any existing row), we must resume non-completed rows so
+    // app restarts don't strand pending Granola transcripts forever.
+    state.with_db(|db| {
+        match db
+            .get_quill_sync_state_by_source(meeting_id, "granola")
+            .map_err(|e| e.to_string())?
+        {
+            Some(existing) => {
+                if !should_process_existing_sync(&existing) {
+                    return Ok(None);
+                }
+
+                // Reset any stale in-flight/failed row so this poll cycle can resume it.
+                if existing.state != "pending" {
+                    #[allow(
+                        clippy::let_underscore_must_use,
+                        reason = "intentional best-effort discard; preserves existing non-blocking behavior"
+                    )]
+                    // dos7-allowed: transcript-db-write - transcript sync-state write; not workspace-file ingestion
+                    let _ = crate::quill::sync::transition_state(
+                        db,
+                        &existing.id,
+                        "pending",
+                        None,
+                        None,
+                        None,
+                        Some("Granola resume/retry"),
+                    );
+                }
+                Ok(Some(existing.id))
+            }
+            None => db
+                .insert_quill_sync_state_with_source(meeting_id, "granola")
+                .map(Some)
+                .map_err(|e| e.to_string()),
+        }
+    })
+}
+
+fn prepare_manual_sync_id(state: &AppState, meeting_id: &str) -> Result<String, String> {
+    let meeting_id = meeting_id.to_string();
+    state.with_db(move |db| {
+        match db
+            .get_quill_sync_state_by_source(&meeting_id, "granola")
+            .map_err(|e| e.to_string())?
+        {
+            Some(existing) => {
+                #[allow(
+                    clippy::let_underscore_must_use,
+                    reason = "intentional best-effort discard; preserves existing non-blocking behavior"
+                )]
+                // dos7-allowed: transcript-db-write - transcript sync-state write; not workspace-file ingestion
+                let _ = crate::quill::sync::transition_state(
+                    db,
+                    &existing.id,
+                    "pending",
+                    None,
+                    None,
+                    None,
+                    Some("Manual sync trigger"),
+                );
+                Ok(existing.id)
+            }
+            None => db
+                .insert_quill_sync_state_with_source(&meeting_id, "granola")
+                .map_err(|e| e.to_string()),
+        }
+    })
 }
 
 /// Process a Granola document through the shared transcript pipeline.
@@ -250,10 +363,7 @@ fn process_granola_document(
     content_kind: crate::processor::transcript::TranscriptContentKind,
 ) -> Result<(String, crate::types::CalendarEvent), String> {
     // Phase 1: Read data with lock, then drop
-    let (calendar_event, workspace, profile, ai_config) = {
-        let db = crate::db::ActionDb::open(std::sync::Arc::new(crate::db::LocalKeychain::new()))
-            .map_err(|e| format!("DB open failed: {e}"))?;
-
+    let (calendar_event, workspace, profile, ai_config) = state.with_db(|db| {
         let meeting = db
             .get_meeting_by_id(meeting_id)
             .map_err(|e| e.to_string())?
@@ -263,7 +373,7 @@ fn process_granola_document(
         // Hydrate linked entities + attendees so the processor routes the
         // markdown to the right account dir and emits entity IDs in the
         // YAML frontmatter.
-        crate::processor::transcript::enrich_meeting_from_db(&mut calendar_event, &db);
+        crate::processor::transcript::enrich_meeting_from_db(&mut calendar_event, db);
 
         let (workspace, profile, ai_config) = {
             let config_guard = state.config.read();
@@ -285,7 +395,7 @@ fn process_granola_document(
         )]
         // dos7-allowed: transcript-db-write - transcript sync-state write; not workspace-file ingestion
         let _ = crate::quill::sync::transition_state(
-            &db,
+            db,
             sync_id,
             "processing",
             None,
@@ -294,8 +404,8 @@ fn process_granola_document(
             None,
         );
 
-        (calendar_event, workspace, profile, ai_config)
-    }; // DB lock dropped
+        Ok((calendar_event, workspace, profile, ai_config))
+    })?; // DB lock dropped
 
     // Step 2: Run AI pipeline WITHOUT holding the DB mutex
     let result = crate::quill::sync::process_fetched_transcript_without_db_with_kind(
@@ -311,28 +421,25 @@ fn process_granola_document(
     // Phase 3: Re-acquire lock to write results
     match result {
         Ok(tr) => {
-            let db =
-                crate::db::ActionDb::open(std::sync::Arc::new(crate::db::LocalKeychain::new()))
-                    .map_err(|e| format!("DB open failed: {e}"))?;
+            let dest = state.with_db(|db| {
+                let dest = tr.destination.as_deref().unwrap_or("").to_string();
+                let processed_at = chrono::Utc::now().to_rfc3339();
+                #[allow(
+                    clippy::let_underscore_must_use,
+                    reason = "intentional best-effort discard; preserves existing non-blocking behavior"
+                )]
+                // dos7-allowed: transcript-db-write - transcript metadata write; not workspace-file ingestion
+                let _ = db.update_meeting_transcript_metadata(
+                    &calendar_event.id,
+                    &dest,
+                    &processed_at,
+                    tr.summary.as_deref(),
+                );
 
-            let dest = tr.destination.as_deref().unwrap_or("");
-            let processed_at = chrono::Utc::now().to_rfc3339();
-            #[allow(
-                clippy::let_underscore_must_use,
-                reason = "intentional best-effort discard; preserves existing non-blocking behavior"
-            )]
-            // dos7-allowed: transcript-db-write - transcript metadata write; not workspace-file ingestion
-            let _ = db.update_meeting_transcript_metadata(
-                &calendar_event.id,
-                dest,
-                &processed_at,
-                tr.summary.as_deref(),
-            );
-
-            // Write captures (wins, risks, decisions) extracted by AI
-            let meeting_account_id = resolve_meeting_account_id(&db, &calendar_event.id);
-            let account = calendar_event.account.as_deref();
-            for win in &tr.wins {
+                // Write captures (wins, risks, decisions) extracted by AI
+                let meeting_account_id = resolve_meeting_account_id(db, &calendar_event.id);
+                let account = calendar_event.account.as_deref();
+                for win in &tr.wins {
                 #[allow(
                     clippy::let_underscore_must_use,
                     reason = "intentional best-effort discard; preserves existing non-blocking behavior"
@@ -462,35 +569,40 @@ fn process_granola_document(
                 );
             }
 
-            // Transition sync state to completed
-            #[allow(
-                clippy::let_underscore_must_use,
-                reason = "intentional best-effort discard; preserves existing non-blocking behavior"
-            )]
-            // dos7-allowed: transcript-db-write - transcript sync-state write; not workspace-file ingestion
-            let _ = crate::quill::sync::transition_state(
-                &db,
-                sync_id,
-                "completed",
-                None,
-                None,
-                Some(dest),
-                None,
-            );
-
-            Ok((dest.to_string(), calendar_event))
-        }
-        Err(error) => {
-            if let Ok(db) =
-                crate::db::ActionDb::open(std::sync::Arc::new(crate::db::LocalKeychain::new()))
-            {
+                // Transition sync state to completed
                 #[allow(
                     clippy::let_underscore_must_use,
                     reason = "intentional best-effort discard; preserves existing non-blocking behavior"
                 )]
                 // dos7-allowed: transcript-db-write - transcript sync-state write; not workspace-file ingestion
                 let _ = crate::quill::sync::transition_state(
-                    &db,
+                    db,
+                    sync_id,
+                    "completed",
+                    None,
+                    None,
+                    Some(&dest),
+                    None,
+                );
+
+                Ok(dest)
+            })?;
+
+            Ok((dest, calendar_event))
+        }
+        Err(error) => {
+            #[allow(
+                clippy::let_underscore_must_use,
+                reason = "intentional best-effort discard; preserves existing non-blocking behavior"
+            )]
+            let _ = state.with_db(|db| {
+                #[allow(
+                    clippy::let_underscore_must_use,
+                    reason = "intentional best-effort discard; preserves existing non-blocking behavior"
+                )]
+                // dos7-allowed: transcript-db-write - transcript sync-state write; not workspace-file ingestion
+                let _ = crate::quill::sync::transition_state(
+                    db,
                     sync_id,
                     "failed",
                     None,
@@ -503,8 +615,9 @@ fn process_granola_document(
                     reason = "intentional best-effort discard; preserves existing non-blocking behavior"
                 )]
                 // dos7-allowed: transcript-db-write - transcript sync-state write; not workspace-file ingestion
-                let _ = crate::quill::sync::advance_attempt(&db, sync_id);
-            }
+                let _ = crate::quill::sync::advance_attempt(db, sync_id);
+                Ok(())
+            });
             Err(error)
         }
     }
@@ -542,12 +655,12 @@ fn is_retry_due(next_attempt_at: Option<&str>) -> bool {
 
 /// Resolve the primary account_id for a meeting.
 ///
-/// Uses explicit account links in `meeting_entities`.
+/// Uses explicit account links through the graph-compatible meeting link view.
 fn resolve_meeting_account_id(db: &crate::db::ActionDb, meeting_id: &str) -> Option<String> {
     db.conn_ref()
         .query_row(
             "SELECT me.entity_id
-             FROM meeting_entities me
+             FROM effective_meeting_entities me
              WHERE me.meeting_id = ?1
                AND me.entity_type = 'account'
              ORDER BY me.rowid ASC
@@ -568,17 +681,20 @@ fn get_recent_meetings_for_matching(
 }
 
 /// Emit transcript-processed event with full MeetingOutcomeData payload when available.
-fn emit_transcript_processed(_state: &AppState, app_handle: &AppHandle, meeting_id: &str) {
-    let payload = crate::db::ActionDb::open(std::sync::Arc::new(crate::db::LocalKeychain::new()))
-        .ok()
-        .and_then(|db| {
-            db.get_meeting_by_id(meeting_id)
+fn emit_transcript_processed(state: &AppState, app_handle: &AppHandle, meeting_id: &str) {
+    let meeting_id = meeting_id.to_string();
+    let payload = state
+        .with_db(|db| {
+            Ok(db
+                .get_meeting_by_id(&meeting_id)
                 .ok()
                 .flatten()
                 .and_then(|meeting| {
-                    crate::services::meetings::collect_meeting_outcomes_from_db(&db, &meeting)
-                })
-        });
+                    crate::services::meetings::collect_meeting_outcomes_from_db(db, &meeting)
+                }))
+        })
+        .ok()
+        .flatten();
 
     match payload {
         Some(outcome) => {
@@ -593,7 +709,7 @@ fn emit_transcript_processed(_state: &AppState, app_handle: &AppHandle, meeting_
                 clippy::let_underscore_must_use,
                 reason = "intentional best-effort discard; preserves existing non-blocking behavior"
             )]
-            let _ = app_handle.emit("transcript-processed", &meeting_id.to_string());
+            let _ = app_handle.emit("transcript-processed", &meeting_id);
         }
     }
 }
@@ -607,17 +723,26 @@ pub fn run_granola_backfill(state: &AppState, days_back: i32) -> Result<(usize, 
         .map(|c| c.granola.clone())
         .unwrap_or_default();
 
+    if companion::CompanionClient::status().available {
+        match run_granola_companion_backfill(state, days_back) {
+            Ok(result) => return Ok(result),
+            Err(error) => {
+                log::warn!(
+                    "Granola backfill: companion source failed, falling back to cache: {}",
+                    error
+                );
+            }
+        }
+    }
+
     let cache_path =
         super::resolve_cache_path(&granola_config).ok_or("Granola cache file not found")?;
 
     let documents = cache::read_cache(&cache_path)?;
     let eligible = documents.len();
 
-    let meetings_for_matching = {
-        let db = crate::db::ActionDb::open(std::sync::Arc::new(crate::db::LocalKeychain::new()))
-            .map_err(|e| format!("DB open failed: {e}"))?;
-        get_recent_meetings_for_matching(&db, days_back)?
-    };
+    let meetings_for_matching =
+        state.with_db(|db| get_recent_meetings_for_matching(db, days_back))?;
 
     let mut created = 0;
 
@@ -628,30 +753,62 @@ pub fn run_granola_backfill(state: &AppState, days_back: i32) -> Result<(usize, 
             None => continue,
         };
 
-        let already_synced = {
-            let db =
-                crate::db::ActionDb::open(std::sync::Arc::new(crate::db::LocalKeychain::new()))
-                    .map_err(|e| format!("DB open failed: {e}"))?;
-            db.get_quill_sync_state_by_source(&matched.meeting_id, "granola")
-                .map_err(|e| e.to_string())?
-                .is_some()
-        };
-
-        if already_synced {
-            continue;
-        }
-
-        let db = crate::db::ActionDb::open(std::sync::Arc::new(crate::db::LocalKeychain::new()))
-            .map_err(|e| format!("DB open failed: {e}"))?;
-        if db
-            .insert_quill_sync_state_with_source(&matched.meeting_id, "granola")
-            .is_ok()
-        {
+        if insert_backfill_sync_state_if_missing(state, &matched.meeting_id)? {
             created += 1;
         }
     }
 
     Ok((created, eligible))
+}
+
+fn run_granola_companion_backfill(
+    state: &AppState,
+    days_back: i32,
+) -> Result<(usize, usize), String> {
+    let client = companion::CompanionClient::new().map_err(|e| e.to_string())?;
+    let notes = client
+        .list_recent_notes(days_back)
+        .map_err(|e| e.to_string())?;
+    let eligible = notes.len();
+
+    let meetings_for_matching =
+        state.with_db(|db| get_recent_meetings_for_matching(db, days_back))?;
+
+    let mut created = 0;
+
+    for note in &notes {
+        let doc = note.as_match_document();
+        let match_result = matcher::match_to_meeting(&doc, &meetings_for_matching);
+        let matched = match match_result {
+            Some(m) => m,
+            None => continue,
+        };
+
+        if insert_backfill_sync_state_if_missing(state, &matched.meeting_id)? {
+            created += 1;
+        }
+    }
+
+    Ok((created, eligible))
+}
+
+fn insert_backfill_sync_state_if_missing(
+    state: &AppState,
+    meeting_id: &str,
+) -> Result<bool, String> {
+    let meeting_id = meeting_id.to_string();
+    state.with_db(move |db| {
+        if db
+            .get_quill_sync_state_by_source(&meeting_id, "granola")
+            .map_err(|e| e.to_string())?
+            .is_some()
+        {
+            return Ok(false);
+        }
+        db.insert_quill_sync_state_with_source(&meeting_id, "granola")
+            .map(|_| true)
+            .map_err(|e| e.to_string())
+    })
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -689,18 +846,16 @@ pub fn trigger_granola_sync_for_meeting(
         .map(|c| c.granola.clone())
         .unwrap_or_default();
 
-    let cache_path =
-        super::resolve_cache_path(&granola_config).ok_or("Granola cache file not found")?;
-    let documents = cache::read_cache(&cache_path)?;
-
     // Check for existing sync state
     if !force {
-        let db = crate::db::ActionDb::open(std::sync::Arc::new(crate::db::LocalKeychain::new()))
-            .map_err(|e| format!("Database unavailable: {e}"))?;
-        if let Some(existing) = db
-            .get_quill_sync_state_by_source(meeting_id, "granola")
-            .map_err(|e| e.to_string())?
-        {
+        let existing_sync_state = {
+            let meeting_id = meeting_id.to_string();
+            state.with_db(move |db| {
+                db.get_quill_sync_state_by_source(&meeting_id, "granola")
+                    .map_err(|e| e.to_string())
+            })?
+        };
+        if let Some(existing) = existing_sync_state {
             match existing.state.as_str() {
                 "completed" => {
                     return Ok((
@@ -730,12 +885,14 @@ pub fn trigger_granola_sync_for_meeting(
     }
 
     // Get meeting from DB for matching
-    let db = crate::db::ActionDb::open(std::sync::Arc::new(crate::db::LocalKeychain::new()))
-        .map_err(|e| format!("Database unavailable: {e}"))?;
-    let meeting = db
-        .get_meeting_by_id(meeting_id)
-        .map_err(|e| e.to_string())?
-        .ok_or_else(|| format!("Meeting {} not found", meeting_id))?;
+    let meeting = {
+        let meeting_id = meeting_id.to_string();
+        state.with_db(move |db| {
+            db.get_meeting_by_id(&meeting_id)
+                .map_err(|e| e.to_string())?
+                .ok_or_else(|| format!("Meeting {} not found", meeting_id))
+        })?
+    };
 
     let meetings_for_matching = vec![(
         meeting.id.clone(),
@@ -743,36 +900,37 @@ pub fn trigger_granola_sync_for_meeting(
         meeting.start_time.clone(),
     )];
 
+    match trigger_companion_sync_for_meeting(
+        state,
+        app_handle,
+        meeting_id,
+        &meeting,
+        &meetings_for_matching,
+    ) {
+        Ok(Some(result)) => return Ok(result),
+        Ok(None) => {}
+        Err(error) => {
+            log::warn!(
+                "Granola manual sync: companion source failed, falling back to cache: {}",
+                error
+            );
+        }
+    }
+
+    let cache_path = super::resolve_cache_path(&granola_config).ok_or_else(|| {
+        if super::detect_encrypted_cache_path().is_some() {
+            "Granola companion bridge is unavailable and the legacy plaintext cache has no usable data; Granola is writing an encrypted cache that DailyOS does not read directly".to_string()
+        } else {
+            "Granola cache file not found".to_string()
+        }
+    })?;
+    let documents = cache::read_cache(&cache_path)?;
+
     // Try to match a Granola document
     for doc in &documents {
         let match_result = matcher::match_to_meeting(doc, &meetings_for_matching);
         if let Some(matched) = match_result {
-            // Create or update sync state
-            let sync_id = match db
-                .get_quill_sync_state_by_source(&matched.meeting_id, "granola")
-                .map_err(|e| e.to_string())?
-            {
-                Some(existing) => {
-                    #[allow(
-                        clippy::let_underscore_must_use,
-                        reason = "intentional best-effort discard; preserves existing non-blocking behavior"
-                    )]
-                    // dos7-allowed: transcript-db-write - transcript sync-state write; not workspace-file ingestion
-                    let _ = crate::quill::sync::transition_state(
-                        &db,
-                        &existing.id,
-                        "pending",
-                        None,
-                        None,
-                        None,
-                        Some("Manual sync trigger"),
-                    );
-                    existing.id
-                }
-                None => db
-                    .insert_quill_sync_state_with_source(&matched.meeting_id, "granola")
-                    .map_err(|e| e.to_string())?,
-            };
+            let sync_id = prepare_manual_sync_id(state, &matched.meeting_id)?;
 
             let content_kind = match doc.content_type {
                 cache::GranolaContentType::Transcript => {
@@ -808,12 +966,81 @@ pub fn trigger_granola_sync_for_meeting(
     Ok((
         ManualGranolaSyncResult {
             status: ManualGranolaSyncStatus::NotFound,
-            message: "No matching Granola document found".to_string(),
+            message: no_matching_granola_document_message(&documents),
             document_title: None,
             content_type: None,
         },
         None,
     ))
+}
+
+fn trigger_companion_sync_for_meeting(
+    state: &AppState,
+    app_handle: &AppHandle,
+    meeting_id: &str,
+    meeting: &crate::db::DbMeeting,
+    meetings_for_matching: &[(String, String, String)],
+) -> Result<Option<(ManualGranolaSyncResult, Option<crate::types::CalendarEvent>)>, String> {
+    let client = match companion::CompanionClient::new() {
+        Ok(client) => client,
+        Err(error) if error.is_unavailable() => return Ok(None),
+        Err(error) => return Err(error.to_string()),
+    };
+
+    let notes = client
+        .list_notes_near(&meeting.start_time, meeting.end_time.as_deref())
+        .map_err(|e| e.to_string())?;
+
+    for note in &notes {
+        let match_doc = note.as_match_document();
+        let Some(matched) = matcher::match_to_meeting(&match_doc, meetings_for_matching) else {
+            continue;
+        };
+
+        let doc = client.fetch_document(note).map_err(|e| e.to_string())?;
+        let sync_id = prepare_manual_sync_id(state, &matched.meeting_id)?;
+
+        let content_kind = match doc.content_type {
+            cache::GranolaContentType::Transcript => {
+                crate::processor::transcript::TranscriptContentKind::Transcript
+            }
+            cache::GranolaContentType::Notes => {
+                crate::processor::transcript::TranscriptContentKind::Notes
+            }
+        };
+
+        return match process_granola_document(
+            state,
+            &sync_id,
+            meeting_id,
+            &doc.content,
+            content_kind,
+        ) {
+            Ok((_, calendar_event)) => {
+                emit_transcript_processed(state, app_handle, meeting_id);
+                Ok(Some((
+                    ManualGranolaSyncResult {
+                        status: ManualGranolaSyncStatus::Attached,
+                        message: "Transcript synced successfully".to_string(),
+                        document_title: Some(doc.title),
+                        content_type: Some(doc.content_type),
+                    },
+                    Some(calendar_event),
+                )))
+            }
+            Err(e) => Err(format!("Granola sync failed: {}", e)),
+        };
+    }
+
+    Ok(None)
+}
+
+fn no_matching_granola_document_message(documents: &[cache::GranolaDocument]) -> String {
+    if documents.is_empty() && super::detect_encrypted_cache_path().is_some() {
+        "No matching Granola document found. Granola's plaintext cache is empty while an encrypted cache exists; enable Granola companion access so DailyOS can read current notes.".to_string()
+    } else {
+        "No matching Granola document found".to_string()
+    }
 }
 
 #[cfg(test)]

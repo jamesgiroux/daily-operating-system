@@ -11,32 +11,39 @@
 //! contract.
 
 use std::collections::BTreeMap;
+use std::sync::Arc;
 
 use abilities_runtime::abilities::registry::{AbilityRegistry, McpExposure};
 use abilities_runtime::abilities::tracer::NOOP_ABILITY_TRACER;
-use serde_json::{json, Map, Value};
+use serde_json::{json, Value};
 
 use crate::bridges::types::{
     invoke_registry_json_for_actor, AbilityInvokeError, RequestScopedInvocation,
     BRIDGE_NOOP_INTELLIGENCE_PROVIDER,
 };
 use crate::bridges::{BridgeActor, BridgeSurface};
+use crate::db::{ActionDb, DbAccount, DbError, LocalKeychain};
+use crate::helpers::normalize_key;
 use crate::services::context::{
     attach_live_workspace_readers, ClaimDismissalSurface, ExternalClients, ServiceContext,
     SystemClock, SystemRng,
 };
 use crate::services::mcp_v2::actor_policy::{project_actor, ToolGrant, ToolRateLimit};
 use crate::services::mcp_v2::contracts::{McpActor, McpToolHandler, ToolDescription, ToolError};
+use crate::services::mcp_v2::runtime_projection::{
+    compact_text, evidence_suffix, humanize_token, open_loop_suffix, project_runtime_evidence,
+    string_at, RuntimeEvidenceProjection,
+};
 
 const ACTOR_LABEL: &str = concat!("agent:dailyos-mcp-v2:", env!("CARGO_PKG_VERSION"));
 
 /// Registered ability name in the abilities-runtime registry.
 const ABILITY_NAME: &str = "get_entity_intelligence";
+const TOOL_NAME: &str = "dailyos.read.account_status";
 
 /// `EntityIntelligenceInput` schema version pinned by the ability contract.
-const ENTITY_INTELLIGENCE_SCHEMA_VERSION: u32 = 1;
-const ACCOUNT_STATUS_RESPONSE_SCHEMA_VERSION: u32 = 1;
-const MAX_ASSESSMENT_ITEMS: usize = 8;
+const ENTITY_INTELLIGENCE_SCHEMA_VERSION: u32 = 2;
+const ACCOUNT_STATUS_RESPONSE_SCHEMA_VERSION: u32 = 2;
 
 pub struct AccountStatusHandler {
     description: ToolDescription,
@@ -102,7 +109,16 @@ impl McpToolHandler for AccountStatusHandler {
         let runtime_actor =
             project_actor(client_id, &synthetic_grant, conversation_handle.as_ref());
 
-        let subject = extract_subject(&params)?;
+        let subject_input = extract_subject(&params)?;
+        let resolved_subject = match resolve_account_subject(&subject_input)? {
+            AccountSubjectResolution::Resolved(subject) => subject,
+            AccountSubjectResolution::NotFound { input } => {
+                return Ok(account_subject_not_found_response(&input));
+            }
+            AccountSubjectResolution::Ambiguous { input, candidates } => {
+                return Ok(account_subject_ambiguous_response(&input, &candidates));
+            }
+        };
 
         self.runtime.block_on(async {
             let clock = SystemClock;
@@ -115,9 +131,9 @@ impl McpToolHandler for AccountStatusHandler {
             let resolved_input = json!({
                 "schemaVersion": ENTITY_INTELLIGENCE_SCHEMA_VERSION,
                 "entityType": "account",
-                "entityId": subject.clone(),
+                "entityId": resolved_subject.entity_id.clone(),
                 "depth": "standard",
-                "sections": ["facts", "open_loops", "touchpoints", "record"],
+                "sections": ["facts", "open_loops", "relationships", "touchpoints", "record"],
             });
 
             // Use the request-scoped dispatch path — V2 MCP needs to pass
@@ -131,6 +147,9 @@ impl McpToolHandler for AccountStatusHandler {
                 response_actor: BridgeActor::McpClient,
                 surface: BridgeSurface::McpTool,
                 claim_dismissal_surface: ClaimDismissalSurface::McpTool,
+                dry_run: false,
+                confirmation: None,
+                confirmation_store: None,
             };
             let response = invoke_registry_json_for_actor(
                 self.registry,
@@ -143,7 +162,16 @@ impl McpToolHandler for AccountStatusHandler {
             )
             .await
             .map_err(map_invoke_error)?;
-            Ok(present_account_status_response(&subject, response.data))
+            let invocation_id = response.invocation_id.0.to_string();
+            let mut payload = present_account_status_response_with_context(
+                &resolved_subject.entity_id,
+                response.data,
+                Some(&resolved_subject.display_label),
+                Some(&invocation_id),
+                None,
+            );
+            attach_account_subject_resolution(&mut payload, &resolved_subject);
+            Ok(payload)
         })
     }
 }
@@ -161,42 +189,411 @@ fn extract_subject(params: &Value) -> Result<String, ToolError> {
             detail: "'subject' must be a non-empty string".into(),
         });
     }
-    // Phase-A passthrough: treat `subject` as the account_id directly. The
-    // follow-on subject resolver replaces this with slug/account resolution.
     Ok(subject.to_string())
 }
 
-fn present_account_status_response(subject: &str, envelope: Value) -> Value {
+#[derive(Debug, Clone, PartialEq)]
+struct ResolvedAccountSubject {
+    input: String,
+    entity_id: String,
+    display_label: String,
+    resolution_kind: &'static str,
+    match_basis: &'static str,
+    match_confidence: &'static str,
+    match_confidence_score: f64,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+struct AccountSubjectCandidate {
+    id: String,
+    name: String,
+}
+
+impl From<DbAccount> for AccountSubjectCandidate {
+    fn from(account: DbAccount) -> Self {
+        Self {
+            id: account.id,
+            name: account.name,
+        }
+    }
+}
+
+#[derive(Debug, Clone, PartialEq)]
+enum AccountSubjectResolution {
+    Resolved(ResolvedAccountSubject),
+    NotFound {
+        input: String,
+    },
+    Ambiguous {
+        input: String,
+        candidates: Vec<AccountSubjectCandidate>,
+    },
+}
+
+fn resolve_account_subject(subject: &str) -> Result<AccountSubjectResolution, ToolError> {
+    let db = ActionDb::open_readonly(Arc::new(LocalKeychain::new()))
+        .map_err(map_subject_resolution_db_error)?;
+
+    if let Some(account) = db
+        .get_account(subject)
+        .map_err(map_subject_resolution_db_error)?
+    {
+        return Ok(resolved_account_subject(
+            subject,
+            AccountSubjectCandidate::from(account),
+            "account_id",
+            "id",
+            "exact",
+            1.0,
+        ));
+    }
+
+    if let Some(account) = db
+        .get_account_by_name(subject)
+        .map_err(map_subject_resolution_db_error)?
+    {
+        return Ok(resolved_account_subject(
+            subject,
+            AccountSubjectCandidate::from(account),
+            "account_name",
+            "name",
+            "exact",
+            1.0,
+        ));
+    }
+
+    let accounts = db
+        .get_all_accounts()
+        .map_err(map_subject_resolution_db_error)?
+        .into_iter()
+        .map(AccountSubjectCandidate::from)
+        .collect::<Vec<_>>();
+    Ok(resolve_account_subject_from_accounts(subject, &accounts))
+}
+
+fn resolve_account_subject_from_accounts(
+    subject: &str,
+    accounts: &[AccountSubjectCandidate],
+) -> AccountSubjectResolution {
+    let input = subject.trim().to_string();
+
+    if let Some(account) = accounts.iter().find(|account| account.id == input) {
+        return resolved_account_subject(&input, account.clone(), "account_id", "id", "exact", 1.0);
+    }
+
+    if let Some(account) = accounts
+        .iter()
+        .find(|account| account.name.eq_ignore_ascii_case(&input))
+    {
+        return resolved_account_subject(
+            &input,
+            account.clone(),
+            "account_name",
+            "name",
+            "exact",
+            1.0,
+        );
+    }
+
+    let normalized_input = normalize_key(&input);
+    if normalized_input.is_empty() {
+        return AccountSubjectResolution::NotFound { input };
+    }
+
+    let mut matches = BTreeMap::new();
+    for account in accounts.iter().cloned() {
+        let id_matches = normalize_key(&account.id) == normalized_input;
+        let name_matches = normalize_key(&account.name) == normalized_input;
+        if id_matches || name_matches {
+            matches.entry(account.id.clone()).or_insert(account);
+        }
+    }
+
+    let candidates = matches.into_values().collect::<Vec<_>>();
+    match candidates.as_slice() {
+        [] => AccountSubjectResolution::NotFound { input },
+        [account] => resolved_account_subject(
+            &input,
+            account.clone(),
+            "normalized_slug",
+            "normalized_id_or_name",
+            "high",
+            0.95,
+        ),
+        _ => AccountSubjectResolution::Ambiguous { input, candidates },
+    }
+}
+
+fn resolved_account_subject(
+    input: &str,
+    account: AccountSubjectCandidate,
+    resolution_kind: &'static str,
+    match_basis: &'static str,
+    match_confidence: &'static str,
+    match_confidence_score: f64,
+) -> AccountSubjectResolution {
+    AccountSubjectResolution::Resolved(ResolvedAccountSubject {
+        input: input.to_string(),
+        entity_id: account.id,
+        display_label: account.name,
+        resolution_kind,
+        match_basis,
+        match_confidence,
+        match_confidence_score,
+    })
+}
+
+fn attach_account_subject_resolution(payload: &mut Value, subject: &ResolvedAccountSubject) {
+    let resolution = account_subject_resolution_json(subject);
+    if let Some(object) = payload.as_object_mut() {
+        object.insert("resolution".to_string(), resolution);
+    }
+    if let Some(subject_object) = payload.get_mut("subject").and_then(Value::as_object_mut) {
+        subject_object.insert("input".to_string(), Value::String(subject.input.clone()));
+        subject_object.insert("id".to_string(), Value::String(subject.entity_id.clone()));
+        subject_object.insert(
+            "displayLabel".to_string(),
+            Value::String(subject.display_label.clone()),
+        );
+        subject_object.insert(
+            "resolutionKind".to_string(),
+            Value::String(subject.resolution_kind.to_string()),
+        );
+        subject_object.insert(
+            "matchConfidence".to_string(),
+            Value::String(subject.match_confidence.to_string()),
+        );
+        subject_object.insert(
+            "matchConfidenceScore".to_string(),
+            json!(subject.match_confidence_score),
+        );
+    }
+}
+
+fn account_subject_resolution_json(subject: &ResolvedAccountSubject) -> Value {
+    json!({
+        "input": subject.input,
+        "entityType": "account",
+        "resolvedEntityId": subject.entity_id,
+        "displayLabel": subject.display_label,
+        "resolutionKind": subject.resolution_kind,
+        "matchBasis": subject.match_basis,
+        "matchConfidence": subject.match_confidence,
+        "matchConfidenceScore": subject.match_confidence_score,
+        "caveats": [],
+    })
+}
+
+fn account_subject_not_found_response(input: &str) -> Value {
+    account_subject_resolution_response(
+        "not_found",
+        input,
+        "DailyOS could not resolve the requested subject to an account in the local workspace. Try an exact account name or account id.",
+        json!({
+            "input": input,
+            "entityType": "account",
+            "resolvedEntityId": Value::Null,
+            "resolutionKind": "not_found",
+            "matchConfidence": "none",
+            "matchConfidenceScore": 0.0,
+            "candidates": [],
+            "caveats": ["No matching account id, exact account name, or normalized account slug was found."],
+        }),
+    )
+}
+
+fn account_subject_ambiguous_response(
+    input: &str,
+    candidates: &[AccountSubjectCandidate],
+) -> Value {
+    let candidate_values = candidates
+        .iter()
+        .take(5)
+        .map(|candidate| {
+            json!({
+                "entityId": candidate.id,
+                "displayLabel": candidate.name,
+            })
+        })
+        .collect::<Vec<_>>();
+    account_subject_resolution_response(
+        "clarification_required",
+        input,
+        "DailyOS found multiple local accounts matching the requested subject. Retry with an exact account id.",
+        json!({
+            "input": input,
+            "entityType": "account",
+            "resolvedEntityId": Value::Null,
+            "resolutionKind": "ambiguous",
+            "matchConfidence": "none",
+            "matchConfidenceScore": 0.0,
+            "candidates": candidate_values,
+            "caveats": ["Multiple accounts matched the same normalized subject."],
+        }),
+    )
+}
+
+fn account_subject_resolution_response(
+    status: &str,
+    input: &str,
+    answer: &str,
+    resolution: Value,
+) -> Value {
+    let section_state = json!({
+        "kind": "empty",
+        "reason": status,
+    });
+    let caveat = resolution
+        .get("caveats")
+        .and_then(Value::as_array)
+        .and_then(|items| items.first())
+        .and_then(Value::as_str)
+        .unwrap_or("Subject resolution did not produce a single local account.");
+    json!({
+        "schemaVersion": ACCOUNT_STATUS_RESPONSE_SCHEMA_VERSION,
+        "toolName": TOOL_NAME,
+        "surface": TOOL_NAME,
+        "producer": ABILITY_NAME,
+        "status": status,
+        "invocationId": Value::Null,
+        "provenanceHandle": Value::Null,
+        "subject": {
+            "kind": "account",
+            "input": input,
+            "displayLabel": input,
+        },
+        "resolution": resolution,
+        "answer": answer,
+        "assessment": {
+            "facts": [],
+            "openLoops": [],
+            "relationships": [],
+            "touchpoints": [],
+            "recordEntries": [],
+            "priorities": [],
+            "caveats": [{ "text": caveat }],
+        },
+        "trust": {
+            "aggregateBand": "unscored",
+            "sectionCaveats": {
+                "subject": caveat,
+            },
+        },
+        "sensitivity": Value::Null,
+        "provenance": {
+            "sources": [],
+            "redactionApplied": false,
+            "rawClaimIdsIncluded": false,
+        },
+        "sectionStates": {
+            "facts": section_state,
+            "openLoops": section_state,
+            "relationships": section_state,
+            "touchpoints": section_state,
+            "recordEntries": section_state,
+        },
+        "sections": {
+            "facts": section_state,
+            "openLoops": section_state,
+            "relationships": section_state,
+            "touchpoints": section_state,
+            "recordEntries": section_state,
+        },
+        "truncation": {},
+        "sourceEnvelope": {
+            "schemaVersion": Value::Null,
+            "rawEnvelopeIncluded": false,
+        },
+    })
+}
+
+pub fn present_account_status_response(subject: &str, envelope: Value) -> Value {
+    present_account_status_response_with_context(subject, envelope, None, None, None)
+}
+
+pub fn present_account_status_response_with_label(
+    subject: &str,
+    envelope: Value,
+    display_label_override: Option<&str>,
+) -> Value {
+    present_account_status_response_with_context(
+        subject,
+        envelope,
+        display_label_override,
+        None,
+        None,
+    )
+}
+
+pub fn present_account_status_response_with_context(
+    subject: &str,
+    envelope: Value,
+    display_label_override: Option<&str>,
+    invocation_id: Option<&str>,
+    provenance_detail_tool: Option<&str>,
+) -> Value {
     let subject_value = envelope
         .get("subject")
         .cloned()
         .unwrap_or_else(|| fallback_subject(subject));
-    let label = subject_value
-        .get("displayLabel")
-        .and_then(Value::as_str)
+    let label = display_label_override
         .map(compact_text)
         .filter(|value| !value.is_empty())
+        .or_else(|| {
+            subject_value
+                .get("displayLabel")
+                .and_then(Value::as_str)
+                .map(compact_text)
+                .filter(|value| !value.is_empty())
+        })
         .unwrap_or_else(|| subject.to_string());
+    let subject_value = if display_label_override.is_some() {
+        let mut subject_map = subject_value.as_object().cloned().unwrap_or_default();
+        subject_map.insert("displayLabel".to_string(), Value::String(label.clone()));
+        Value::Object(subject_map)
+    } else {
+        subject_value
+    };
 
-    let (provenance, source_id_map) = build_provenance_summary(&envelope);
-    let facts = collect_fact_summaries(&envelope, &source_id_map);
-    let open_loops = collect_open_loop_summaries(&envelope, &source_id_map);
-    let answer = build_account_status_answer(&label, &facts, &open_loops, &envelope, &provenance);
+    let projection = project_runtime_evidence(&envelope);
+    let answer = build_account_status_answer(&label, &projection, &envelope);
+    let provenance_handle = invocation_id.map(|id| {
+        json!({
+            "invocationId": id,
+            "invocation_id": id,
+            "detailAvailable": provenance_detail_tool.is_some(),
+            "detailTool": provenance_detail_tool,
+            "detailParams": {
+                "invocation_id": id
+            }
+        })
+    });
 
     json!({
         "schemaVersion": ACCOUNT_STATUS_RESPONSE_SCHEMA_VERSION,
-        "surface": "dailyos.read.account_status",
+        "toolName": TOOL_NAME,
+        "surface": TOOL_NAME,
         "producer": ABILITY_NAME,
+        "status": projection.status,
+        "invocationId": invocation_id,
+        "provenanceHandle": provenance_handle,
         "subject": subject_value,
         "answer": answer,
         "assessment": {
-            "facts": facts,
-            "openLoops": open_loops,
+            "facts": projection.facts,
+            "openLoops": projection.open_loops,
+            "relationships": projection.relationships,
+            "touchpoints": projection.touchpoints,
+            "recordEntries": projection.record_entries,
+            "priorities": projection.priorities,
+            "caveats": projection.caveats,
         },
         "trust": envelope.get("trust").cloned().unwrap_or(Value::Null),
         "sensitivity": envelope.get("sensitivity").cloned().unwrap_or(Value::Null),
-        "provenance": provenance,
-        "sections": envelope.get("sections").cloned().unwrap_or_else(|| json!({})),
+        "provenance": projection.provenance,
+        "sectionStates": projection.section_states.clone(),
+        "sections": projection.section_states,
+        "truncation": projection.truncation,
         "sourceEnvelope": {
             "schemaVersion": envelope.get("schemaVersion").cloned().unwrap_or(Value::Null),
             "rawEnvelopeIncluded": false,
@@ -212,159 +609,134 @@ fn fallback_subject(subject: &str) -> Value {
     })
 }
 
-fn build_provenance_summary(envelope: &Value) -> (Value, BTreeMap<String, String>) {
-    let mut source_id_map = BTreeMap::new();
-    let mut sources = Vec::new();
-
-    if let Some(raw_sources) = envelope
-        .pointer("/provenance/sources")
-        .and_then(Value::as_array)
-    {
-        for (index, source) in raw_sources.iter().enumerate() {
-            let display_id = format!("source_{}", index + 1);
-            if let Some(raw_id) = source.get("id").and_then(Value::as_str) {
-                source_id_map.insert(raw_id.to_string(), display_id.clone());
-            }
-
-            let mut projected = Map::new();
-            projected.insert("id".to_string(), Value::String(display_id));
-            insert_string_or_clone(&mut projected, "label", source, "/label");
-            insert_string_or_clone(&mut projected, "sourceType", source, "/sourceType");
-            insert_string_or_clone(&mut projected, "asOf", source, "/asOf");
-            if let Some(redacted) = source.get("redacted").and_then(Value::as_bool) {
-                projected.insert("redacted".to_string(), Value::Bool(redacted));
-            }
-            sources.push(Value::Object(projected));
-        }
-    }
-
-    let redaction_applied = envelope
-        .pointer("/provenance/redactionApplied")
-        .and_then(Value::as_bool)
-        .unwrap_or(false);
-
-    (
-        json!({
-            "sources": sources,
-            "redactionApplied": redaction_applied,
-            "rawClaimIdsIncluded": false,
-        }),
-        source_id_map,
-    )
-}
-
-fn collect_fact_summaries(
-    envelope: &Value,
-    source_id_map: &BTreeMap<String, String>,
-) -> Vec<Value> {
-    envelope
-        .pointer("/facts/items")
-        .and_then(Value::as_array)
-        .map(|items| {
-            items
-                .iter()
-                .filter_map(|item| fact_summary(item, source_id_map))
-                .take(MAX_ASSESSMENT_ITEMS)
-                .collect()
-        })
-        .unwrap_or_default()
-}
-
-fn fact_summary(item: &Value, source_id_map: &BTreeMap<String, String>) -> Option<Value> {
-    let text = string_at(item, "/renderedText/text")
-        .map(compact_text)
-        .filter(|value| !value.is_empty())?;
-
-    let mut summary = Map::new();
-    summary.insert("text".to_string(), Value::String(text));
-    insert_string_or_clone(&mut summary, "fieldPath", item, "/fieldPath");
-    insert_string_or_clone(&mut summary, "claimType", item, "/claimType");
-    insert_string_or_clone(&mut summary, "trustBand", item, "/trustBand");
-    insert_string_or_clone(&mut summary, "freshness", item, "/freshness");
-    insert_string_or_clone(&mut summary, "sourceAsOf", item, "/sourceAsof");
-    insert_string_or_clone(&mut summary, "sensitivity", item, "/sensitivity");
-    insert_string_or_clone(&mut summary, "lifecycleState", item, "/lifecycleState");
-    insert_string_or_clone(
-        &mut summary,
-        "verificationState",
-        item,
-        "/verificationState",
-    );
-    insert_source_refs(&mut summary, item, source_id_map);
-    Some(Value::Object(summary))
-}
-
-fn collect_open_loop_summaries(
-    envelope: &Value,
-    source_id_map: &BTreeMap<String, String>,
-) -> Vec<Value> {
-    envelope
-        .pointer("/openLoops/items")
-        .and_then(Value::as_array)
-        .map(|items| {
-            items
-                .iter()
-                .filter_map(|item| open_loop_summary(item, source_id_map))
-                .take(MAX_ASSESSMENT_ITEMS)
-                .collect()
-        })
-        .unwrap_or_default()
-}
-
-fn open_loop_summary(item: &Value, source_id_map: &BTreeMap<String, String>) -> Option<Value> {
-    let open_loop = item.get("openLoop").unwrap_or(item);
-    let description = string_at(open_loop, "/description")
-        .map(compact_text)
-        .filter(|value| !value.is_empty())?;
-
-    let mut summary = Map::new();
-    summary.insert("description".to_string(), Value::String(description));
-    insert_string_or_clone(&mut summary, "loopKind", open_loop, "/loop_kind");
-    insert_string_or_clone(&mut summary, "owner", open_loop, "/owner");
-    insert_string_or_clone(&mut summary, "dueDate", open_loop, "/due_date");
-    insert_string_or_clone(&mut summary, "status", open_loop, "/status");
-    insert_string_or_clone(&mut summary, "sourceAsOf", open_loop, "/source_asof");
-    insert_string_or_clone(&mut summary, "claimType", open_loop, "/claim_type");
-    insert_string_or_clone(&mut summary, "trustBand", item, "/trustBand");
-    insert_string_or_clone(&mut summary, "freshness", item, "/freshness");
-    insert_source_refs(&mut summary, item, source_id_map);
-    Some(Value::Object(summary))
-}
-
 fn build_account_status_answer(
     label: &str,
-    facts: &[Value],
-    open_loops: &[Value],
+    projection: &RuntimeEvidenceProjection,
     envelope: &Value,
-    provenance: &Value,
 ) -> String {
-    if facts.is_empty() && open_loops.is_empty() {
+    if projection.facts.is_empty()
+        && projection.open_loops.is_empty()
+        && projection.relationships.is_empty()
+        && projection.touchpoints.is_empty()
+        && projection.record_entries.is_empty()
+    {
+        if let Some(advisory) = relationship_partial_failure_advisory(envelope) {
+            return format!(
+                "DailyOS could not read requested intelligence for {label}: {advisory}."
+            );
+        }
         return format!("DailyOS does not yet have claim-backed account intelligence for {label}.");
     }
 
     let mut lines = vec![format!("DailyOS account briefing for {label}.")];
 
-    if !facts.is_empty() {
+    if !projection.facts.is_empty() {
         lines.push(String::new());
         lines.push("Assessment:".to_string());
-        for fact in facts.iter().take(5) {
+        for fact in projection.facts.iter().take(5) {
             if let Some(text) = string_at(fact, "/text") {
                 lines.push(format!("- {}{}", text, evidence_suffix(fact)));
             }
         }
     }
 
-    if !open_loops.is_empty() {
+    if !projection.open_loops.is_empty() {
         lines.push(String::new());
         lines.push("Open loops:".to_string());
-        for open_loop in open_loops.iter().take(5) {
+        for open_loop in projection.open_loops.iter().take(5) {
             if let Some(description) = string_at(open_loop, "/description") {
                 lines.push(format!("- {}{}", description, open_loop_suffix(open_loop)));
             }
         }
     }
 
-    let source_count = provenance
+    if !projection.relationships.is_empty() {
+        let participants = projection
+            .relationships
+            .iter()
+            .filter(|item| string_at(item, "/kind") == Some("participant"))
+            .take(3)
+            .collect::<Vec<_>>();
+        if !participants.is_empty() {
+            lines.push(String::new());
+            lines.push("Top participants by meeting attendance:".to_string());
+        }
+        for participant in participants {
+            if let Some(display_label) = string_at(participant, "/displayLabel") {
+                let touchpoint_count = participant
+                    .get("normalizedTouchpointCount")
+                    .and_then(Value::as_u64)
+                    .unwrap_or(0);
+                let role = string_at(participant, "/role")
+                    .map(|value| format!("; role: {value}"))
+                    .unwrap_or_default();
+                lines.push(format!(
+                    "- {display_label}: {touchpoint_count} touchpoint(s){role}{}",
+                    evidence_suffix(participant)
+                ));
+            }
+        }
+
+        let edges = projection
+            .relationships
+            .iter()
+            .filter(|item| string_at(item, "/kind") == Some("edge"))
+            .take(3)
+            .collect::<Vec<_>>();
+        if !edges.is_empty() {
+            lines.push(String::new());
+            lines.push("Relationship evidence:".to_string());
+        }
+        for edge in edges {
+            if let Some(relationship) = string_at(edge, "/relationship") {
+                let label = string_at(edge, "/displayLabel")
+                    .map(|value| format!(" with {value}"))
+                    .unwrap_or_default();
+                lines.push(format!("- {relationship}{label}{}", evidence_suffix(edge)));
+            }
+        }
+    }
+
+    if !projection.touchpoints.is_empty() {
+        lines.push(String::new());
+        lines.push("Touchpoint evidence:".to_string());
+        for touchpoint in projection.touchpoints.iter().take(5) {
+            let timing = string_at(touchpoint, "/timing").unwrap_or("touchpoint");
+            let kind = string_at(touchpoint, "/kind")
+                .map(humanize_token)
+                .unwrap_or_else(|| "touchpoint".to_string());
+            if let Some(when) = string_at(touchpoint, "/when") {
+                lines.push(format!(
+                    "- {} {} on {}{}",
+                    humanize_token(timing),
+                    kind,
+                    when,
+                    evidence_suffix(touchpoint)
+                ));
+            }
+        }
+    }
+
+    if !projection.record_entries.is_empty() {
+        lines.push(String::new());
+        lines.push("Record evidence:".to_string());
+        for entry in projection.record_entries.iter().take(5) {
+            if let Some(text) = string_at(entry, "/text") {
+                let recorded_at = string_at(entry, "/recordedAt")
+                    .map(|value| format!(" recorded {value}"))
+                    .unwrap_or_default();
+                lines.push(format!(
+                    "- {}{}{}",
+                    text,
+                    recorded_at,
+                    evidence_suffix(entry)
+                ));
+            }
+        }
+    }
+
+    let source_count = projection
+        .provenance
         .pointer("/sources")
         .and_then(Value::as_array)
         .map(Vec::len)
@@ -379,86 +751,27 @@ fn build_account_status_answer(
     lines.join("\n")
 }
 
-fn evidence_suffix(item: &Value) -> String {
-    let mut parts = Vec::new();
-    push_humanized_part(&mut parts, "trust", item, "/trustBand");
-    push_humanized_part(&mut parts, "freshness", item, "/freshness");
-    if let Some(source_as_of) = string_at(item, "/sourceAsOf") {
-        parts.push(format!("as of {source_as_of}"));
+fn relationship_partial_failure_advisory(envelope: &Value) -> Option<String> {
+    match envelope {
+        Value::Object(object) => {
+            for key in ["partial_failure", "partialFailure"] {
+                if let Some(advisory) = object
+                    .get(key)
+                    .and_then(|failure| failure.get("advisory"))
+                    .and_then(Value::as_str)
+                    .map(compact_text)
+                    .filter(|value| !value.is_empty())
+                {
+                    return Some(advisory);
+                }
+            }
+            object
+                .values()
+                .find_map(relationship_partial_failure_advisory)
+        }
+        Value::Array(items) => items.iter().find_map(relationship_partial_failure_advisory),
+        _ => None,
     }
-    if parts.is_empty() {
-        String::new()
-    } else {
-        format!(" ({})", parts.join("; "))
-    }
-}
-
-fn open_loop_suffix(item: &Value) -> String {
-    let mut parts = Vec::new();
-    if let Some(status) = string_at(item, "/status") {
-        parts.push(format!("status: {}", humanize_token(status)));
-    }
-    if let Some(due_date) = string_at(item, "/dueDate") {
-        parts.push(format!("due {due_date}"));
-    }
-    push_humanized_part(&mut parts, "trust", item, "/trustBand");
-    if parts.is_empty() {
-        String::new()
-    } else {
-        format!(" ({})", parts.join("; "))
-    }
-}
-
-fn push_humanized_part(parts: &mut Vec<String>, label: &str, item: &Value, pointer: &str) {
-    if let Some(value) = string_at(item, pointer) {
-        parts.push(format!("{label}: {}", humanize_token(value)));
-    }
-}
-
-fn insert_string_or_clone(
-    target: &mut Map<String, Value>,
-    key: &str,
-    source: &Value,
-    pointer: &str,
-) {
-    if let Some(value) = source.pointer(pointer).filter(|value| !value.is_null()) {
-        target.insert(key.to_string(), value.clone());
-    }
-}
-
-fn insert_source_refs(
-    target: &mut Map<String, Value>,
-    item: &Value,
-    source_id_map: &BTreeMap<String, String>,
-) {
-    let refs = item
-        .pointer("/provenance/sourceIds")
-        .and_then(Value::as_array)
-        .map(|source_ids| {
-            source_ids
-                .iter()
-                .filter_map(Value::as_str)
-                .filter_map(|raw_id| source_id_map.get(raw_id))
-                .cloned()
-                .map(Value::String)
-                .collect::<Vec<_>>()
-        })
-        .unwrap_or_default();
-    if !refs.is_empty() {
-        target.insert("sourceRefs".to_string(), Value::Array(refs));
-    }
-}
-
-fn string_at<'a>(value: &'a Value, pointer: &str) -> Option<&'a str> {
-    value.pointer(pointer).and_then(Value::as_str)
-}
-
-fn compact_text(text: &str) -> String {
-    text.split_whitespace().collect::<Vec<_>>().join(" ")
-}
-
-fn humanize_token(value: &str) -> String {
-    value.replace('_', " ")
 }
 
 fn map_invoke_error(err: AbilityInvokeError) -> ToolError {
@@ -476,6 +789,13 @@ fn map_invoke_error(err: AbilityInvokeError) -> ToolError {
     };
     ToolError::Internal {
         trace_id: trace_id.to_string(),
+    }
+}
+
+fn map_subject_resolution_db_error(err: DbError) -> ToolError {
+    eprintln!("mcp_v2 dailyos.read.account_status subject resolution failed: {err:?}");
+    ToolError::Internal {
+        trace_id: "account_subject_resolution".to_string(),
     }
 }
 
@@ -526,10 +846,203 @@ mod tests {
         assert!(matches!(err, ToolError::BadParams { .. }));
     }
 
+    fn account_candidate(id: &str, name: &str) -> AccountSubjectCandidate {
+        AccountSubjectCandidate {
+            id: id.to_string(),
+            name: name.to_string(),
+        }
+    }
+
     #[test]
-    fn account_status_presenter_returns_prose_and_display_provenance() {
+    fn account_subject_resolver_prefers_exact_id() {
+        let accounts = vec![
+            account_candidate("example-account", "Different Name"),
+            account_candidate("other-account", "Example Account"),
+        ];
+
+        let resolved = resolve_account_subject_from_accounts("example-account", &accounts);
+
+        match resolved {
+            AccountSubjectResolution::Resolved(subject) => {
+                assert_eq!(subject.entity_id, "example-account");
+                assert_eq!(subject.display_label, "Different Name");
+                assert_eq!(subject.resolution_kind, "account_id");
+                assert_eq!(subject.match_confidence, "exact");
+            }
+            other => panic!("expected resolved subject, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn account_subject_resolver_matches_exact_name() {
+        let accounts = vec![account_candidate("example-account", "Example Account")];
+
+        let resolved = resolve_account_subject_from_accounts("example account", &accounts);
+
+        match resolved {
+            AccountSubjectResolution::Resolved(subject) => {
+                assert_eq!(subject.entity_id, "example-account");
+                assert_eq!(subject.display_label, "Example Account");
+                assert_eq!(subject.resolution_kind, "account_name");
+                assert_eq!(subject.match_confidence_score, 1.0);
+            }
+            other => panic!("expected resolved subject, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn account_subject_resolver_matches_normalized_slug() {
+        let accounts = vec![account_candidate("example-account", "Example Account")];
+
+        let resolved = resolve_account_subject_from_accounts("ExampleAccount", &accounts);
+
+        match resolved {
+            AccountSubjectResolution::Resolved(subject) => {
+                assert_eq!(subject.entity_id, "example-account");
+                assert_eq!(subject.display_label, "Example Account");
+                assert_eq!(subject.resolution_kind, "normalized_slug");
+                assert_eq!(subject.match_confidence, "high");
+            }
+            other => panic!("expected resolved subject, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn account_subject_resolver_returns_ambiguous_for_duplicate_normalized_matches() {
+        let accounts = vec![
+            account_candidate("example-account", "Example Account"),
+            account_candidate("exampleaccount", "ExampleAccount"),
+        ];
+
+        let resolved = resolve_account_subject_from_accounts("Example Account", &accounts);
+
+        match resolved {
+            AccountSubjectResolution::Resolved(subject) => {
+                assert_eq!(subject.entity_id, "example-account");
+                assert_eq!(subject.resolution_kind, "account_name");
+            }
+            other => panic!("exact name should win before ambiguity, got {other:?}"),
+        }
+
+        let ambiguous = resolve_account_subject_from_accounts("Example-Account", &accounts);
+        match ambiguous {
+            AccountSubjectResolution::Ambiguous { candidates, .. } => {
+                assert_eq!(candidates.len(), 2);
+            }
+            other => panic!("expected ambiguous subject, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn account_status_subject_resolution_edges() {
+        let accounts = vec![
+            account_candidate("example-account", "Example Account"),
+            account_candidate("exampleaccount", "ExampleAccount"),
+            account_candidate("another-account", "Another Account"),
+        ];
+
+        let exact_id = resolve_account_subject_from_accounts("another-account", &accounts);
+        assert!(matches!(
+            exact_id,
+            AccountSubjectResolution::Resolved(ResolvedAccountSubject {
+                resolution_kind: "account_id",
+                ..
+            })
+        ));
+
+        let exact_name = resolve_account_subject_from_accounts("example account", &accounts);
+        assert!(matches!(
+            exact_name,
+            AccountSubjectResolution::Resolved(ResolvedAccountSubject {
+                resolution_kind: "account_name",
+                ..
+            })
+        ));
+
+        let normalized = resolve_account_subject_from_accounts("AnotherAccount", &accounts);
+        assert!(matches!(
+            normalized,
+            AccountSubjectResolution::Resolved(ResolvedAccountSubject {
+                resolution_kind: "normalized_slug",
+                ..
+            })
+        ));
+
+        let missing = resolve_account_subject_from_accounts("missing-account", &accounts);
+        assert!(matches!(missing, AccountSubjectResolution::NotFound { .. }));
+
+        let ambiguous = resolve_account_subject_from_accounts("Example-Account", &accounts);
+        assert!(matches!(
+            ambiguous,
+            AccountSubjectResolution::Ambiguous { .. }
+        ));
+    }
+
+    #[test]
+    fn account_subject_not_found_response_uses_documented_shape() {
+        let payload = account_subject_not_found_response("missing-account");
+
+        assert_eq!(payload["schemaVersion"], 2);
+        assert_eq!(payload["toolName"], "dailyos.read.account_status");
+        assert_eq!(payload["status"], "not_found");
+        assert_eq!(payload["resolution"]["resolvedEntityId"], Value::Null);
+        assert!(payload["answer"]
+            .as_str()
+            .unwrap()
+            .contains("could not resolve"));
+        assert_eq!(payload["provenance"]["rawClaimIdsIncluded"], false);
+    }
+
+    #[test]
+    fn account_subject_resolution_is_attached_to_presented_payload() {
+        let mut payload = present_account_status_response(
+            "example-account",
+            json!({
+                "schemaVersion": 2,
+                "subject": {
+                    "kind": "account",
+                    "id": "example-account",
+                    "displayLabel": "account:example-account"
+                },
+                "facts": { "items": [] },
+                "openLoops": { "items": [] },
+                "relationships": { "items": [] },
+                "touchpoints": { "items": [] },
+                "recordEntries": { "items": [] },
+                "trust": {
+                    "aggregateBand": "unscored",
+                    "sectionCaveats": {}
+                },
+                "sensitivity": "internal",
+                "provenance": {
+                    "sources": [],
+                    "redactionApplied": false
+                },
+                "sections": {}
+            }),
+        );
+        let subject = ResolvedAccountSubject {
+            input: "Example Account".to_string(),
+            entity_id: "example-account".to_string(),
+            display_label: "Example Account".to_string(),
+            resolution_kind: "normalized_slug",
+            match_basis: "normalized_id_or_name",
+            match_confidence: "high",
+            match_confidence_score: 0.95,
+        };
+
+        attach_account_subject_resolution(&mut payload, &subject);
+
+        assert_eq!(payload["resolution"]["resolvedEntityId"], "example-account");
+        assert_eq!(payload["subject"]["input"], "Example Account");
+        assert_eq!(payload["subject"]["displayLabel"], "Example Account");
+        assert_eq!(payload["subject"]["resolutionKind"], "normalized_slug");
+    }
+
+    #[test]
+    fn account_status_exec_briefing_fixture_uses_runtime_projection() {
         let envelope = serde_json::json!({
-            "schemaVersion": 1,
+            "schemaVersion": 2,
             "subject": {
                 "kind": "account",
                 "id": "acct-1",
@@ -577,6 +1090,87 @@ mod tests {
                     }
                 }]
             },
+            "relationships": {
+                "items": [{
+                    "edges": {
+                        "items": [{
+                            "edgeId": "stakeholder:person:person-2:raw-edge-source",
+                            "edgeType": "stakeholder",
+                            "relatedSubjectRef": { "person": "person-2" },
+                            "relatedDisplayLabel": {
+                                "text": "Commercial Sponsor",
+                                "policy": {}
+                            },
+                            "observedAt": "2026-05-22T15:00:00Z",
+                            "sourceAsof": "2026-05-22T15:00:00Z",
+                            "trustBand": "likely_current",
+                            "freshness": "current",
+                            "provenance": {
+                                "sourceIds": ["relationship_source:edge-1"]
+                            }
+                        }]
+                    },
+                    "participants": {
+                        "items": [{
+                            "subjectRef": { "person": "person-1" },
+                            "displayLabel": {
+                                "text": "Example Person",
+                                "policy": {}
+                            },
+                            "role": {
+                                "text": "Executive sponsor",
+                                "policy": {}
+                            },
+                            "relationship": {
+                                "text": "stakeholder",
+                                "policy": {}
+                            },
+                            "normalizedTouchpointCount": 4,
+                            "recentTouchpointIds": ["meeting-1", "meeting-2"],
+                            "lastSeenAt": "2026-05-22T15:00:00Z",
+                            "trustBand": "likely_current",
+                            "freshness": "current",
+                            "provenance": {
+                                "sourceIds": ["relationship_source:person-1"]
+                            }
+                        }]
+                    }
+                }]
+            },
+            "touchpoints": {
+                "items": [{
+                    "upcoming": { "items": [] },
+                    "recent": {
+                        "items": [{
+                            "meetingId": "meeting-1",
+                            "kind": "meeting",
+                            "when": "2026-05-22T15:00:00Z",
+                            "inclusionReason": "attendee_match",
+                            "trustBand": "unscored",
+                            "freshness": "current",
+                            "provenance": {
+                                "sourceIds": ["touchpoint:meeting-1"]
+                            }
+                        }]
+                    }
+                }]
+            },
+            "recordEntries": {
+                "items": [{
+                    "claimId": "claim-3",
+                    "claimType": "account_priority",
+                    "recordedAt": "2026-05-22T15:00:00Z",
+                    "renderedText": {
+                        "text": "Prioritize the reliability recap before the next renewal review.",
+                        "policy": {}
+                    },
+                    "trustBand": "likely_current",
+                    "sensitivity": "internal",
+                    "provenance": {
+                        "sourceIds": ["record_source:claim-3"]
+                    }
+                }]
+            },
             "trust": {
                 "aggregateBand": "likely_current",
                 "sectionCaveats": {}
@@ -597,6 +1191,34 @@ mod tests {
                         "sourceType": "open_loop",
                         "asOf": "2026-05-22T15:00:00Z",
                         "redacted": false
+                    },
+                    {
+                        "id": "relationship_source:person-1",
+                        "label": "meeting participation",
+                        "sourceType": "meeting_attendees",
+                        "asOf": "2026-05-22T15:00:00Z",
+                        "redacted": false
+                    },
+                    {
+                        "id": "relationship_source:edge-1",
+                        "label": "account stakeholder",
+                        "sourceType": "account_stakeholders",
+                        "asOf": "2026-05-22T15:00:00Z",
+                        "redacted": false
+                    },
+                    {
+                        "id": "touchpoint:meeting-1",
+                        "label": "Meeting (redacted)",
+                        "sourceType": "meeting",
+                        "asOf": "2026-05-22T15:00:00Z",
+                        "redacted": true
+                    },
+                    {
+                        "id": "record_source:claim-3",
+                        "label": "claim",
+                        "sourceType": "claim",
+                        "asOf": "2026-05-22T15:00:00Z",
+                        "redacted": false
                     }
                 ],
                 "redactionApplied": false
@@ -613,16 +1235,407 @@ mod tests {
             .as_str()
             .unwrap()
             .contains("Confirm commercial owner"));
+        assert!(payload["answer"]
+            .as_str()
+            .unwrap()
+            .contains("Example Person"));
+        assert!(payload["answer"]
+            .as_str()
+            .unwrap()
+            .contains("Commercial Sponsor"));
+        assert!(payload["answer"]
+            .as_str()
+            .unwrap()
+            .contains("Touchpoint evidence"));
+        assert!(payload["answer"]
+            .as_str()
+            .unwrap()
+            .contains("Prioritize the reliability recap"));
+        assert_eq!(payload["schemaVersion"], 2);
+        assert_eq!(payload["toolName"], "dailyos.read.account_status");
+        assert_eq!(payload["status"], "ok");
         assert_eq!(
             payload["assessment"]["facts"][0]["sourceRefs"][0],
             "source_1"
         );
+        assert_eq!(
+            payload["assessment"]["relationships"][0]["sourceRefs"][0],
+            "source_3"
+        );
+        assert_eq!(
+            payload["assessment"]["touchpoints"][0]["sourceRefs"][0],
+            "source_5"
+        );
+        assert_eq!(
+            payload["assessment"]["recordEntries"][0]["sourceRefs"][0],
+            "source_6"
+        );
+        assert_eq!(
+            payload["assessment"]["priorities"][0]["text"],
+            "Prioritize the reliability recap before the next renewal review."
+        );
         assert_eq!(payload["provenance"]["sources"][0]["id"], "source_1");
         assert_eq!(payload["provenance"]["rawClaimIdsIncluded"], false);
+        assert_eq!(payload["truncation"]["recordEntries"]["renderedCount"], 1);
 
         let serialized = serde_json::to_string(&payload).unwrap();
         assert!(!serialized.contains("claim_source:claim-1"));
+        assert!(!serialized.contains("relationship_source:person-1"));
+        assert!(!serialized.contains("relationship_source:edge-1"));
+        assert!(!serialized.contains("touchpoint:meeting-1"));
+        assert!(!serialized.contains("record_source:claim-3"));
+        assert!(!serialized.contains("raw-edge-source"));
+        assert!(!serialized.contains("meeting-1"));
+        assert!(!serialized.contains("claim-3"));
         assert!(!serialized.contains("\"claimId\""));
+    }
+
+    #[test]
+    fn account_status_presenter_keeps_edge_only_relationships_readable() {
+        let envelope = json!({
+            "schemaVersion": 2,
+            "subject": {
+                "kind": "account",
+                "id": "acct-1",
+                "displayLabel": "account:acct-1"
+            },
+            "facts": { "items": [] },
+            "openLoops": { "items": [] },
+            "relationships": {
+                "items": [{
+                    "edges": {
+                        "items": [{
+                            "edgeId": "stakeholder:person:person-1:raw-source",
+                            "edgeType": "stakeholder",
+                            "relatedSubjectRef": { "person": "person-1" },
+                            "relatedDisplayLabel": {
+                                "text": "Commercial Sponsor",
+                                "policy": {}
+                            },
+                            "trustBand": "use_with_caution",
+                            "freshness": "unknown",
+                            "provenance": {
+                                "sourceIds": ["relationship_source:edge-1"]
+                            }
+                        }]
+                    },
+                    "participants": { "items": [] }
+                }]
+            },
+            "trust": {
+                "aggregateBand": "use_with_caution",
+                "sectionCaveats": {}
+            },
+            "sensitivity": "internal",
+            "provenance": {
+                "sources": [{
+                    "id": "relationship_source:edge-1",
+                    "label": "account stakeholder",
+                    "sourceType": "account_stakeholders",
+                    "redacted": false
+                }],
+                "redactionApplied": false
+            },
+            "sections": {}
+        });
+
+        let payload = present_account_status_response_with_context(
+            "acct-1",
+            envelope,
+            Some("Example Account"),
+            Some("00000000-0000-0000-0000-000000000001"),
+            Some("get_provenance"),
+        );
+
+        assert!(payload["answer"]
+            .as_str()
+            .unwrap()
+            .contains("DailyOS account briefing for Example Account"));
+        assert!(payload["answer"]
+            .as_str()
+            .unwrap()
+            .contains("Commercial Sponsor"));
+        assert_eq!(payload["assessment"]["relationships"][0]["kind"], "edge");
+        assert_eq!(
+            payload["assessment"]["relationships"][0]["sourceRefs"][0],
+            "source_1"
+        );
+        assert_eq!(
+            payload["provenanceHandle"]["invocationId"],
+            "00000000-0000-0000-0000-000000000001"
+        );
+        assert_eq!(
+            payload["provenanceHandle"]["invocation_id"],
+            "00000000-0000-0000-0000-000000000001"
+        );
+        assert_eq!(payload["provenanceHandle"]["detailAvailable"], true);
+        assert_eq!(payload["provenanceHandle"]["detailTool"], "get_provenance");
+        assert_eq!(
+            payload["provenanceHandle"]["detailParams"]["invocation_id"],
+            "00000000-0000-0000-0000-000000000001"
+        );
+
+        let serialized = serde_json::to_string(&payload).unwrap();
+        assert!(!serialized.contains("relationship_source:edge-1"));
+        assert!(!serialized.contains("raw-source"));
+        assert!(!serialized.contains("person-1"));
+    }
+
+    #[test]
+    fn account_status_presenter_reports_presenter_truncation() {
+        let facts = (0..9)
+            .map(|index| {
+                json!({
+                    "claimId": format!("claim-{index}"),
+                    "claimType": "account_status",
+                    "renderedText": {
+                        "text": format!("Runtime fact {index}."),
+                        "policy": {}
+                    },
+                    "trustBand": "likely_current",
+                    "freshness": "current",
+                    "provenance": { "sourceIds": [] }
+                })
+            })
+            .collect::<Vec<_>>();
+        let envelope = json!({
+            "schemaVersion": 2,
+            "subject": {
+                "kind": "account",
+                "id": "acct-1",
+                "displayLabel": "Example Account"
+            },
+            "facts": { "items": facts },
+            "openLoops": { "items": [] },
+            "relationships": { "items": [] },
+            "touchpoints": { "items": [] },
+            "recordEntries": { "items": [] },
+            "trust": {
+                "aggregateBand": "likely_current",
+                "sectionCaveats": {}
+            },
+            "sensitivity": "internal",
+            "provenance": {
+                "sources": [],
+                "redactionApplied": false
+            },
+            "sections": {}
+        });
+
+        let payload = present_account_status_response("acct-1", envelope);
+
+        assert_eq!(payload["assessment"]["facts"].as_array().unwrap().len(), 8);
+        assert_eq!(payload["truncation"]["facts"]["renderedCount"], 8);
+        assert_eq!(payload["truncation"]["facts"]["rawCount"], 9);
+        assert_eq!(payload["truncation"]["facts"]["omittedCount"], 1);
+        assert_eq!(payload["truncation"]["facts"]["projectionTruncated"], true);
+        assert_eq!(payload["truncation"]["facts"]["presenterTruncated"], true);
+    }
+
+    #[test]
+    fn account_status_presenter_stays_within_mcp_payload_budget_for_large_runtime_text() {
+        let long_text = "This claim has useful detail. ".repeat(400);
+        let facts = (0..30)
+            .map(|index| {
+                json!({
+                    "claimId": format!("claim-{index}"),
+                    "claimType": "account_status",
+                    "renderedText": {
+                        "text": format!("{long_text} fact {index}."),
+                        "policy": {}
+                    },
+                    "trustBand": "likely_current",
+                    "freshness": "current",
+                    "provenance": { "sourceIds": [] }
+                })
+            })
+            .collect::<Vec<_>>();
+        let envelope = json!({
+            "schemaVersion": 2,
+            "subject": {
+                "kind": "account",
+                "id": "acct-1",
+                "displayLabel": "Example Account"
+            },
+            "facts": { "items": facts },
+            "openLoops": { "items": [] },
+            "relationships": { "items": [] },
+            "touchpoints": { "items": [] },
+            "recordEntries": { "items": [] },
+            "trust": {
+                "aggregateBand": "likely_current",
+                "sectionCaveats": {}
+            },
+            "sensitivity": "internal",
+            "provenance": {
+                "sources": [],
+                "redactionApplied": false
+            },
+            "sections": {}
+        });
+
+        let payload = present_account_status_response("acct-1", envelope);
+        let serialized = serde_json::to_vec(&payload).unwrap();
+
+        assert!(
+            serialized.len()
+                <= crate::services::mcp_v2::runtime_projection::MAX_MCP_PROJECTED_PAYLOAD_BYTES,
+            "MCP payload should fit under the 64 KiB local stdio tool budget"
+        );
+        assert!(String::from_utf8(serialized)
+            .unwrap()
+            .contains("[truncated]"));
+    }
+
+    #[test]
+    fn account_status_presenter_uses_documented_status_for_empty_response() {
+        let envelope = json!({
+            "schemaVersion": 2,
+            "subject": {
+                "kind": "account",
+                "id": "acct-1",
+                "displayLabel": "Example Account"
+            },
+            "facts": { "items": [] },
+            "openLoops": { "items": [] },
+            "relationships": { "items": [] },
+            "touchpoints": { "items": [] },
+            "recordEntries": { "items": [] },
+            "trust": {
+                "aggregateBand": "unscored",
+                "sectionCaveats": {}
+            },
+            "sensitivity": "internal",
+            "provenance": {
+                "sources": [],
+                "redactionApplied": false
+            },
+            "sections": {}
+        });
+
+        let payload = present_account_status_response("acct-1", envelope);
+
+        assert_eq!(payload["status"], "not_found");
+        assert!(payload["answer"]
+            .as_str()
+            .unwrap()
+            .contains("does not yet have claim-backed account intelligence"));
+    }
+
+    #[test]
+    fn account_status_presenter_surfaces_relationship_partial_failure() {
+        let envelope = json!({
+            "schemaVersion": 2,
+            "subject": {
+                "kind": "account",
+                "id": "acct-1",
+                "displayLabel": "Example Account"
+            },
+            "facts": { "items": [] },
+            "openLoops": { "items": [] },
+            "relationships": {
+                "items": [{
+                    "edges": { "items": [] },
+                    "participants": { "items": [] },
+                    "emptyReason": {
+                        "partial_failure": {
+                            "advisory": "relationships reader unavailable"
+                        }
+                    }
+                }]
+            },
+            "trust": {
+                "aggregateBand": "unscored",
+                "sectionCaveats": {
+                    "relationships": "relationships reader unavailable"
+                }
+            },
+            "sensitivity": "internal",
+            "provenance": {
+                "sources": [],
+                "redactionApplied": false
+            },
+            "sections": {
+                "relationships": {
+                    "kind": "empty",
+                    "reason": {
+                        "partial_failure": {
+                            "advisory": "relationships reader unavailable"
+                        }
+                    }
+                }
+            }
+        });
+
+        let payload = present_account_status_response("acct-1", envelope);
+
+        assert!(payload["answer"]
+            .as_str()
+            .unwrap()
+            .contains("could not read requested intelligence"));
+        assert!(!payload["answer"]
+            .as_str()
+            .unwrap()
+            .contains("does not yet have claim-backed account intelligence"));
+        assert_eq!(payload["status"], "unavailable");
+        assert_eq!(
+            payload["assessment"]["caveats"][0]["text"],
+            "relationships reader unavailable"
+        );
+    }
+
+    #[test]
+    fn account_status_presenter_marks_touchpoint_partial_failure() {
+        let envelope = json!({
+            "schemaVersion": 2,
+            "subject": {
+                "kind": "account",
+                "id": "acct-1",
+                "displayLabel": "Example Account"
+            },
+            "facts": { "items": [] },
+            "openLoops": { "items": [] },
+            "relationships": { "items": [] },
+            "touchpoints": {
+                "items": [{
+                    "upcoming": { "items": [] },
+                    "recent": { "items": [] },
+                    "emptyReason": {
+                        "partial_failure": {
+                            "advisory": "touchpoints reader unavailable"
+                        }
+                    }
+                }]
+            },
+            "recordEntries": { "items": [] },
+            "trust": {
+                "aggregateBand": "unscored",
+                "sectionCaveats": {}
+            },
+            "sensitivity": "internal",
+            "provenance": {
+                "sources": [],
+                "redactionApplied": false
+            },
+            "sections": {
+                "touchpoints": {
+                    "kind": "empty",
+                    "reason": "no_relevant_touchpoints"
+                }
+            }
+        });
+
+        let payload = present_account_status_response("acct-1", envelope);
+
+        assert_eq!(payload["status"], "unavailable");
+        assert!(payload["answer"]
+            .as_str()
+            .unwrap()
+            .contains("touchpoints reader unavailable"));
+        assert_eq!(
+            payload["assessment"]["caveats"][0]["text"],
+            "touchpoints reader unavailable"
+        );
     }
 
     #[test]

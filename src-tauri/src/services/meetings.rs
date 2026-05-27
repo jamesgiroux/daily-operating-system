@@ -53,6 +53,89 @@ pub fn set_meeting_prep_context(
         .map_err(|e| e.to_string())
 }
 
+pub async fn mark_meeting_intelligence_viewed(
+    ctx: &ServiceContext<'_>,
+    state: &AppState,
+    meeting_id: &str,
+) -> Result<(), String> {
+    ctx.check_mutation_allowed().map_err(|e| e.to_string())?;
+    let meeting_id = meeting_id.to_string();
+    state
+        .db_write(move |db| {
+            let Some(meeting) = db
+                .get_meeting_intelligence_row(&meeting_id)
+                .map_err(|e| e.to_string())?
+            else {
+                return Ok(());
+            };
+
+            db.mark_prep_reviewed(
+                &meeting.id,
+                meeting.calendar_event_id.as_deref(),
+                &meeting.title,
+            )
+            .map_err(|e| e.to_string())?;
+            db.clear_meeting_new_signals(&meeting.id)
+                .map_err(|e| e.to_string())?;
+            Ok(())
+        })
+        .await
+        .map_err(String::from)
+}
+
+pub(crate) fn record_cancelled_calendar_meetings(
+    ctx: &ServiceContext<'_>,
+    db: &ActionDb,
+    engine: &crate::signals::propagation::PropagationEngine,
+    current_calendar_event_ids: &HashSet<String>,
+    range_start: &str,
+    range_end: &str,
+) -> Result<usize, String> {
+    ctx.check_mutation_allowed().map_err(|e| e.to_string())?;
+    db.with_transaction(|tx| {
+        let mut stmt = tx
+            .conn_ref()
+            .prepare(
+                "SELECT m.id, m.calendar_event_id FROM meetings m
+                 LEFT JOIN meeting_transcripts mt ON mt.meeting_id = m.id
+                 WHERE m.start_time >= ?1 AND m.start_time < ?2
+                 AND m.calendar_event_id IS NOT NULL
+                 AND (mt.intelligence_state IS NULL OR mt.intelligence_state != 'archived')",
+            )
+            .map_err(|e| e.to_string())?;
+        let rows = stmt
+            .query_map(rusqlite::params![range_start, range_end], |row| {
+                Ok((row.get::<_, String>(0)?, row.get::<_, String>(1)?))
+            })
+            .map_err(|e| e.to_string())?;
+        let mut cancelled = Vec::new();
+        for row in rows {
+            let (id, calendar_event_id) = row.map_err(|e| e.to_string())?;
+            if !current_calendar_event_ids.contains(&calendar_event_id) {
+                cancelled.push(id);
+            }
+        }
+
+        for meeting_id in &cancelled {
+            tx.update_intelligence_state(meeting_id, "archived", None, None)
+                .map_err(|e| e.to_string())?;
+            crate::services::signals::emit_and_propagate_or_log(
+                ctx,
+                tx,
+                engine,
+                "meeting",
+                meeting_id,
+                "meeting_cancelled",
+                "calendar",
+                None,
+                0.9,
+            );
+        }
+
+        Ok(cancelled.len())
+    })
+}
+
 pub fn update_capture_content(
     ctx: &ServiceContext<'_>,
     db: &ActionDb,
@@ -241,87 +324,16 @@ fn load_prepare_meeting_subjects(
 ) -> Result<Vec<PrepareMeetingSubjectSnapshot>, String> {
     let mut subjects = Vec::new();
 
-    if object_exists(db, "linked_entities")? {
-        let mut statement = db
-            .conn_ref()
-            .prepare(
-                "SELECT lr.entity_type, lr.entity_id,
-                        COALESCE(e.name, lr.entity_id) AS display_name
-                 FROM linked_entities lr
-                 LEFT JOIN entities e
-                      ON e.id = lr.entity_id AND e.entity_type = lr.entity_type
-                 WHERE lr.owner_type = 'meeting'
-                   AND lr.owner_id = ?1
-                   AND lr.entity_type IN ('account', 'project', 'person')
-                 ORDER BY CASE lr.role WHEN 'primary' THEN 0
-                                       WHEN 'related' THEN 1
-                                       ELSE 2 END,
-                          display_name ASC",
-            )
-            .map_err(|error| format!("prepare linked entity read: {error}"))?;
-        let rows = statement
-            .query_map(rusqlite::params![meeting_id], |row| {
-                Ok((
-                    row.get::<_, String>(0)?,
-                    row.get::<_, String>(1)?,
-                    row.get::<_, String>(2)?,
-                ))
-            })
-            .map_err(|error| format!("read linked entities: {error}"))?;
-        for row in rows {
-            let (kind, id, display_name) =
-                row.map_err(|error| format!("map linked entity: {error}"))?;
-            push_prepare_meeting_subject(&mut subjects, &kind, &id, &display_name);
-        }
-    }
-
-    if object_exists(db, "meeting_entities")? {
-        let display_join = if object_exists(db, "entities")? {
-            "COALESCE(e.name, me.entity_id)"
-        } else {
-            "me.entity_id"
-        };
-        let sql = if object_exists(db, "entities")? {
-            format!(
-                "SELECT me.entity_type, me.entity_id, {display_join} AS display_name
-                 FROM meeting_entities me
-                 LEFT JOIN entities e
-                      ON e.id = me.entity_id AND e.entity_type = me.entity_type
-                 WHERE me.meeting_id = ?1
-                   AND me.entity_type IN ('account', 'project', 'person')
-                 ORDER BY COALESCE(me.is_primary, 0) DESC,
-                          COALESCE(me.confidence, 0.0) DESC,
-                          display_name ASC"
-            )
-        } else {
-            format!(
-                "SELECT me.entity_type, me.entity_id, {display_join} AS display_name
-                 FROM meeting_entities me
-                 WHERE me.meeting_id = ?1
-                   AND me.entity_type IN ('account', 'project', 'person')
-                 ORDER BY COALESCE(me.is_primary, 0) DESC,
-                          COALESCE(me.confidence, 0.0) DESC,
-                          display_name ASC"
-            )
-        };
-        let mut statement = db
-            .conn_ref()
-            .prepare(&sql)
-            .map_err(|error| format!("prepare meeting entity read: {error}"))?;
-        let rows = statement
-            .query_map(rusqlite::params![meeting_id], |row| {
-                Ok((
-                    row.get::<_, String>(0)?,
-                    row.get::<_, String>(1)?,
-                    row.get::<_, String>(2)?,
-                ))
-            })
-            .map_err(|error| format!("read meeting entities: {error}"))?;
-        for row in rows {
-            let (kind, id, display_name) =
-                row.map_err(|error| format!("map meeting entity: {error}"))?;
-            push_prepare_meeting_subject(&mut subjects, &kind, &id, &display_name);
-        }
+    for entity in db
+        .get_meeting_entities(meeting_id)
+        .map_err(|error| format!("read meeting entities: {error}"))?
+    {
+        push_prepare_meeting_subject(
+            &mut subjects,
+            entity.entity_type.as_str(),
+            &entity.id,
+            &entity.name,
+        );
     }
 
     Ok(subjects)
@@ -710,7 +722,7 @@ fn subject_ref_json(kind: &str, id: &str) -> Result<String, String> {
         other => {
             return Err(format!(
                 "unsupported prepare_meeting subject kind `{other}`"
-            ))
+            ));
         }
     };
     crate::services::claims::canonical_subject_ref(&subject)
@@ -2125,7 +2137,7 @@ fn find_prior_meeting(
         .collect();
     let sql = format!(
         "SELECT DISTINCT m.id FROM meetings m
-         INNER JOIN meeting_entities me ON me.meeting_id = m.id
+         INNER JOIN effective_meeting_entities me ON me.meeting_id = m.id
          WHERE me.entity_id IN ({})
            AND m.start_time < ?1
            AND m.id != ?2
@@ -2235,16 +2247,14 @@ pub fn resolve_prep_path(meeting_id: &str, state: &AppState) -> Result<std::path
 
 /// Get full meeting intelligence for the detail page.
 ///
-/// Uses db_read for the heavy lifting (queries + prep loading), then a
-/// lightweight db_write only for the two trivial UPDATEs (mark_prep_reviewed,
-/// clear_meeting_new_signals). Disk I/O for prep files happens inside the
-/// read closure to avoid a second round-trip, but doesn't block the writer.
+/// Uses db_read for the heavy lifting (queries + prep loading). Disk I/O for
+/// prep files happens inside the read closure to avoid a second round-trip,
+/// but this foreground read never triggers a DB write.
 pub async fn get_meeting_intelligence(
     ctx: &ServiceContext<'_>,
     state: &AppState,
     meeting_id: &str,
 ) -> Result<MeetingIntelligence, String> {
-    ctx.check_mutation_allowed().map_err(|e| e.to_string())?;
     let config = state
         .config
         .read()
@@ -2252,10 +2262,10 @@ pub async fn get_meeting_intelligence(
         .ok_or("No configuration loaded")?;
 
     let meeting_id_owned = meeting_id.to_string();
+    let current_time = ctx.clock.now();
 
-    // Pre-check: if meeting doesn't exist in DB, try to persist it from the
-    // live calendar cache. This covers the race where calendar_merge shows a
-    // "New" event on the briefing before the poller has written it to SQLite.
+    // Pre-check: if meeting doesn't exist in DB, render from the live calendar
+    // cache without auto-persisting from this foreground read.
     let mid_check = meeting_id_owned.clone();
     let exists = state
         .db_read(move |db| {
@@ -2288,48 +2298,15 @@ pub async fn get_meeting_intelligence(
         };
 
         if let Some(event) = live_event {
-            let primary_id = crate::workflow::deliver::meeting_primary_id(
-                Some(&event.id),
-                &event.title,
-                &event.start.to_rfc3339(),
-                event.meeting_type.as_str(),
-            );
-            let attendees_json = serde_json::to_string(&event.attendees).unwrap_or_default();
-            let start_rfc = event.start.to_rfc3339();
-            let end_rfc = event.end.to_rfc3339();
-            let mtype = event.meeting_type.as_str().to_string();
-            let title = event.title.clone();
-            let eid = event.id.clone();
-            #[allow(
-                clippy::let_underscore_must_use,
-                reason = "intentional best-effort discard; preserves existing non-blocking behavior"
-            )]
-            let _ = state
-                .db_write(move |db| {
-                    db.ensure_meeting_in_history(crate::db::EnsureMeetingHistoryInput {
-                        id: &primary_id,
-                        title: &title,
-                        meeting_type: &mtype,
-                        start_time: &start_rfc,
-                        end_time: Some(&end_rfc),
-                        calendar_event_id: Some(&eid),
-                        attendees: Some(&attendees_json),
-                        description: None,
-                    })
-                    .map_err(|e| e.to_string())?;
-                    Ok(())
-                })
-                .await
-                .map_err(String::from);
-            log::info!(
-                "Auto-persisted meeting from live calendar cache: {}",
-                meeting_id
-            );
+            return Ok(build_live_calendar_meeting_intelligence(
+                &config.workspace_path,
+                current_time,
+                &event,
+            ));
         }
     }
 
     // Phase 1: Read-only — all queries, prep loading, quality assessment
-    let current_time = ctx.clock.now();
     let intel = state
         .db_read(move |db| {
             let workspace = Path::new(&config.workspace_path);
@@ -2481,43 +2458,84 @@ pub async fn get_meeting_intelligence(
         })
         .await?;
 
-    // Step 2: Lightweight writes — mark reviewed + clear new-signal flag
-    let write_meeting_id = intel.meeting.id.clone();
-    let write_prep_event_id = intel
-        .prep
-        .as_ref()
-        .and_then(|p| p.calendar_event_id.clone());
-    let write_prep_title = intel
-        .prep
-        .as_ref()
-        .map(|p| p.title.clone())
-        .unwrap_or_default();
-    #[allow(
-        clippy::let_underscore_must_use,
-        reason = "intentional best-effort discard; preserves existing non-blocking behavior"
-    )]
-    let _ = state
-        .db_write(move |db| {
-            #[allow(
-                clippy::let_underscore_must_use,
-                reason = "intentional best-effort discard; preserves existing non-blocking behavior"
-            )]
-            let _ = db.mark_prep_reviewed(
-                &write_meeting_id,
-                write_prep_event_id.as_deref(),
-                &write_prep_title,
-            );
-            #[allow(
-                clippy::let_underscore_must_use,
-                reason = "intentional best-effort discard; preserves existing non-blocking behavior"
-            )]
-            let _ = db.clear_meeting_new_signals(&write_meeting_id);
-            Ok::<(), String>(())
-        })
-        .await
-        .map_err(String::from);
-
     Ok(intel)
+}
+
+fn build_live_calendar_meeting_intelligence(
+    workspace_path: &str,
+    current_time: DateTime<Utc>,
+    event: &crate::types::CalendarEvent,
+) -> MeetingIntelligence {
+    let meeting_id = crate::workflow::deliver::meeting_primary_id(
+        Some(&event.id),
+        &event.title,
+        &event.start.to_rfc3339(),
+        event.meeting_type.as_str(),
+    );
+    let attendees_json = serde_json::to_string(&event.attendees).ok();
+    let meeting = crate::db::DbMeeting {
+        id: meeting_id,
+        title: event.title.clone(),
+        meeting_type: event.meeting_type.as_str().to_string(),
+        start_time: event.start.to_rfc3339(),
+        end_time: Some(event.end.to_rfc3339()),
+        attendees: attendees_json,
+        notes_path: None,
+        summary: None,
+        created_at: current_time.to_rfc3339(),
+        calendar_event_id: Some(event.id.clone()),
+        description: None,
+        prep_context_json: None,
+        user_agenda_json: None,
+        user_notes: None,
+        prep_frozen_json: None,
+        prep_frozen_at: None,
+        prep_snapshot_path: None,
+        prep_snapshot_hash: None,
+        transcript_path: None,
+        transcript_processed_at: None,
+        intelligence_state: None,
+        intelligence_quality: None,
+        last_enriched_at: None,
+        signal_count: None,
+        has_new_signals: None,
+        last_viewed_at: None,
+    };
+
+    let today_dir = Path::new(workspace_path).join("_today");
+    let prep = load_meeting_prep_from_sources(&today_dir, &meeting);
+    let start_dt = parse_meeting_datetime(&meeting.start_time);
+    let end_dt = meeting
+        .end_time
+        .as_deref()
+        .and_then(parse_meeting_datetime)
+        .or(start_dt.map(|s| s + chrono::Duration::hours(1)));
+    let is_current = start_dt
+        .zip(end_dt)
+        .is_some_and(|(s, e)| s <= current_time && current_time <= e);
+    let is_past = end_dt.is_some_and(|e| e < current_time);
+
+    MeetingIntelligence {
+        meeting,
+        prep,
+        is_past,
+        is_current,
+        is_frozen: false,
+        can_edit_user_layer: false,
+        user_agenda: None,
+        user_notes: None,
+        dismissed_topics: Vec::new(),
+        hidden_attendees: Vec::new(),
+        outcomes: None,
+        captures: Vec::new(),
+        actions: Vec::new(),
+        linked_entities: Vec::new(),
+        prep_snapshot_path: None,
+        prep_frozen_at: None,
+        transcript_path: None,
+        transcript_processed_at: None,
+        intelligence_quality: None,
+    }
 }
 
 /// Link meeting entity: DB link, clear prep, enqueue re-assembly.
@@ -2785,17 +2803,15 @@ pub async fn unlink_meeting_entity_with_prep_queue(
             // field_path='account'. Project/Person link dismissals
             // could resurface because PRE-GATE matches on field_path
             // and saw 'account' instead of the real entity_type.
-            let entity_type: String = db
-                .conn_ref()
-                .query_row(
-                    "SELECT entity_type FROM meeting_entities \
-                     WHERE meeting_id = ?1 AND entity_id = ?2 LIMIT 1",
-                    rusqlite::params![meeting_id_s, entity_id_s],
-                    |row| row.get(0),
-                )
-                .map_err(|e| {
+            let entity_type = db
+                .get_meeting_linked_entities(&meeting_id_s)
+                .map_err(|e| e.to_string())?
+                .into_iter()
+                .find(|entity| entity.id == entity_id_s)
+                .map(|entity| entity.entity_type)
+                .ok_or_else(|| {
                     format!(
-                        "unlink_meeting_entity_with_prep_queue: meeting_entities row not found for ({}, {}): {e}",
+                        "unlink_meeting_entity_with_prep_queue: meeting link not found for ({}, {})",
                         meeting_id_s, entity_id_s
                     )
                 })?;
@@ -2912,8 +2928,8 @@ pub fn persist_classification_entities(
 ///     so a later lower-confidence sweep can never downgrade a previously
 ///     linked primary.
 ///
-/// Dismissed entities (user-unlinked, recorded in
-/// `meeting_entity_dismissals`) are skipped before any write. This closes
+/// Dismissed entities (user-unlinked, recorded in the legacy dismissal table
+/// or the current entity-link graph) are skipped before any write. This closes
 /// the "dismissed entity comes back every sync" loop at the calendar-sync
 /// edge, mirroring the guard in
 /// `persist_and_invalidate_entity_links_sync_scored` for the resolver edge.
@@ -3182,14 +3198,14 @@ pub fn persist_and_invalidate_entity_links_sync_scored(
     }
 
     // Track whether a link existed before for prep-invalidation accounting.
+    let existing_link_ids: HashSet<String> = db
+        .get_meeting_linked_entities(meeting_id)
+        .map(|entities| entities.into_iter().map(|entity| entity.id).collect())
+        .unwrap_or_default();
     let mut linked = 0usize;
     for candidate in &candidates {
         // Check existence first so we can increment only on new inserts.
-        let already: bool = db
-            .conn_ref()
-            .prepare("SELECT 1 FROM meeting_entities WHERE meeting_id = ?1 AND entity_id = ?2")
-            .and_then(|mut s| s.exists(rusqlite::params![meeting_id, candidate.entity_id]))
-            .unwrap_or(false);
+        let already = existing_link_ids.contains(&candidate.entity_id);
 
         match db.link_meeting_entity_with_confidence(
             meeting_id,
@@ -3388,7 +3404,8 @@ pub fn update_meeting_user_agenda(
             .unwrap_or_else(|| ("meeting".to_string(), meeting_id.to_string()));
         crate::services::signals::emit_and_propagate_or_log(
             ctx,
-            db, &state.signals.engine,
+            db,
+            &state.signals.engine,
             &etype,
             &eid,
             "prep_edited",

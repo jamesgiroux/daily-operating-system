@@ -242,9 +242,9 @@ Trust band rendering on `AccountDetailEditorial` is not wired in v1.4.1 — the 
 
 - **Lifecycle intelligence engine (I623)** — automatic signal-driven lifecycle transitions. Renewals, at-risk signals, and engagement drops detected and reported in daily briefing with confirm/correct flow.
 - **Person-first stakeholder architecture (I652)** — multi-role support, AI suggestion table, email-based person dedup, per-field data_source provenance protecting user edits from enrichment overwrite.
-- **Product intelligence (I624)** — AI-discovered products from Glean/REDACTED displayed on account dossier with inline correction.
-- **Product classification (I651)** — extracts product_type, tier, ARR from REDACTED Financial dimension via Glean.
-- **Provenance inline markers (I625)** — "via REDACTED," "you noted" attribution on vitals strip. Conflict suggestions with accept/dismiss.
+- **Product intelligence (I624)** — AI-discovered products from Glean/Salesforce displayed on account dossier with inline correction.
+- **Product classification (I651)** — extracts product_type, tier, ARR from Salesforce Financial dimension via Glean.
+- **Provenance inline markers (I625)** — "via Salesforce," "you noted" attribution on vitals strip. Conflict suggestions with accept/dismiss.
 - **Canonical account truth (I644)** — 19 promoted account fact columns, account_source_refs table, Glean fact promotion, field promotion matrix, dashboard.json elimination.
 - **Timeliness and feedback learning (I645)** — feedback events table, suppression tombstones, class-specific relevance windows, stale item filtering.
 - **Success plan auto-completion (I628)** — lifecycle transitions auto-complete matching milestones.

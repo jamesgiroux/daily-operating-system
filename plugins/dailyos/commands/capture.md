@@ -81,7 +81,7 @@ Determine where each extracted artifact should go:
 - Use the meeting date for the archive path, not today's date
 
 **Actions:**
-- Destination: `data/actions.json` (append to existing array)
+- Destination: DailyOS action service/tool (generated `actions.json` remains an export)
 - Each action formatted per schema: id, text, entity, person, due_date, status ("open"), source_meeting
 
 **People intelligence updates:**
@@ -89,7 +89,7 @@ Determine where each extracted artifact should go:
 - New meeting signals, temperature observations, communication data points
 
 **Entity intelligence updates:**
-- Destination: `{entity-path}/intelligence.json` (merge with existing)
+- Destination: DailyOS runtime/services (generated `intelligence.json` remains an export)
 - New risks, wins, state changes, stakeholder insights
 
 ### Step 5: Generate Capture Report
@@ -133,11 +133,11 @@ Present the capture report and ask for confirmation:
 ```
 Ready to write:
 1. Archive summary to _archive/2026-02/acme-corp-weekly-sync-2026-02-14.md
-2. Create 5 actions in data/actions.json
+2. Create 5 DailyOS actions
 3. Update People/Sarah-Chen/person.md with warming signal
 4. Update People/David-Park/person.md with cooling signal
 5. Add Elena Rodriguez to People/ (new profile)
-6. Update Accounts/Acme-Corp/intelligence.json with expansion signal and competitive mention
+6. Promote the expansion signal and competitive mention through DailyOS runtime/services
 
 Proceed with all, or adjust first?
 ```
@@ -149,7 +149,7 @@ Never write back to workspace files without explicit user confirmation. The user
 After confirmation, execute the approved writes:
 - Read existing files before modifying (preserve content, append/merge)
 - Create new directories as needed (_archive/YYYY-MM/, new People/ profiles)
-- For JSON files (actions.json, intelligence.json), merge carefully — do not overwrite existing entries
+- For runtime mutations, use DailyOS tools/services when available. Do not edit generated JSON exports directly unless the user explicitly asks for file-artifact repair.
 - Report completion: "Done. 5 actions created, 3 people profiles updated, Acme Corp intelligence refreshed, summary archived."
 
 ## Loop-Back

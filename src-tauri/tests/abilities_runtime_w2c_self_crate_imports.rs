@@ -13,7 +13,8 @@ fn entity_intake_uses_self_crate_imports_inside_abilities_runtime() {
     .expect("read contracts");
 
     assert!(
-        producer.contains("use crate::") && contracts.contains("use crate::abilities::trust::types::TrustBand;"),
+        producer.contains("use crate::")
+            && contracts.contains("use crate::abilities::trust::types::TrustBand;"),
         "entity_intake must use self-crate imports"
     );
     assert!(

@@ -14,9 +14,10 @@ pub use contracts::{
     EntityIntelligenceEnvelope, EntityIntelligenceInput, EntityKind, EnvelopeProvenance,
     EnvelopeProvenanceSource, EnvelopeSection, EnvelopeTrustSummary, ExclusionReason, Freshness,
     HealthStory, HealthStoryRow, InclusionReason, MetadataProposal, NormalizedSubject,
-    OpenLoopWithReceipt, Paginated, ProvenanceRef, ReceiptTargetRef, RecordEntry, SectionState,
+    OpenLoopWithReceipt, Paginated, ProvenanceRef, ReceiptTargetRef, RecordEntry, RelationshipEdge,
+    RelationshipParticipant, RelationshipTruncation, RelationshipsBundle, SectionState,
     SubjectScope, ThreadSummary, Touchpoint, TouchpointBundle, TouchpointKind,
-    ENVELOPE_SCHEMA_VERSION,
+    ENVELOPE_SCHEMA_VERSION, ENVELOPE_SCHEMA_VERSION_V1, ENVELOPE_SCHEMA_VERSION_V2,
 };
 
 use dailyos_abilities_macro::ability;
@@ -27,7 +28,7 @@ use crate::abilities::{AbilityContext, AbilityResult};
     name = "get_entity_intelligence",
     category = Read,
     version = "0.1.0",
-    schema_version = 1,
+    schema_version = 2,
     allowed_actors = [User, Agent, System, SurfaceClient, McpClient],
     allowed_modes = [Live, Simulate, Evaluate],
     requires_confirmation = false,

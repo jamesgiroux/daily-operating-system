@@ -7,52 +7,140 @@ import { describe, expect, it } from "vitest";
 
 import {
   ENVELOPE_SCHEMA_VERSION,
+  ENVELOPE_SCHEMA_VERSION_V1,
+  ENVELOPE_SCHEMA_VERSION_V2,
   type ClaimSensitivity,
   type ClaimState,
   type ClaimVerificationState,
   type ContextDepth,
   type CursorState,
-  type EmptyReason,
-  type EntityIntelligenceEnvelope,
+  type EmptyReasonV1,
+  type EmptyReasonV2,
+  type EntityIntelligenceEnvelopeV1,
+  type EntityIntelligenceEnvelopeV2,
+  type EntityIntelligenceInputV1,
+  type EntityIntelligenceInputV2,
   type EntityKind,
-  type EnvelopeSection,
+  type EnvelopeSectionV1,
+  type EnvelopeSectionV2,
   type ExclusionReason,
   type Freshness,
   type InclusionReason,
   type RenderSurface,
-  type SectionState,
+  type RelationshipInclusionReason,
+  type SectionStateV1,
+  type SectionStateV2,
   type SubjectRef,
   type SurfacingState,
   type TouchpointKind,
   type TrustBand,
 } from "../contracts";
 
-interface ContractGoldenFixture {
-  envelope: EntityIntelligenceEnvelope;
-  enumCoverage: {
-    entityKinds: EntityKind[];
-    contextDepths: ContextDepth[];
-    envelopeSections: EnvelopeSection[];
-    cursorStates: CursorState[];
-    emptyReasons: EmptyReason[];
-    sectionStates: SectionState[];
-    subjectRefs: SubjectRef[];
-    trustBands: TrustBand[];
-    freshness: Freshness[];
-    claimStates: ClaimState[];
-    surfacingStates: SurfacingState[];
-    verificationStates: ClaimVerificationState[];
-    claimSensitivities: ClaimSensitivity[];
-    renderSurfaces: RenderSurface[];
-    touchpointKinds: TouchpointKind[];
-    inclusionReasons: InclusionReason[];
-    exclusionReasons: ExclusionReason[];
-  };
+interface SharedEnumCoverage {
+  entityKinds: EntityKind[];
+  contextDepths: ContextDepth[];
+  cursorStates: CursorState[];
+  subjectRefs: SubjectRef[];
+  trustBands: TrustBand[];
+  freshness: Freshness[];
+  claimStates: ClaimState[];
+  surfacingStates: SurfacingState[];
+  verificationStates: ClaimVerificationState[];
+  claimSensitivities: ClaimSensitivity[];
+  renderSurfaces: RenderSurface[];
+  touchpointKinds: TouchpointKind[];
+  inclusionReasons: InclusionReason[];
+  exclusionReasons: ExclusionReason[];
 }
 
-const goldenFixture = {
+interface ContractGoldenFixtureV1 {
+  envelope: EntityIntelligenceEnvelopeV1;
+  enumCoverage: {
+    envelopeSections: EnvelopeSectionV1[];
+    emptyReasons: EmptyReasonV1[];
+    sectionStates: SectionStateV1[];
+  } & SharedEnumCoverage;
+}
+
+interface SchemaV2EnumCoverage {
+  envelopeSections: EnvelopeSectionV2[];
+  emptyReasons: EmptyReasonV2[];
+  sectionStates: SectionStateV2[];
+  relationshipInclusionReasons: RelationshipInclusionReason[];
+}
+
+const schemaV1SectionRequest = {
+  schemaVersion: ENVELOPE_SCHEMA_VERSION_V1,
+  entityType: "account",
+  entityId: "account-1",
+  depth: "standard",
+  sections: ["facts"],
+} satisfies EntityIntelligenceInputV1;
+
+const schemaV2RelationshipsSectionRequest = {
+  schemaVersion: ENVELOPE_SCHEMA_VERSION_V2,
+  entityType: "account",
+  entityId: "account-1",
+  depth: "standard",
+  sections: ["relationships"],
+} satisfies EntityIntelligenceInputV2;
+
+if (false) {
+  const schemaV1RelationshipsSectionRequest = {
+    schemaVersion: ENVELOPE_SCHEMA_VERSION_V1,
+    entityType: "account",
+    entityId: "account-1",
+    depth: "standard",
+    sections: [
+      // @ts-expect-error Schema v1 cannot request schema v2 relationships.
+      "relationships",
+    ],
+  } satisfies EntityIntelligenceInputV1;
+
+  void schemaV1RelationshipsSectionRequest;
+}
+
+const schemaV2EnumCoverage = {
+  envelopeSections: [
+    "facts",
+    "health",
+    "metadata_proposals",
+    "open_loops",
+    "relationships",
+    "touchpoints",
+    "threads",
+    "record",
+  ],
+  emptyReasons: [
+    "not_connected",
+    "not_processed_yet",
+    "filtered_out_by_subject",
+    "no_relevant_touchpoints",
+    "no_relevant_relationships",
+    "stale",
+    "no_evidence_backed_proposal",
+    "unsupported_for_subject",
+    "not_requested",
+    { partial_failure: { advisory: "section error" } },
+  ],
+  sectionStates: [
+    { kind: "present", item_count: 1 },
+    { kind: "empty", reason: "no_relevant_relationships" },
+  ],
+  relationshipInclusionReasons: [
+    "subject_match",
+    "hierarchy",
+    "explicit_link",
+    "attendee_match",
+    "co_attendance",
+    "work_item",
+    "content_link",
+  ],
+} satisfies SchemaV2EnumCoverage;
+
+const schemaV1GoldenFixture = {
   envelope: {
-    schemaVersion: ENVELOPE_SCHEMA_VERSION,
+    schemaVersion: ENVELOPE_SCHEMA_VERSION_V1,
     subject: {
       kind: "account",
       id: "account-1",
@@ -182,8 +270,8 @@ const goldenFixture = {
       sources: [
         {
           id: "claim_source:claim-1",
-          label: "google",
-          sourceType: "google",
+          label: "fixture_source",
+          sourceType: "fixture_source",
           asOf: "2026-05-19T12:00:00Z",
           redacted: false,
         },
@@ -193,7 +281,7 @@ const goldenFixture = {
     sensitivity: "internal",
   },
   enumCoverage: {
-    entityKinds: ["account", "project", "person"],
+    entityKinds: ["account", "project", "person", "meeting"],
     contextDepths: ["shallow", "standard", "deep"],
     envelopeSections: [
       "facts",
@@ -259,14 +347,121 @@ const goldenFixture = {
     inclusionReasons: ["subject_match", "entity_link", "attendee_match", "domain_match"],
     exclusionReasons: ["subject_mismatch", "outside_window", "low_confidence", "suppressed"],
   },
-} satisfies ContractGoldenFixture;
+} satisfies ContractGoldenFixtureV1;
+
+const displayLabelPolicy = {
+  kind: "render",
+  sensitivity: "internal",
+  surface: "tauri_entity_detail",
+  claimId: null,
+  affordance: null,
+} as const;
+
+const schemaV2Envelope = {
+  ...schemaV1GoldenFixture.envelope,
+  schemaVersion: ENVELOPE_SCHEMA_VERSION_V2,
+  sections: {
+    ...schemaV1GoldenFixture.envelope.sections,
+    relationships: { kind: "present", item_count: 1 },
+  },
+  relationships: {
+    items: [
+      {
+        edges: {
+          items: [
+            {
+              edgeId: "relationship-edge-1",
+              edgeType: "account_participant",
+              subjectRef: { account: "account-1" },
+              relatedSubjectRef: { person: "person-1" },
+              relatedDisplayLabel: {
+                text: "Example Person",
+                policy: displayLabelPolicy,
+              },
+              observedAt: "2026-05-20T12:00:00Z",
+              sourceAsof: "2026-05-20T12:00:00Z",
+              confidence: 0.92,
+              sensitivity: "internal",
+              inclusionReason: "attendee_match",
+              traversalDepth: 1,
+              trustBand: "likely_current",
+              freshness: "current",
+              provenance: { sourceIds: ["relationship_source:relationship-edge-1"] },
+              caveats: [],
+            },
+          ],
+          nextCursor: null,
+          totalHint: 1,
+          cursorState: { kind: "stable" },
+        },
+        participants: {
+          items: [
+            {
+              subjectRef: { person: "person-1" },
+              displayLabel: {
+                text: "Example Person",
+                policy: displayLabelPolicy,
+              },
+              role: {
+                text: "Executive sponsor",
+                policy: displayLabelPolicy,
+              },
+              relationship: {
+                text: "stakeholder",
+                policy: displayLabelPolicy,
+              },
+              sensitivity: "internal",
+              normalizedTouchpointCount: 3,
+              recentTouchpointIds: ["meeting-1", "meeting-2"],
+              lastSeenAt: "2026-05-20T12:00:00Z",
+              trustBand: "likely_current",
+              freshness: "current",
+              provenance: { sourceIds: ["relationship_source:person-1"] },
+              caveats: [],
+            },
+          ],
+          nextCursor: null,
+          totalHint: 1,
+          cursorState: { kind: "stable" },
+        },
+        candidateSet: {
+          windowStart: null,
+          windowEnd: "2026-05-20T12:00:00Z",
+          filterDescription: "account relationship neighborhood",
+        },
+        emptyReason: null,
+        subjectScope: {
+          primary: { account: "account-1" },
+          alsoIncludes: [{ person: "person-1" }],
+        },
+        truncation: {
+          edgesTruncated: false,
+          participantsTruncated: false,
+          perEdgeCap: 50,
+        },
+        caveats: [],
+      },
+    ],
+    nextCursor: null,
+    totalHint: 1,
+    cursorState: { kind: "stable" },
+  },
+} satisfies EntityIntelligenceEnvelopeV2;
 
 describe("entity intelligence envelope contract golden fixture", () => {
-  it("parses representative envelope JSON as EntityIntelligenceEnvelope", () => {
-    const parsedFixture = JSON.parse(JSON.stringify(goldenFixture)) as ContractGoldenFixture;
-    expect(parsedFixture.envelope.schemaVersion).toBe(ENVELOPE_SCHEMA_VERSION);
+  it("versions section request types by schema", () => {
+    expect(schemaV1SectionRequest.sections).toEqual(["facts"]);
+    expect(schemaV2RelationshipsSectionRequest.sections).toEqual(["relationships"]);
+  });
+
+  it("parses representative schema v1 envelope JSON without relationships", () => {
+    const parsedFixture = JSON.parse(
+      JSON.stringify(schemaV1GoldenFixture),
+    ) as ContractGoldenFixtureV1;
+    expect(parsedFixture.envelope.schemaVersion).toBe(ENVELOPE_SCHEMA_VERSION_V1);
     expect(parsedFixture.envelope.subject.kind).toBe("account");
     expect(parsedFixture.envelope.facts.items[0]?.claimId).toBe("claim-1");
+    expect("relationships" in parsedFixture.envelope).toBe(false);
     // AC-459.9 — every list-shape field carries `cursorState`.
     expect(parsedFixture.envelope.facts.cursorState).toEqual({ kind: "stable" });
     expect(parsedFixture.envelope.metadataProposals.cursorState).toEqual({ kind: "stable" });
@@ -276,8 +471,24 @@ describe("entity intelligence envelope contract golden fixture", () => {
     expect(parsedFixture.envelope.recordEntries.cursorState).toEqual({ kind: "stable" });
   });
 
-  it("sections map enumerates all 7 EnvelopeSection variants (AC-459.2)", () => {
-    const { sections } = goldenFixture.envelope;
+  it("parses representative schema v2 envelope JSON with relationships", () => {
+    const parsedEnvelope = JSON.parse(
+      JSON.stringify(schemaV2Envelope),
+    ) as EntityIntelligenceEnvelopeV2;
+    expect(parsedEnvelope.schemaVersion).toBe(ENVELOPE_SCHEMA_VERSION);
+    expect(parsedEnvelope.schemaVersion).toBe(ENVELOPE_SCHEMA_VERSION_V2);
+    expect(parsedEnvelope.relationships?.cursorState).toEqual({ kind: "stable" });
+    expect(parsedEnvelope.relationships?.items[0]?.edges.cursorState).toEqual({ kind: "stable" });
+    expect(parsedEnvelope.relationships?.items[0]?.participants.cursorState).toEqual({
+      kind: "stable",
+    });
+    expect(parsedEnvelope.relationships?.items[0]?.edges.items[0]?.relatedSubjectRef).toEqual({
+      person: "person-1",
+    });
+  });
+
+  it("schema v1 sections map enumerates all 7 EnvelopeSection variants (AC-459.2)", () => {
+    const { sections } = schemaV1GoldenFixture.envelope;
     const keys = Object.keys(sections).sort();
     expect(keys).toEqual([
       "facts",
@@ -290,8 +501,22 @@ describe("entity intelligence envelope contract golden fixture", () => {
     ]);
   });
 
+  it("schema v2 sections map enumerates all 8 EnvelopeSection variants", () => {
+    const keys = Object.keys(schemaV2Envelope.sections).sort();
+    expect(keys).toEqual([
+      "facts",
+      "health",
+      "metadata_proposals",
+      "open_loops",
+      "record",
+      "relationships",
+      "threads",
+      "touchpoints",
+    ]);
+  });
+
   it("every empty section carries a typed reason (AC-459.2)", () => {
-    const { sections } = goldenFixture.envelope;
+    const { sections } = schemaV1GoldenFixture.envelope;
     for (const state of Object.values(sections)) {
       if (state?.kind === "empty") {
         expect(state.reason).toBeDefined();
@@ -300,19 +525,23 @@ describe("entity intelligence envelope contract golden fixture", () => {
   });
 
   it("per-fact provenance is ProvenanceRef, not inlined ProvenanceSource[] (architecture F9)", () => {
-    const fact = goldenFixture.envelope.facts.items[0];
+    const fact = schemaV1GoldenFixture.envelope.facts.items[0];
     expect(fact?.provenance.sourceIds).toEqual(["claim_source:claim-1"]);
     // Top-level envelope provenance carries the actual source descriptors.
-    expect(goldenFixture.envelope.provenance.sources[0]?.id).toBe("claim_source:claim-1");
+    expect(schemaV1GoldenFixture.envelope.provenance.sources[0]?.id).toBe(
+      "claim_source:claim-1",
+    );
   });
 
-  it("covers every closed enum variant mirrored from Rust", () => {
-    const { enumCoverage } = goldenFixture;
-    expect(enumCoverage.entityKinds).toHaveLength(3);
+  it("keeps schema v1 enum coverage schema v1 only", () => {
+    const { enumCoverage } = schemaV1GoldenFixture;
+    expect(enumCoverage.entityKinds).toHaveLength(4);
     expect(enumCoverage.contextDepths).toHaveLength(3);
     expect(enumCoverage.envelopeSections).toHaveLength(7);
+    expect(enumCoverage.envelopeSections).not.toContain("relationships");
     expect(enumCoverage.cursorStates).toHaveLength(3);
     expect(enumCoverage.emptyReasons).toHaveLength(9);
+    expect(enumCoverage.emptyReasons).not.toContain("no_relevant_relationships");
     expect(enumCoverage.subjectRefs).toHaveLength(8);
     expect(enumCoverage.trustBands).toHaveLength(4);
     expect(enumCoverage.freshness).toHaveLength(4);
@@ -324,5 +553,17 @@ describe("entity intelligence envelope contract golden fixture", () => {
     expect(enumCoverage.touchpointKinds).toHaveLength(5);
     expect(enumCoverage.inclusionReasons).toHaveLength(4);
     expect(enumCoverage.exclusionReasons).toHaveLength(4);
+  });
+
+  it("covers schema v2 relationship-only enum variants", () => {
+    expect(schemaV2EnumCoverage.envelopeSections).toHaveLength(8);
+    expect(schemaV2EnumCoverage.envelopeSections).toContain("relationships");
+    expect(schemaV2EnumCoverage.emptyReasons).toHaveLength(10);
+    expect(schemaV2EnumCoverage.emptyReasons).toContain("no_relevant_relationships");
+    expect(schemaV2EnumCoverage.sectionStates).toContainEqual({
+      kind: "empty",
+      reason: "no_relevant_relationships",
+    });
+    expect(schemaV2EnumCoverage.relationshipInclusionReasons).toHaveLength(7);
   });
 });

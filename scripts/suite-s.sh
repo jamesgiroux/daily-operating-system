@@ -32,15 +32,15 @@ trap 'rm -f "$OAUTH_SECRET_SCAN_SCRIPT"' EXIT
 # Each entry: "label::command"
 CHECKS=(
   "service-layer-boundary::./scripts/check_service_layer_boundary.sh"
-  "no-let-underscore::./scripts/check_no_let_underscore_feedback.sh"
+  "no-let-underscore::bash src-tauri/scripts/check_no_let_underscore_in_writer_paths.sh"
   "write-fence-usage::./scripts/check_write_fence_usage.sh"
   "ability-surface-drift::bash src-tauri/scripts/check_ability_surface_drift.sh"
   "no-live-external-clients::bash src-tauri/scripts/check_no_live_external_clients_in_eval.sh"
   "fixture-anonymization::bash src-tauri/scripts/check_fixture_anonymization.sh"
   "durable-source-comments::./scripts/check_no_ephemeral_issue_refs_in_comments.sh"
   "oauth-secret-scan::bash \"$OAUTH_SECRET_SCAN_SCRIPT\""
-  "clippy-deny-warnings::cargo clippy --manifest-path src-tauri/Cargo.toml --workspace --all-features --lib --bins -- -D warnings"
-  "cargo-audit::cd src-tauri && cargo audit --file audit.toml"
+  "clippy-deny-warnings::bash src-tauri/scripts/build-mcp.sh --stub && cargo clippy --manifest-path src-tauri/Cargo.toml --workspace --all-features --lib --bins -- -D warnings"
+  "cargo-audit::cargo audit --file src-tauri/Cargo.lock"
 )
 
 # Inline OAuth secret scan (matches CI policy step)
@@ -61,19 +61,19 @@ first=1
 for entry in "${CHECKS[@]}"; do
   label="${entry%%::*}"
   cmd="${entry#*::}"
+  log_path="/tmp/suite-s-${label}.log"
   total=$((total + 1))
 
   echo "─── Suite S: $label ───" >&2
-  if eval "$cmd" >/tmp/suite-s-${label}.log 2>&1; then
+  if (cd "$REPO_ROOT" && eval "$cmd") >"$log_path" 2>&1; then
     status="pass"
   else
     status="fail"
     failed=$((failed + 1))
-    cat /tmp/suite-s-${label}.log >&2 || true
+    cat "$log_path" >&2 || true
   fi
 
   if [[ $first -eq 1 ]]; then first=0; else results_json+=","; fi
-  log_path="/tmp/suite-s-${label}.log"
   results_json+="{\"check\":\"$label\",\"status\":\"$status\",\"log\":\"$log_path\"}"
 done
 
