@@ -962,6 +962,10 @@ const LATENCY_PERSIST_INTERVAL_TICKS: u32 = 2;
 /// Best-effort: a failure here is logged but does not propagate, because a
 /// failed persist must not break a foreground command or stop the checkpoint
 /// loop. The next tick will retry.
+///
+/// Wraps the write in `ActionDb::with_transaction` so the call satisfies
+/// ADR-0133 §2's "explicit transaction wrapper" requirement, even though the
+/// single INSERT OR REPLACE would auto-commit on its own.
 async fn persist_latency_snapshot_to_kv(writer: &PooledConnection) {
     let snapshot = crate::latency::snapshot_for_persistence();
     let Ok(value_json) = serde_json::to_string(&snapshot) else {
@@ -971,12 +975,19 @@ async fn persist_latency_snapshot_to_kv(writer: &PooledConnection) {
     let timestamp = chrono::Utc::now().to_rfc3339();
     let result = writer
         .call_labeled("db.latency.persist_snapshot", move |conn| {
-            conn.execute(
-                "INSERT OR REPLACE INTO app_state_kv (key, value_json, updated_at) \
-                 VALUES (?1, ?2, ?3)",
-                rusqlite::params![LATENCY_KV_KEY, value_json, timestamp],
-            )
-            .map(|_| ())
+            let db = crate::db::ActionDb::from_conn(conn);
+            db.with_transaction(|inner| {
+                inner
+                    .conn_ref()
+                    .execute(
+                        "INSERT OR REPLACE INTO app_state_kv (key, value_json, updated_at) \
+                         VALUES (?1, ?2, ?3)",
+                        rusqlite::params![LATENCY_KV_KEY, value_json, timestamp],
+                    )
+                    .map(|_| ())
+                    .map_err(|e| e.to_string())
+            })
+            .map_err(rusqlite::Error::InvalidParameterName)
         })
         .await;
     if let Err(error) = result {

@@ -213,10 +213,22 @@ pub fn snapshot_for_persistence() -> LatencyPersistentSnapshot {
 
 /// Apply a previously-persisted snapshot, additively. Counters merge by the
 /// stored totals so a restart mid-measurement preserves long-window
-/// accumulation. Samples are not restored (they're window-local). Idempotent
-/// only if called once per process lifetime — repeated calls would double-
-/// count. Intended to be invoked exactly once at startup.
+/// accumulation. Samples are not restored (they're window-local).
+///
+/// At-most-once per process via the static `HYDRATED` guard: dev-mode
+/// `reinit_db_service` reopens the pool (dev_apply_scenario, dev_restore_live,
+/// dev_onboarding_scenario), which would re-fire `hydrate_latency_snapshot_from_kv`
+/// and double-count the persisted counters into the live in-memory state. The
+/// guard makes additional calls no-ops with a debug log; production lifecycle
+/// is unaffected.
 pub fn apply_persistent_snapshot(snapshot: LatencyPersistentSnapshot) {
+    static HYDRATED: std::sync::OnceLock<()> = std::sync::OnceLock::new();
+    if HYDRATED.set(()).is_err() {
+        log::debug!(
+            "latency hydrate skipped: already applied in this process (snapshot dropped)"
+        );
+        return;
+    }
     let mut windows = LatencyRecorder::global().windows.lock();
     for entry in snapshot.commands {
         let window = windows.entry(entry.command).or_default();
