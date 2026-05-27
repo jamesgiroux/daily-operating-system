@@ -808,22 +808,23 @@ impl ActionDb {
         if email_ids.is_empty() {
             return Ok(0);
         }
-        let now = chrono::Utc::now().to_rfc3339();
-        let placeholders: Vec<String> = (1..=email_ids.len()).map(|i| format!("?{i}")).collect();
-        let sql = format!(
-            "UPDATE email_signals SET deactivated_at = '{}' WHERE email_id IN ({}) AND deactivated_at IS NULL",
-            now,
-            placeholders.join(", ")
-        );
-        let param_values: Vec<&dyn rusqlite::types::ToSql> = email_ids
-            .iter()
-            .map(|id| id as &dyn rusqlite::types::ToSql)
-            .collect();
-        let rows = self
-            .conn
-            .execute(&sql, param_values.as_slice())
-            .map_err(|e| format!("Failed to deactivate email signals: {e}"))?;
-        Ok(rows)
+        self.with_transaction(|tx| {
+            let now = chrono::Utc::now().to_rfc3339();
+            let placeholders: Vec<String> =
+                (1..=email_ids.len()).map(|i| format!("?{i}")).collect();
+            let sql = format!(
+                "UPDATE email_signals SET deactivated_at = '{}' WHERE email_id IN ({}) AND deactivated_at IS NULL",
+                now,
+                placeholders.join(", ")
+            );
+            let param_values: Vec<&dyn rusqlite::types::ToSql> = email_ids
+                .iter()
+                .map(|id| id as &dyn rusqlite::types::ToSql)
+                .collect();
+            tx.conn
+                .execute(&sql, param_values.as_slice())
+                .map_err(|e| format!("Failed to deactivate email signals: {e}"))
+        })
     }
 
     /// Check if a Glean document signal already exists for a URL.

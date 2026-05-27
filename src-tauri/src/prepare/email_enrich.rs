@@ -431,34 +431,34 @@ fn parse_enrichment_response(
 ///
 /// This two-phase approach avoids holding the DB mutex during PTY calls
 /// which can take 60s each.
-pub fn enrich_pending_emails_two_phase(
+pub async fn enrich_pending_emails_two_phase(
     state: &crate::state::AppState,
     workspace: &Path,
     ai_config: &AiModelConfig,
     limit: usize,
 ) -> usize {
     // Phase 1: Get pending emails + resolve entities (short DB lock)
-    let pending: Vec<(DbEmail, Option<String>, Option<String>)> = {
-        let db =
-            match crate::db::ActionDb::open(std::sync::Arc::new(crate::db::LocalKeychain::new())) {
-                Ok(d) => d,
-                Err(_) => return 0,
-            };
-        let emails = match db.get_pending_enrichment(limit) {
-            Ok(e) => e,
-            Err(e) => {
-                log::warn!("email_enrich: failed to get pending emails: {e}");
-                return 0;
-            }
-        };
-        emails
-            .into_iter()
-            .map(|email| {
-                let (eid, etype) = resolve_entity(&db, &email);
-                (email, eid, etype)
-            })
-            .collect()
-    }; // DB lock released here
+    let pending: Vec<(DbEmail, Option<String>, Option<String>)> = match state
+        .db_read(move |db| {
+            let emails = db
+                .get_pending_enrichment(limit)
+                .map_err(|e| format!("email_enrich: failed to get pending emails: {e}"))?;
+            Ok(emails
+                .into_iter()
+                .map(|email| {
+                    let (eid, etype) = resolve_entity(db, &email);
+                    (email, eid, etype)
+                })
+                .collect())
+        })
+        .await
+    {
+        Ok(pending) => pending,
+        Err(e) => {
+            log::warn!("{e}");
+            return 0;
+        }
+    }; // DB read released here
 
     if pending.is_empty() {
         return 0;
@@ -494,19 +494,31 @@ pub fn enrich_pending_emails_two_phase(
         }
         // Build context prompt — needs DB for relationship context
         let prompt = {
-            let db = match crate::db::ActionDb::open(std::sync::Arc::new(
-                crate::db::LocalKeychain::new(),
-            )) {
-                Ok(d) => d,
-                Err(_) => continue,
-            };
-            build_enrichment_prompt(
-                &db,
-                email,
-                entity_id.as_deref(),
-                entity_type.as_deref(),
-                active_preset.as_ref(),
-            )
+            let email_for_prompt = email.clone();
+            let entity_id_for_prompt = entity_id.clone();
+            let entity_type_for_prompt = entity_type.clone();
+            let preset_for_prompt = active_preset.clone();
+            match state
+                .db_read(move |db| {
+                    Ok(build_enrichment_prompt(
+                        db,
+                        &email_for_prompt,
+                        entity_id_for_prompt.as_deref(),
+                        entity_type_for_prompt.as_deref(),
+                        preset_for_prompt.as_ref(),
+                    ))
+                })
+                .await
+            {
+                Ok(prompt) => prompt,
+                Err(e) => {
+                    log::warn!(
+                        "email_enrich: failed to build enrichment prompt for {}: {e}",
+                        email.email_id
+                    );
+                    continue;
+                }
+            }
         };
 
         let pty = PtyManager::for_tier(ModelTier::Extraction, ai_config)
@@ -554,36 +566,20 @@ pub fn enrich_pending_emails_two_phase(
             Err(e) => Err(format!("AI enrichment failed for {}: {e}", email.email_id)),
         };
 
-        // Phase 3: Persist result (short DB lock per email)
-        if let Ok(db) =
-            crate::db::ActionDb::open(std::sync::Arc::new(crate::db::LocalKeychain::new()))
-        {
-            match ai_result {
+        // Phase 3: Persist result (short DB write per email)
+        let email_id_for_write = email.email_id.clone();
+        let persist_result = state
+            .db_write(move |db| match ai_result {
                 Ok(result) => {
                     let update = result.as_db_update();
-                    if let Err(e) = db.set_enrichment_state(&email.email_id, "enriched", update) {
-                        log::warn!(
-                            "email_enrich: failed to persist enrichment for {}: {e}",
-                            email.email_id
-                        );
-                    } else {
-                        enriched_count += 1;
-                        if let Some(app_handle) = state.app_handle() {
-                            #[allow(
-                                clippy::let_underscore_must_use,
-                                reason = "intentional best-effort discard; preserves existing non-blocking behavior"
-                            )]
-                            let _ = app_handle.emit(
-                                "email-enrichment-progress",
-                                EmailEnrichmentProgressPayload {
-                                    completed: enriched_count,
-                                    total: total_pending,
-                                    last_email_id: email.email_id.clone(),
-                                    last_email_subject: email.subject.clone().unwrap_or_default(),
-                                },
-                            );
-                        }
-                    }
+                    db.set_enrichment_state(&email_id_for_write, "enriched", update)
+                        .map_err(|e| {
+                            format!(
+                                "email_enrich: failed to persist enrichment for {}: {e}",
+                                email_id_for_write
+                            )
+                        })?;
+                    Ok(true)
                 }
                 Err(e) => {
                     log::warn!("email_enrich: {e}");
@@ -604,23 +600,50 @@ pub fn enrich_pending_emails_two_phase(
                         clippy::let_underscore_must_use,
                         reason = "intentional best-effort discard; preserves existing non-blocking behavior"
                     )]
-                    let _ = db.set_enrichment_state(&email.email_id, "failed", empty);
-                    if let Some(app_handle) = state.app_handle() {
-                        #[allow(
-                            clippy::let_underscore_must_use,
-                            reason = "intentional best-effort discard; preserves existing non-blocking behavior"
-                        )]
-                        let _ = app_handle.emit(
-                            "email-enrichment-progress",
-                            EmailEnrichmentProgressPayload {
-                                completed: enriched_count,
-                                total: total_pending,
-                                last_email_id: email.email_id.clone(),
-                                last_email_subject: email.subject.clone().unwrap_or_default(),
-                            },
-                        );
-                    }
+                    let _ = db.set_enrichment_state(&email_id_for_write, "failed", empty);
+                    Ok(false)
                 }
+            })
+            .await;
+
+        match persist_result {
+            Ok(true) => {
+                enriched_count += 1;
+                if let Some(app_handle) = state.app_handle() {
+                    #[allow(
+                        clippy::let_underscore_must_use,
+                        reason = "intentional best-effort discard; preserves existing non-blocking behavior"
+                    )]
+                    let _ = app_handle.emit(
+                        "email-enrichment-progress",
+                        EmailEnrichmentProgressPayload {
+                            completed: enriched_count,
+                            total: total_pending,
+                            last_email_id: email.email_id.clone(),
+                            last_email_subject: email.subject.clone().unwrap_or_default(),
+                        },
+                    );
+                }
+            }
+            Ok(false) => {
+                if let Some(app_handle) = state.app_handle() {
+                    #[allow(
+                        clippy::let_underscore_must_use,
+                        reason = "intentional best-effort discard; preserves existing non-blocking behavior"
+                    )]
+                    let _ = app_handle.emit(
+                        "email-enrichment-progress",
+                        EmailEnrichmentProgressPayload {
+                            completed: enriched_count,
+                            total: total_pending,
+                            last_email_id: email.email_id.clone(),
+                            last_email_subject: email.subject.clone().unwrap_or_default(),
+                        },
+                    );
+                }
+            }
+            Err(e) => {
+                log::warn!("{e}");
             }
         }
     }

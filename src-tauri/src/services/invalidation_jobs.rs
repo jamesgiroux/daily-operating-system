@@ -253,6 +253,10 @@ pub async fn drain_pending_claim_recomputes(state: &Arc<AppState>) {
 pub async fn run_claim_recompute_worker(state: Arc<AppState>) {
     let worker_id = format!("claim-recompute-worker-{}", uuid::Uuid::new_v4());
     loop {
+        if state.is_database_recovery_required() {
+            log::warn!("Claim recompute worker stopped: database recovery required");
+            break;
+        }
         let worker_id_for_db = worker_id.clone();
         let result = state
             .db_write(move |db| {
@@ -323,6 +327,10 @@ pub async fn drain_pending_targeted_claim_repairs(state: &Arc<AppState>) {
 pub async fn run_targeted_claim_repair_worker(state: Arc<AppState>) {
     let worker_id = format!("targeted-repair-worker-{}", uuid::Uuid::new_v4());
     loop {
+        if state.is_database_recovery_required() {
+            log::warn!("Targeted claim repair worker stopped: database recovery required");
+            break;
+        }
         let worker_id_for_db = worker_id.clone();
         let result = state
             .db_write(move |db| {

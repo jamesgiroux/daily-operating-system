@@ -35,6 +35,8 @@ pub const RUNTIME_EVIDENCE_BACKFILL_266_ENTITY_OFFSET_KEY: &str =
     "runtime_evidence_backfill_266_entity_offset";
 pub const RUNTIME_EVIDENCE_BACKFILL_266_ACTION_OFFSET_KEY: &str =
     "runtime_evidence_backfill_266_action_offset";
+pub const RUNTIME_EVIDENCE_BACKFILL_266_STORAGE_HALTED_AT_KEY: &str =
+    "runtime_evidence_backfill_266_storage_halted_at";
 
 const RUNTIME_EVIDENCE_BACKFILL_266_ENTITY_BATCH_SIZE: usize = 50;
 const RUNTIME_EVIDENCE_BACKFILL_266_ACTION_BATCH_SIZE: usize = 10;
@@ -86,6 +88,14 @@ pub fn run_runtime_evidence_backfill_if_pending(
     if !account_fact_pending && !entity_intelligence_pending {
         return Ok(None);
     }
+    if entity_intelligence_pending
+        && migration_state_value(db, RUNTIME_EVIDENCE_BACKFILL_266_STORAGE_HALTED_AT_KEY)?.is_some()
+    {
+        return Err(
+            "runtime evidence backfill 266 is paused after a prior storage-health failure"
+                .to_string(),
+        );
+    }
 
     if account_fact_pending {
         record_marker(
@@ -115,6 +125,7 @@ pub fn run_runtime_evidence_backfill_if_pending(
             offset,
             RUNTIME_EVIDENCE_BACKFILL_266_ACTION_BATCH_SIZE,
         )?;
+        halt_on_storage_health_errors(ctx, db, &report.errors)?;
         record_marker(
             db,
             RUNTIME_EVIDENCE_BACKFILL_266_ACTION_OFFSET_KEY,
@@ -133,6 +144,7 @@ pub fn run_runtime_evidence_backfill_if_pending(
             offset,
             RUNTIME_EVIDENCE_BACKFILL_266_ENTITY_BATCH_SIZE,
         )?;
+        halt_on_storage_health_errors(ctx, db, &report.errors)?;
         record_marker(
             db,
             RUNTIME_EVIDENCE_BACKFILL_266_ENTITY_OFFSET_KEY,
@@ -171,6 +183,50 @@ pub fn run_runtime_evidence_backfill_if_pending(
         action_claim_report,
         completed,
     }))
+}
+
+pub fn runtime_evidence_backfill_266_resume_pending(db: &ActionDb) -> Result<bool, String> {
+    if !migration_state_exists(db)? {
+        return Ok(false);
+    }
+    let requested =
+        migration_state_value(db, RUNTIME_EVIDENCE_BACKFILL_266_REQUESTED_AT_KEY)?.is_some();
+    let started =
+        migration_state_value(db, RUNTIME_EVIDENCE_BACKFILL_266_STARTED_AT_KEY)?.is_some();
+    let completed =
+        migration_state_value(db, RUNTIME_EVIDENCE_BACKFILL_266_COMPLETED_AT_KEY)?.is_some();
+
+    Ok(requested && started && !completed)
+}
+
+pub fn error_indicates_storage_health_failure(message: &str) -> bool {
+    let lower = message.to_ascii_lowercase();
+    lower.contains("disk i/o error")
+        || lower.contains("file is not a database")
+        || lower.contains("database disk image is malformed")
+        || lower.contains("sqlite_notadb")
+        || lower.contains("sqlcipher key verification failed")
+}
+
+fn halt_on_storage_health_errors(
+    ctx: &ServiceContext<'_>,
+    db: &ActionDb,
+    errors: &[String],
+) -> Result<(), String> {
+    if !errors
+        .iter()
+        .any(|error| error_indicates_storage_health_failure(error))
+    {
+        return Ok(());
+    }
+    let halted_at = ctx.clock.now().timestamp();
+    record_marker(
+        db,
+        RUNTIME_EVIDENCE_BACKFILL_266_STORAGE_HALTED_AT_KEY,
+        halted_at,
+    )
+    .map_err(|error| format!("runtime evidence backfill storage halt marker failed: {error}"))?;
+    Err("runtime evidence backfill halted after storage-health failure".to_string())
 }
 
 fn migration_state_exists(db: &ActionDb) -> Result<bool, String> {
@@ -359,6 +415,58 @@ mod tests {
                 .expect("completion read")
                 .is_some()
         );
+    }
+
+    #[test]
+    fn storage_health_error_detection_catches_sqlite_corruption_signals() {
+        for message in [
+            "SQLite error: disk I/O error",
+            "file is not a database",
+            "rusqlite error: database disk image is malformed",
+            "SQLITE_NOTADB while opening DB",
+            "SQLCipher key verification failed (database unreadable): disk I/O error",
+        ] {
+            assert!(error_indicates_storage_health_failure(message), "{message}");
+        }
+        assert!(!error_indicates_storage_health_failure(
+            "database is locked"
+        ));
+    }
+
+    #[test]
+    fn runtime_evidence_backfill_266_resume_pending_only_after_started_marker() {
+        let db = test_db();
+
+        assert!(!runtime_evidence_backfill_266_resume_pending(&db).expect("initial check"));
+
+        record_marker(&db, RUNTIME_EVIDENCE_BACKFILL_266_REQUESTED_AT_KEY, 1)
+            .expect("request marker");
+        assert!(!runtime_evidence_backfill_266_resume_pending(&db).expect("requested check"));
+
+        record_marker(&db, RUNTIME_EVIDENCE_BACKFILL_266_STARTED_AT_KEY, 2)
+            .expect("started marker");
+        assert!(runtime_evidence_backfill_266_resume_pending(&db).expect("started check"));
+
+        record_marker(&db, RUNTIME_EVIDENCE_BACKFILL_266_COMPLETED_AT_KEY, 3)
+            .expect("completed marker");
+        assert!(!runtime_evidence_backfill_266_resume_pending(&db).expect("completed check"));
+    }
+
+    #[test]
+    fn runtime_evidence_backfill_stops_when_storage_health_marker_exists() {
+        let db = test_db();
+        record_marker(&db, RUNTIME_EVIDENCE_BACKFILL_266_REQUESTED_AT_KEY, 1)
+            .expect("request marker");
+        record_marker(&db, RUNTIME_EVIDENCE_BACKFILL_266_STORAGE_HALTED_AT_KEY, 2)
+            .expect("halt marker");
+        let clock = FixedClock::new(chrono::Utc.with_ymd_and_hms(2026, 5, 22, 12, 0, 0).unwrap());
+        let rng = SeedableRng::new(25);
+        let ext = ExternalClients::default();
+        let ctx = test_ctx(&clock, &rng, &ext);
+
+        let error = run_runtime_evidence_backfill_if_pending(&ctx, &db)
+            .expect_err("halted backfill must not resume on startup");
+        assert!(error.contains("paused after a prior storage-health failure"));
     }
 
     #[test]

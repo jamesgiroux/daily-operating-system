@@ -3,18 +3,29 @@
 use crate::db::ActionDb;
 use crate::linear::client::{LinearIssue, LinearProject};
 use crate::state::AppState;
+use std::sync::Arc;
 
 /// Upsert Linear issues into the database and emit signals for state changes.
-pub fn upsert_issues(state: &AppState, issues: &[LinearIssue]) -> Result<(), String> {
-    let db = ActionDb::open(std::sync::Arc::new(crate::db::LocalKeychain::new()))
-        .map_err(|e| format!("DB open failed: {e}"))?;
+pub async fn upsert_issues(state: &Arc<AppState>, issues: Vec<LinearIssue>) -> Result<(), String> {
+    let state_for_write = Arc::clone(state);
+    state
+        .db_write(move |db| upsert_issues_in_db(state_for_write.as_ref(), db, &issues))
+        .await
+        .map_err(String::from)
+}
+
+fn upsert_issues_in_db(
+    state: &AppState,
+    db: &ActionDb,
+    issues: &[LinearIssue],
+) -> Result<(), String> {
     let conn = db.conn_ref();
     let signal_ctx = state.live_service_context().with_actor("linear_sync");
 
     for issue in issues {
         // Capture old state for signal comparison
         let previous =
-            crate::services::linear_issue_signals::PreviousLinearIssueState::load(&db, &issue.id)
+            crate::services::linear_issue_signals::PreviousLinearIssueState::load(db, &issue.id)
                 .unwrap_or(None);
         let synced_at = chrono::Utc::now().to_rfc3339();
 
@@ -46,7 +57,7 @@ pub fn upsert_issues(state: &AppState, issues: &[LinearIssue]) -> Result<(), Str
 
         crate::services::linear_issue_signals::emit_issue_change_signals(
             &signal_ctx,
-            &db,
+            db,
             &state.signals.engine,
             issue,
             previous.as_ref(),
@@ -80,7 +91,7 @@ pub fn upsert_issues(state: &AppState, issues: &[LinearIssue]) -> Result<(), Str
                     reason = "intentional best-effort discard; preserves existing non-blocking behavior"
                 )]
                 let _ = crate::signals::bus::emit_signal_and_propagate(
-                    &db,
+                    db,
                     &state.signals.engine,
                     entity_type,
                     entity_id,
@@ -99,7 +110,7 @@ pub fn upsert_issues(state: &AppState, issues: &[LinearIssue]) -> Result<(), Str
                         reason = "intentional best-effort discard; preserves existing non-blocking behavior"
                     )]
                     let _ = crate::signals::bus::emit_signal_and_propagate(
-                        &db,
+                        db,
                         &state.signals.engine,
                         entity_type,
                         entity_id,
@@ -124,7 +135,7 @@ pub fn upsert_issues(state: &AppState, issues: &[LinearIssue]) -> Result<(), Str
                         reason = "intentional best-effort discard; preserves existing non-blocking behavior"
                     )]
                     let _ = crate::signals::bus::emit_signal_and_propagate(
-                        &db,
+                        db,
                         &state.signals.engine,
                         entity_type,
                         entity_id,
@@ -142,9 +153,17 @@ pub fn upsert_issues(state: &AppState, issues: &[LinearIssue]) -> Result<(), Str
 }
 
 /// Upsert Linear projects into the database.
-pub fn upsert_projects(_state: &AppState, projects: &[LinearProject]) -> Result<(), String> {
-    let db = ActionDb::open(std::sync::Arc::new(crate::db::LocalKeychain::new()))
-        .map_err(|e| format!("DB open failed: {e}"))?;
+pub async fn upsert_projects(
+    state: &Arc<AppState>,
+    projects: Vec<LinearProject>,
+) -> Result<(), String> {
+    state
+        .db_write(move |db| upsert_projects_in_db(db, &projects))
+        .await
+        .map_err(String::from)
+}
+
+fn upsert_projects_in_db(db: &ActionDb, projects: &[LinearProject]) -> Result<(), String> {
     let conn = db.conn_ref();
 
     for project in projects {

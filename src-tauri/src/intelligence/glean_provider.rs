@@ -405,28 +405,29 @@ impl GleanIntelligenceProvider {
                             }
                         }
 
-                        // Progressive DB write + event emission
+                        // Progressive UI cache write + event emission
                         if let Some(handle) = app_handle {
-                            write_progressive_glean_dimension(
+                            if write_progressive_glean_dimension(
                                 entity_id,
                                 entity_type,
                                 relationship,
                                 &combined,
-                            );
-                            #[allow(
-                                clippy::let_underscore_must_use,
-                                reason = "intentional best-effort discard; preserves existing non-blocking behavior"
-                            )]
-                            let _ = handle.emit(
-                                "enrichment-progress",
-                                EnrichmentProgress {
-                                    entity_id: entity_id.to_string(),
-                                    entity_type: entity_type.to_string(),
-                                    completed: succeeded,
-                                    total: total_dimensions,
-                                    last_dimension: dim_name,
-                                },
-                            );
+                            ) {
+                                #[allow(
+                                    clippy::let_underscore_must_use,
+                                    reason = "intentional best-effort discard; preserves existing non-blocking behavior"
+                                )]
+                                let _ = handle.emit(
+                                    "enrichment-progress",
+                                    EnrichmentProgress {
+                                        entity_id: entity_id.to_string(),
+                                        entity_type: entity_type.to_string(),
+                                        completed: succeeded,
+                                        total: total_dimensions,
+                                        last_dimension: dim_name,
+                                    },
+                                );
+                            }
                         }
                     }
                 }
@@ -1075,7 +1076,7 @@ fn extract_domains_for_glean_enrichment(_intel: &mut IntelligenceJson) {
     // This hook is in place for easy future enhancement.
 }
 
-/// Write progressive dimension state to DB during Glean parallel enrichment.
+/// Write progressive dimension state to the UI cache during Glean parallel enrichment.
 ///
 /// Similar to `write_progressive_dimension` in `intel_queue.rs` but for the Glean path.
 /// Non-fatal on error — the final merge+write after all dimensions is authoritative.
@@ -1084,7 +1085,7 @@ fn write_progressive_glean_dimension(
     entity_type: &str,
     relationship: Option<&str>,
     combined: &IntelligenceJson,
-) {
+) -> bool {
     let db = match crate::db::ActionDb::open(std::sync::Arc::new(crate::db::LocalKeychain::new())) {
         Ok(db) => db,
         Err(e) => {
@@ -1093,7 +1094,7 @@ fn write_progressive_glean_dimension(
                 entity_id,
                 e
             );
-            return;
+            return false;
         }
     };
 
@@ -1109,14 +1110,18 @@ fn write_progressive_glean_dimension(
     let rng = crate::services::context::SystemRng;
     let ext = crate::services::context::ExternalClients::default();
     let ctx = crate::services::context::ServiceContext::new_live(&clock, &rng, &ext);
-    if let Err(e) = crate::services::intelligence::upsert_assessment_snapshot(&ctx, &db, &merged) {
+    if let Err(e) =
+        crate::services::intelligence::upsert_progressive_assessment_snapshot(&ctx, &db, &merged)
+    {
         log::warn!(
             "[I575] Glean progressive write failed for {}: {}",
             entity_id,
             e
         );
+        false
     } else {
         log::debug!("[I575] Glean progressive write succeeded for {}", entity_id,);
+        true
     }
 }
 
@@ -1661,36 +1666,38 @@ pub fn upsert_products_to_db(
     account_id: &str,
     products: Vec<(String, Option<String>, Option<f64>, Option<String>)>,
 ) -> Result<usize, String> {
-    let mut count = 0;
-    for (product_type, tier, arr, billing_terms) in products {
-        match db.upsert_product_classification(
-            account_id,
-            &product_type,
-            tier.as_deref(),
-            arr,
-            billing_terms.as_deref(),
-            "Salesforce",
-        ) {
-            Ok(_) => {
-                count += 1;
-                log::info!(
-                    "I651: Upserted product {} ({:?} tier, ${:?} ARR) for {}",
-                    product_type,
-                    tier,
-                    arr,
-                    account_id
-                );
-            }
-            Err(e) => {
-                log::warn!(
-                    "I651: Failed to upsert product {} for {}: {}",
-                    product_type,
-                    account_id,
-                    e
-                );
-                return Err(format!("Product upsert failed for {}: {}", product_type, e));
+    db.with_transaction(|tx| {
+        let mut count = 0;
+        for (product_type, tier, arr, billing_terms) in products {
+            match tx.upsert_product_classification(
+                account_id,
+                &product_type,
+                tier.as_deref(),
+                arr,
+                billing_terms.as_deref(),
+                "Salesforce",
+            ) {
+                Ok(_) => {
+                    count += 1;
+                    log::info!(
+                        "I651: Upserted product {} ({:?} tier, ${:?} ARR) for {}",
+                        product_type,
+                        tier,
+                        arr,
+                        account_id
+                    );
+                }
+                Err(e) => {
+                    log::warn!(
+                        "I651: Failed to upsert product {} for {}: {}",
+                        product_type,
+                        account_id,
+                        e
+                    );
+                    return Err(format!("Product upsert failed for {}: {}", product_type, e));
+                }
             }
         }
-    }
-    Ok(count)
+        Ok(count)
+    })
 }

@@ -136,6 +136,19 @@ use tokio::sync::mpsc;
 const SCHEDULER_CHANNEL_SIZE: usize = 32;
 const RUNTIME_EVIDENCE_BACKFILL_INITIAL_DELAY_MS: u64 = 10_000;
 const RUNTIME_EVIDENCE_BACKFILL_SLICE_PAUSE_MS: u64 = 15_000;
+const RUNTIME_EVIDENCE_BACKFILL_MAINTENANCE_ENV: &str = "DAILYOS_RUN_RUNTIME_EVIDENCE_BACKFILL";
+
+fn env_flag_enabled(key: &str) -> bool {
+    std::env::var(key)
+        .map(|value| {
+            let value = value.trim();
+            !value.is_empty()
+                && !value.eq_ignore_ascii_case("0")
+                && !value.eq_ignore_ascii_case("false")
+                && !value.eq_ignore_ascii_case("no")
+        })
+        .unwrap_or(false)
+}
 
 async fn run_runtime_evidence_backfill_slice(init_state: &Arc<AppState>) -> bool {
     let runtime_evidence_backfill = init_state
@@ -220,8 +233,73 @@ async fn run_runtime_evidence_backfill_slice(init_state: &Arc<AppState>) -> bool
     }
 }
 
+async fn runtime_evidence_backfill_266_resume_pending(init_state: &Arc<AppState>) -> bool {
+    let result = init_state
+        .db_read(
+            crate::services::runtime_evidence_backfill::runtime_evidence_backfill_266_resume_pending,
+        )
+        .await;
+
+    match result {
+        Ok(pending) => pending,
+        Err(error) => {
+            init_state
+                .recover_db_service_after_access_error(
+                    &error,
+                    "Runtime evidence backfill startup probe",
+                )
+                .await;
+            log::warn!("[runtime_evidence_backfill] startup probe failed: {error}");
+            false
+        }
+    }
+}
+
+async fn maybe_spawn_runtime_evidence_backfill(
+    init_state: &Arc<AppState>,
+    background_workers_disabled: bool,
+) {
+    let maintenance_requested = env_flag_enabled(RUNTIME_EVIDENCE_BACKFILL_MAINTENANCE_ENV);
+    let resume_pending = runtime_evidence_backfill_266_resume_pending(init_state).await;
+
+    if resume_pending && !maintenance_requested {
+        log::warn!(
+            "[runtime_evidence_backfill] deferred in-progress v266 resume; set {RUNTIME_EVIDENCE_BACKFILL_MAINTENANCE_ENV}=1 with background workers disabled to run it"
+        );
+        return;
+    }
+
+    if maintenance_requested && !background_workers_disabled {
+        log::warn!(
+            "[runtime_evidence_backfill] maintenance run requires background workers disabled; deferred"
+        );
+        return;
+    }
+
+    if background_workers_disabled && !maintenance_requested {
+        return;
+    }
+
+    let runtime_backfill_state = init_state.clone();
+    tauri::async_runtime::spawn(async move {
+        tokio::time::sleep(std::time::Duration::from_millis(
+            RUNTIME_EVIDENCE_BACKFILL_INITIAL_DELAY_MS,
+        ))
+        .await;
+        while run_runtime_evidence_backfill_slice(&runtime_backfill_state).await {
+            tokio::time::sleep(std::time::Duration::from_millis(
+                RUNTIME_EVIDENCE_BACKFILL_SLICE_PAUSE_MS,
+            ))
+            .await;
+        }
+    });
+}
+
 async fn run_db_service_startup_tasks(init_state: Arc<AppState>) {
-    if crate::pty::background_workers_disabled() {
+    let background_workers_disabled = crate::pty::background_workers_disabled();
+    maybe_spawn_runtime_evidence_backfill(&init_state, background_workers_disabled).await;
+
+    if background_workers_disabled {
         log::info!(
             "Startup background maintenance skipped because background workers are disabled"
         );
@@ -312,19 +390,6 @@ async fn run_db_service_startup_tasks(init_state: Arc<AppState>) {
         }
     }
 
-    let runtime_backfill_state = init_state.clone();
-    tauri::async_runtime::spawn(async move {
-        tokio::time::sleep(std::time::Duration::from_millis(
-            RUNTIME_EVIDENCE_BACKFILL_INITIAL_DELAY_MS,
-        ))
-        .await;
-        while run_runtime_evidence_backfill_slice(&runtime_backfill_state).await {
-            tokio::time::sleep(std::time::Duration::from_millis(
-                RUNTIME_EVIDENCE_BACKFILL_SLICE_PAUSE_MS,
-            ))
-            .await;
-        }
-    });
     crate::services::invalidation_jobs::drain_pending_claim_recomputes(&init_state).await;
     crate::services::invalidation_jobs::drain_pending_targeted_claim_repairs(&init_state).await;
     let repair_worker_state = init_state.clone();

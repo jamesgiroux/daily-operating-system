@@ -501,7 +501,7 @@ export default function MeetingDetailPage() {
     }
   }, [meetingId, data, meetingMeta, loadMeetingIntelligence]);
 
-  const handlePasteTranscript = useCallback(async () => {
+  const handlePasteTranscript = useCallback(() => {
     if (!meetingId || !data) return;
     const trimmed = pasteText.trim();
     if (!trimmed) {
@@ -509,52 +509,66 @@ export default function MeetingDetailPage() {
       return;
     }
 
-    setPasting(true);
-    try {
-      const calendarEvent: CalendarEvent = {
-        id: meetingMeta?.id || meetingId,
-        title: meetingMeta?.title || data.title,
-        start: meetingMeta?.startTime || new Date().toISOString(),
-        end:
-          meetingMeta?.endTime ||
-          meetingMeta?.startTime ||
-          new Date().toISOString(),
-        type:
-          (meetingMeta?.meetingType as CalendarEvent["type"]) ?? "internal",
-        attendees: [],
-        isAllDay: false,
-      };
-      const result = await invoke<{
-        status: string;
-        message?: string;
-        summary?: string;
-      }>("attach_meeting_transcript_text", {
-        text: trimmed,
-        format: pasteFormat,
-        meeting: calendarEvent,
-      });
+    const submittedFormat = pasteFormat;
+    const calendarEvent: CalendarEvent = {
+      id: meetingMeta?.id || meetingId,
+      title: meetingMeta?.title || data.title,
+      start: meetingMeta?.startTime || new Date().toISOString(),
+      end:
+        meetingMeta?.endTime ||
+        meetingMeta?.startTime ||
+        new Date().toISOString(),
+      type:
+        (meetingMeta?.meetingType as CalendarEvent["type"]) ?? "internal",
+      attendees: [],
+      isAllDay: false,
+    };
 
-      if (result.status !== "success") {
-        toast.error("Transcript processing failed", {
-          description: result.message || result.status,
+    setPasting(true);
+    setPasteOpen(false);
+    toast.loading("Processing pasted transcript…", {
+      id: "paste-transcript",
+      description: "You can keep working while outcomes are extracted.",
+    });
+
+    void (async () => {
+      try {
+        const result = await invoke<{
+          status: string;
+          message?: string;
+          summary?: string;
+        }>("attach_meeting_transcript_text", {
+          text: trimmed,
+          format: submittedFormat,
+          meeting: calendarEvent,
         });
-      } else if (!result.summary) {
-        toast.warning("No outcomes extracted", {
-          description: result.message || "AI extraction returned empty",
+
+        if (result.status !== "success") {
+          toast.error("Transcript processing failed", {
+            id: "paste-transcript",
+            description: result.message || result.status,
+          });
+        } else if (!result.summary) {
+          toast.warning("No outcomes extracted", {
+            id: "paste-transcript",
+            description: result.message || "AI extraction returned empty",
+          });
+        } else {
+          setPasteText("");
+          toast.success("Transcript processed", { id: "paste-transcript" });
+        }
+        await loadMeetingIntelligence();
+      } catch (err) {
+        const msg = err instanceof Error ? err.message : String(err);
+        console.error("Failed to paste transcript:", msg);
+        toast.error("Failed to paste transcript", {
+          id: "paste-transcript",
+          description: msg,
         });
-      } else {
-        toast.success("Transcript processed");
+      } finally {
+        setPasting(false);
       }
-      setPasteOpen(false);
-      setPasteText("");
-      await loadMeetingIntelligence();
-    } catch (err) {
-      const msg = err instanceof Error ? err.message : String(err);
-      console.error("Failed to paste transcript:", msg);
-      toast.error("Failed to paste transcript", { description: msg });
-    } finally {
-      setPasting(false);
-    }
+    })();
   }, [
     meetingId,
     data,
@@ -1769,7 +1783,7 @@ Thanks!`;
         subject={draft.subject}
         body={draft.body}
       />
-      <Dialog open={pasteOpen} onOpenChange={(o) => { if (!pasting) setPasteOpen(o); }}>
+      <Dialog open={pasteOpen} onOpenChange={setPasteOpen}>
         <DialogContent className="sm:max-w-2xl">
           <DialogHeader>
             <DialogTitle>Paste Transcript</DialogTitle>

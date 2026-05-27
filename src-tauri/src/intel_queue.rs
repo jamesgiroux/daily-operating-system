@@ -535,7 +535,7 @@ pub struct IntelligenceUpdatedPayload {
 
 /// Progressive enrichment progress event payload.
 ///
-/// Emitted after each dimension completes and is written to DB,
+/// Emitted after each dimension completes and the UI cache is updated,
 /// so the frontend can show incremental progress and refresh data.
 #[derive(Debug, Clone, serde::Serialize)]
 #[serde(rename_all = "camelCase")]
@@ -752,6 +752,11 @@ pub async fn run_intel_processor(state: Arc<AppState>, app: AppHandle) {
         // Dev mode isolation: pause background processing while dev sandbox is active
         if crate::db::is_dev_db_mode() {
             continue;
+        }
+
+        if state.is_database_recovery_required() {
+            log::warn!("IntelProcessor: stopped because database recovery is required");
+            break;
         }
 
         // skip processing entirely while a schema-epoch migration
@@ -1154,7 +1159,6 @@ pub async fn run_intel_processor(state: Arc<AppState>, app: AppHandle) {
                     continue;
                 }
             };
-            let ctx = state.live_service_context();
             let prepared = match compose_enrichment_intelligence(
                 &state,
                 &db,
@@ -1182,22 +1186,14 @@ pub async fn run_intel_processor(state: Arc<AppState>, app: AppHandle) {
                     continue;
                 }
             };
-            if let Err(e) = db.with_transaction(|tx| {
-                apply_enrichment_side_writes(&ctx, tx, input, &prepared)?;
-                crate::services::intelligence::upsert_assessment_from_enrichment_in_active_transaction(
-                    &ctx,
-                    tx,
-                    &state.signals.engine,
-                    crate::services::intelligence::EnrichmentAssessmentUpsert {
-                        entity_type: &input.entity_type,
-                        entity_id: &input.entity_id,
-                        intel: prepared.intelligence(),
-                        projection_intel: prepared.projection_intelligence(),
-                        projection_data_source: parsed.producer.projection_data_source(),
-                        cleared_dimensions: prepared.cleared_dimensions(),
-                    },
-                )
-            }) {
+            if let Err(e) = persist_enrichment_write_results_via_db_service(
+                &state,
+                input,
+                &prepared,
+                parsed.producer,
+            )
+            .await
+            {
                 finalization_failures.push(QueueRefreshFailure::new(
                     &request.entity_id,
                     "write_results",
@@ -1211,9 +1207,8 @@ pub async fn run_intel_processor(state: Arc<AppState>, app: AppHandle) {
                 continue;
             }
             let written_intel = prepared.into_intelligence();
-            if let Err(e) = run_enrichment_finalize_post_commit(
+            if let Err(e) = run_enrichment_finalize_post_commit_via_db_service(
                 &state,
-                &db,
                 input,
                 &written_intel,
                 &parsed.inferred_relationships,
@@ -1221,7 +1216,9 @@ pub async fn run_intel_processor(state: Arc<AppState>, app: AppHandle) {
                     is_background: is_background_priority(request.priority),
                     producer: parsed.producer,
                 },
-            ) {
+            )
+            .await
+            {
                 finalization_failures.push(QueueRefreshFailure::new(
                     &request.entity_id,
                     "finalize",
@@ -1945,28 +1942,29 @@ fn run_parallel_enrichment(
                     all_raw_output.push_str(&raw_output);
                     all_raw_output.push('\n');
 
-                    // Per-dimension DB write + event emission
+                    // Per-dimension UI cache write + event emission
                     if let Some(handle) = app_handle {
-                        write_progressive_dimension(
+                        if write_progressive_dimension(
                             &input.entity_id,
                             &input.entity_type,
                             input.relationship.as_deref(),
                             &combined,
-                        );
-                        #[allow(
-                            clippy::let_underscore_must_use,
-                            reason = "intentional best-effort discard; preserves existing non-blocking behavior"
-                        )]
-                        let _ = handle.emit(
-                            "enrichment-progress",
-                            EnrichmentProgress {
-                                entity_id: input.entity_id.clone(),
-                                entity_type: input.entity_type.clone(),
-                                completed: succeeded,
-                                total: total_dimensions,
-                                last_dimension: dim_name,
-                            },
-                        );
+                        ) {
+                            #[allow(
+                                clippy::let_underscore_must_use,
+                                reason = "intentional best-effort discard; preserves existing non-blocking behavior"
+                            )]
+                            let _ = handle.emit(
+                                "enrichment-progress",
+                                EnrichmentProgress {
+                                    entity_id: input.entity_id.clone(),
+                                    entity_type: input.entity_type.clone(),
+                                    completed: succeeded,
+                                    total: total_dimensions,
+                                    last_dimension: dim_name,
+                                },
+                            );
+                        }
                     }
                 }
             }
@@ -2072,17 +2070,17 @@ fn run_parallel_enrichment(
     })
 }
 
-/// Write the current progressive state of intelligence to DB after a dimension completes.
+/// Write the current progressive state of intelligence to the UI cache after a dimension completes.
 ///
 /// Opens a short-lived DB connection, reads existing entity_assessment, merges the
-/// new combined state, and writes back. Non-fatal on error — the committed
+/// new combined state, and writes back. Non-fatal on error -- the committed
 /// enrichment persistence path is the authoritative write.
 fn write_progressive_dimension(
     entity_id: &str,
     entity_type: &str,
     relationship: Option<&str>,
     combined: &IntelligenceJson,
-) {
+) -> bool {
     let db = match crate::db::ActionDb::open(std::sync::Arc::new(crate::db::LocalKeychain::new())) {
         Ok(db) => db,
         Err(e) => {
@@ -2091,7 +2089,7 @@ fn write_progressive_dimension(
                 entity_id,
                 e
             );
-            return;
+            return false;
         }
     };
 
@@ -2102,10 +2100,14 @@ fn write_progressive_dimension(
     let rng = crate::services::context::SystemRng;
     let ext = crate::services::context::ExternalClients::default();
     let ctx = crate::services::context::ServiceContext::new_live(&clock, &rng, &ext);
-    if let Err(e) = crate::services::intelligence::upsert_assessment_snapshot(&ctx, &db, &merged) {
+    if let Err(e) =
+        crate::services::intelligence::upsert_progressive_assessment_snapshot(&ctx, &db, &merged)
+    {
         log::warn!("[I575] Progressive write failed for {}: {}", entity_id, e);
+        false
     } else {
         log::debug!("[I575] Progressive write succeeded for {}", entity_id,);
+        true
     }
 }
 
@@ -2706,6 +2708,422 @@ pub fn apply_enrichment_side_writes(
     Ok(())
 }
 
+pub(crate) async fn persist_enrichment_write_results_via_db_service(
+    state: &Arc<AppState>,
+    input: &EnrichmentInput,
+    prepared: &PreparedEnrichment,
+    producer: EnrichmentProducer,
+) -> Result<(), String> {
+    let state_for_write = Arc::clone(state);
+    let input_for_write = input.clone();
+    let prepared_for_write = prepared.clone();
+    state
+        .db_write(move |db| {
+            let engine = Arc::clone(&state_for_write.signals.engine);
+            let ctx = state_for_write.live_service_context();
+            db.with_transaction(|tx| {
+                apply_enrichment_side_writes(&ctx, tx, &input_for_write, &prepared_for_write)?;
+                crate::services::intelligence::upsert_assessment_from_enrichment_in_active_transaction(
+                    &ctx,
+                    tx,
+                    &engine,
+                    crate::services::intelligence::EnrichmentAssessmentUpsert {
+                        entity_type: &input_for_write.entity_type,
+                        entity_id: &input_for_write.entity_id,
+                        intel: prepared_for_write.intelligence(),
+                        projection_intel: prepared_for_write.projection_intelligence(),
+                        projection_data_source: producer.projection_data_source(),
+                        cleared_dimensions: prepared_for_write.cleared_dimensions(),
+                    },
+                )
+            })
+        })
+        .await
+        .map_err(String::from)?;
+    Ok(())
+}
+
+pub(crate) async fn run_enrichment_finalize_post_commit_via_db_service(
+    state: &Arc<AppState>,
+    input: &EnrichmentInput,
+    intel: &IntelligenceJson,
+    inferred_relationships: &[InferredRelationship],
+    mode: FinalizeMode,
+) -> Result<(), String> {
+    let side_effect_producer = match mode {
+        FinalizeMode::QueueWorker { producer, .. } | FinalizeMode::ManualRefresh { producer } => {
+            producer
+        }
+        FinalizeMode::TrustRecompute => EnrichmentProducer::Pty,
+    };
+    let materialize_visible_side_effects_before_export =
+        !matches!(mode, FinalizeMode::TrustRecompute);
+
+    if materialize_visible_side_effects_before_export {
+        run_enrichment_post_commit_side_effects_via_db_service(
+            state,
+            input,
+            intel,
+            side_effect_producer,
+        )
+        .await?;
+    }
+
+    match mode {
+        FinalizeMode::QueueWorker {
+            is_background,
+            producer,
+        } => {
+            if producer.is_glean() {
+                run_shared_glean_finalization_via_db_service(state, input, intel).await?;
+                spawn_queue_worker_supplemental_glean_finalize(state, input, is_background);
+            }
+        }
+        FinalizeMode::TrustRecompute => {
+            run_finalize_trust_recompute_via_db_service(state, input).await?;
+        }
+        FinalizeMode::ManualRefresh { producer } => {
+            if producer.is_glean() {
+                run_shared_glean_finalization_via_db_service(state, input, intel).await?;
+            }
+        }
+    }
+
+    fenced_write_enrichment_intelligence_via_db_service(state, input, intel).await?;
+
+    if !materialize_visible_side_effects_before_export {
+        run_enrichment_post_commit_side_effects_via_db_service(
+            state,
+            input,
+            intel,
+            side_effect_producer,
+        )
+        .await?;
+    }
+
+    if !inferred_relationships.is_empty() {
+        upsert_inferred_relationships_via_db_service(state, input, inferred_relationships).await?;
+    }
+
+    if matches!(mode, FinalizeMode::QueueWorker { .. }) {
+        if let Some(app) = state.app_handle() {
+            #[allow(
+                clippy::let_underscore_must_use,
+                reason = "intentional best-effort discard; preserves existing non-blocking behavior"
+            )]
+            let _ = app.emit(
+                "intelligence-updated",
+                IntelligenceUpdatedPayload {
+                    entity_id: input.entity_id.clone(),
+                    entity_type: input.entity_type.clone(),
+                },
+            );
+        }
+    }
+
+    invalidate_and_requeue_meeting_preps_via_db_service(state, &input.entity_id).await?;
+    record_enrichment_success_via_db_service(state, &input.entity_id).await?;
+
+    if matches!(mode, FinalizeMode::QueueWorker { .. }) {
+        on_enrichment_complete_via_db_service(state, input).await?;
+    }
+
+    Ok(())
+}
+
+async fn run_enrichment_post_commit_side_effects_via_db_service(
+    state: &Arc<AppState>,
+    input: &EnrichmentInput,
+    intel: &IntelligenceJson,
+    producer: EnrichmentProducer,
+) -> Result<(), String> {
+    let state_for_write = Arc::clone(state);
+    let input_for_write = input.clone();
+    let intel_for_write = intel.clone();
+    let side_effect_producer = producer.side_effect_producer();
+    state
+        .db_write(move |db| {
+            #[allow(
+                clippy::let_underscore_must_use,
+                reason = "intentional best-effort discard; preserves existing non-blocking behavior"
+            )]
+            let _ = crate::reports::invalidation::mark_reports_stale(
+                db,
+                &input_for_write.entity_id,
+            );
+
+            if input_for_write.entity_type == "account" {
+                let ctx = state_for_write.live_service_context();
+                if let Err(error) =
+                    crate::services::enrichment_side_effects::sync_account_enrichment_side_effects_for_producer(
+                        &ctx,
+                        db,
+                        state_for_write.signals.engine.as_ref(),
+                        &input_for_write.entity_id,
+                        &intel_for_write,
+                        side_effect_producer,
+                    )
+                {
+                    log::warn!(
+                        "IntelProcessor: enrichment side-effect sync failed for {}: {}",
+                        input_for_write.entity_id,
+                        error
+                    );
+                    if producer.is_glean() {
+                        return Err(format!(
+                            "{} enrichment side-effect sync failed for {}: {}",
+                            producer.materialization_label(),
+                            input_for_write.entity_id,
+                            error
+                        ));
+                    }
+                }
+            }
+
+            Ok(())
+        })
+        .await
+        .map_err(String::from)?;
+
+    if input.entity_type == "person" {
+        regenerate_person_files_via_db_service(state, input).await?;
+    }
+
+    enqueue_parent_refresh_after_child_update(state, input).await?;
+
+    log::debug!(
+        "IntelProcessor: wrote intelligence for {} to DB + post-commit file cache",
+        input.entity_id,
+    );
+    Ok(())
+}
+
+async fn regenerate_person_files_via_db_service(
+    state: &Arc<AppState>,
+    input: &EnrichmentInput,
+) -> Result<(), String> {
+    let workspace = input.workspace.clone();
+    let entity_id = input.entity_id.clone();
+    state
+        .db_read(move |db| {
+            if let Ok(Some(person)) = db.get_person(&entity_id) {
+                #[allow(
+                    clippy::let_underscore_must_use,
+                    reason = "intentional best-effort discard; preserves existing non-blocking behavior"
+                )]
+                let _ = crate::people::write_person_markdown(&workspace, &person, db);
+                #[allow(
+                    clippy::let_underscore_must_use,
+                    reason = "intentional best-effort discard; preserves existing non-blocking behavior"
+                )]
+                let _ = crate::people::write_person_dashboard_json(&workspace, &person, db);
+            }
+            Ok(())
+        })
+        .await
+        .map_err(String::from)
+}
+
+async fn enqueue_parent_refresh_after_child_update(
+    state: &Arc<AppState>,
+    input: &EnrichmentInput,
+) -> Result<(), String> {
+    let entity_type = input.entity_type.clone();
+    let entity_id = input.entity_id.clone();
+    let parent_id = state
+        .db_read(move |db| {
+            if entity_type == "account" {
+                Ok(db
+                    .get_account(&entity_id)
+                    .ok()
+                    .flatten()
+                    .and_then(|account| account.parent_id))
+            } else if entity_type == "project" {
+                Ok(db
+                    .get_project(&entity_id)
+                    .ok()
+                    .flatten()
+                    .and_then(|project| project.parent_id))
+            } else {
+                Ok(None)
+            }
+        })
+        .await
+        .map_err(String::from)?;
+
+    if let Some(parent_id) = parent_id {
+        let entity_type = input.entity_type.clone();
+        let priority = IntelPriority::ContentChange;
+        #[allow(
+            clippy::let_underscore_must_use,
+            reason = "intentional best-effort discard; preserves existing non-blocking behavior"
+        )]
+        let _ = state.intel_queue.enqueue(IntelRequest {
+            entity_id: parent_id.clone(),
+            entity_type: entity_type.clone(),
+            priority,
+            requested_at: std::time::Instant::now(),
+            retry_count: 0,
+        });
+        state.integrations.intel_queue_wake.notify_one();
+        log::info!(
+            "IntelProcessor: enqueued parent {} for portfolio refresh after child {} update",
+            parent_id,
+            input.entity_id,
+        );
+    }
+
+    Ok(())
+}
+
+async fn run_shared_glean_finalization_via_db_service(
+    state: &Arc<AppState>,
+    input: &EnrichmentInput,
+    intel: &IntelligenceJson,
+) -> Result<(), String> {
+    let state_for_write = Arc::clone(state);
+    let input_for_write = input.clone();
+    let intel_for_write = intel.clone();
+    state
+        .db_write(move |db| {
+            run_shared_glean_finalization(
+                state_for_write.as_ref(),
+                db,
+                &input_for_write,
+                &intel_for_write,
+            )
+        })
+        .await
+        .map_err(String::from)
+}
+
+async fn run_finalize_trust_recompute_via_db_service(
+    state: &Arc<AppState>,
+    input: &EnrichmentInput,
+) -> Result<(), String> {
+    let state_for_write = Arc::clone(state);
+    let input_for_write = input.clone();
+    state
+        .db_write(move |db| {
+            run_finalize_trust_recompute(state_for_write.as_ref(), db, &input_for_write)
+        })
+        .await
+        .map_err(String::from)
+}
+
+async fn fenced_write_enrichment_intelligence_via_db_service(
+    state: &Arc<AppState>,
+    input: &EnrichmentInput,
+    intel: &IntelligenceJson,
+) -> Result<(), String> {
+    let entity_dir = input.entity_dir.clone();
+    let intel_for_write = intel.clone();
+    let entity_context = format!("entity={} source=ai_enrichment", intel.entity_id);
+    state
+        .db_write(move |db| {
+            crate::intelligence::write_fence::post_commit_fenced_write(
+                db,
+                &entity_dir,
+                &intel_for_write,
+                &entity_context,
+            );
+            Ok(())
+        })
+        .await
+        .map_err(String::from)
+}
+
+async fn upsert_inferred_relationships_via_db_service(
+    state: &Arc<AppState>,
+    input: &EnrichmentInput,
+    inferred_relationships: &[InferredRelationship],
+) -> Result<(), String> {
+    let state_for_write = Arc::clone(state);
+    let entity_type = input.entity_type.clone();
+    let entity_id = input.entity_id.clone();
+    let inferred_for_write = inferred_relationships.to_vec();
+    state
+        .db_write(move |db| {
+            let ctx = state_for_write.live_service_context();
+            crate::services::intelligence::upsert_inferred_relationships_from_enrichment(
+                &ctx,
+                db,
+                state_for_write.signals.engine.as_ref(),
+                &entity_type,
+                &entity_id,
+                &inferred_for_write,
+            )
+        })
+        .await
+        .map_err(String::from)?;
+    Ok(())
+}
+
+async fn invalidate_and_requeue_meeting_preps_via_db_service(
+    state: &Arc<AppState>,
+    entity_id: &str,
+) -> Result<(), String> {
+    let state_for_write = Arc::clone(state);
+    let entity_id_for_write = entity_id.to_string();
+    state
+        .db_write(move |db| {
+            invalidate_and_requeue_meeting_preps_with_db(
+                state_for_write.as_ref(),
+                db,
+                &entity_id_for_write,
+            );
+            Ok(())
+        })
+        .await
+        .map_err(String::from)
+}
+
+async fn record_enrichment_success_via_db_service(
+    state: &Arc<AppState>,
+    entity_id: &str,
+) -> Result<(), String> {
+    let entity_id_for_write = entity_id.to_string();
+    state
+        .db_write(move |db| {
+            crate::self_healing::feedback::record_enrichment_success(db, &entity_id_for_write);
+            Ok(())
+        })
+        .await
+        .map_err(String::from)
+}
+
+async fn on_enrichment_complete_via_db_service(
+    state: &Arc<AppState>,
+    input: &EnrichmentInput,
+) -> Result<(), String> {
+    let state_for_write = Arc::clone(state);
+    let entity_id = input.entity_id.clone();
+    let entity_type = input.entity_type.clone();
+    state
+        .db_write(move |db| {
+            #[allow(
+                clippy::let_underscore_must_use,
+                reason = "intentional best-effort discard; preserves existing non-blocking behavior"
+            )]
+            let _ = crate::self_healing::scheduler::on_enrichment_complete(
+                db,
+                Some(state_for_write.embedding_model.as_ref()),
+                &entity_id,
+                &entity_type,
+                &state_for_write.intel_queue,
+                Some(state_for_write.signals.engine.as_ref()),
+            );
+            #[allow(
+                clippy::let_underscore_must_use,
+                reason = "intentional best-effort discard; preserves existing non-blocking behavior"
+            )]
+            let _ = crate::connectivity::record_sync_success(db.conn_ref(), "claude_code");
+            Ok(())
+        })
+        .await
+        .map_err(String::from)
+}
+
 fn apply_enrichment_stakeholder_side_writes(
     db: &crate::db::ActionDb,
     input: &EnrichmentInput,
@@ -3277,18 +3695,28 @@ fn spawn_queue_worker_supplemental_glean_finalize(
             .await
         {
             Ok(signals) => {
-                if let Ok(db) =
-                    crate::db::ActionDb::open(std::sync::Arc::new(crate::db::LocalKeychain::new()))
+                let state_for_write = std::sync::Arc::clone(&state_for_spawn);
+                let engine_for_write = std::sync::Arc::clone(&engine);
+                let entity_type_for_write = entity_type.clone();
+                let entity_id_for_write = entity_id.clone();
+                match state_for_spawn
+                    .db_write(move |db| {
+                        let ctx = state_for_write.live_service_context();
+                        crate::services::intelligence::upsert_health_outlook_signals(
+                            &ctx,
+                            db,
+                            &engine_for_write,
+                            &entity_type_for_write,
+                            &entity_id_for_write,
+                            &signals,
+                        )
+                    })
+                    .await
                 {
-                    let ctx = state_for_spawn.live_service_context();
-                    if let Err(e) = crate::services::intelligence::upsert_health_outlook_signals(
-                        &ctx,
-                        &db,
-                        &engine,
-                        &entity_type,
-                        &entity_id,
-                        &signals,
-                    ) {
+                    Ok(()) => {
+                        log::info!("[DOS-15] Leading signals persisted for {}", entity_id);
+                    }
+                    Err(e) => {
                         log::warn!(
                             "[DOS-15] upsert_health_outlook_signals failed for {}: {}",
                             entity_id,
@@ -3304,8 +3732,6 @@ fn spawn_queue_worker_supplemental_glean_finalize(
                             ls_start.elapsed().as_millis() as u64,
                             is_background,
                         );
-                    } else {
-                        log::info!("[DOS-15] Leading signals persisted for {}", entity_id);
                     }
                 }
             }
@@ -3332,43 +3758,44 @@ fn spawn_queue_worker_supplemental_glean_finalize(
         // failures leave peer_benchmark unset without user-visible noise.
         match provider.enrich_peer_benchmark(&entity_name).await {
             Ok(peer_benchmark) => {
-                if let Ok(db) =
-                    crate::db::ActionDb::open(std::sync::Arc::new(crate::db::LocalKeychain::new()))
-                {
-                    match db.get_entity_intelligence(&entity_id) {
-                        Ok(Some(mut current)) => {
-                            let ctx = state_for_spawn.live_service_context();
-                            let outlook = current
-                                .agreement_outlook
-                                .get_or_insert_with(Default::default);
-                            outlook.peer_benchmark = Some(peer_benchmark);
-                            if let Err(e) =
+                let state_for_write = std::sync::Arc::clone(&state_for_spawn);
+                let entity_id_for_write = entity_id.clone();
+                match state_for_spawn
+                    .db_write(move |db| {
+                        match db
+                            .get_entity_intelligence(&entity_id_for_write)
+                            .map_err(|e| format!("reading assessment failed: {e}"))?
+                        {
+                            Some(mut current) => {
+                                let ctx = state_for_write.live_service_context();
+                                let outlook = current
+                                    .agreement_outlook
+                                    .get_or_insert_with(Default::default);
+                                outlook.peer_benchmark = Some(peer_benchmark);
                                 crate::services::intelligence::upsert_assessment_snapshot(
-                                    &ctx, &db, &current,
+                                    &ctx, db, &current,
                                 )
-                            {
-                                log::warn!(
-                                    "[DOS-204] Persisting peer_benchmark failed for {}: {}",
-                                    entity_id,
-                                    e
-                                );
-                            } else {
-                                log::info!("[DOS-204] Peer benchmark persisted for {}", entity_id);
+                                .map_err(|e| format!("persisting peer_benchmark failed: {e}"))?;
+                                Ok(true)
                             }
+                            None => Ok(false),
                         }
-                        Ok(None) => {
-                            log::debug!(
-                                "[DOS-204] No assessment row for {}; skipping peer_benchmark write",
-                                entity_id
-                            );
-                        }
-                        Err(e) => {
-                            log::warn!(
-                                "[DOS-204] Reading assessment for {} failed: {}",
-                                entity_id,
-                                e
-                            );
-                        }
+                    })
+                    .await
+                {
+                    Ok(true) => log::info!("[DOS-204] Peer benchmark persisted for {}", entity_id),
+                    Ok(false) => {
+                        log::debug!(
+                            "[DOS-204] No assessment row for {}; skipping peer_benchmark write",
+                            entity_id
+                        );
+                    }
+                    Err(e) => {
+                        log::warn!(
+                            "[DOS-204] Peer benchmark persistence failed for {}: {}",
+                            entity_id,
+                            e
+                        );
                     }
                 }
             }
