@@ -43,7 +43,6 @@ is_allowlisted_file() {
     src-tauri/src/devtools/*)                        return 0 ;;
     src-tauri/src/demo.rs)                           return 0 ;;
     src-tauri/tests/*)                               return 0 ;;
-    src-tauri/src/services/meetings.rs)              return 0 ;;
     *_test.rs|*_tests.rs)                            return 0 ;;
   esac
   return 1

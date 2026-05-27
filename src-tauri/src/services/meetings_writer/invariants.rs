@@ -20,8 +20,10 @@
 //! `Calendar` and `Manual` require RFC3339 UTC `start_time` so downstream
 //! TZ-aware projection (`services/meetings_view.rs`) can range-query
 //! deterministically. `Reconcile` and `Backfill` accept legacy formats
-//! because their source material predates the contract; the v1.4.8 backfill
-//! migration normalizes those rows.
+//! because their source material predates the contract. Existing rows that
+//! carry pre-RFC3339 formats are not normalized by this substrate — the
+//! invariant matrix is enforced on WRITE only. A separate backfill
+//! migration to normalize legacy rows is tracked as a follow-up.
 
 use super::types::{MeetingSource, WriteError, WriteRequest};
 

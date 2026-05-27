@@ -7,7 +7,7 @@
 use crate::db::ActionDb;
 use crate::types::Config;
 use crate::util::slugify;
-use chrono::{DateTime, NaiveDate, Utc};
+use chrono::NaiveDate;
 use regex::Regex;
 use rusqlite::params;
 use std::collections::HashSet;
@@ -341,9 +341,6 @@ fn create_meeting_record(db: &ActionDb, meeting: &DiscoveredMeeting) -> Result<(
         .and_utc()
         .to_rfc3339();
 
-    let created_at: DateTime<Utc> = Utc::now();
-    let created_at_str = created_at.to_rfc3339();
-
     // Get absolute path for notes_path / transcript_path
     let absolute_path = meeting
         .file_path
@@ -376,7 +373,6 @@ fn create_meeting_record(db: &ActionDb, meeting: &DiscoveredMeeting) -> Result<(
         user_notes: None,
         intelligence_state: None,
     };
-    let _ = created_at_str; // upsert sets created_at at write time
     crate::services::meetings_writer::write(db, &write_req).map_err(|e| e.to_string())?;
 
     // Link to entity via meeting_entities table
