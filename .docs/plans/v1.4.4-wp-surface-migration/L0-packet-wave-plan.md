@@ -317,6 +317,8 @@ Wave-level ACs span the full v1.4.4 program. Per-surface ACs defer to sub-L0 pac
 
 **AC #W7 — Tauri UI freeze in effect throughout the wave.** No new UI work in Tauri React from 2026-05-15 forward (per memory `feedback_tauri_ui_freeze`). Existing Tauri surfaces in stasis until WP parity (W6). Tauri continues hosting runtime + MCP + keychain + dev/admin surfaces.
 
+**v1.4.4a exception (2026-05-23 L0 fold):** `.docs/plans/v1.4.4a-tauri-briefing-entity-intelligence-waves.html` is a W0-approved exception lane for existing shipped Tauri surfaces. It may touch Tauri React only to change claim-backed data sourcing, actor-filtered trust/provenance rendering, and prompt-input plumbing for Daily Briefing / Meeting Briefing first, then entity detail, actions, and email. It does **not** satisfy or replace WordPress W2-W6 acceptance criteria, and it does **not** allow new Tauri routes, visual patterns, UI features, or reskinning. Cross-surface contract changes still reopen the relevant v1.4.4 master/sub-L0 packet.
+
 ## 8. Out of scope (explicit deferrals)
 
 | Out of scope | Where it goes |
@@ -329,12 +331,12 @@ Wave-level ACs span the full v1.4.4 program. Per-surface ACs defer to sub-L0 pac
 | DOS-297 longitudinal topic threading | **v1.4.5** Workspace Memory |
 | Recommendations layer (typed `RecommendationProposal` claims, salience scoring) | **v1.4.6** Salience |
 | Causal lineage between claims | **v1.5.x** (per memory `project_causal_lineage_deferred`) |
-| New Tauri React UI work | **Frozen** — no new Tauri UI from 2026-05-15 (memory `feedback_tauri_ui_freeze`). Tauri continues as runtime-host. |
+| New Tauri React UI work | **Frozen** — no new Tauri UI from 2026-05-15 (memory `feedback_tauri_ui_freeze`). The v1.4.4a exception is limited to data-sourcing, actor-filtered trust/provenance rendering, and prompt-input plumbing on existing surfaces; it does not permit new routes, visual patterns, UI features, or reskinning. Tauri continues as runtime-host. |
 | WordPress.com sync as publish target | Out of scope at v1.4.x (per ADR-0129 §5 paid-tier future scope) |
 | Multi-tenant hosted substrate | Out of scope at v1.4.x (per ADR-0129 §5) |
 | Hosted DailyOS agent backend | Out of scope at v1.4.x (BYOM only at free tier) |
 
-**Tauri UI freeze reminder (memory `feedback_tauri_ui_freeze`):** existing Tauri surfaces stay in stasis until WP parity. Bug-fix-only triage applies to Tauri surfaces; no new UI features. Tauri continues hosting runtime + MCP server + keychain + dev/admin surfaces (NOT frozen).
+**Tauri UI freeze reminder (memory `feedback_tauri_ui_freeze`):** existing Tauri surfaces stay in stasis until WP parity except for the v1.4.4a data-sourcing/trust/provenance/prompt-input exception above. Bug-fix-only triage applies to other Tauri surface work; no new UI features. Tauri continues hosting runtime + MCP server + keychain + dev/admin surfaces (NOT frozen).
 
 ## 9. Migration slots
 
@@ -356,7 +358,7 @@ Wave-level invariants that govern every sub-L0 packet and every PR in v1.4.4.
 | **Surface-agnostic substrate (anchored decision #6).** Substrate works across Tauri / WP / Claude Desktop / Cursor / MCP without surface-specific branching. | Reorientation doc + ADR-0130 §1 + ADR-0129 §6 | Producer/renderer split per ADR-0130 §4; per-surface renderer; same `Composition` model |
 | **Many blocks, not few (anchored decision #1).** Each Tauri component or pattern gets a Gutenberg block. Composite surfaces compose many small blocks. | Reorientation doc anchored decision #1 | W2/W3/W4 sub-L0 packets list per-block breakdown, not monolithic composite |
 | **Inline edit captured as feedback claim (anchored decision #2).** No direct DB writes from WP. Pull/push of feedback flows through `services::claims::record_claim_feedback`. | Reorientation doc anchored decision #2 + CLAUDE.md critical rule | W4 sub-L0 codifies the wire shape; CI grep gate on `wp/dailyos/` for DB write attempts |
-| **Tauri UI freeze (anchored decision #4).** No new Tauri React UI from 2026-05-15. Existing surfaces in stasis until W6 parity. | Reorientation doc anchored decision #4 + memory `feedback_tauri_ui_freeze` | Wave packet acceptance: no new `src/pages/` or `src/components/` React UI files outside bug-fix maintenance |
+| **Tauri UI freeze (anchored decision #4).** No new Tauri React UI from 2026-05-15. Existing surfaces in stasis until W6 parity, except the v1.4.4a exception for data-sourcing, actor-filtered trust/provenance rendering, and prompt-input plumbing on existing surfaces. | Reorientation doc anchored decision #4 + memory `feedback_tauri_ui_freeze` + v1.4.4a L0 fold | Wave packet acceptance: no new `src/pages/` or `src/components/` React UI files outside bug-fix maintenance and the scoped v1.4.4a exception; no new routes, visual patterns, UI features, or reskinning |
 | **Runtime stays side-process (C3).** Tauri (or headless Rust binary) hosts runtime; WP plugin signs HTTP requests. PHP-extension and FFI-bridge runtime models out of scope. | Reorientation doc §C3 + ADR-0129 §7 | W1 substrate items use existing transport (signed loopback HTTP); no new transports introduced |
 | **Theme owns no trust/provenance styling (v1.4.3 invariant carried forward).** Plugin owns essential trust/provenance CSS. Stock TwentyTwentyFive fallback supported. | v1.4.3 waves.md architecture invariants | W2/W3/W4 blocks ship trust/provenance via plugin-owned CSS, not theme overrides |
 | **Producer commit on cache miss (v1.4.3 carried forward).** No signal-propagation invalidation bus required at v1.4.4 scope. | v1.4.3 W0 invariant | W3/W4 sub-L0 packets reuse v1.4.2 W4-F cache discipline |

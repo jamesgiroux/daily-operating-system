@@ -1,0 +1,530 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>v1.4.5 Workspace Memory Refactor - DailyOS Planning</title>
+  <link rel="stylesheet" href="../design/reference/_shared/fonts.css">
+  <link rel="stylesheet" href="../design/reference/_shared/styles/design-tokens.css">
+  <link rel="stylesheet" href="../design/reference/_shared/styles/AtmosphereLayer.module.css">
+  <link rel="stylesheet" href="../design/reference/_shared/styles/MagazinePageLayout.module.css">
+  <link rel="stylesheet" href="../design/reference/_shared/chrome.css">
+  <link rel="stylesheet" href="plans.css">
+</head>
+<body data-tint="sage">
+<div class="MagazinePageLayout_magazinePage">
+<main class="MagazinePageLayout_pageContainer">
+<div class="plans-shell">
+
+<nav class="plans-topnav" aria-label="Planning surface">
+  <a class="plans-mark" href="index.html">
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 433 407" width="16" height="16" aria-hidden="true">
+      <path d="M159 407 161 292 57 355 0 259 102 204 0 148 57 52 161 115 159 0H273L271 115L375 52L433 148L331 204L433 259L375 355L271 292L273 407Z" fill="currentColor"/>
+    </svg>
+    DailyOS - Planning
+  </a>
+  <div class="plans-topnav-links">
+    <a href="engineering-ladder.html">Engineering Ladder</a>
+    <a href="v1.4.4a-tauri-briefing-entity-intelligence-waves.html">v1.4.4a Tauri Briefing Cutover</a>
+    <a href="v1.4.5-workspace-memory-waves.html" data-active="true">v1.4.5 Workspace Memory</a>
+    <a href="AUTHORING.md">Authoring Ruleset</a>
+  </div>
+</nav>
+
+<section class="plans-cover">
+  <p class="plans-eyebrow">DailyOS - v1.4.5 - Parallel Wave Plan</p>
+  <h1 class="plans-title">Workspace files become first-class source memory.</h1>
+  <p class="plans-kicker">Local files, AI work product, inbox residue, and MCP-placed documents all feed the claim/provenance graph through one service-owned pipeline instead of living as manual side channels.</p>
+  <p class="plans-lede">
+    Workspace memory today is split across inbox processing, watchers, Drive import, attachments, content indexing, embeddings, and MCP/search paths.
+    v1.4.5 collapses those into a single staged ingestion pipeline with durable source identity, lifecycle states, entity links, ingestion run history, and provenance-aware claim proposals.
+    The proof surfaces are a Gutenberg source-management block, a sanitized markdown preview side rail, and a frozen headless contract that v1.4.7 MCP tools can build against without amendment.
+  </p>
+  <div class="plans-meta">
+    <span>Target: v1.4.5 substrate + first WP source surfaces</span>
+    <span>Waves: 6 (W0 coordination + W1-W5 implementation)</span>
+    <span>Parallel agents: 4 peak</span>
+    <span>Source: <a href="https://linear.app/a8c/project/v145-workspace-memory-refactor-cdb9d2c17102">Linear v1.4.5 project</a></span>
+    <span>Companion: <a href="v1.4.5-waves.md">v1.4.5-waves.md</a> (canonical, cycle-13)</span>
+  </div>
+</section>
+
+<section class="plans-section" aria-labelledby="status">
+  <header class="plans-section-header">
+    <p class="plans-section-eyebrow">Where we are - 2026-05-23</p>
+    <h2 id="status" class="plans-section-title">W1, W2, and W3-A shipped; W3-B scoped signal plumbing is implemented locally.</h2>
+    <p class="plans-section-lede">
+      Substrate (lifecycle, registry, links, ingestion runs), the staged ingestion pipeline, and the real workspace claim producer are in.
+      W3-B's scoped workspace signal emitter, policy registry entries, and prep invalidation wiring are now implemented in the W3-B worktree with claim-source retraction intentionally deferred until the account/Glean claim producer lane lands. W3-C still needs its L0 packet before implementation.
+    </p>
+  </header>
+  <ul class="plans-related">
+    <li><strong>W1 Contract & Registry (DOS-463 / DOS-464 / DOS-465):</strong> ✅ merged in PR <a href="https://github.com/jamesgiroux/daily-operating-system/pull/345">#345</a>. Migrations v250-v254 live. 76 W1 tests green. Substrate-reinvention CI gate active.</li>
+    <li><strong>W2 Ingestion Pipeline (DOS-466 / DOS-467 / DOS-468 / DOS-469):</strong> ✅ merged in PRs <a href="https://github.com/jamesgiroux/daily-operating-system/pull/350">#350</a> (W1-extension), <a href="https://github.com/jamesgiroux/daily-operating-system/pull/352">#352</a>, <a href="https://github.com/jamesgiroux/daily-operating-system/pull/353">#353</a>, <a href="https://github.com/jamesgiroux/daily-operating-system/pull/356">#356</a>, <a href="https://github.com/jamesgiroux/daily-operating-system/pull/357">#357</a>. <code>IngestPipeline::run</code> is real; W3-A has replaced the extraction stub with the real workspace extractor.</li>
+    <li><strong>W3 Intelligence & Provenance (DOS-470 / DOS-471 / DOS-489):</strong> ▶️ stage 3b implementation. W3-A / DOS-470 merged in PR <a href="https://github.com/jamesgiroux/daily-operating-system/pull/369">#369</a>. W3-B / DOS-471 implemented locally in <code>.worktrees/codex/v1.4.5-w3-b-dos-471</code> within the coordinated workspace-signal-only boundary; W3-C graph projection still needs L0.</li>
+    <li><strong>W4 Source UX & Headless (DOS-472 / DOS-473 / DOS-474):</strong> ⏸ not started.</li>
+    <li><strong>W5 Backfill & Validation (DOS-475 / DOS-476):</strong> ⏸ not started; release-gate wave.</li>
+    <li><strong>Open follow-ups:</strong> <a href="https://linear.app/a8c/issue/DOS-751">DOS-751</a> (10 W1-A L2 path-alpha nits, medium); three v1.4.6 follow-up notes for W2-B transcript/Drive staging, W2-C editor write transport, W2-D legacy processor consolidation.</li>
+    <li><strong>Retros written:</strong> W1 and W2 retros live at <code>.docs/plans/v1.4.5-workspace-memory/retro-W{1,2}.md</code>.</li>
+  </ul>
+</section>
+
+<section class="plans-section" aria-labelledby="source-and-scope">
+  <header class="plans-section-header">
+    <p class="plans-section-eyebrow">Source and scope</p>
+    <h2 id="source-and-scope" class="plans-section-title">Workspace memory becomes a single ingestion service with provenance.</h2>
+    <p class="plans-section-lede">
+      v1.4.5 is the substrate that makes files trustworthy as source material. It is not the UI redesign and it is not the MCP tool expansion - both have downstream waves.
+    </p>
+  </header>
+  <ul class="plans-related">
+    <li><strong>Problem:</strong> workspace files flow through inbox, content index, embeddings, Drive, watcher, and MCP paths without a single durable source identity, lifecycle, hash, provenance, source type, sensitivity, or trust posture.</li>
+    <li><strong>First proof surface:</strong> the Gutenberg source-management block (DOS-472) plus the sanitized markdown preview (DOS-473) - both consume the new substrate via the v1.4.2 SurfaceClient bridge.</li>
+    <li><strong>Headless proof:</strong> the frozen <code>workspace_placement::place_document</code> ability contract (DOS-474) becomes the v1.4.7 MCP write surface for AI-placed documents.</li>
+    <li><strong>Upstream dependency:</strong> v1.4.2 W4 surface-bridge block scaffolding pattern + v1.4.2 W6 audit attribution helper must be confirmed merged before W4 lanes start.</li>
+    <li><strong>Non-goal:</strong> no Tauri React surfaces for source management. No new trust UI primitives. No new claim_kind variants without an L0 amendment.</li>
+    <li><strong>Threat topology:</strong> mixed - markdown rendering, MCP write payloads, and attachment file paths are untrusted input boundaries; local file ingestion is trusted-source but lifecycle-controlled.</li>
+    <li><strong>K-in:</strong> ADR-0107 (DataSource taxonomy), ADR-0108 (sensitivity rendering), ADR-0125 (envelope-actor binding), v1.4.1 freshness decay table, existing <code>CLAIM_TYPE_REGISTRY</code>, <code>SourceAttribution</code> primitive.</li>
+  </ul>
+</section>
+
+<section class="plans-section" aria-labelledby="principles">
+  <header class="plans-section-header">
+    <p class="plans-section-eyebrow">Operating principles</p>
+    <h2 id="principles" class="plans-section-title">One service, typed proposals, validated input.</h2>
+  </header>
+  <div class="callout-grid">
+    <article class="callout">
+      <h3 class="callout-title">All mutations through services::workspace_ingestion</h3>
+      <p class="callout-prose">No direct DB writes from watcher handlers, processor pipeline, Drive poller, attachment paths, or MCP. The lifecycle, registry, links, and ingestion run tables have exactly one writer. CI lint script (<code>check_workspace_mutation_allowlist.sh</code>) enforces.</p>
+    </article>
+    <article class="callout">
+      <h3 class="callout-title">File-derived facts are claim proposals, not direct claims</h3>
+      <p class="callout-prose">Extraction never inserts into <code>intelligence_claims</code> directly. Every extracted fact goes through <code>services::claims::commit_claim</code> with mandatory provenance: <code>source_asof</code>, <code>data_source</code>, <code>source_attribution</code>, separate <code>ingestion_run_id</code>. <code>content_index</code> and embeddings remain derived caches.</p>
+    </article>
+    <article class="callout">
+      <h3 class="callout-title">Untrusted input passes through validation before service entry</h3>
+      <p class="callout-prose">Markdown content, MCP write payloads, attachment file paths - none reach <code>commit_claim</code> without sanitization. The markdown sanitizer is allowlist-based, not blocklist-patched. The MCP placement ability uses server-derived <code>source_asof</code>, not caller-provided.</p>
+    </article>
+  </div>
+</section>
+
+<section class="plans-section" aria-labelledby="wave-overview">
+  <header class="plans-section-header">
+    <p class="plans-section-eyebrow">Wave shape</p>
+    <h2 id="wave-overview" class="plans-section-title">5 implementation waves; W2 and W3 internally serialized; W4 parallel; W5 sequenced.</h2>
+    <p class="plans-section-lede">
+      W0 freezes the boundary. W1 builds the contract and registry. W2 builds the staged pipeline. W3 fills it with real extraction, signals, and a graph projection. W4 ships the source surfaces and the headless contract. W5 backfills and validates the release.
+    </p>
+  </header>
+
+  <table class="reviewer-matrix">
+    <thead>
+      <tr>
+        <th>Wave</th>
+        <th>Issues</th>
+        <th>Parallel agents</th>
+        <th>Target</th>
+        <th>Status</th>
+      </tr>
+    </thead>
+    <tbody>
+      <tr>
+        <td>W0 - Plan freeze + scope cleanup</td>
+        <td>coordination; 13 L0 cycles folded</td>
+        <td>0</td>
+        <td>plan frozen, slots reserved</td>
+        <td>Done</td>
+      </tr>
+      <tr>
+        <td>W1 - Contract & Registry</td>
+        <td><a href="https://linear.app/a8c/issue/DOS-463">DOS-463</a>, <a href="https://linear.app/a8c/issue/DOS-464">DOS-464</a>, <a href="https://linear.app/a8c/issue/DOS-465">DOS-465</a></td>
+        <td>3</td>
+        <td>lifecycle + registry + run tracking substrate</td>
+        <td>Done (PR #345)</td>
+      </tr>
+      <tr>
+        <td>W2 - Ingestion Pipeline</td>
+        <td><a href="https://linear.app/a8c/issue/DOS-466">DOS-466</a>, <a href="https://linear.app/a8c/issue/DOS-467">DOS-467</a>, <a href="https://linear.app/a8c/issue/DOS-468">DOS-468</a>, <a href="https://linear.app/a8c/issue/DOS-469">DOS-469</a></td>
+        <td>4</td>
+        <td>service-owned pipeline; mutation paths consolidated; entity-seeded intake; _inbox refactor</td>
+        <td>Done (PRs #350, #352, #353, #356, #357)</td>
+      </tr>
+      <tr>
+        <td>W3 - Intelligence & Provenance</td>
+        <td><a href="https://linear.app/a8c/issue/DOS-470">DOS-470</a>, <a href="https://linear.app/a8c/issue/DOS-471">DOS-471</a>, <a href="https://linear.app/a8c/issue/DOS-489">DOS-489</a></td>
+        <td>3 (1 then 2)</td>
+        <td>real claim extraction; signal wiring; graph projection</td>
+        <td>Stage 3b implementation - W3-A done in PR #369; W3-B scoped signal plumbing implemented locally; W3-C needs L0</td>
+      </tr>
+      <tr>
+        <td>W4 - Source UX & Headless Contract</td>
+        <td><a href="https://linear.app/a8c/issue/DOS-472">DOS-472</a>, <a href="https://linear.app/a8c/issue/DOS-473">DOS-473</a>, <a href="https://linear.app/a8c/issue/DOS-474">DOS-474</a></td>
+        <td>3</td>
+        <td>WP source-management block; markdown preview; MCP placement contract frozen</td>
+        <td>Pending</td>
+      </tr>
+      <tr>
+        <td>W5 - Backfill & Validation</td>
+        <td><a href="https://linear.app/a8c/issue/DOS-475">DOS-475</a>, <a href="https://linear.app/a8c/issue/DOS-476">DOS-476</a></td>
+        <td>2 (sequenced)</td>
+        <td>backfill existing workspace; E2E validation against real data</td>
+        <td>Pending - release gate</td>
+      </tr>
+    </tbody>
+  </table>
+</section>
+
+<section class="plans-section" aria-labelledby="staging-rules">
+  <header class="plans-section-header">
+    <p class="plans-section-eyebrow">Named exceptions to default wave ordering</p>
+    <h2 id="staging-rules" class="plans-section-title">Internal staging is not optional.</h2>
+  </header>
+  <ul class="plans-related">
+    <li><strong>W2 stage 2a:</strong> DOS-466 (W2-A) merges first alone - pipeline shell + quarantine.</li>
+    <li><strong>W2 stage 2b:</strong> DOS-467 (mutation paths), DOS-468 (entity-seeded intake + entity_intake block), DOS-469 (_inbox refactor) run in parallel - file-disjoint per cycle 2 amendment.</li>
+    <li><strong>W3 stage 3a:</strong> DOS-470 (W3-A) merges first alone - replaces W2-A's <code>extract_stub</code> with the real extractor; first real claim producer.</li>
+    <li><strong>W3 stage 3b:</strong> DOS-471 (W3-B signals) + DOS-489 (W3-C graph projection) run in parallel - file-disjoint.</li>
+    <li><strong>W4:</strong> DOS-472 + DOS-473 + DOS-474 may run in parallel if v1.4.2 surface bridge is confirmed merged. All three depend on W3 substrate.</li>
+    <li><strong>W5:</strong> DOS-475 (backfill) must merge before DOS-476 (E2E validation) starts.</li>
+  </ul>
+</section>
+
+<section class="plans-section" aria-labelledby="reviewer-matrix">
+  <header class="plans-section-header">
+    <p class="plans-section-eyebrow">Reviewer matrix</p>
+    <h2 id="reviewer-matrix" class="plans-section-title">Security and DX both load-bearing.</h2>
+  </header>
+
+  <table class="reviewer-matrix">
+    <thead>
+      <tr>
+        <th>Agent profile</th>
+        <th>L0 domain reviewer</th>
+        <th>L2 domain reviewer</th>
+      </tr>
+    </thead>
+    <tbody>
+      <tr>
+        <td>Pipeline service / mutation boundary</td>
+        <td><code>/plan-eng-review</code> + <code>/cso</code></td>
+        <td><code>architect-reviewer</code> + <code>/cso</code></td>
+      </tr>
+      <tr>
+        <td>Claim extraction / provenance</td>
+        <td><code>/plan-eng-review</code></td>
+        <td><code>architect-reviewer</code></td>
+      </tr>
+      <tr>
+        <td>Signal wiring / invalidation</td>
+        <td><code>/plan-eng-review</code></td>
+        <td><code>architect-reviewer</code></td>
+      </tr>
+      <tr>
+        <td>Graph projection / MCP-consumed API</td>
+        <td><code>/plan-eng-review</code> + <code>/plan-devex-review</code></td>
+        <td><code>architect-reviewer</code></td>
+      </tr>
+      <tr>
+        <td>Gutenberg source surfaces</td>
+        <td><code>/plan-eng-review</code> (functional, not editorial)</td>
+        <td><code>code-reviewer</code></td>
+      </tr>
+      <tr>
+        <td>Markdown sanitizer / untrusted input</td>
+        <td><code>/cso</code></td>
+        <td><code>/cso</code> + <code>code-reviewer</code></td>
+      </tr>
+      <tr>
+        <td>MCP placement contract</td>
+        <td><code>/cso</code> + <code>/plan-devex-review</code></td>
+        <td><code>/cso</code> + <code>code-reviewer</code></td>
+      </tr>
+      <tr>
+        <td>Backfill + release validation</td>
+        <td><code>/plan-eng-review</code> + <code>qa-expert</code></td>
+        <td><code>qa-expert</code></td>
+      </tr>
+    </tbody>
+  </table>
+</section>
+
+<section class="plans-section" aria-labelledby="suites">
+  <header class="plans-section-header">
+    <p class="plans-section-eyebrow">Test suites</p>
+    <h2 id="suites" class="plans-section-title">S, P, and E feed L3 and W5.</h2>
+  </header>
+
+  <div class="suite-grid">
+    <article class="suite-card" data-suite="s">
+      <span class="suite-letter">S</span>
+      <h3 class="suite-name">Security</h3>
+      <p class="suite-prose">Path traversal rejection; binary detection; file size limits; markdown sanitizer attack vectors (script, event handler, dangerous schemes, SVG/MathML, CSS @import, foreign objects); MCP write allowlist enforcement; subject validation transactional; no raw content in signal payloads; <code>workspace_graph</code> never returns file paths or raw claim text without scope.</p>
+      <p class="suite-owner"><span class="suite-owner-label">Owner</span> <code>/cso</code></p>
+      <p class="suite-pass-rule"><span class="suite-pass-label">Pass</span> zero Critical/High; allowlist sanitizer (not blocklist)</p>
+    </article>
+    <article class="suite-card" data-suite="p">
+      <span class="suite-letter">P</span>
+      <h3 class="suite-name">Performance</h3>
+      <p class="suite-prose">Ingestion pipeline latency on a 1MB text fixture; no regression on watcher response time; markdown preview render latency on a 5KB fixture; <code>workspace_graph</code> projection query latency with paginated cursor; backfill throughput on a fixture workspace.</p>
+      <p class="suite-owner"><span class="suite-owner-label">Owner</span> <code>performance-engineer</code></p>
+      <p class="suite-pass-rule"><span class="suite-pass-label">Pass</span> no regression vs baseline</p>
+    </article>
+    <article class="suite-card" data-suite="e">
+      <span class="suite-letter">E</span>
+      <h3 class="suite-name">Edge cases</h3>
+      <p class="suite-prose">Concurrent ingestion of the same file; file changes during extraction; uncertain entity link; extraction succeeds but proposal fails; derived cache update failure after registration; app restart mid-run; old-mtime backfill produces <code>use_with_caution</code> not <code>likely_current</code>; idempotency triple matches existing run; pagination cursor opacity; <code>NotModified</code> branch when watermark unchanged.</p>
+      <p class="suite-owner"><span class="suite-owner-label">Owner</span> <code>qa-expert</code></p>
+      <p class="suite-pass-rule"><span class="suite-pass-label">Pass</span> bundles 1-18 (v1.4.1) still green; new fixtures green</p>
+    </article>
+  </div>
+</section>
+
+<section class="plans-section" aria-labelledby="wave-details">
+  <header class="plans-section-header">
+    <p class="plans-section-eyebrow">Wave details</p>
+    <h2 id="wave-details" class="plans-section-title">Acceptance criteria by wave.</h2>
+  </header>
+
+  <div class="callout-grid">
+    <article class="callout">
+      <h3 class="callout-title">W1 - Contract & Registry (Done)</h3>
+      <p class="callout-prose">Define source lifecycle (DOS-463). Add workspace document registry tables (DOS-464). Add document/entity links + ingestion run tracking (DOS-465). Promote shared traits (<code>Extractor</code>, <code>SignalEmitter</code>) and shared types (<code>WorkspaceClaimProposal</code>, <code>FileIdentity</code>, <code>RejectionReason</code>, <code>SourceType</code>) into W1-A-owned <code>contracts.rs</code> so downstream waves can compile against a stable surface.</p>
+      <p class="callout-prose"><strong>Outcome:</strong> migrations v250-v254 live. <code>services/workspace_ingestion/{lifecycle,registry,runs,link,contracts}.rs</code> in place. Substrate-reinvention CI gate active. <code>open_validated</code> hardened against TOCTOU. 76 W1 tests green.</p>
+      <p class="callout-prose"><strong>Path-alpha:</strong> <a href="https://linear.app/a8c/issue/DOS-751">DOS-751</a> (10 nits including <code>WorkspaceCategory::Other(known_slug)</code> round-trip asymmetry, u64→i64 inode conversion at W1-C boundary, missing trybuild compile-fail tests, substrate-reinvention grep gate scope).</p>
+    </article>
+
+    <article class="callout">
+      <h3 class="callout-title">W2 - Ingestion Pipeline (Done)</h3>
+      <p class="callout-prose">DOS-466 staged pipeline with explicit stages (canonicalize, register, classify, link, extract, propose, index, signal, run-status); each stage idempotent. DOS-467 refactored every mutation path (inbox, Drive, watcher, attachments, MCP) into the service. DOS-468 added entity-seeded source intake on account/person/project pages + <code>entity_intake</code> Gutenberg block. DOS-469 refactored <code>_inbox</code> from manual chore into unresolved-source exception queue.</p>
+      <p class="callout-prose"><strong>Outcome:</strong> <code>IngestPipeline::run</code> is the single ingestion path. Watcher, Drive poller, attachment handlers all route through it. WP entity-intake block scaffolded as read-only (write transport deferred). W3-A now wires the real <code>WorkspaceExtractor</code> into the pipeline.</p>
+      <p class="callout-prose"><strong>Path-alpha + v1.4.6 follow-ups:</strong> transcript staging API + Drive remote-bytes staging API (W2-B, allowlisted <code>dos7-allowed</code>); editor write-transport REST route for <code>entity_intake</code> (W2-C); legacy <code>processor/mod.rs</code> + <code>processor/router.rs</code> consolidation (W2-D).</p>
+    </article>
+
+    <article class="callout" data-emphasis="next">
+      <h3 class="callout-title">W3 - Intelligence & Provenance (Stage 3b L0)</h3>
+      <p class="callout-prose"><strong>Stage 3a (alone) - DOS-470 / W3-A:</strong> ✅ merged in PR <a href="https://github.com/jamesgiroux/daily-operating-system/pull/369">#369</a>. <code>services/workspace_ingestion/extract.rs</code> now has the real <code>WorkspaceExtractor</code> impl of the W1-A <code>Extractor</code> trait, producing typed <code>WorkspaceClaimProposal</code> records and committing through <code>services::claims::commit_claim</code>.</p>
+      <p class="callout-prose"><strong>Stage 3b (parallel after 3a) - DOS-471 / W3-B:</strong> L0 packet V0.3 lives at <code>.docs/plans/v1.4.5-workspace-memory/L0-packet-W3-B-DOS-471.md</code> in worktree <code>.worktrees/codex/v1.4.5-w3-b-dos-471</code>. Coordination narrowed the implementation to workspace signal plumbing only: real <code>WorkspaceSignalEmitter</code>, fallible signal context, service-facade emission, policy registry entries, and prep invalidation allowlist. Claim-source retraction is deferred until after the account/Glean claim producer lane lands.</p>
+      <p class="callout-prose"><strong>Stage 3b (parallel after 3a) - DOS-489 / W3-C:</strong> ship <code>WorkspaceGraphProjection v1</code> as a frozen API. Cursor pagination (max 500), sensitivity rendering per ADR-0108 (file paths never returned; entity names redacted without scope; raw claim text via <code>claim_summary</code> aggregates only), incremental fetch via <code>watermark_signal_id</code> + <code>NotModified</code> branch. New <code>workspace_graph</code> ability + <code>workspace_graph_audit</code> binary producing machine-parseable JSON.</p>
+      <p class="callout-prose"><strong>Pass:</strong> direct curl to <code>get_entity_intelligence</code> returns claims sourced from workspace files; signal-driven invalidation propagates through to prep regeneration; <code>workspace_graph_audit</code> exits 0 with zero attribution gaps on a fixture workspace; <code>/plan-devex-review</code> L0 plan approval recorded for W3-C.</p>
+      <p class="callout-prose"><strong>Files owned:</strong> <code>services/workspace_ingestion/{extract,signals,graph}.rs</code>; <code>abilities/workspace_graph.rs</code>; <code>bin/workspace_graph_audit.rs</code>; additive entries in <code>signals/policy_registry.rs</code> + <code>signals/invalidation.rs</code>; documented single-line patches in <code>services/workspace_ingestion/wiring.rs</code>. W3-B implementation used the coordinated write set in <code>contracts.rs</code>, <code>pipeline.rs</code>, <code>link.rs</code>, <code>commands/workspace.rs</code>, and <code>watcher.rs</code>; it did not touch <code>state.rs</code>, <code>services/claims.rs</code>, account fact producer code, Glean producer code, or <code>signals::bus</code>.</p>
+    </article>
+
+    <article class="callout">
+      <h3 class="callout-title">W4 - Source UX & Headless Contract</h3>
+      <p class="callout-prose"><strong>DOS-472 / W4-A - <code>dailyos/source-management</code> Gutenberg block:</strong> entity-scoped source list (Drive files, inbox items, entity documents), lifecycle states, ingestion run history, trust-band distribution of derived claims. User actions: re-ingest, quarantine (calls <code>pipeline::quarantine_source</code>), re-link (calls <code>link::override_link</code> with <code>SignalEmitter</code>).</p>
+      <p class="callout-prose"><strong>DOS-473 / W4-B - <code>dailyos/markdown-preview</code> block + sanitizer:</strong> allowlist-based, not blocklist. Allowed tags only (paragraph, heading, list, code, blockquote, link, image, table); all <code>style</code> attributes dropped; URI schemes restricted (<code>http</code>/<code>https</code>/<code>mailto</code> for href; <code>dailyos-asset://</code> only for img src); HTML comments dropped; no CSS at all. Negative fixture suite covers script injection, event handlers, dangerous schemes, SVG/MathML/foreignObject escape, conditional comments, remote assets, CSS injection. New Rust ability <code>markdown_preview</code> with <code>mcp_exposure: None</code>.</p>
+      <p class="callout-prose"><strong>DOS-474 / W4-C - <code>workspace_placement::place_document</code> ability:</strong> frozen contract. Synchronous + dry-run shapes. Server-derived <code>source_asof</code> (caller's hint stored separately as audit-only). Transactional validation+write+enqueue. Per-actor rate limits (10/min, 200/hour). Idempotency triple <code>(entity_id, content_sha256, client_dedup_key.unwrap_or_default())</code>. Base64 wire encoding for binary content. Canonical category slug from <code>WorkspaceCategoryRegistry</code> or server auto-detect. Typed errors including <code>RateLimited</code>, <code>IdempotencyConflict</code>, <code>CategoryNotAllowed</code>. MCP write allowlist entry; <code>/cso</code> + <code>/plan-devex-review</code> at L0 + L2.</p>
+      <p class="callout-prose"><strong>Surface Bridge dependency:</strong> v1.4.2 W4 block scaffolding + trust-band-render helper + v1.4.2 W6 audit attribution helper must be confirmed merged.</p>
+    </article>
+
+    <article class="callout">
+      <h3 class="callout-title">W5 - Backfill & Validation (release gate)</h3>
+      <p class="callout-prose"><strong>DOS-475 / W5-A - backfill:</strong> idempotent, resumable, dry-runnable. Cursor-based resume (<code>backfill_state</code> row updated atomically per file). Trust-band discipline - historical files with <code>source_asof</code> older than freshness decay threshold receive <code>use_with_caution</code> or <code>needs_verification</code>, never <code>likely_current</code> without confirmed re-ingestion. New binary <code>workspace_backfill</code> with <code>--dry-run</code> flag. Migration slot v268.</p>
+      <p class="callout-prose"><strong>DOS-476 / W5-B - E2E validation:</strong> five axes. (1) Every claim has traceable <code>source_attribution</code> - zero <code>attribution_gap</code> entries. (2) Trust-band correctness on old vs recent files. (3) Signal propagation from <code>WorkspaceFileIngested</code> through <code>EntityIntelligenceUpdated</code> to meeting prep invalidation. (4) Context inclusion via <code>build_intelligence_context()</code> and <code>gather_account_context()</code>. (5) User correction round-trip via source-management block.</p>
+      <p class="callout-prose"><strong>Pass:</strong> <code>pnpm release-gate -- --mode hermetic</code> exits zero; manual dogfood against ≥5 real entities' workspace files; validation report at <code>.docs/plans/wave-W5-v146/validation-report.md</code>.</p>
+    </article>
+  </div>
+</section>
+
+<section class="plans-section" aria-labelledby="invariants">
+  <header class="plans-section-header">
+    <p class="plans-section-eyebrow">CI invariants</p>
+    <h2 id="invariants" class="plans-section-title">Structural gates over reviewer memory.</h2>
+  </header>
+
+  <table class="reviewer-matrix">
+    <thead>
+      <tr>
+        <th>Invariant</th>
+        <th>Mechanism</th>
+        <th>Activated by</th>
+      </tr>
+    </thead>
+    <tbody>
+      <tr>
+        <td>All workspace file mutations through <code>services::workspace_ingestion</code></td>
+        <td><code>scripts/check_workspace_mutation_allowlist.sh</code> - forbids <code>INSERT/UPDATE/REPLACE</code> against the three lifecycle tables outside the service; <code>dos-146-allowed:</code> per-line rationale exceptions</td>
+        <td>W2-A merge</td>
+      </tr>
+      <tr>
+        <td>File-derived facts commit through <code>commit_claim</code> only</td>
+        <td>Existing <code>check_claim_writer_allowlist.sh</code> already covers <code>services/workspace_ingestion/**</code> as a forbidden writer of <code>intelligence_claims</code></td>
+        <td>W3-A merge</td>
+      </tr>
+      <tr>
+        <td><code>content_index</code> + embeddings remain derived caches</td>
+        <td><code>scripts/check_content_index_allowlist.sh</code> - forbids direct <code>INSERT/UPDATE</code> against the cache tables outside the cache services and ingestion cache hooks</td>
+        <td>W3-A merge</td>
+      </tr>
+      <tr>
+        <td>User-visible source UI ships as Gutenberg blocks on v1.4.2 SurfaceClient</td>
+        <td>Architecture review gate at W4 L0 + grep test for new <code>src/components/</code> files matching v1.4.5 surface names</td>
+        <td>W4 L0 plan approval</td>
+      </tr>
+      <tr>
+        <td>Untrusted input validated before service entry</td>
+        <td><code>scripts/check_workspace_path_validation.sh</code> - forbids <code>std::fs::File::open</code> / <code>tokio::fs::File::open</code> on workspace-rooted paths outside <code>registry::open_validated</code></td>
+        <td>W1-B merge → W2-A merge</td>
+      </tr>
+      <tr>
+        <td>Claim proposals from ingestion carry mandatory provenance</td>
+        <td>Property test + trybuild on <code>WorkspaceClaimProposal</code> shape</td>
+        <td>W3-A merge</td>
+      </tr>
+      <tr>
+        <td>Backfill never mass-promotes historical files to <code>likely_current</code></td>
+        <td>Property test on <code>BackfillSummary</code>; dry-run mode CI test</td>
+        <td>W5 start gate</td>
+      </tr>
+      <tr>
+        <td>MCP write operations on explicit allowlist</td>
+        <td><code>scripts/check_mcp_write_allowlist.sh</code> - asserts every ability with <code>mcp_exposure: Invocable</code> AND <code>required_scopes</code> containing <code>write.*</code> is enumerated</td>
+        <td>W4-C merge</td>
+      </tr>
+      <tr>
+        <td>Workspace signals only from named submodules</td>
+        <td><code>scripts/check_workspace_signal_allowlist.sh</code> - forbids <code>emit_signal(SignalType::WorkspaceFile*)</code> outside <code>signals.rs</code> and <code>link.rs</code></td>
+        <td>W3-B merge</td>
+      </tr>
+    </tbody>
+  </table>
+</section>
+
+<section class="plans-section plans-section-callouts">
+  <div class="callout-grid">
+    <article class="callout">
+      <h3 class="callout-title">Pacing</h3>
+      <p class="callout-prose">W3-A must merge alone before W3-B and W3-C can run in parallel - they consume real claim records and need the real extractor in place. W4 needs the v1.4.2 surface bridge confirmed merged plus all of W3. W5 cannot start until backfill substrate (DOS-475) is ready.</p>
+    </article>
+    <article class="callout">
+      <h3 class="callout-title">Bounding</h3>
+      <p class="callout-prose">v1.4.5 is the substrate + first WP source surfaces. It is not the source-UI redesign, not the daily-briefing rewrite, not the MCP tool expansion. v1.4.7 builds against the frozen W3-C and W4-C contracts.</p>
+    </article>
+    <article class="callout">
+      <h3 class="callout-title">Migration slots</h3>
+      <p class="callout-prose">v250-v269 reserved for v1.4.5 (cycle-11 renumber from stale v200-v219). v250-v254 already consumed by W1. v268 reserved for W5-A backfill. Coordinate with sibling v1.4.4 workspaces that may also claim slots above v245.</p>
+    </article>
+  </div>
+</section>
+
+<section class="plans-section" aria-labelledby="review-ladder">
+  <header class="plans-section-header">
+    <p class="plans-section-eyebrow">Review ladder</p>
+    <h2 id="review-ladder" class="plans-section-title">L0 through L6 for this train.</h2>
+  </header>
+
+  <table class="reviewer-matrix">
+    <thead>
+      <tr>
+        <th>Level</th>
+        <th>Applies</th>
+        <th>Notes</th>
+      </tr>
+    </thead>
+    <tbody>
+      <tr>
+        <td>L0 Prep</td>
+        <td>Every wave packet</td>
+        <td><code>/plan-eng-review</code> default; <code>/cso</code> for W4-B (sanitizer) + W4-C (MCP write) + any wave touching trust boundary; <code>/plan-devex-review</code> for W3-C and W4-C (frozen contracts consumed by v1.4.7).</td>
+      </tr>
+      <tr>
+        <td>L0 Plan</td>
+        <td>Every issue</td>
+        <td>Codex challenge + domain reviewer + Codex consult. K-in: grep <code>docs/solutions/</code> and <code>.docs/decisions/</code> before scoring. Unanimous required.</td>
+      </tr>
+      <tr>
+        <td>L1 Self</td>
+        <td>Every issue</td>
+        <td>Implementer proves acceptance with real fixtures. Tests + clippy + tsc green is necessary but not sufficient.</td>
+      </tr>
+      <tr>
+        <td>L2 Diff</td>
+        <td>Every wave PR</td>
+        <td>Run locally before push. Codex review + code-reviewer + domain reviewer per matrix. <code>/cso</code> re-review for W4-B + W4-C. L2 bounded by acceptance criteria; path-alpha findings to <a href="https://linear.app/a8c/project/codebase-maintenance-production-quality">Codebase Maintenance</a>.</td>
+      </tr>
+      <tr>
+        <td>L3 Wave</td>
+        <td>W2, W3, W4 (W1 retro pending)</td>
+        <td>Codex challenge + architect-reviewer + <code>/cso</code> + Suite S/P/E. K-out: <code>/ce-compound</code> on class patterns and substrate-already-existed findings.</td>
+      </tr>
+      <tr>
+        <td>L4 Surface</td>
+        <td>W4 (and any user-facing change in W3-C if MCP surface ships earlier)</td>
+        <td><code>/qa-only</code> first, then <code>/qa</code> if remediation needed. Hands-on browser proof for source-management block + markdown preview in WP Studio.</td>
+      </tr>
+      <tr>
+        <td>L5 Drift</td>
+        <td>W5 close</td>
+        <td><code>/plan-eng-review</code> + architect-reviewer; compare integrated state to v1.4.5 DoD verbatim. <code>/ce-compound-refresh</code> on stale <code>docs/solutions/</code> entries.</td>
+      </tr>
+      <tr>
+        <td>L6 Human</td>
+        <td>If escalated</td>
+        <td>James decides scope tradeoffs when prompt quality, latency, sanitizer strictness, or surface completeness conflict.</td>
+      </tr>
+    </tbody>
+  </table>
+</section>
+
+<section class="plans-section" aria-labelledby="outstanding">
+  <header class="plans-section-header">
+    <p class="plans-section-eyebrow">Outstanding work before W3 kickoff</p>
+    <h2 id="outstanding" class="plans-section-title">Loose ends from W1 + W2.</h2>
+  </header>
+  <ul class="plans-related">
+    <li><strong>W1 retro</strong> not yet written. W1 handoff doc lists 6 K-out class patterns: W0 reuse-audit ceiling check must grep MIGRATIONS slice literals; substrate-reinvention is a recurring L0 class (CI gate now ships); wave-plan substrate-promoting amendments need K-in grep; changelog folds without paired body edits; L2 reviewer dissent is signal; W0 reuse-audit must check sibling wave branches not just <code>dev</code>.</li>
+    <li><strong>W2 retro</strong> not yet written.</li>
+    <li><strong><a href="https://linear.app/a8c/issue/DOS-751">DOS-751</a></strong> (10 W1-A L2 path-alpha nits, Codebase Maintenance, medium priority). Worth picking up before W3-A because W3-A consumes the <code>Extractor</code> trait surface and the <code>WorkspaceCategory::Other</code> round-trip asymmetry could bite during category propagation.</li>
+    <li><strong>v1.4.6 follow-ups to file as Linear issues</strong> against the Salience & Recommendations project, captured in <code>.docs/plans/v1.4.5-workspace-memory/v1.4.6-followups-W2-{B,C,D}.md</code>:
+      <ul>
+        <li>W2-B: transcript content staging API + Drive remote-bytes staging API (currently allowlisted with <code>dos7-allowed</code>).</li>
+        <li>W2-C: WP editor write-transport REST route so the <code>entity_intake</code> block's Ingest button can call <code>write.entity_intake</code>.</li>
+        <li>W2-D: legacy <code>processor/mod.rs</code> + <code>processor/router.rs</code> consolidation onto the staged lifecycle path.</li>
+      </ul>
+    </li>
+    <li><strong>W3 L0 packets:</strong> W3-B's <code>L0-packet-W3-B-DOS-471.md</code> is updated to V0.3 with the scoped coordination decision and local implementation verification. W3-C's <code>L0-packet-W3-C-DOS-489.md</code> still needs drafting. W3-A's <code>L0-packet-W3-A-DOS-470.md</code> exists and PR #369 has merged. DOS-489 needs <code>/plan-devex-review</code> because v1.4.7 MCP tooling consumes its frozen API.</li>
+  </ul>
+</section>
+
+<section class="plans-section" aria-labelledby="open-questions">
+  <header class="plans-section-header">
+    <p class="plans-section-eyebrow">Open questions</p>
+    <h2 id="open-questions" class="plans-section-title">Resolve at W3 L0, not during implementation.</h2>
+  </header>
+  <ul class="plans-related">
+    <li><strong>Claim kind coverage:</strong> W3-A maps file-derived facts to <code>CLAIM_TYPE_REGISTRY</code>. Unmapped facts become <code>RawObservation</code>. L0 must enumerate which structured entity-JSON fields cleanly map to existing kinds vs which need a registry amendment.</li>
+    <li><strong>Signal payload shape:</strong> W3-B's typed payload structs exclude raw content, file path, claim text, prompt/output bodies, full content hash, and raw actor user IDs. Payloads use opaque file IDs, run IDs, entity targets, controlled reason codes, and actor classes.</li>
+    <li><strong>Graph projection sensitivity:</strong> W3-C redacts file paths always and entity names without scope. L0 must freeze the exact field-level scope matrix (file_id never redacted, entity_name behind <code>read.entity_names</code>, claim text never returned via projection).</li>
+    <li><strong>Backfill trust band table:</strong> W5-A must follow the v1.4.1 freshness decay table per <code>DataSource</code> variant. L0 should grep the active table and pin the exact thresholds for each <code>WorkspaceFileKind</code>.</li>
+    <li><strong>Auth overhaul interaction:</strong> the local-to-local auth strip (DOS-758-class) may affect the MCP write path for DOS-474. L0 should confirm whether <code>write.workspace_place_document</code> scope still composes against the post-overhaul actor materialization.</li>
+  </ul>
+</section>
+
+<section class="plans-section plans-section-footer">
+  <header class="plans-section-header">
+    <p class="plans-section-eyebrow">Related</p>
+    <h2 class="plans-section-title">Cross-references.</h2>
+  </header>
+  <ul class="plans-related">
+    <li><strong><a href="v1.4.5-waves.md">v1.4.5-waves.md</a></strong> canonical wave plan with 13 cycle amendments.</li>
+    <li><strong><a href="v1.4.5-workspace-memory/HANDOFF-2026-05-21.md">v1.4.5-workspace-memory/HANDOFF-2026-05-21.md</a></strong> W1 handoff with K-out patterns + next-agent task list.</li>
+    <li><strong><a href="v1.4.5-workspace-memory/W2-shared-contract.md">v1.4.5-workspace-memory/W2-shared-contract.md</a></strong> W2 cross-lane file ownership, traits, and DI wiring.</li>
+    <li><strong><a href="v1.4.5-workspace-memory/L0-packet-W1-A-DOS-463.md">L0 packets</a></strong> for W1-A/B/C and W2-A/B/C/D under <code>.docs/plans/v1.4.5-workspace-memory/</code>.</li>
+    <li><strong><a href="engineering-ladder.html">engineering-ladder.html</a></strong> L0-L6 + K-channel + review matrix.</li>
+    <li><strong><a href="v1.4.4a-tauri-briefing-entity-intelligence-waves.html">v1.4.4a wave plan</a></strong> companion Tauri-briefing cutover that consumes the same envelope substrate.</li>
+    <li><strong><code>src-tauri/src/services/workspace_ingestion/</code></strong> the live substrate this plan builds.</li>
+  </ul>
+</section>
+
+<div class="finis">
+  <div class="finis-mark">W0 - W1 - W2 - W3 - W4 - W5</div>
+  <div class="finis-date">v1.4.5 Workspace Memory Refactor - 2026-05-23</div>
+  <div class="finis-caption">Files become source memory when the pipeline owns them.</div>
+</div>
+
+</div>
+</main>
+</div>
+</body>
+</html>
