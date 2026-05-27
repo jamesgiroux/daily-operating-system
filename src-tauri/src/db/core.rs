@@ -26,8 +26,49 @@ use sha2::{Digest, Sha256};
 /// `ActionDb::open()` independently — the static flag means they automatically
 /// pick up the right path without plumbing config through every thread.
 static DEV_DB_MODE: AtomicBool = AtomicBool::new(false);
+static WRITE_TRANSACTION_GATE: parking_lot::Mutex<()> = parking_lot::const_mutex(());
+static WRITE_TRANSACTION_HOLDER: parking_lot::Mutex<Option<WriteTransactionHolder>> =
+    parking_lot::const_mutex(None);
 const WORKSPACE_GRAPH_DIAGNOSTIC_KEY_DERIVATION_DOMAIN: &[u8] =
     b"DAILYOS-WORKSPACE-GRAPH-DIAGNOSTIC-HANDLE-V1\n";
+
+#[derive(Clone, Debug)]
+struct WriteTransactionHolder {
+    caller: String,
+    acquired_at: std::time::Instant,
+}
+
+struct WriteTransactionHolderGuard;
+
+impl WriteTransactionHolderGuard {
+    fn set(caller: &'static std::panic::Location<'static>) -> Self {
+        *WRITE_TRANSACTION_HOLDER.lock() = Some(WriteTransactionHolder {
+            caller: format!("{}:{}", caller.file(), caller.line()),
+            acquired_at: std::time::Instant::now(),
+        });
+        Self
+    }
+}
+
+impl Drop for WriteTransactionHolderGuard {
+    fn drop(&mut self) {
+        *WRITE_TRANSACTION_HOLDER.lock() = None;
+    }
+}
+
+fn write_transaction_holder_summary() -> String {
+    WRITE_TRANSACTION_HOLDER
+        .lock()
+        .clone()
+        .map(|holder| {
+            format!(
+                "{} held for {}ms",
+                holder.caller,
+                holder.acquired_at.elapsed().as_millis()
+            )
+        })
+        .unwrap_or_else(|| "unknown holder".to_string())
+}
 
 /// Activate dev-mode DB isolation. All subsequent `ActionDb::open()` calls
 /// will target `~/.dailyos/dailyos-dev.db` instead of `dailyos.db`.
@@ -155,6 +196,7 @@ impl ActionDb {
     /// Execute a closure within a SQLite transaction.
     /// Commits on Ok, rolls back on Err.
     #[must_use = "the closure may write to the DB; dropping this Result silently swallows transaction failure or rollback"]
+    #[track_caller]
     pub fn with_transaction<F, T>(&self, f: F) -> Result<T, String>
     where
         F: FnOnce(&Self) -> Result<T, String>,
@@ -165,6 +207,41 @@ impl ActionDb {
         if !self.conn.is_autocommit() {
             return f(self);
         }
+
+        let gate_started = std::time::Instant::now();
+        let mut next_wait_log_at = std::time::Duration::from_secs(5);
+        let wait_limit = std::time::Duration::from_secs(120);
+        let _write_gate = loop {
+            if let Some(gate) =
+                WRITE_TRANSACTION_GATE.try_lock_for(std::time::Duration::from_millis(250))
+            {
+                break gate;
+            }
+            let waited = gate_started.elapsed();
+            if waited >= next_wait_log_at {
+                log::warn!(
+                    "write transaction gate busy for {}ms before BEGIN IMMEDIATE at {}:{}; current holder: {}",
+                    waited.as_millis(),
+                    std::panic::Location::caller().file(),
+                    std::panic::Location::caller().line(),
+                    write_transaction_holder_summary(),
+                );
+                next_wait_log_at += std::time::Duration::from_secs(5);
+            }
+            if waited >= wait_limit {
+                return Err(format!(
+                    "Timed out waiting for process write transaction gate before BEGIN IMMEDIATE; waited={}ms; current holder: {}",
+                    waited.as_millis(),
+                    write_transaction_holder_summary()
+                ));
+            }
+        };
+        let _holder_guard = WriteTransactionHolderGuard::set(std::panic::Location::caller());
+        crate::latency::record_latency(
+            "action_db.write_transaction_gate_wait",
+            gate_started.elapsed().as_millis(),
+            500,
+        );
 
         self.conn
             .execute_batch("BEGIN IMMEDIATE")
@@ -410,14 +487,9 @@ impl ActionDb {
                 .map_err(Self::map_key_error)?;
             let conn = svc.open_fresh_serialized(path.clone(), encryption_key)?;
             drop(rotation_lock);
-            let db = Self { conn };
-            Self::recover_stuck_version_mutations_logged(&db);
-            #[allow(
-                clippy::let_underscore_must_use,
-                reason = "intentional best-effort discard; preserves existing non-blocking behavior"
-            )]
-            let _ = db.run_guarded_init_backfill_account_domains();
-            return Ok(db);
+            // Startup initialization already runs through the global DbService.
+            // Fresh handles should not add best-effort writes outside that path.
+            return Ok(Self { conn });
         }
 
         Self::open_at(path, key_provider)

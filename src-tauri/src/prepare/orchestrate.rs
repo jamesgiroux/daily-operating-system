@@ -332,7 +332,8 @@ pub async fn prepare_today(state: &AppState, workspace: &Path) -> Result<(), Exe
                 .unwrap_or_default()
         };
         let enriched =
-            super::email_enrich::enrich_pending_emails_two_phase(state, workspace, &ai_config, 20);
+            super::email_enrich::enrich_pending_emails_two_phase(state, workspace, &ai_config, 20)
+                .await;
         if enriched > 0 {
             log::info!("prepare_today: enriched {} emails", enriched);
         }
@@ -1733,7 +1734,8 @@ pub async fn refresh_emails_with_retry_batch(
             ExecutionError::ConfigurationError("Orchestration permit closed".to_string())
         })?;
         let enriched =
-            super::email_enrich::enrich_pending_emails_two_phase(state, workspace, &ai_config, 20);
+            super::email_enrich::enrich_pending_emails_two_phase(state, workspace, &ai_config, 20)
+                .await;
         drop(_enrich_permit);
         if enriched > 0 {
             log::info!("refresh_emails: enriched {} emails", enriched);

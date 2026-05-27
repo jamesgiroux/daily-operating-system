@@ -12,6 +12,10 @@ interface GranolaStatusData {
   enabled: boolean;
   cacheExists: boolean;
   cachePath: string;
+  source: "companion" | "cache" | "encrypted_cache" | "none";
+  companionAvailable: boolean;
+  companionMessage: string | null;
+  encryptedCacheExists: boolean;
   documentCount: number;
   pendingSyncs: number;
   failedSyncs: number;
@@ -46,13 +50,17 @@ export default function GranolaConnection() {
 
   const statusLabel = !status
     ? "Loading..."
-    : !status.cacheExists
-      ? "Cache not found"
-      : `Cache found (${status.documentCount} documents)`;
+    : status.companionAvailable
+      ? `Granola connected (${status.documentCount} notes)`
+      : status.cacheExists
+        ? `Legacy cache found (${status.documentCount} documents)`
+        : status.encryptedCacheExists
+          ? "Granola access unavailable"
+          : "Granola not found";
 
   const statusColor = !status
     ? "var(--color-text-tertiary)"
-    : !status.cacheExists
+    : !status.companionAvailable && !status.cacheExists
       ? "var(--color-spice-terracotta)"
       : "var(--color-garden-olive)";
 
@@ -61,7 +69,7 @@ export default function GranolaConnection() {
       <div className={surface.intro}>
         <SettingsSectionLabel>Granola Transcripts</SettingsSectionLabel>
         <p className={`${formRowStyles.description} ${surface.introDescription}`}>
-          Sync meeting notes from Granola&apos;s local cache (no API key required)
+          Sync meeting notes from Granola&apos;s local companion access, with legacy cache fallback
         </p>
       </div>
 
@@ -72,7 +80,7 @@ export default function GranolaConnection() {
           </span>
           <p className={surface.settingDescription}>
             {status?.enabled
-              ? "Notes will sync from Granola cache"
+              ? "Notes will sync from Granola when local access is available"
               : "Granola transcript sync is turned off"}
           </p>
         </div>
@@ -88,11 +96,25 @@ export default function GranolaConnection() {
 
       {status?.enabled && (
         <>
-          {!status.cacheExists && (
+          {!status.companionAvailable && status.encryptedCacheExists && (
+            <div className={surface.callout}>
+              <p className={surface.calloutLabel}>Access Needed</p>
+              <p className={surface.calloutText}>
+                Granola is writing protected local data. Enable Granola companion access so DailyOS can read current notes.
+              </p>
+              {status.companionMessage && (
+                <p className={`${surface.calloutText} ${surface.calloutTextSpaced}`}>
+                  {status.companionMessage}
+                </p>
+              )}
+            </div>
+          )}
+
+          {!status.cacheExists && !status.encryptedCacheExists && (
             <div className={surface.callout}>
               <p className={surface.calloutLabel}>Not Found</p>
               <p className={surface.calloutText}>
-                Granola must be installed and have recorded at least one meeting for its local cache to exist.
+                Granola must be installed and have recorded at least one meeting.
               </p>
               <p className={`${surface.calloutText} ${surface.calloutTextSpaced}`}>
                 Expected path: <span className={surface.inlineCode}>~/Library/Application Support/Granola/</span>
@@ -134,7 +156,7 @@ export default function GranolaConnection() {
             <div className={surface.settingCopy}>
               <span className={surface.settingTitle}>Poll interval</span>
               <p className={surface.settingDescription}>
-                How often to check the Granola cache for new notes
+                How often to check Granola for new notes
               </p>
             </div>
             <select
@@ -163,7 +185,7 @@ export default function GranolaConnection() {
             <div className={surface.settingCopy}>
               <span className={surface.settingTitle}>Historical backfill</span>
               <p className={surface.settingDescription}>
-                Match Granola cache documents to past meetings (last {BACKFILL_DAYS} days)
+                Match Granola notes to past meetings (last {BACKFILL_DAYS} days)
               </p>
             </div>
             <SettingsButton

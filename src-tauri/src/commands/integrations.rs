@@ -685,6 +685,10 @@ pub struct GranolaStatus {
     pub enabled: bool,
     pub cache_exists: bool,
     pub cache_path: String,
+    pub source: String,
+    pub companion_available: bool,
+    pub companion_message: Option<String>,
+    pub encrypted_cache_exists: bool,
     pub document_count: usize,
     pub pending_syncs: usize,
     pub failed_syncs: usize,
@@ -714,10 +718,28 @@ pub async fn get_granola_status(state: State<'_, Arc<AppState>>) -> Result<Grano
     let granola_config = config.unwrap_or_default();
     let resolved_path = crate::granola::resolve_cache_path(&granola_config);
     let cache_exists = resolved_path.is_some();
+    let encrypted_cache_exists = crate::granola::detect_encrypted_cache_path().is_some();
+    let companion_status = crate::granola::companion::CompanionClient::status();
 
-    let document_count = match &resolved_path {
-        Some(p) => crate::granola::cache::count_documents(p).unwrap_or(0),
-        None => 0,
+    let document_count = if companion_status.available {
+        crate::granola::companion::CompanionClient::new()
+            .and_then(|client| client.list_recent_notes(90).map(|notes| notes.len()))
+            .unwrap_or(0)
+    } else {
+        match &resolved_path {
+            Some(p) => crate::granola::cache::count_documents(p).unwrap_or(0),
+            None => 0,
+        }
+    };
+
+    let source = if companion_status.available {
+        "companion"
+    } else if cache_exists {
+        "cache"
+    } else if encrypted_cache_exists {
+        "encrypted_cache"
+    } else {
+        "none"
     };
 
     // Count sync states from DB (source='granola')
@@ -756,6 +778,10 @@ pub async fn get_granola_status(state: State<'_, Arc<AppState>>) -> Result<Grano
             .as_ref()
             .map(|p| p.to_string_lossy().to_string())
             .unwrap_or_default(),
+        source: source.to_string(),
+        companion_available: companion_status.available,
+        companion_message: companion_status.message,
+        encrypted_cache_exists,
         document_count,
         pending_syncs: pending,
         failed_syncs: failed,

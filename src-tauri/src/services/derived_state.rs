@@ -1068,68 +1068,9 @@ pub(crate) fn upsert_entity_intelligence_legacy_snapshot(
     db: &ActionDb,
     intel: &crate::intelligence::IntelligenceJson,
 ) -> Result<(), rusqlite::Error> {
+    upsert_entity_assessment_row(db, intel, true)?;
+
     let conn = db.conn_ref();
-
-    let dimensions_json = serde_json::to_string(&intel.dimensions_blob()).ok();
-    conn.execute(
-        "INSERT INTO entity_assessment (
-            entity_id, entity_type, enriched_at, source_file_count,
-            next_meeting_readiness_json, success_metrics, open_commitments,
-            relationship_depth, health_json, org_health_json, consistency_status,
-            consistency_findings_json, consistency_checked_at,
-            portfolio_json, network_json, user_edits_json, source_manifest_json,
-            dimensions_json, success_plan_signals_json, pull_quote
-        ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?16, ?17, ?18, ?19, ?20)
-        ON CONFLICT(entity_id) DO UPDATE SET
-            entity_type = excluded.entity_type,
-            enriched_at = excluded.enriched_at,
-            source_file_count = excluded.source_file_count,
-            next_meeting_readiness_json = excluded.next_meeting_readiness_json,
-            success_metrics = excluded.success_metrics,
-            open_commitments = excluded.open_commitments,
-            relationship_depth = excluded.relationship_depth,
-            health_json = excluded.health_json,
-            org_health_json = excluded.org_health_json,
-            consistency_status = excluded.consistency_status,
-            consistency_findings_json = excluded.consistency_findings_json,
-            consistency_checked_at = excluded.consistency_checked_at,
-            portfolio_json = excluded.portfolio_json,
-            network_json = excluded.network_json,
-            user_edits_json = excluded.user_edits_json,
-            source_manifest_json = excluded.source_manifest_json,
-            dimensions_json = excluded.dimensions_json,
-            success_plan_signals_json = excluded.success_plan_signals_json,
-            pull_quote = excluded.pull_quote",
-        rusqlite::params![
-            intel.entity_id,
-            intel.entity_type,
-            intel.enriched_at,
-            intel.source_file_count,
-            serde_json::to_string(&intel.next_meeting_readiness).ok(),
-            serde_json::to_string(&intel.success_metrics).ok(),
-            serde_json::to_string(&intel.open_commitments).ok(),
-            serde_json::to_string(&intel.relationship_depth).ok(),
-            intel.health.as_ref().and_then(|v| serde_json::to_string(v).ok()),
-            intel
-                .org_health
-                .as_ref()
-                .and_then(|v| serde_json::to_string(v).ok()),
-            serde_json::to_string(&intel.consistency_status).ok(),
-            serde_json::to_string(&intel.consistency_findings).ok(),
-            intel.consistency_checked_at,
-            serde_json::to_string(&intel.portfolio).ok(),
-            serde_json::to_string(&intel.network).ok(),
-            serde_json::to_string(&intel.user_edits).ok(),
-            serde_json::to_string(&intel.source_manifest).ok(),
-            dimensions_json,
-            intel
-                .success_plan_signals
-                .as_ref()
-                .and_then(|v| serde_json::to_string(v).ok()),
-            intel.pull_quote,
-        ],
-    )?;
-
     conn.execute(
         "DELETE FROM intelligence_feedback WHERE entity_id = ?1 AND entity_type = ?2 \
          AND field NOT LIKE 'account_field_conflict:%'",
@@ -1156,6 +1097,119 @@ pub(crate) fn upsert_entity_intelligence_legacy_snapshot(
         );
     }
 
+    Ok(())
+}
+
+/// Lightweight UI cache writer for progressive enrichment updates.
+///
+/// This intentionally skips claim projection, feedback cleanup, health
+/// projection, and side-effect signals. The final enrichment commit owns those
+/// authoritative writes.
+pub(crate) fn upsert_entity_intelligence_progressive_snapshot(
+    db: &ActionDb,
+    intel: &crate::intelligence::IntelligenceJson,
+) -> Result<(), rusqlite::Error> {
+    upsert_entity_assessment_row(db, intel, false)
+}
+
+fn upsert_entity_assessment_row(
+    db: &ActionDb,
+    intel: &crate::intelligence::IntelligenceJson,
+    update_enriched_at: bool,
+) -> Result<(), rusqlite::Error> {
+    let conn = db.conn_ref();
+
+    let dimensions_json = serde_json::to_string(&intel.dimensions_blob()).ok();
+    let enriched_at = if update_enriched_at && !intel.enriched_at.trim().is_empty() {
+        Some(intel.enriched_at.as_str())
+    } else {
+        None
+    };
+    let update_sql = if update_enriched_at {
+        "entity_type = excluded.entity_type,
+            enriched_at = excluded.enriched_at,
+            source_file_count = excluded.source_file_count,
+            next_meeting_readiness_json = excluded.next_meeting_readiness_json,
+            success_metrics = excluded.success_metrics,
+            open_commitments = excluded.open_commitments,
+            relationship_depth = excluded.relationship_depth,
+            health_json = excluded.health_json,
+            org_health_json = excluded.org_health_json,
+            consistency_status = excluded.consistency_status,
+            consistency_findings_json = excluded.consistency_findings_json,
+            consistency_checked_at = excluded.consistency_checked_at,
+            portfolio_json = excluded.portfolio_json,
+            network_json = excluded.network_json,
+            user_edits_json = excluded.user_edits_json,
+            source_manifest_json = excluded.source_manifest_json,
+            dimensions_json = excluded.dimensions_json,
+            success_plan_signals_json = excluded.success_plan_signals_json,
+            pull_quote = excluded.pull_quote"
+    } else {
+        "entity_type = excluded.entity_type,
+            source_file_count = excluded.source_file_count,
+            next_meeting_readiness_json = excluded.next_meeting_readiness_json,
+            success_metrics = excluded.success_metrics,
+            open_commitments = excluded.open_commitments,
+            relationship_depth = excluded.relationship_depth,
+            health_json = excluded.health_json,
+            org_health_json = excluded.org_health_json,
+            consistency_status = excluded.consistency_status,
+            consistency_findings_json = excluded.consistency_findings_json,
+            consistency_checked_at = excluded.consistency_checked_at,
+            portfolio_json = excluded.portfolio_json,
+            network_json = excluded.network_json,
+            user_edits_json = excluded.user_edits_json,
+            source_manifest_json = excluded.source_manifest_json,
+            dimensions_json = excluded.dimensions_json,
+            success_plan_signals_json = excluded.success_plan_signals_json,
+            pull_quote = excluded.pull_quote"
+    };
+    let sql = format!(
+        "INSERT INTO entity_assessment (
+            entity_id, entity_type, enriched_at, source_file_count,
+            next_meeting_readiness_json, success_metrics, open_commitments,
+            relationship_depth, health_json, org_health_json, consistency_status,
+            consistency_findings_json, consistency_checked_at,
+            portfolio_json, network_json, user_edits_json, source_manifest_json,
+            dimensions_json, success_plan_signals_json, pull_quote
+        ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?16, ?17, ?18, ?19, ?20)
+        ON CONFLICT(entity_id) DO UPDATE SET {update_sql}"
+    );
+    conn.execute(
+        &sql,
+        rusqlite::params![
+            intel.entity_id,
+            intel.entity_type,
+            enriched_at,
+            intel.source_file_count,
+            serde_json::to_string(&intel.next_meeting_readiness).ok(),
+            serde_json::to_string(&intel.success_metrics).ok(),
+            serde_json::to_string(&intel.open_commitments).ok(),
+            serde_json::to_string(&intel.relationship_depth).ok(),
+            intel
+                .health
+                .as_ref()
+                .and_then(|v| serde_json::to_string(v).ok()),
+            intel
+                .org_health
+                .as_ref()
+                .and_then(|v| serde_json::to_string(v).ok()),
+            serde_json::to_string(&intel.consistency_status).ok(),
+            serde_json::to_string(&intel.consistency_findings).ok(),
+            intel.consistency_checked_at,
+            serde_json::to_string(&intel.portfolio).ok(),
+            serde_json::to_string(&intel.network).ok(),
+            serde_json::to_string(&intel.user_edits).ok(),
+            serde_json::to_string(&intel.source_manifest).ok(),
+            dimensions_json,
+            intel
+                .success_plan_signals
+                .as_ref()
+                .and_then(|v| serde_json::to_string(v).ok()),
+            intel.pull_quote,
+        ],
+    )?;
     Ok(())
 }
 

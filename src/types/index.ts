@@ -3086,6 +3086,10 @@ export interface GranolaStatus {
   enabled: boolean;
   cacheExists: boolean;
   cachePath: string;
+  source: "companion" | "cache" | "encrypted_cache" | "none";
+  companionAvailable: boolean;
+  companionMessage: string | null;
+  encryptedCacheExists: boolean;
   documentCount: number;
   pendingSyncs: number;
   failedSyncs: number;

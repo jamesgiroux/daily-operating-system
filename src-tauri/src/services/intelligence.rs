@@ -6,8 +6,9 @@ use std::path::Path;
 
 use crate::db::ActionDb;
 use crate::intel_queue::{
-    apply_enrichment_side_writes, compose_enrichment_intelligence, gather_enrichment_input,
-    run_enrichment, run_enrichment_finalize_post_commit, FinalizeMode, IntelPriority, IntelRequest,
+    compose_enrichment_intelligence, gather_enrichment_input,
+    persist_enrichment_write_results_via_db_service, run_enrichment,
+    run_enrichment_finalize_post_commit_via_db_service, FinalizeMode, IntelPriority, IntelRequest,
 };
 use crate::pty::AiUsageContext;
 use crate::services::context::ServiceContext;
@@ -1911,22 +1912,10 @@ pub async fn enrich_entity(
             return Err(manual_refresh_error("write_results", &e));
         }
     };
-    if let Err(e) = db.with_transaction(|tx| {
-        apply_enrichment_side_writes(ctx, tx, &input, &prepared)?;
-        upsert_assessment_from_enrichment_in_active_transaction(
-            ctx,
-            tx,
-            &state.signals.engine,
-            EnrichmentAssessmentUpsert {
-                entity_type: &input.entity_type,
-                entity_id: &input.entity_id,
-                intel: prepared.intelligence(),
-                projection_intel: prepared.projection_intelligence(),
-                projection_data_source: parsed.producer.projection_data_source(),
-                cleared_dimensions: prepared.cleared_dimensions(),
-            },
-        )
-    }) {
+    if let Err(e) =
+        persist_enrichment_write_results_via_db_service(state, &input, &prepared, parsed.producer)
+            .await
+    {
         emit_manual_refresh_failed_best_effort(
             ctx,
             app_handle,
@@ -1939,16 +1928,17 @@ pub async fn enrich_entity(
         return Err(manual_refresh_error("write_results", &e));
     }
     let final_intel = prepared.into_intelligence();
-    if let Err(e) = run_enrichment_finalize_post_commit(
+    if let Err(e) = run_enrichment_finalize_post_commit_via_db_service(
         state,
-        &db,
         &input,
         &final_intel,
         &parsed.inferred_relationships,
         FinalizeMode::ManualRefresh {
             producer: parsed.producer,
         },
-    ) {
+    )
+    .await
+    {
         emit_manual_refresh_failed_best_effort(
             ctx,
             app_handle,
@@ -2927,6 +2917,25 @@ pub fn upsert_assessment_snapshot(
     })?;
 
     Ok(())
+}
+
+/// Persist a partial enrichment snapshot for UI progress refreshes only.
+///
+/// Progressive dimension updates are not authoritative evidence. Keep them out
+/// of claim projection, feedback cleanup, and side-effect signal paths so a
+/// slow multi-dimension refresh cannot create write amplification while the
+/// final enrichment commit is still pending.
+pub fn upsert_progressive_assessment_snapshot(
+    ctx: &ServiceContext<'_>,
+    db: &ActionDb,
+    intel: &crate::intelligence::IntelligenceJson,
+) -> Result<(), String> {
+    ctx.check_mutation_allowed().map_err(|e| e.to_string())?;
+    db.with_transaction(|tx| {
+        crate::services::derived_state::upsert_entity_intelligence_progressive_snapshot(tx, intel)
+            .map_err(|e| e.to_string())?;
+        Ok(())
+    })
 }
 
 /// Persist the Glean leading-signals JSON blob on `entity_assessment`
@@ -5106,6 +5115,72 @@ mod tests {
         assert_eq!(report.generated_projection_claims_withdrawn, 1);
         assert_eq!(report.generated_projection_recompute_jobs_enqueued, 1);
         assert_eq!(active_generated_risk_count(&db, account_id), 0);
+    }
+
+    #[test]
+    fn progressive_snapshot_does_not_advance_freshness_domains_or_claims() {
+        let db = test_db();
+        let engine = PropagationEngine::default();
+        let account_id = "acc-progressive-cache-only";
+        seed_account(&db, account_id);
+        let clock = FixedClock::new(chrono::Utc.with_ymd_and_hms(2026, 5, 22, 12, 0, 0).unwrap());
+        let rng = SeedableRng::new(53);
+        let ext = ExternalClients::default();
+        let ctx = test_ctx(&clock, &rng, &ext);
+        let final_intel = IntelligenceJson {
+            executive_assessment_render_policy: None,
+            entity_id: account_id.to_string(),
+            entity_type: "account".to_string(),
+            enriched_at: "2026-05-22T12:00:00Z".to_string(),
+            executive_assessment: Some("Authoritative committed summary.".to_string()),
+            ..Default::default()
+        };
+
+        upsert_assessment_from_enrichment(&ctx, &db, &engine, "account", account_id, &final_intel)
+            .expect("commit authoritative assessment");
+
+        let progressive_intel = IntelligenceJson {
+            executive_assessment_render_policy: None,
+            entity_id: account_id.to_string(),
+            entity_type: "account".to_string(),
+            enriched_at: "2026-05-27T12:00:00Z".to_string(),
+            executive_assessment: Some("Partial in-flight summary.".to_string()),
+            domains: vec!["partial.example".to_string()],
+            ..Default::default()
+        };
+
+        upsert_progressive_assessment_snapshot(&ctx, &db, &progressive_intel)
+            .expect("write progressive UI cache");
+
+        let enriched_at: Option<String> = db
+            .conn_ref()
+            .query_row(
+                "SELECT enriched_at FROM entity_assessment WHERE entity_id = ?1",
+                params![account_id],
+                |row| row.get(0),
+            )
+            .expect("read enriched_at");
+        assert_eq!(enriched_at.as_deref(), Some("2026-05-22T12:00:00Z"));
+
+        let partial_domain_count: i64 = db
+            .conn_ref()
+            .query_row(
+                "SELECT COUNT(*) FROM account_domains WHERE account_id = ?1 AND domain = 'partial.example'",
+                params![account_id],
+                |row| row.get(0),
+            )
+            .expect("count partial domains");
+        assert_eq!(partial_domain_count, 0);
+
+        let progressive_claim_count: i64 = db
+            .conn_ref()
+            .query_row(
+                "SELECT COUNT(*) FROM intelligence_claims WHERE data_source = 'ai_enrichment_progressive'",
+                [],
+                |row| row.get(0),
+            )
+            .expect("count progressive claims");
+        assert_eq!(progressive_claim_count, 0);
     }
 
     #[test]

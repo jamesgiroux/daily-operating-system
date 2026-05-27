@@ -15,6 +15,8 @@ fn startup_background_workers_use_app_state_db_service_paths() {
         "src/processor/embeddings.rs",
         "src/hygiene/loop_runner.rs",
         "src/proactive/scanner.rs",
+        "src/prepare/email_enrich.rs",
+        "src/linear/sync.rs",
     ];
     let forbidden_needles = [
         "ActionDb::open(",

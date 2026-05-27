@@ -1,5 +1,7 @@
 # Lessons
 
+- 2026-05-26: Granola cache detection must treat filename versioning and storage mechanism as separate contracts. `cache-v*.json` catches version bumps, but not the newer encrypted cache path; prefer Granola's companion IPC/MCP access and make stale plaintext cache fallback explicit.
+- 2026-05-26: Treat "lock storm resolved" as unproven until a normal app startup with background workers runs cleanly. Deferring a corrupting backfill fixes storage safety, but independent writable `ActionDb` handles and long `db_write` finalization closures can still starve the SQLite writer.
 - 2026-05-25: Do not edit Rust backend files while `pnpm tauri dev` is writing to the production SQLCipher database. Tauri dev hot-restarts can terminate active WAL writers during runtime backfills or enrichment, producing real btree corruption even when earlier `quick_check` passes. Stop the app, patch and test, then restart once.
 - 2026-05-25: Runtime evidence backfills must include open-loop/action evidence even if actions are not yet a first-class entity subject. Treat actions as claim-backed `open_loop` / `commitment` evidence attached to their owning entity, and prevent runtime readers from synthesizing them directly from raw action rows.
 - 2026-05-25: A producer audit should include a production-data inventory by evidence class before marking coverage complete. Sparse fixture success can hide populated legacy tables whose semantics never reach the runtime, especially source refs, action sources, meeting-derived intelligence, and feedback/suppression rows.

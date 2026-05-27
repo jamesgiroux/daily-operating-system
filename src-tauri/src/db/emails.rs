@@ -221,22 +221,24 @@ impl ActionDb {
         if vanished_ids.is_empty() {
             return Ok(0);
         }
-        let now = Utc::now().to_rfc3339();
-        let placeholders: Vec<String> = (1..=vanished_ids.len()).map(|i| format!("?{i}")).collect();
-        let sql = format!(
-            "UPDATE emails SET resolved_at = '{}', updated_at = '{}' WHERE email_id IN ({}) AND resolved_at IS NULL",
-            now, now,
-            placeholders.join(", ")
-        );
-        let param_values: Vec<&dyn rusqlite::types::ToSql> = vanished_ids
-            .iter()
-            .map(|id| id as &dyn rusqlite::types::ToSql)
-            .collect();
-        let rows = self
-            .conn
-            .execute(&sql, param_values.as_slice())
-            .map_err(|e| format!("Failed to mark emails resolved: {e}"))?;
-        Ok(rows)
+        self.with_transaction(|tx| {
+            let now = Utc::now().to_rfc3339();
+            let placeholders: Vec<String> =
+                (1..=vanished_ids.len()).map(|i| format!("?{i}")).collect();
+            let sql = format!(
+                "UPDATE emails SET resolved_at = '{}', updated_at = '{}' WHERE email_id IN ({}) AND resolved_at IS NULL",
+                now, now,
+                placeholders.join(", ")
+            );
+            let param_values: Vec<&dyn rusqlite::types::ToSql> = vanished_ids
+                .iter()
+                .map(|id| id as &dyn rusqlite::types::ToSql)
+                .collect();
+            tx.conn
+                .execute(&sql, param_values.as_slice())
+                .map_err(|e| format!("Failed to mark emails resolved: {e}"))
+        })
+        .map_err(Into::into)
     }
 
     /// Unmark resolved emails that reappeared in inbox. Sets `resolved_at` to NULL.
@@ -246,24 +248,25 @@ impl ActionDb {
         if reappeared_ids.is_empty() {
             return Ok(0);
         }
-        let now = Utc::now().to_rfc3339();
-        let placeholders: Vec<String> = (1..=reappeared_ids.len())
-            .map(|i| format!("?{i}"))
-            .collect();
-        let sql = format!(
-            "UPDATE emails SET resolved_at = NULL, updated_at = '{}' WHERE email_id IN ({})",
-            now,
-            placeholders.join(", ")
-        );
-        let param_values: Vec<&dyn rusqlite::types::ToSql> = reappeared_ids
-            .iter()
-            .map(|id| id as &dyn rusqlite::types::ToSql)
-            .collect();
-        let rows = self
-            .conn
-            .execute(&sql, param_values.as_slice())
-            .map_err(|e| format!("Failed to unmark resolved emails: {e}"))?;
-        Ok(rows)
+        self.with_transaction(|tx| {
+            let now = Utc::now().to_rfc3339();
+            let placeholders: Vec<String> = (1..=reappeared_ids.len())
+                .map(|i| format!("?{i}"))
+                .collect();
+            let sql = format!(
+                "UPDATE emails SET resolved_at = NULL, updated_at = '{}' WHERE email_id IN ({})",
+                now,
+                placeholders.join(", ")
+            );
+            let param_values: Vec<&dyn rusqlite::types::ToSql> = reappeared_ids
+                .iter()
+                .map(|id| id as &dyn rusqlite::types::ToSql)
+                .collect();
+            tx.conn
+                .execute(&sql, param_values.as_slice())
+                .map_err(|e| format!("Failed to unmark resolved emails: {e}"))
+        })
+        .map_err(Into::into)
     }
 
     /// Get emails pending enrichment (state = 'pending' or 'failed', attempts < 3).
@@ -309,49 +312,52 @@ impl ActionDb {
         state: &str,
         enrichment: EmailEnrichmentUpdate<'_>,
     ) -> Result<(), DbError> {
-        let now = Utc::now().to_rfc3339();
-        // is_noise gets COALESCE-style "only update if AI gave a
-        // verdict" semantics via a CASE expression — Some(bool) -> 0/1,
-        // None -> keep existing column value.
-        let is_noise_param: Option<i32> = enrichment.is_noise.map(|b| if b { 1 } else { 0 });
-        self.conn
-            .execute(
-                "UPDATE emails SET
-                    enrichment_state = ?1,
-                    enrichment_attempts = enrichment_attempts + 1,
-                    last_enrichment_at = ?2,
-                    contextual_summary = COALESCE(?3, contextual_summary),
-                    entity_id = COALESCE(?4, entity_id),
-                    entity_type = COALESCE(?5, entity_type),
-                    sentiment = COALESCE(?6, sentiment),
-                    urgency = COALESCE(?7, urgency),
-                    is_noise = COALESCE(?8, is_noise),
-                    summary_context_prompt_version = CASE WHEN ?3 IS NOT NULL THEN ?9 ELSE NULL END,
-                    summary_context_trust_band = CASE WHEN ?3 IS NOT NULL THEN ?10 ELSE NULL END,
-                    summary_context_source_count = CASE WHEN ?3 IS NOT NULL THEN ?11 ELSE NULL END,
-                    summary_context_source_keys_json = CASE WHEN ?3 IS NOT NULL THEN ?12 ELSE NULL END,
-                    summary_context_generated_at = CASE WHEN ?3 IS NOT NULL THEN ?13 ELSE NULL END,
-                    updated_at = ?2
-                 WHERE email_id = ?14",
-                params![
-                    state,
-                    now,
-                    enrichment.summary,
-                    enrichment.entity_id,
-                    enrichment.entity_type,
-                    enrichment.sentiment,
-                    enrichment.urgency,
-                    is_noise_param,
-                    enrichment.summary_context_prompt_version,
-                    enrichment.summary_context_trust_band,
-                    enrichment.summary_context_source_count.map(|count| count as i64),
-                    enrichment.summary_context_source_keys_json,
-                    enrichment.summary_context_generated_at,
-                    email_id,
-                ],
-            )
-            .map_err(|e| format!("Failed to set enrichment state for {email_id}: {e}"))?;
-        Ok(())
+        self.with_transaction(|tx| {
+            let now = Utc::now().to_rfc3339();
+            // is_noise gets COALESCE-style "only update if AI gave a
+            // verdict" semantics via a CASE expression -- Some(bool) -> 0/1,
+            // None -> keep existing column value.
+            let is_noise_param: Option<i32> = enrichment.is_noise.map(|b| if b { 1 } else { 0 });
+            tx.conn
+                .execute(
+                    "UPDATE emails SET
+                        enrichment_state = ?1,
+                        enrichment_attempts = enrichment_attempts + 1,
+                        last_enrichment_at = ?2,
+                        contextual_summary = COALESCE(?3, contextual_summary),
+                        entity_id = COALESCE(?4, entity_id),
+                        entity_type = COALESCE(?5, entity_type),
+                        sentiment = COALESCE(?6, sentiment),
+                        urgency = COALESCE(?7, urgency),
+                        is_noise = COALESCE(?8, is_noise),
+                        summary_context_prompt_version = CASE WHEN ?3 IS NOT NULL THEN ?9 ELSE NULL END,
+                        summary_context_trust_band = CASE WHEN ?3 IS NOT NULL THEN ?10 ELSE NULL END,
+                        summary_context_source_count = CASE WHEN ?3 IS NOT NULL THEN ?11 ELSE NULL END,
+                        summary_context_source_keys_json = CASE WHEN ?3 IS NOT NULL THEN ?12 ELSE NULL END,
+                        summary_context_generated_at = CASE WHEN ?3 IS NOT NULL THEN ?13 ELSE NULL END,
+                        updated_at = ?2
+                     WHERE email_id = ?14",
+                    params![
+                        state,
+                        now,
+                        enrichment.summary,
+                        enrichment.entity_id,
+                        enrichment.entity_type,
+                        enrichment.sentiment,
+                        enrichment.urgency,
+                        is_noise_param,
+                        enrichment.summary_context_prompt_version,
+                        enrichment.summary_context_trust_band,
+                        enrichment.summary_context_source_count.map(|count| count as i64),
+                        enrichment.summary_context_source_keys_json,
+                        enrichment.summary_context_generated_at,
+                        email_id,
+                    ],
+                )
+                .map_err(|e| format!("Failed to set enrichment state for {email_id}: {e}"))?;
+            Ok(())
+        })
+        .map_err(Into::into)
     }
 
     /// Get all active (non-resolved) emails.
@@ -426,15 +432,18 @@ impl ActionDb {
         thread_id: &str,
         user_is_last_sender: bool,
     ) -> Result<(), DbError> {
-        let now = Utc::now().to_rfc3339();
-        self.conn
-            .execute(
-                "UPDATE emails SET user_is_last_sender = ?1, updated_at = ?2
-                 WHERE thread_id = ?3",
-                params![user_is_last_sender as i32, now, thread_id],
-            )
-            .map_err(|e| format!("Failed to update thread position for {thread_id}: {e}"))?;
-        Ok(())
+        self.with_transaction(|tx| {
+            let now = Utc::now().to_rfc3339();
+            tx.conn
+                .execute(
+                    "UPDATE emails SET user_is_last_sender = ?1, updated_at = ?2
+                     WHERE thread_id = ?3",
+                    params![user_is_last_sender as i32, now, thread_id],
+                )
+                .map_err(|e| format!("Failed to update thread position for {thread_id}: {e}"))?;
+            Ok(())
+        })
+        .map_err(Into::into)
     }
 
     /// Get email sync statistics for the sync status indicator.
@@ -537,25 +546,27 @@ impl ActionDb {
     /// singleton PK check).
     #[must_use = "check whether fetch watermark was saved before reporting sync freshness"]
     pub fn set_last_successful_fetch_at(&self) -> Result<(), DbError> {
-        let now = Utc::now().to_rfc3339();
-        let rows = self
-            .conn
-            .execute(
-                "INSERT INTO email_sync_meta (id, last_successful_fetch_at, updated_at)
-                 VALUES (1, ?1, ?1)
-                 ON CONFLICT(id) DO UPDATE SET
-                    last_successful_fetch_at = excluded.last_successful_fetch_at,
-                    updated_at = excluded.updated_at",
-                params![now],
-            )
-            .map_err(|e| format!("Failed to upsert email_sync_meta: {e}"))?;
-        if rows != 1 {
-            return Err(format!(
-                "email_sync_meta upsert affected {rows} rows; expected 1 (schema drift?)"
-            )
-            .into());
-        }
-        Ok(())
+        self.with_transaction(|tx| {
+            let now = Utc::now().to_rfc3339();
+            let rows = tx
+                .conn
+                .execute(
+                    "INSERT INTO email_sync_meta (id, last_successful_fetch_at, updated_at)
+                     VALUES (1, ?1, ?1)
+                     ON CONFLICT(id) DO UPDATE SET
+                        last_successful_fetch_at = excluded.last_successful_fetch_at,
+                        updated_at = excluded.updated_at",
+                    params![now],
+                )
+                .map_err(|e| format!("Failed to upsert email_sync_meta: {e}"))?;
+            if rows != 1 {
+                return Err(format!(
+                    "email_sync_meta upsert affected {rows} rows; expected 1 (schema drift?)"
+                ));
+            }
+            Ok(())
+        })
+        .map_err(Into::into)
     }
 
     /// Read the last successful Gmail fetch timestamp. `Ok(None)` means
@@ -930,14 +941,17 @@ impl ActionDb {
         score: f64,
         reason: &str,
     ) -> Result<(), DbError> {
-        let now = chrono::Utc::now().to_rfc3339();
-        self.conn
-            .execute(
-                "UPDATE emails SET relevance_score = ?1, score_reason = ?2, updated_at = ?3 WHERE email_id = ?4",
-                rusqlite::params![score, reason, now, email_id],
-            )
-            .map_err(|e| format!("Failed to set relevance score for {email_id}: {e}"))?;
-        Ok(())
+        self.with_transaction(|tx| {
+            let now = chrono::Utc::now().to_rfc3339();
+            tx.conn
+                .execute(
+                    "UPDATE emails SET relevance_score = ?1, score_reason = ?2, updated_at = ?3 WHERE email_id = ?4",
+                    rusqlite::params![score, reason, now, email_id],
+                )
+                .map_err(|e| format!("Failed to set relevance score for {email_id}: {e}"))?;
+            Ok(())
+        })
+        .map_err(Into::into)
     }
 
     /// Get emails sorted by relevance score (highest first), with minimum score filter.

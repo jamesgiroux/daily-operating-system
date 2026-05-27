@@ -1462,6 +1462,15 @@ impl AppState {
         error: &DbAccessError,
         context: &'static str,
     ) -> bool {
+        if db_access_error_requires_manual_recovery(error) {
+            let message = error.to_string();
+            self.set_database_recovery_required("database_storage_health", message.clone());
+            log::warn!(
+                "{context}: database recovery required after storage-health error: {message}"
+            );
+            return false;
+        }
+
         if !db_access_error_needs_pool_reopen(error) {
             return false;
         }
@@ -1617,6 +1626,13 @@ impl AppState {
 fn db_access_error_needs_pool_reopen(error: &DbAccessError) -> bool {
     let message = error.to_string().to_ascii_lowercase();
     message.contains("file is not a database") || message.contains("sqlite_notadb")
+}
+
+fn db_access_error_requires_manual_recovery(error: &DbAccessError) -> bool {
+    let message = error.to_string().to_ascii_lowercase();
+    message.contains("disk i/o error")
+        || message.contains("database disk image is malformed")
+        || message.contains("sqlcipher key verification failed")
 }
 
 impl Default for AppState {
@@ -2203,5 +2219,30 @@ mod tests {
 
         assert!(!changed);
         assert!(!config.google.enabled);
+    }
+
+    #[test]
+    fn storage_health_errors_require_recovery_without_pool_reopen() {
+        let state = AppState::default();
+        let error = crate::db_service::DbAccessError::from(
+            "commit projection claim failed: rusqlite error: database disk image is malformed",
+        );
+
+        let recovered = tauri::async_runtime::block_on(
+            state.recover_db_service_after_access_error(&error, "test"),
+        );
+
+        assert!(!recovered);
+        let status = state.get_database_recovery_status();
+        assert!(status.required);
+        assert_eq!(status.reason, "database_storage_health");
+    }
+
+    #[test]
+    fn notadb_errors_remain_pool_reopen_candidates() {
+        let error = crate::db_service::DbAccessError::from("file is not a database");
+
+        assert!(!db_access_error_requires_manual_recovery(&error));
+        assert!(db_access_error_needs_pool_reopen(&error));
     }
 }
