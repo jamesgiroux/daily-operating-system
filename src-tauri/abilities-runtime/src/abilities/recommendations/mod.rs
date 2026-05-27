@@ -3,14 +3,17 @@
 pub mod contracts;
 
 pub use contracts::{
-    BoundedNote, ClaimId, ConversionState, ConversionTarget, DismissReason, FactorRationale,
-    FeedbackState, ListSuggestedNextStepsInput, ListSuggestedNextStepsResponse, PrimaryFactorBand,
-    RecommendationFeedbackDecision, RecommendedActionView, SalienceFactor, SalienceFactorKind,
-    SaliencePersistence, SalienceReadError, SalienceScore, ScoreSalienceInput,
-    ScoreSalienceReadRequest, ScoreSalienceResponse, SuggestedNextStepItem,
-    SuggestedNextStepsReadError, LIST_SUGGESTED_NEXT_STEPS_ABILITY_NAME,
-    LIST_SUGGESTED_NEXT_STEPS_SCHEMA_VERSION, LIST_SUGGESTED_NEXT_STEPS_SCOPE,
-    SCORE_SALIENCE_ABILITY_NAME, SCORE_SALIENCE_SCHEMA_VERSION, SCORE_SALIENCE_SCOPE,
+    BoundedNote, ClaimId, ConversionState, ConversionTarget, DismissReason, EffectKind,
+    FactorRationale, FeedbackState, ListSuggestedNextStepsInput, ListSuggestedNextStepsResponse,
+    PrimaryFactorBand, RecommendationFeedbackContext, RecommendationFeedbackDecision,
+    RecommendedActionView, SalienceFactor, SalienceFactorKind, SaliencePersistence,
+    SalienceReadError, SalienceScore, ScoreSalienceInput, ScoreSalienceReadRequest,
+    ScoreSalienceResponse, SubmitRecommendationFeedbackError, SubmitRecommendationFeedbackInput,
+    SubmitRecommendationFeedbackResponse, SuggestedNextStepItem, SuggestedNextStepsReadError,
+    LIST_SUGGESTED_NEXT_STEPS_ABILITY_NAME, LIST_SUGGESTED_NEXT_STEPS_SCHEMA_VERSION,
+    LIST_SUGGESTED_NEXT_STEPS_SCOPE, SCORE_SALIENCE_ABILITY_NAME, SCORE_SALIENCE_SCHEMA_VERSION,
+    SCORE_SALIENCE_SCOPE, SUBMIT_RECOMMENDATION_FEEDBACK_ABILITY_NAME,
+    SUBMIT_RECOMMENDATION_FEEDBACK_SCHEMA_VERSION, SUBMIT_RECOMMENDATION_FEEDBACK_SCOPE,
 };
 
 use dailyos_abilities_macro::ability;
@@ -91,6 +94,42 @@ pub async fn list_suggested_next_steps(
     finalize_list_suggested_next_steps_output(ctx, schema_version, subject, response)
 }
 
+#[ability(
+    name = "submit_recommendation_feedback",
+    category = Maintenance,
+    version = "1.0.0",
+    schema_version = 1,
+    allowed_actors = [User, SurfaceClient],
+    allowed_modes = [Live],
+    requires_confirmation = false,
+    may_publish = false,
+    required_scopes = ["submit.recommendations.feedback"],
+    mcp_exposure = None,
+    client_side_executable = false,
+    mutates = [intelligence_claims, claim_feedback],
+    composes = [],
+    experimental = false,
+    signal_policy = { emits_on_output_change = [], coalesce = false }
+)]
+pub async fn submit_recommendation_feedback(
+    ctx: &AbilityContext<'_>,
+    input: SubmitRecommendationFeedbackInput,
+) -> AbilityResult<SubmitRecommendationFeedbackResponse> {
+    validate_submit_recommendation_feedback_schema_version(input.schema_version)?;
+    ctx.services()
+        .check_mutation_allowed()
+        .map_err(service_error)?;
+
+    let schema_version = input.schema_version;
+    let response = ctx
+        .services()
+        .submit_recommendation_feedback(input, ctx.actor.clone())
+        .await
+        .map_err(submit_feedback_error)?;
+
+    finalize_submit_recommendation_feedback_output(ctx, schema_version, response)
+}
+
 fn validate_schema_version(schema_version: u32) -> Result<(), AbilityError> {
     if schema_version == SCORE_SALIENCE_SCHEMA_VERSION {
         Ok(())
@@ -119,6 +158,21 @@ fn validate_list_suggested_next_steps_schema_version(
     }
 }
 
+fn validate_submit_recommendation_feedback_schema_version(
+    schema_version: u32,
+) -> Result<(), AbilityError> {
+    if schema_version == SUBMIT_RECOMMENDATION_FEEDBACK_SCHEMA_VERSION {
+        Ok(())
+    } else {
+        Err(AbilityError {
+            kind: AbilityErrorKind::Validation,
+            message: format!(
+                "unsupported schema_version `{schema_version}` for `{SUBMIT_RECOMMENDATION_FEEDBACK_ABILITY_NAME}`"
+            ),
+        })
+    }
+}
+
 fn read_error(error: SalienceReadError) -> AbilityError {
     match error {
         SalienceReadError::UnsupportedSchemaVersion(schema_version) => AbilityError {
@@ -135,6 +189,42 @@ fn read_error(error: SalienceReadError) -> AbilityError {
         SalienceReadError::ReadFailed(message) => AbilityError {
             kind: AbilityErrorKind::HardError(message.clone()),
             message: format!("salience_read_failed: {message}"),
+        },
+    }
+}
+
+fn submit_feedback_error(error: SubmitRecommendationFeedbackError) -> AbilityError {
+    match error {
+        SubmitRecommendationFeedbackError::UnsupportedSchemaVersion(schema_version) => {
+            AbilityError {
+                kind: AbilityErrorKind::Validation,
+                message: format!(
+                    "unsupported schema_version `{schema_version}` for `{SUBMIT_RECOMMENDATION_FEEDBACK_ABILITY_NAME}`"
+                ),
+            }
+        }
+        SubmitRecommendationFeedbackError::UnknownClaimId(claim_id) => AbilityError {
+            kind: AbilityErrorKind::Validation,
+            message: format!("claim_not_found: {claim_id}"),
+        },
+        SubmitRecommendationFeedbackError::UnsupportedClaimType {
+            claim_id,
+            claim_type,
+        } => AbilityError {
+            kind: AbilityErrorKind::Validation,
+            message: format!("unsupported_claim_type: {claim_id}:{claim_type}"),
+        },
+        SubmitRecommendationFeedbackError::InvalidFeedback(message) => AbilityError {
+            kind: AbilityErrorKind::Validation,
+            message: format!("invalid_recommendation_feedback: {message}"),
+        },
+        SubmitRecommendationFeedbackError::MutationBlocked(message) => AbilityError {
+            kind: AbilityErrorKind::Capability,
+            message,
+        },
+        SubmitRecommendationFeedbackError::WriteFailed(message) => AbilityError {
+            kind: AbilityErrorKind::HardError(message.clone()),
+            message: format!("recommendation_feedback_write_failed: {message}"),
         },
     }
 }
@@ -197,6 +287,26 @@ fn finalize_list_suggested_next_steps_output(
     builder.finalize(response).map_err(provenance_error)
 }
 
+fn finalize_submit_recommendation_feedback_output(
+    ctx: &AbilityContext<'_>,
+    schema_version: u32,
+    response: SubmitRecommendationFeedbackResponse,
+) -> AbilityResult<SubmitRecommendationFeedbackResponse> {
+    let mut builder = ProvenanceBuilder::new(submit_recommendation_feedback_provenance_config(
+        ctx,
+        schema_version,
+    ));
+    let subject_attribution = SubjectAttribution::direct_confident(SubjectRef::Global);
+    builder.set_subject(subject_attribution.clone());
+    builder
+        .attribute_subtree(
+            FieldPath::root(),
+            FieldAttribution::constant(subject_attribution),
+        )
+        .map_err(provenance_error)?;
+    builder.finalize(response).map_err(provenance_error)
+}
+
 fn provenance_config(ctx: &AbilityContext<'_>, schema_version: u32) -> ProvenanceBuilderConfig {
     let mut config =
         ProvenanceBuilderConfig::new(SCORE_SALIENCE_ABILITY_NAME, ctx.services().clock.now());
@@ -205,6 +315,22 @@ fn provenance_config(ctx: &AbilityContext<'_>, schema_version: u32) -> Provenanc
     config.actor = provenance_actor(&ctx.actor);
     config.mode = AbilityExecutionMode::from(ctx.mode());
     config.category = AbilityCategory::Read;
+    config
+}
+
+fn submit_recommendation_feedback_provenance_config(
+    ctx: &AbilityContext<'_>,
+    schema_version: u32,
+) -> ProvenanceBuilderConfig {
+    let mut config = ProvenanceBuilderConfig::new(
+        SUBMIT_RECOMMENDATION_FEEDBACK_ABILITY_NAME,
+        ctx.services().clock.now(),
+    );
+    config.ability_version = AbilityVersion::new(1, 0);
+    config.ability_schema_version = SchemaVersion(schema_version);
+    config.actor = provenance_actor(&ctx.actor);
+    config.mode = AbilityExecutionMode::from(ctx.mode());
+    config.category = AbilityCategory::Maintenance;
     config
 }
 
@@ -256,6 +382,13 @@ fn provenance_error(error: impl std::fmt::Display) -> AbilityError {
     }
 }
 
+fn service_error(error: impl std::fmt::Display) -> AbilityError {
+    AbilityError {
+        kind: AbilityErrorKind::Capability,
+        message: error.to_string(),
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -274,8 +407,10 @@ mod tests {
     use crate::intelligence::provider::ReplayProvider;
     use crate::sensitivity::ClaimDismissalSurface;
     use crate::services::context::{
-        ExternalClients, FixedClock, SalienceReadFuture, SalienceReadHandle, SeedableRng,
-        ServiceContext, SuggestedNextStepsReadFuture, SuggestedNextStepsReadHandle,
+        ExternalClients, FixedClock, RecommendationFeedbackWriteFuture,
+        RecommendationFeedbackWriteHandle, RecommendationFeedbackWriteRequest, SalienceReadFuture,
+        SalienceReadHandle, SeedableRng, ServiceContext, SuggestedNextStepsReadFuture,
+        SuggestedNextStepsReadHandle,
     };
 
     #[derive(Default)]
@@ -326,6 +461,21 @@ mod tests {
         }
     }
 
+    #[derive(Default)]
+    struct CapturingRecommendationFeedbackWriter {
+        requests: Mutex<Vec<RecommendationFeedbackWriteRequest>>,
+    }
+
+    impl RecommendationFeedbackWriteHandle for CapturingRecommendationFeedbackWriter {
+        fn submit_recommendation_feedback<'a>(
+            &'a self,
+            request: RecommendationFeedbackWriteRequest,
+        ) -> RecommendationFeedbackWriteFuture<'a> {
+            self.requests.lock().expect("requests lock").push(request);
+            Box::pin(async { Ok(submit_recommendation_feedback_response_fixture()) })
+        }
+    }
+
     #[test]
     fn descriptor_is_user_system_read_only_and_hidden_from_clients() {
         let registry = AbilityRegistry::global_checked().expect("registry builds");
@@ -358,7 +508,7 @@ mod tests {
     #[test]
     fn registry_does_not_admit_surface_or_mcp_actors() {
         let registry = AbilityRegistry::global_checked().expect("registry builds");
-        ScopeSet::set_allowlist_for_tests([SurfaceScope::new(SCORE_SALIENCE_SCOPE)]);
+        set_recommendation_scope_allowlist_for_tests();
         let surface_scopes =
             ScopeSet::new([SurfaceScope::new(SCORE_SALIENCE_SCOPE)]).expect("surface scope set");
         assert!(registry
@@ -407,9 +557,49 @@ mod tests {
         assert!(descriptor.mutates.is_empty());
     }
 
+    #[test]
+    fn submit_recommendation_feedback_descriptor_is_maintenance_and_surface_scoped() {
+        let registry = AbilityRegistry::global_checked().expect("registry builds");
+        let descriptor = registry
+            .iter_all()
+            .find(|descriptor| descriptor.name == SUBMIT_RECOMMENDATION_FEEDBACK_ABILITY_NAME)
+            .expect("submit_recommendation_feedback ability is registered");
+
+        assert_eq!(descriptor.category, AbilityCategory::Maintenance);
+        assert!(descriptor.policy.allowed_actors.contains(&ActorKind::User));
+        assert!(descriptor
+            .policy
+            .allowed_actors
+            .contains(&ActorKind::SurfaceClient));
+        assert!(!descriptor
+            .policy
+            .allowed_actors
+            .contains(&ActorKind::System));
+        assert!(!descriptor.policy.allowed_actors.contains(&ActorKind::Agent));
+        assert!(!descriptor.policy.allowed_actors.contains(&ActorKind::Admin));
+        assert!(!descriptor
+            .policy
+            .allowed_actors
+            .contains(&ActorKind::McpClient));
+        assert_eq!(
+            descriptor.policy.required_scopes,
+            &[SUBMIT_RECOMMENDATION_FEEDBACK_SCOPE]
+        );
+        assert_eq!(descriptor.policy.mcp_exposure, McpExposure::None);
+        assert!(!descriptor.policy.may_publish);
+        assert!(!descriptor.policy.client_side_executable);
+        assert_eq!(
+            descriptor.mutates,
+            &["intelligence_claims", "claim_feedback"]
+        );
+        assert!(descriptor.composes.is_empty());
+        assert!(descriptor.signal_policy.emits_on_output_change.is_empty());
+        assert!(!descriptor.signal_policy.coalesce);
+    }
+
     #[tokio::test]
     async fn list_suggested_next_steps_per_actor_dry_run_matches_allowlist() {
-        ScopeSet::set_allowlist_for_tests([SurfaceScope::new(LIST_SUGGESTED_NEXT_STEPS_SCOPE)]);
+        set_recommendation_scope_allowlist_for_tests();
         let reader = Arc::new(CapturingSuggestedNextStepsReader::default());
 
         for actor in [Actor::User, Actor::System, surface_actor()] {
@@ -433,8 +623,32 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn submit_recommendation_feedback_per_actor_dry_run_matches_allowlist() {
+        set_recommendation_scope_allowlist_for_tests();
+        let writer = Arc::new(CapturingRecommendationFeedbackWriter::default());
+
+        for actor in [Actor::User, submit_surface_actor()] {
+            invoke_submit_recommendation_feedback(writer.clone(), actor)
+                .await
+                .expect("allowed actor succeeds");
+        }
+
+        for actor in [Actor::System, Actor::Agent, Actor::Admin, mcp_actor()] {
+            let error = invoke_submit_recommendation_feedback(writer.clone(), actor)
+                .await
+                .expect_err("disallowed actor is denied");
+            assert_eq!(error.kind, AbilityErrorKind::Capability);
+        }
+
+        let requests = writer.requests.lock().expect("requests lock");
+        assert_eq!(requests.len(), 2);
+        assert_eq!(requests[0].actor.kind(), ActorKind::User);
+        assert_eq!(requests[1].actor.kind(), ActorKind::SurfaceClient);
+    }
+
+    #[tokio::test]
     async fn list_suggested_next_steps_forwards_subject_filter_placeholder() {
-        ScopeSet::set_allowlist_for_tests([SurfaceScope::new(LIST_SUGGESTED_NEXT_STEPS_SCOPE)]);
+        set_recommendation_scope_allowlist_for_tests();
         let reader = Arc::new(CapturingSuggestedNextStepsReader::default());
         invoke_list_suggested_next_steps_with_payload(
             reader.clone(),
@@ -545,7 +759,7 @@ mod tests {
 
     #[tokio::test]
     async fn surface_actor_is_denied_before_reader() {
-        ScopeSet::set_allowlist_for_tests([SurfaceScope::new(SCORE_SALIENCE_SCOPE)]);
+        set_recommendation_scope_allowlist_for_tests();
         let scopes = ScopeSet::new([SurfaceScope::new(SCORE_SALIENCE_SCOPE)]).expect("scope set");
         let reader = Arc::new(CapturingSalienceReader::default());
         let err = invoke(
@@ -643,9 +857,63 @@ mod tests {
             .await
     }
 
+    async fn invoke_submit_recommendation_feedback<W>(
+        writer: Arc<W>,
+        actor: Actor,
+    ) -> Result<serde_json::Value, AbilityError>
+    where
+        W: RecommendationFeedbackWriteHandle + 'static,
+    {
+        let registry = AbilityRegistry::global_checked().expect("registry builds");
+        let clock = FixedClock::new(Utc.with_ymd_and_hms(2026, 5, 26, 12, 0, 0).unwrap());
+        let rng = SeedableRng::new(7);
+        let external = ExternalClients::default();
+        let services = ServiceContext::new_live(&clock, &rng, &external)
+            .with_actor("test")
+            .with_recommendation_feedback_writer(writer);
+        let provider = ReplayProvider::new(std::collections::HashMap::new());
+        let ctx = crate::abilities::AbilityContext::new(
+            &services,
+            &provider,
+            &NOOP_ABILITY_TRACER,
+            actor,
+            None,
+            ClaimDismissalSurface::Eval,
+        );
+        registry
+            .invoke_by_name_json(
+                &ctx,
+                SUBMIT_RECOMMENDATION_FEEDBACK_ABILITY_NAME,
+                json!({
+                    "schemaVersion": SUBMIT_RECOMMENDATION_FEEDBACK_SCHEMA_VERSION,
+                    "claimId": "claim-feedback-1",
+                    "decision": {
+                        "kind": "accept",
+                        "at": "2026-05-26T12:00:00Z"
+                    },
+                    "context": {
+                        "surface": "tauri_entity_detail",
+                        "invocationId": "invocation-1"
+                    }
+                }),
+            )
+            .await
+    }
+
     fn surface_actor() -> Actor {
+        set_recommendation_scope_allowlist_for_tests();
         let scopes =
             ScopeSet::new([SurfaceScope::new(LIST_SUGGESTED_NEXT_STEPS_SCOPE)]).expect("scope set");
+        Actor::SurfaceClient {
+            instance: SurfaceClientId::new("surface-1"),
+            scopes,
+        }
+    }
+
+    fn submit_surface_actor() -> Actor {
+        set_recommendation_scope_allowlist_for_tests();
+        let scopes = ScopeSet::new([SurfaceScope::new(SUBMIT_RECOMMENDATION_FEEDBACK_SCOPE)])
+            .expect("scope set");
         Actor::SurfaceClient {
             instance: SurfaceClientId::new("surface-1"),
             scopes,
@@ -657,6 +925,31 @@ mod tests {
             client_id: McpClientId::new("client-1"),
             conversation_handle: Some(OpaqueConversationHandle::new("conv-1")),
         }
+    }
+
+    fn set_recommendation_scope_allowlist_for_tests() {
+        // `ScopeSet::set_allowlist_for_tests` is a global static; tests run
+        // in parallel and ANY test setting the allowlist races with others.
+        // The defensive pattern (matching `registry.rs` `scope_set` helper):
+        // include every production scope used anywhere in the codebase so
+        // the global overwrite doesn't break tests in unrelated modules.
+        // If a future test needs to verify scope-rejection-of-an-allowlisted-scope,
+        // it should `clear_allowlist_for_tests()` and `set_allowlist_for_tests`
+        // with a tight subset within the test body.
+        ScopeSet::set_allowlist_for_tests([
+            SurfaceScope::new(SCORE_SALIENCE_SCOPE),
+            SurfaceScope::new(LIST_SUGGESTED_NEXT_STEPS_SCOPE),
+            SurfaceScope::new(SUBMIT_RECOMMENDATION_FEEDBACK_SCOPE),
+            SurfaceScope::new("read.account_overview"),
+            SurfaceScope::new("read.composition"),
+            SurfaceScope::new("read.entity_names"),
+            SurfaceScope::new("read.markdown_preview"),
+            SurfaceScope::new("read.workspace_graph"),
+            SurfaceScope::new("read.workspace_sources"),
+            SurfaceScope::new("submit.feedback"),
+            SurfaceScope::new("write.entity_intake"),
+            SurfaceScope::new("write.feedback"),
+        ]);
     }
 
     fn response_fixture() -> ScoreSalienceResponse {
@@ -684,6 +977,18 @@ mod tests {
             schema_version: LIST_SUGGESTED_NEXT_STEPS_SCHEMA_VERSION,
             items: Vec::new(),
             generated_at: Utc.with_ymd_and_hms(2026, 5, 26, 12, 0, 0).unwrap(),
+        }
+    }
+
+    fn submit_recommendation_feedback_response_fixture() -> SubmitRecommendationFeedbackResponse {
+        let at = Utc.with_ymd_and_hms(2026, 5, 26, 12, 0, 0).unwrap();
+        SubmitRecommendationFeedbackResponse {
+            schema_version: SUBMIT_RECOMMENDATION_FEEDBACK_SCHEMA_VERSION,
+            claim_id: ClaimId("claim-feedback-1".to_string()),
+            feedback_state: FeedbackState::Decided(RecommendationFeedbackDecision::Accept { at }),
+            conversion_state: ConversionState::NotConverted,
+            effect_kind: EffectKind::ClaimFeedbackRecorded,
+            recorded_at: at,
         }
     }
 }

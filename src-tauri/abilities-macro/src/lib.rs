@@ -167,7 +167,13 @@ fn expand_ability(args: AbilityArgs, item_fn: ItemFn) -> syn::Result<proc_macro2
         .iter()
         .map(ComposeArg::registry_expr)
         .collect();
-    let mutates_exprs: Vec<_> = detected.iter().map(|path| quote! { #path }).collect();
+    let mut mutates = args.mutates.clone();
+    for path in detected {
+        if !mutates.contains(&path) {
+            mutates.push(path);
+        }
+    }
+    let mutates_exprs: Vec<_> = mutates.iter().map(|path| quote! { #path }).collect();
     let signal_exprs = args
         .signal_policy
         .emits_on_output_change
@@ -749,6 +755,7 @@ struct AbilityArgs {
     requires_confirmation: bool,
     may_publish: bool,
     composes: Vec<ComposeArg>,
+    mutates: Vec<String>,
     experimental: bool,
     registered_at: Option<String>,
     signal_policy: SignalPolicyArg,
@@ -782,6 +789,7 @@ impl Parse for AbilityArgs {
         let mut requires_confirmation = None;
         let mut may_publish = None;
         let mut composes = Vec::new();
+        let mut mutates = Vec::new();
         let mut experimental = false;
         let mut registered_at = None;
         let mut signal_policy = SignalPolicyArg::default();
@@ -808,6 +816,7 @@ impl Parse for AbilityArgs {
                 }
                 "may_publish" => may_publish = Some(input.parse::<LitBool>()?.value),
                 "composes" => composes = parse_composes_array(input)?,
+                "mutates" => mutates = parse_string_or_ident_array(input)?,
                 "experimental" => experimental = input.parse::<LitBool>()?.value,
                 "registered_at" => registered_at = Some(input.parse::<LitStr>()?.value()),
                 "signal_policy" => signal_policy = parse_signal_policy(input)?,
@@ -847,6 +856,7 @@ impl Parse for AbilityArgs {
             may_publish: may_publish
                 .ok_or_else(|| input.error("missing required #[ability] may_publish"))?,
             composes,
+            mutates,
             experimental,
             registered_at,
             signal_policy,
@@ -1064,6 +1074,19 @@ fn parse_string_array(input: ParseStream<'_>) -> syn::Result<Vec<String>> {
     let mut values = Vec::new();
     while !content.is_empty() {
         values.push(content.parse::<LitStr>()?.value());
+        if content.peek(Token![,]) {
+            content.parse::<Token![,]>()?;
+        }
+    }
+    Ok(values)
+}
+
+fn parse_string_or_ident_array(input: ParseStream<'_>) -> syn::Result<Vec<String>> {
+    let content;
+    bracketed!(content in input);
+    let mut values = Vec::new();
+    while !content.is_empty() {
+        values.push(parse_string_or_ident(&content)?);
         if content.peek(Token![,]) {
             content.parse::<Token![,]>()?;
         }

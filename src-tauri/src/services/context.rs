@@ -58,6 +58,7 @@ pub struct LiveWorkspaceGraphReader;
 pub struct LiveSourceManagementLedgerReader;
 pub struct LiveSalienceReader;
 pub struct LiveSuggestedNextStepsReader;
+pub struct LiveRecommendationFeedbackWriter;
 pub struct LiveSourceManagementActionHandler {
     signal_engine: Option<Arc<crate::signals::propagation::PropagationEngine>>,
 }
@@ -94,6 +95,7 @@ pub fn attach_live_workspace_readers_with_signal_engine(
         .with_source_management_ledger_reader(Arc::new(LiveSourceManagementLedgerReader))
         .with_salience_reader(Arc::new(LiveSalienceReader))
         .with_suggested_next_steps_reader(Arc::new(LiveSuggestedNextStepsReader))
+        .with_recommendation_feedback_writer(Arc::new(LiveRecommendationFeedbackWriter))
         .with_source_management_action_handler(Arc::new(LiveSourceManagementActionHandler {
             signal_engine: signal_engine.clone(),
         }))
@@ -406,6 +408,83 @@ impl SuggestedNextStepsReadHandle for LiveSuggestedNextStepsReader {
                 runtime_salience::SuggestedNextStepsReadError::ReadFailed(error.to_string())
             })
         })
+    }
+}
+
+impl RecommendationFeedbackWriteHandle for LiveRecommendationFeedbackWriter {
+    fn submit_recommendation_feedback<'a>(
+        &'a self,
+        request: RecommendationFeedbackWriteRequest,
+    ) -> RecommendationFeedbackWriteFuture<'a> {
+        Box::pin(async move {
+            tokio::task::spawn_blocking(move || {
+                if request.mode != ExecutionMode::Live {
+                    return Err(
+                        runtime_salience::SubmitRecommendationFeedbackError::MutationBlocked(
+                            format!("write blocked by execution mode: {:?}", request.mode),
+                        ),
+                    );
+                }
+
+                let db = crate::db::ActionDb::open(Arc::new(crate::db::LocalKeychain::new()))
+                    .map_err(|error| {
+                        runtime_salience::SubmitRecommendationFeedbackError::WriteFailed(format!(
+                            "Database unavailable: {error}"
+                        ))
+                    })?;
+                let clock = FixedClock::new(request.recorded_at);
+                let rng = SeedableRng::new(7);
+                let external = ExternalClients::default();
+                let service_actor = "user";
+                let mut service_ctx =
+                    ServiceContext::new_live(&clock, &rng, &external).with_actor(service_actor);
+                if let Some(ability_id) = request.ability_id.as_deref() {
+                    service_ctx = service_ctx.with_ability_id(ability_id);
+                }
+
+                crate::services::recommendations::feedback::record_recommendation_feedback(
+                    &service_ctx,
+                    &db,
+                    request.input.claim_id,
+                    request.input.decision,
+                    request.input.context,
+                    &request.actor,
+                )
+                .map_err(recommendation_feedback_error_to_runtime)
+            })
+            .await
+            .map_err(|error| {
+                runtime_salience::SubmitRecommendationFeedbackError::WriteFailed(format!(
+                    "recommendation feedback write task failed: {error}"
+                ))
+            })?
+        })
+    }
+}
+
+fn recommendation_feedback_error_to_runtime(
+    error: crate::services::claims::ClaimError,
+) -> runtime_salience::SubmitRecommendationFeedbackError {
+    match error {
+        crate::services::claims::ClaimError::UnknownClaimId(claim_id) => {
+            runtime_salience::SubmitRecommendationFeedbackError::UnknownClaimId(claim_id)
+        }
+        crate::services::claims::ClaimError::UnsupportedClaimType {
+            claim_id,
+            claim_type,
+        } => runtime_salience::SubmitRecommendationFeedbackError::UnsupportedClaimType {
+            claim_id,
+            claim_type,
+        },
+        crate::services::claims::ClaimError::InvalidFeedback(message) => {
+            runtime_salience::SubmitRecommendationFeedbackError::InvalidFeedback(message)
+        }
+        crate::services::claims::ClaimError::Mode(message) => {
+            runtime_salience::SubmitRecommendationFeedbackError::MutationBlocked(message)
+        }
+        error => {
+            runtime_salience::SubmitRecommendationFeedbackError::WriteFailed(error.to_string())
+        }
     }
 }
 
