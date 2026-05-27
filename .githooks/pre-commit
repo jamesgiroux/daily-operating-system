@@ -237,6 +237,15 @@ while IFS= read -r file; do
   esac
 done <<< "$STAGED_FILES"
 
+# Meetings-writer boundary gate (Lane B of v1.4.8). Reject raw INSERT/UPDATE
+# on the meetings table outside the writer substrate's allowlist. Defers all
+# logic to scripts/check_meetings_writer_boundary.sh so the rule lives in one
+# place.
+if ! bash "${CWD}/scripts/check_meetings_writer_boundary.sh" --staged 2>&1; then
+  append_error "❌ meetings_writer boundary: raw meetings INSERT/UPDATE outside services::meetings_writer."
+  append_error "   Route through services::meetings_writer::write() with a typed WriteRequest."
+fi
+
 # 7. PII blocklist scan (cheap, always runs).
 #
 # Batched: one `git diff --cached` invocation parses per-file content via the
