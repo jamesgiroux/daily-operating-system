@@ -172,7 +172,223 @@ This is appropriately smaller than W3-A. Per scope-guardian: "If W4-A's packet b
 - B1–B12 amendments apply; B13 trim confirmed
 - Original §1, §3.1, §3.3, §3.4, §4, §7, §12, §14 sections are SUPERSEDED inline by cycle 1 (the inline-sweep pattern from W3-A's cycle 3); a future cycle-2 reviewer reading any single section should see consistent state without needing to cross-reference cycle 1 amendments
 
-**Ready for cycle 2 panel re-dispatch.** Recommended subset: adversarial (verify F1/F2/F3/F8 closed); feasibility (verify B6 json_set + B5 actor normalization + B9 transport); scope-guardian (verify B3/B4 dropped scope; B11 added test row). Skip K-in (no scope changes need re-validation).
+---
+
+## Cycle 2 amendments (2026-05-27 late) — substrate grounding pass
+
+Cycle-2 panel verdict: adversarial BLOCKED (5 new findings); feasibility CYCLE_3 (3 defects); scope-guardian CYCLE_3 (1 scope decision + stale text cleanup).
+
+**The class pattern recurred:** cycle 1 dropped the cycle-0 `bump_cooldown` hallucination but introduced new hallucinations of the same class (typed `note` column that doesn't exist; `LIKE '%"pending"%'` predicate that doesn't actually match; `attach_from_recommendation` retry infra that doesn't exist). Per adversarial reviewer's own recommendation: "the packet author needs to do a single grounding pass against the live schema, the FeedbackState serde shape, and the actions service module, then re-emit a packet whose every 'X already exists' claim is line-cited."
+
+This amendment block does that grounding pass. **Every claim below is file:line-cited and verified against the current `dev` HEAD (`2a6ec716`).**
+
+### B14. Compare-and-set predicate fixed (supersedes B6 + §3.4 step 4)
+
+`LIKE '%"pending"%'` was empirically broken in `sqlite3 :memory:` testing. Reason: `json_extract` strips JSON quotes from primitive string values; the LIKE pattern searches for embedded quotes that never appear in the extracted text.
+
+**Verified empirically:**
+
+```
+sqlite> SELECT json_extract(json('{"recommendation":{"feedbackState":"pending"}}'),
+                            '$.recommendation.feedbackState');
+pending                              -- bare text, no quotes
+sqlite> SELECT json_extract(...) LIKE '%"pending"%';
+0                                    -- DOES NOT MATCH
+sqlite> SELECT json_extract(...) = 'pending';
+1                                    -- correct match
+```
+
+**Corrected predicate** (replaces B6's UPDATE):
+
+```sql
+UPDATE intelligence_claims
+SET metadata_json = json_set(metadata_json,
+    '$.recommendation.feedbackState', json(?),
+    '$.recommendation.conversionState', json(?))
+WHERE id = ?
+  AND json_extract(metadata_json, '$.recommendation.feedbackState') = 'pending'
+```
+
+Note: `json_set` requires explicit `json(?)` wrapping when the bound parameter is itself a JSON value (e.g., the Decided object). For the Pending → Decided transition, the new feedbackState is `{"decided": {...}}` (object), so `json(?)` parses the parameter as JSON. SQLite `json_extract` continues to return the unquoted primitive string `"pending"` for the prior state, allowing the `= 'pending'` compare-and-set to succeed only when the row is in Pending state.
+
+**FeedbackState serde shape verified** at `src-tauri/src/services/recommendations/contracts.rs:103-106`:
+
+```rust
+#[derive(...)]
+#[serde(rename_all = "camelCase")]
+pub enum FeedbackState {
+    Pending,                                          // → bare JSON string "pending"
+    Decided(RecommendationFeedbackDecision),          // → {"decided": {...}}
+}
+```
+
+No `#[serde(tag = ...)]` → external tagging default. Pending serializes to the JSON string `"pending"`; Decided serializes to an object with the `decided` key.
+
+The packet's atomic compare-and-set is structurally sound; only the predicate was broken. Cycle 3 fixes it.
+
+### B15. `note` storage — encode in payload_json with validator extension (supersedes B1 row #5 + §4 AC#7 + §12 Q1)
+
+**Grounded against schema:** `claim_feedback` table at `src-tauri/src/migrations/245_dos_484_feedback_merge_intent.sql` has columns:
+
+```
+id, claim_id, feedback_type, actor, actor_id, payload_json, submitted_at, applied_at
+```
+
+**There is no `note` column.** `ClaimFeedbackInput` at `src-tauri/src/services/claims.rs:230-236` has fields:
+
+```rust
+pub struct ClaimFeedbackInput {
+    pub claim_id: String,
+    pub action: FeedbackAction,
+    pub actor: String,
+    pub actor_id: Option<String>,
+    pub payload_json: Option<String>,
+}
+```
+
+**There is no `note: Option<String>` field.** ADR-0123 §2 describes an intended typed shape, but it is not present in the live substrate. The cycle-1 packet's "typed `note: Option<String>` column" claim is wrong.
+
+**Correction.** The note encodes into `payload_json` as a JSON key alongside the action-required key:
+
+```json
+{ "invocation_id": "<surface_invocation_id>", "note": "<up to 200 chars>" }
+```
+
+**Validator extension required.** `validate_feedback_action_metadata` at `claims.rs:5560-5570` is action-keyed:
+
+```rust
+match action {
+    FeedbackAction::WrongSource       => require_payload_string(action, payload, "source_ref"),
+    FeedbackAction::NeedsNuance       => require_payload_string(action, payload, "corrected_text"),
+    FeedbackAction::SurfaceInappropriate => require_payload_string(action, payload, "surface"),
+    FeedbackAction::NotRelevantHere   => require_payload_string(action, payload, "invocation_id"),
+    FeedbackAction::MergeIntent       => require_payload_object(action, payload, "merge_target"),
+    _ => Ok(()),
+}
+```
+
+L1 extends this for `NotRelevantHere` to admit an OPTIONAL `note` key (size-validated to 200 chars at the writer, matching `BoundedNote::MAX_CHARS` from `contracts.rs:148`). The validator change is a 3-line addition: keep the required `invocation_id` check, add an optional `note` length check.
+
+This is a **net-new validator-allowlist line, not a schema change.** §4 AC#5 "no new migrations" holds; §4 AC#11 "first Maintenance ability under recommendations/" is unaffected. New CI gate input row in §7: "Validator extension: `NotRelevantHere` admits optional `note` key with 200-char cap."
+
+§4 AC#7 cycle-1 text superseded: "The note is encoded in `payload_json.note` per B15. The 200-char cap is enforced at the API boundary by `BoundedNote::try_from`; the validator extension at `claims.rs:5560` enforces it server-side after JSON deserialization."
+
+### B16. Convert{Action} simplifies — pure state update, no external side effect (supersedes B1 Convert{Action} row + §3.3 ActionAttachment / AttachStatus + §3.4 step 6)
+
+**Grounded against actions service.** Greppy survey of `src-tauri/src/services/`:
+
+- `sync_action_open_loop_claim` exists at `src-tauri/src/services/action_claims.rs` — takes an existing `DbAction`, syncs its open-loop claim shape. Does not link an arbitrary action to a recommendation.
+- `commitment_bridge.rs` handles commitments → action linkage. Not recommendation-specific.
+- `attach_from_recommendation` does NOT exist. The cycle-1 packet's "existing action retry infrastructure" claim is a hallucination.
+
+**Key insight from `ConversionState` enum** (`contracts.rs`):
+
+```rust
+pub enum ConversionState {
+    NotConverted,
+    ConvertedToAction { action_id: String },          // existing action_id
+    ConvertedToClaimCorrection { claim_id: ClaimId }, // existing claim_id
+    ConvertedToReviewQueue { queue_item_id: String }, // existing queue_item_id
+}
+```
+
+Every Convert variant carries an ID of an **already-existing** entity. The user has the action / claim / queue item in hand BEFORE submitting feedback. The recommendation just records "I was converted to that thing." This is pure state mutation on the recommendation's `metadata_json`. **No external service call. No attachment. No retry infrastructure.**
+
+**Convert{Action(action_id)} flow simplifies:**
+
+1. `record_claim_feedback(... ConfirmCurrent ...)` — reinforce source/agent
+2. `json_set` on `metadata_json` sets `recommendation.conversionState = {kind: "convertedToAction", actionId: <action_id>}`
+3. Done. No `ActionAttachment` type, no `AttachStatus::Queued`, no retry.
+
+**Output simplifies (supersedes §3.3):**
+
+```rust
+pub struct SubmitRecommendationFeedbackResponse {
+    pub schema_version: u32,
+    pub claim_id: ClaimId,
+    pub feedback_state: FeedbackState,
+    pub conversion_state: ConversionState,
+    pub effect_kind: EffectKind,
+    pub recorded_at: DateTime<Utc>,
+}
+
+pub enum EffectKind {
+    ClaimFeedbackRecorded,
+    NoMutation,
+}
+```
+
+`ActionAttachment` and `AttachStatus` types from cycle 1 are **dropped**. The conversion_state field on the response already carries the action_id when relevant; no separate envelope needed.
+
+**Resolves the cycle-1 atomicity-honesty concern** (adv F4): there is no external side effect, so there is no honesty problem to disclose. The cycle-1 framing was solving a non-problem.
+
+### B17. `actor_id` populated with SurfaceClient instance (supersedes B5 audit-trail gap)
+
+Per adversarial cycle 2 new attack surface: when normalized to `"user"`, the `claim_feedback.actor` column loses SurfaceClient identity. **Resolution: populate `actor_id`.**
+
+Verified at `claims.rs:230-236`: `ClaimFeedbackInput` has `actor_id: Option<String>`. Setting this to the SurfaceClient instance string (e.g., `"surface:wp-block-suggested-next-steps-{uuid}"`) preserves audit-trail identity in the DB row alongside the normalized `actor: "user"`.
+
+For `Actor::User` direct invocations, `actor_id` is `None`. For `Actor::SurfaceClient { instance, .. }`, `actor_id = Some(instance.to_string())`.
+
+**Verified against actor_class_for_actor** at `claims.rs:5488`: the function splits on `[:, /, @]` so `actor: "user"` admits regardless of `actor_id` value — the audit identity is captured without breaking validation.
+
+### B18. Signal payload corrected (supersedes B3 description in cycle 1)
+
+**Grounded against signal emission** at `claims.rs:9112-9136`:
+
+```rust
+let payload = serde_json::json!({
+    "action": write.outcome.action.as_str(),
+    "claim_id": &write.outcome.claim_id,
+    "verification_state_before": &write.verification_state_before,
+    "verification_state_after": &write.verification_state_after,
+}).to_string();
+```
+
+Cycle 1's claim that the signal carries `feedback_id, claim_id, feedback_type` is wrong. The actual payload is `{action, claim_id, verification_state_before, verification_state_after}`.
+
+**Discriminator surface for downstream W4-B/W4-C:**
+
+- `action` is the FeedbackAction string (e.g., `"not_relevant_here"`, `"surface_inappropriate"`, `"needs_nuance"`, `"confirm_current"`, `"wrong_subject"`)
+- `claim_id` is the recommendation's claim_id
+
+W4-B / W4-C consumers filter recommendation-feedback events by joining on `claim_id` against `intelligence_claims` to confirm `claim_type = 'recommendation'`. They cannot filter from signal payload alone without the join. **This is a known cost, not a defect** — the signal is a notification, not a self-contained record.
+
+§4 AC#8 superseded: "Signal payload is `{action, claim_id, verification_state_before, verification_state_after}` per the existing `claim_feedback_recorded` emission at `claims.rs:9114`. Downstream W4-B/C consumers filter via JOIN against `intelligence_claims` on `claim_type = 'recommendation'`."
+
+### B19. Scope name follows existing convention (supersedes B4 scope naming)
+
+Per feasibility cycle 2: existing scope strings in `registry.rs:2759, 2845` follow `verb.noun` (e.g., `read.account_overview`, `submit.feedback`). The cycle-1 `maintenance.recommendations.feedback` has no precedent — grep returned zero `maintenance.*` scopes.
+
+**Corrected:** `submit.recommendations.feedback` (matches existing `submit.feedback` convention; verb prefix; noun-namespace).
+
+§3.1 `required_scopes` superseded: `["submit.recommendations.feedback"]`.
+
+ADR-0103 maintenance-ability constraints still apply via category, not scope namespace.
+
+### B20. Stale-text cleanup (sweep of cycle-1 in-document references to dropped primitives)
+
+Cycle 2 scope-guardian flagged stale references to dropped concepts (B3 SignalType, B7 ActionAttachment, B16 retry infra). Cleanup applied inline:
+
+- **§5 channel #5** — was: "`signals/policy_registry.rs` `RecommendationFeedbackRecorded` variant." Updated: "No new SignalType variant; consume existing `claim_feedback_recorded` per B3 + B18."
+- **§6 integration test bullets** — references to `MarkOutdated` (was cycle-0 mapping for Convert{ClaimCorrection}) replaced with `NeedsNuance` per B1; references to declaring a new signal dropped.
+- **§9 cross-wave coordination** — sentence "W4-B's L0 reads from `RecommendationFeedbackRecorded` signal declared here" replaced with "W4-B's L0 reads from the existing `claim_feedback_recorded` signal (filtering via JOIN on `claim_type = 'recommendation'`)."
+- **§13 risk register** — last row "Signal type declared but unused" dropped entirely (no signal declared).
+- **§7 CI gate inputs** — L2-status row dropped (per scope cycle 2: commit hygiene, not artifact deliverable).
+
+### B21. Verified-against-codebase appendix (new §15)
+
+Per adversarial cycle 2: "the packet must include a 'verified-against-codebase' appendix with file:line citations for every 'X already exists' claim." Added as §15.
+
+### Cycle 3 status
+
+- B14–B21 amendments apply; cycle 2 hallucinations resolved with citations
+- B16 simplifies the Convert{Action} path — drops `ActionAttachment` / `AttachStatus` types entirely
+- B17 closes the SurfaceClient audit-trail gap via `actor_id` field (no schema change)
+- B19 aligns scope naming with codebase convention
+- B20 sweeps stale references
+
+**Ready for cycle 3 panel re-dispatch.** Recommended subset: adversarial only (verify the LIKE-fix + note-storage + Convert simplification all close their cycle-2 findings). Feasibility + scope-guardian skipped — their cycle-2 findings are addressed by B14–B19 with citations they can verify by spot-check.
 
 ---
 
@@ -280,8 +496,8 @@ Wave plan §line 1015-1020:
 
 - **Name:** `submit_recommendation_feedback`
 - **Category:** `Maintenance` — per ADR-0102 §82 the category is call-graph-derived. Mutates internal state through `services::claims::record_claim_feedback` (canonical maintenance path for `intelligence_claims` mutations). ADR-0103 maintenance-ability constraints apply.
-- **Allowed actors:** `[User, SurfaceClient]` — the user OR a surface acting on the user's explicit click. NOT `System` (no automatic feedback), NOT `Agent` / `Admin`, NOT `McpClient`. Note: per B5, the ability **normalizes `ctx.actor()` to `"user"`** before calling `record_claim_feedback` because `validate_feedback_actor` (`claims.rs:5507`) admits only `User`. The original SurfaceClient identity is preserved in the provenance envelope.
-- **`required_scopes`:** `["maintenance.recommendations.feedback"]` (maintenance naming convention; verify at L1 grep against existing maintenance scope strings)
+- **Allowed actors:** `[User, SurfaceClient]` — the user OR a surface acting on the user's explicit click. NOT `System` (no automatic feedback), NOT `Agent` / `Admin`, NOT `McpClient`. Per B5 + B17, the ability **normalizes `ClaimFeedbackInput.actor = "user"`** (so `validate_feedback_actor` at `claims.rs:5507` admits) AND **populates `actor_id` with the SurfaceClient instance string** (when caller is `Actor::SurfaceClient { instance, .. }`) so the audit trail in `claim_feedback.actor_id` (per migration 245 schema) preserves identity. For `Actor::User` direct invocations, `actor_id` is `None`.
+- **`required_scopes`:** `["submit.recommendations.feedback"]` (per B19 — matches existing `submit.feedback` convention at `registry.rs:2759, 2845`; `maintenance.*` prefix from cycle 1 has no codebase precedent)
 - **`may_publish`:** false (per ADR-0103 maintenance default)
 - **`mcp_exposure`:** `None` (per ADR-0103 maintenance default)
 - **`client_side_executable`:** false (per ADR-0103)
@@ -315,10 +531,9 @@ The ability returns `AbilityOutput<SubmitRecommendationFeedbackResponse>` per AD
 pub struct SubmitRecommendationFeedbackResponse {
     pub schema_version: u32,
     pub claim_id: ClaimId,
-    pub feedback_state: FeedbackState,                // always Decided(<variant>) after success; Pending on NoMutation
-    pub conversion_state: ConversionState,             // updated if Convert variant
+    pub feedback_state: FeedbackState,           // always Decided(<variant>) after success; Pending on NoMutation
+    pub conversion_state: ConversionState,        // updated if Convert variant; carries the action_id / claim_id / queue_item_id inline
     pub effect_kind: EffectKind,
-    pub action_attachment: Option<ActionAttachment>,   // only Some(...) for Convert{Action}; carries the open-loop action_id
     pub recorded_at: DateTime<Utc>,
 }
 
@@ -326,26 +541,11 @@ pub struct SubmitRecommendationFeedbackResponse {
 #[serde(rename_all = "camelCase")]
 pub enum EffectKind {
     ClaimFeedbackRecorded,
-    NoMutation, // idempotent reject — claim's feedback_state was already non-Pending at write time
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
-#[serde(rename_all = "camelCase")]
-pub struct ActionAttachment {
-    pub action_id: String,
-    pub attached_at: DateTime<Utc>,
-    pub attach_status: AttachStatus,
-}
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
-#[serde(rename_all = "camelCase")]
-pub enum AttachStatus {
-    /// Open-loop attached successfully within this ability call
-    Attached,
-    /// Feedback recorded; open-loop attach queued for at-least-once retry (per B1 Convert{Action} row)
-    Queued,
+    NoMutation, // idempotent reject — claim's feedback_state was already non-Pending at compare-and-set time
 }
 ```
+
+Per B16: cycle 1's `ActionAttachment` + `AttachStatus` types are **dropped**. The existing `ConversionState` enum already carries `ConvertedToAction { action_id }` / `ConvertedToClaimCorrection { claim_id }` / `ConvertedToReviewQueue { queue_item_id }` inline — no separate attachment envelope needed. No external service call, no retry infrastructure required; the Convert variants record the user-supplied IDs of already-existing entities.
 
 **Privacy note:** `EffectKind` carries no subject identity. The caller (the surface that posted the feedback) already knows its own claim's subject and decision. No new privacy surface introduced (resolves adv F10).
 
@@ -363,38 +563,42 @@ pub enum AttachStatus {
    UPDATE intelligence_claims
    SET metadata_json = json_set(metadata_json,
        '$.recommendation.feedbackState', ?,
-       '$.recommendation.conversionState', ?)
+       '$.recommendation.conversionState', json(?))
    WHERE id = ?
-     AND json_extract(metadata_json, '$.recommendation.feedbackState') LIKE '%"pending"%'
+     AND json_extract(metadata_json, '$.recommendation.feedbackState') = 'pending'
    ```
-   If `rows_affected == 0`, return `Ok(EffectKind::NoMutation)` with the existing state — the claim was already decided. SQLite single-writer prevents the read-then-write race (per feas #4); the WHERE-clause check is the atomic guard. **Resolves adv F6.**
-5. **Call `record_claim_feedback`.** With the constructed `ClaimFeedbackInput` and the normalized `"user"` actor string. This:
-   - Inserts the `claim_feedback` row (UUID generated internally per `claims.rs:7156`)
-   - Validates the payload per `validate_feedback_payload` (L1 verifies the `note` + `corrected_text` keys are admitted by the validator for the `NotRelevantHere` / `NeedsNuance` / `SurfaceInappropriate` actions; if not, L1 amendment to the validator's allowlist)
-   - Transitions verification_state per ADR-0123 dispatch table
-   - Emits `claim_feedback_recorded` signal automatically (no W4-A action needed — per B3)
-6. **Convert{Action} side effect.** If the decision is `Convert{Action(action_id)}`, AFTER the feedback row is inserted, invoke `services::actions::attach_from_recommendation(action_id, recommendation_claim_id)` (or the existing analog — L1 grep confirms the function name). If attachment fails, the feedback row stays; the response's `action_attachment.attach_status = Queued` signals at-least-once retry. **Resolves adv F4 atomicity-honesty.**
-7. **Convert{ReviewQueue} side effect.** If the decision is `Convert{ReviewQueue(queue_item_id)}`, skip the `record_claim_feedback` call entirely (per §1 table); just update `conversion_state` via `json_set` on `metadata_json` and return. DOS-336's review-queue lifecycle owns the conversion semantics.
+   Predicate is `= 'pending'` (NOT `LIKE '%"pending"%'` — per B14, `json_extract` strips JSON quotes from primitive strings; LIKE-with-quotes would never match). If `rows_affected == 0`, return `Ok(EffectKind::NoMutation)` with the existing state — the claim was already decided. SQLite single-writer prevents the read-then-write race (per feas #4); the WHERE-clause `=` check is the atomic guard. **Resolves adv F6 + cycle-2 dissent.**
+5. **Call `record_claim_feedback`.** With the constructed `ClaimFeedbackInput`:
+   - `actor = "user"` (normalized per B5)
+   - `actor_id = Some(<surface_instance_string>)` for `Actor::SurfaceClient { instance, .. }` invocations; `None` for direct `Actor::User`. Per B17 — preserves audit identity in `claim_feedback.actor_id` column (verified in migration 245 schema).
+   - `payload_json` per the action's validator requirement at `claims.rs:5560-5570`:
+     - `NotRelevantHere` → `{"invocation_id": "<context.invocation_id>", "note": "<optional BoundedNote, ≤200 chars>"}`. The `note` key is OPTIONAL; L1 extends `validate_feedback_action_metadata` for `NotRelevantHere` to admit it (per B15).
+     - `NeedsNuance` → `{"corrected_text": "<reference to corrected claim_id>"}` (uses the corrected claim_id reference; L1 confirms text-vs-id semantics).
+     - `SurfaceInappropriate` → `{"surface": "<context.surface>"}`.
+     - `WrongSubject`, `ConfirmCurrent` → no required payload keys (per validator).
+   This inserts the `claim_feedback` row (UUID generated per `claims.rs:7156`), transitions verification_state per ADR-0123 dispatch, and emits the `claim_feedback_recorded` signal automatically.
+6. **Convert variants — pure state update on conversion_state.** Per B16: no external service call. The `ConversionState` enum variants (`ConvertedToAction { action_id }`, `ConvertedToClaimCorrection { claim_id }`, `ConvertedToReviewQueue { queue_item_id }`) carry user-supplied IDs of already-existing entities. The step-4 UPDATE already sets `recommendation.conversionState` via `json_set`; no follow-up call needed.
+7. **Convert{ReviewQueue} skips record_claim_feedback.** Per §1 row 10: ReviewQueue conversion routes through DOS-336's review queue lifecycle independently; W4-A's ability skips step 5 (no `record_claim_feedback` call), executes only step 4 (the `json_set` UPDATE setting `conversionState`), then returns.
 8. **Return `AbilityOutput<SubmitRecommendationFeedbackResponse>`.** Wrap in provenance via `ProvenanceBuilder` per ADR-0105.
 
-All steps 4–7 are within `with_claim_transaction` (which provides SQL transaction boundaries via SQLite's serializable isolation). External side effects (action attachment in step 6) cannot be rolled back — that's the at-least-once contract documented in `AttachStatus::Queued`.
+All steps 4–7 are within `with_claim_transaction` (SQLite serializable isolation). **There are no external side effects to roll back** — per B16, Convert variants record IDs of pre-existing entities, not creation calls.
 
 ---
 
 ## §4 Acceptance criteria
 
-1. **Ability ships and is registered.** `submit_recommendation_feedback` in `tools/dailyos-abilities.json` (regen); `AbilityRegistry` exposes to `[User, SurfaceClient]` with `category = Maintenance`. `cargo test recommendations::submit_recommendation_feedback` passes.
-2. **Mapping is deterministic.** Parametric test enumerates all 10 mapping rows in §1; asserts the documented `(FeedbackAction, EffectKind)` pair for each. Each row's claim_feedback row inspection confirms the typed `note` or `payload_json` shape.
-3. **Idempotent.** Re-submitting feedback for an already-`Decided` claim returns `EffectKind::NoMutation` and does NOT mutate `claim_feedback` (the atomic compare-and-set UPDATE affects 0 rows; service short-circuits per §3.4 step 4).
-4. **Atomicity via SQLite single-writer.** The `metadata_json` json_set UPDATE + the `record_claim_feedback` INSERT are within `with_claim_transaction`. SQLite's serializable isolation prevents partial observation. External side effects (Convert{Action} attachment) are explicitly at-least-once per `AttachStatus::Queued`.
-5. **No new tables.** Migrations diff is empty. Uses existing `claim_feedback` rows; cooldown is read-derived from `latest_feedback_suppression` (per B2).
-6. **No new ADR-0123 variants.** Maps to the existing 10 `FeedbackAction` variants from `abilities-runtime/src/abilities/feedback.rs:39`.
-7. **Privacy.** `Dismiss { reason: Other(BoundedNote) }` enforces 200-char cap via `BoundedNote::try_from`. The note is stored in `claim_feedback`'s typed `note: Option<String>` column per ADR-0123 §2 (NOT `payload_json` — resolves adv F3). L1 verifies `validate_feedback_payload` admits the `note` key for `NotRelevantHere`; if not, L1 extends the validator.
-8. **Signal: reuse `claim_feedback_recorded`.** The existing signal fires automatically from `record_claim_feedback` (`claims.rs:9127`). W4-A does NOT declare a new SignalType. Downstream W4-B/C consume the existing signal and filter by `feedback_type` (per B3).
-9. **Actor normalization at the ability boundary.** Per B5: `ctx.actor()` is normalized to `"user"` before calling `record_claim_feedback` so `validate_feedback_actor` admits. Original Actor identity preserved in the provenance envelope.
-10. **`feedback_state` is JSON, not a column.** Mutation via `json_set` on `metadata_json` (per migration `269_recommendation_claim_metadata_indexes.sql`). Per B6.
+1. **Ability ships and is registered.** `submit_recommendation_feedback` in `tools/dailyos-abilities.json` (regen); `AbilityRegistry` exposes to `[User, SurfaceClient]` with `category = Maintenance`. Required scope `submit.recommendations.feedback` (per B19; matches existing `submit.feedback` convention at `registry.rs:2759, 2845`). `cargo test recommendations::submit_recommendation_feedback` passes.
+2. **Mapping is deterministic.** Parametric test enumerates all 10 mapping rows in §1; asserts the documented `(FeedbackAction, EffectKind)` pair for each. Each row's `claim_feedback` row inspection confirms the `payload_json` keys match the validator requirement per `claims.rs:5560-5570`.
+3. **Idempotent compare-and-set.** Re-submitting feedback for an already-`Decided` claim returns `EffectKind::NoMutation` and does NOT mutate `claim_feedback`. Per B14: predicate is `json_extract(...) = 'pending'` (verified empirically). Test asserts: pre-Decided claim → UPDATE affects 0 rows → service returns NoMutation without calling `record_claim_feedback`.
+4. **Atomicity via SQLite single-writer.** The `metadata_json` json_set UPDATE + the `record_claim_feedback` INSERT are within `with_claim_transaction`. SQLite's serializable isolation prevents partial observation. **No external side effects** — per B16, Convert variants record IDs of pre-existing entities; no creation calls, no retry infra needed.
+5. **No new tables.** Migrations diff is empty. Uses existing `claim_feedback` rows; cooldown is read-derived from `latest_feedback_suppression` at `surfacing.rs:724` (per B2).
+6. **No new ADR-0123 variants.** Maps to the existing 10 `FeedbackAction` variants at `abilities-runtime/src/abilities/feedback.rs:39`.
+7. **Note encoded in `payload_json`, not a typed column.** Per B15: `claim_feedback` table has no `note` column (verified migration 245); `ClaimFeedbackInput` has no `note` field (verified `claims.rs:230-236`). `Dismiss { reason: Other(BoundedNote) }` encodes the note in `payload_json` as `{"invocation_id": "<...>", "note": "<≤200 chars>"}`. L1 extends `validate_feedback_action_metadata` for `NotRelevantHere` to admit the optional `note` key (3-line addition at `claims.rs:5560`).
+8. **Signal: reuse `claim_feedback_recorded`.** The existing signal fires automatically from `record_claim_feedback` (`claims.rs:9112-9136`). W4-A does NOT declare a new SignalType. Actual signal payload per B18: `{action, claim_id, verification_state_before, verification_state_after}`. Downstream W4-B/C consume this signal and JOIN against `intelligence_claims` to filter by `claim_type = 'recommendation'`.
+9. **Actor normalization + `actor_id` populated.** Per B5 + B17: ability passes `actor = "user"` (so `validate_feedback_actor` at `claims.rs:5507` admits) AND `actor_id = Some(<surface_instance>)` for SurfaceClient invocations. Preserves SurfaceClient audit identity in `claim_feedback.actor_id` column (verified migration 245 schema).
+10. **`feedback_state` is JSON, not a column.** Mutation via `json_set` on `metadata_json` (per migration 269). Predicate per B14: `json_extract(...) = 'pending'`.
 11. **W3-A filter-flip is L4-gated, not auto-merged.** Per B12: the `dailyos_suggested_next_steps_feedback_enabled` filter flip from `false` to `true` is a separate L4-gated change requiring hands-on QA of the full WP block → REST → ability → record_claim_feedback → surfacing read pickup vertical. The flip does NOT ship with W4-A merge.
-12. **First Maintenance ability under `recommendations/`.** Per B4 + feas #8: existing `dailyos-abilities.json` inventory has Read/Transform/Maintenance categories; the Maintenance category for recommendations is new but the transport admits it without changes. L1 confirms regen handles it as passthrough.
+12. **First Maintenance ability under `recommendations/`.** Per B4 + feas #8: existing `dailyos-abilities.json` inventory has Read/Transform/Maintenance categories; transport admits Maintenance without changes. L1 confirms regen handles it as passthrough.
 13. **Cycle hygiene.** `cargo clippy -- -D warnings && cargo test --lib && pnpm tsc --noEmit` clean.
 
 ---
@@ -404,11 +608,12 @@ All steps 4–7 are within `with_claim_transaction` (which provides SQL transact
 Per W3-A's A8 pattern (channels enumerated before merge):
 
 1. **Ability registry** — auto via `#[ability(...)]` macro; tested via `tools/dailyos-abilities.json` diff.
-2. **Surface scope registry** — new `write.recommendations` scope; verify file path at L1 grep (likely `abilities-runtime/src/abilities/registry.rs`).
-3. **WP REST endpoint allowlist** — the new ability must be admitted by `wp/dailyos/includes/transport/class-dailyos-runtime-client.php`'s allowlist (if explicit) or pass through (if dynamic per scope). Verify at L1.
+2. **Surface scope registry** — new `submit.recommendations.feedback` scope per B19 (matches existing `submit.feedback` convention). File path at L1 grep is likely `abilities-runtime/src/abilities/registry.rs` (existing scope strings at `registry.rs:2759, 2845`).
+3. **WP REST endpoint allowlist** — `wp/dailyos/includes/transport/class-dailyos-runtime-client.php` transport is category-agnostic per feas #8 cycle 0. No allowlist change needed for the new Maintenance category.
 4. **`tools/dailyos-abilities.json`** — regen + commit.
-5. **`signals/policy_registry.rs`** — pre-declare `RecommendationFeedbackRecorded` SignalType.
+5. **No new `signals/policy_registry.rs` row.** Per B3 + B20: W4-A consumes the existing `claim_feedback_recorded` signal at `claims.rs:9112`; no new SignalType variant. W0 ownership preserved.
 6. **Per-Actor dry-run test** — assert `[User, SurfaceClient]` admit; `[System, Agent, Admin, McpClient]` deny with `Capability` error.
+7. **`validate_feedback_action_metadata` extension** — L1 adds optional `note` key admission for `NotRelevantHere` at `claims.rs:5560-5570`. 3-line addition; preserves required `invocation_id` check.
 
 ---
 
@@ -416,23 +621,25 @@ Per W3-A's A8 pattern (channels enumerated before merge):
 
 ### Rust unit
 
-- Mapping table parametric: each `RecommendationFeedbackDecision` variant produces the documented `DownstreamEffect` (10 rows)
-- Idempotent re-submission returns `NoMutation`
-- `Dismiss { Other }` with note >200 chars rejected at contract level (already enforced by `BoundedNote`)
+- Mapping table parametric: each `RecommendationFeedbackDecision` variant produces the documented `(FeedbackAction, EffectKind)` pair (10 rows)
+- Idempotent compare-and-set: pre-Decided claim returns `NoMutation`; predicate `json_extract(...) = 'pending'` verified to match Pending shape via fixture (per B14)
+- `Dismiss { Other }` with note >200 chars rejected at contract level (already enforced by `BoundedNote::try_from`)
 - Unknown `claim_id` returns `ClaimError::UnknownClaimId`
 - Non-recommendation claim_id returns `ClaimError::UnsupportedClaimType`
 - Per-Actor allowlist test ([User, SurfaceClient] admit; rest deny)
+- `actor_id` populated correctly: User direct → None; SurfaceClient → Some(instance) (per B17)
 
 ### Integration (`cargo test --test` recommendations)
 
-- Full Pending → Decided cycle: seed claim, submit Accept, verify `claim_feedback` row + claim's `feedback_state` updated atomically
-- Cooldown-only path: submit `NotUseful`, verify no `claim_feedback` row; cooldown bumped in surfacing state
-- Both-paths: submit `Convert { ClaimCorrection }`, verify `claim_feedback` `MarkOutdated` row + corrected claim proposal exists
-- Signal emission: assert `RecommendationFeedbackRecorded` signal fired with correct claim_id + decision variant
+- Full Pending → Decided cycle: seed claim, submit Accept, verify `claim_feedback` row + claim's `metadata_json.recommendation.feedbackState` updated atomically to `{"decided": {"kind": "accept", "at": "..."}}`
+- NotUseful path: submit `NotUseful`, verify `claim_feedback` row with `feedback_type = 'surface_inappropriate'` AND `latest_feedback_suppression` returns the row on subsequent surfacing.rs read (cooldown emergent — per B2)
+- Convert{ClaimCorrection} path: submit decision, verify `claim_feedback` row with `feedback_type = 'needs_nuance'` + `payload_json` containing `corrected_text` (per B1 row + ADR-0123 §149 row #7); verify `conversion_state` updated to `convertedToClaimCorrection` via json_set
+- Convert{Action} path: submit decision with action_id, verify `claim_feedback` row with `feedback_type = 'confirm_current'` + `conversion_state` updated to `convertedToAction { action_id }` via json_set; **NO** external service call (per B16)
+- Signal emission: assert `claim_feedback_recorded` signal payload matches `{action, claim_id, verification_state_before, verification_state_after}` per `claims.rs:9112-9136` (per B18)
 
 ### Substrate-side smoke (deferred to W3-A integration when UI flips)
 
-- WP block view.js → REST endpoint → ability → service path → claim_feedback / surfacing — full vertical test. Deferred per UI Surface Deferral.
+- WP block view.js → REST endpoint → ability → service path → claim_feedback → surfacing.rs read pickup — full vertical test. Deferred per UI Surface Deferral; gated by L4 per AC#11.
 
 ---
 
@@ -443,12 +650,14 @@ Per W3-A's A8 pattern (channels enumerated before merge):
 | `tools/dailyos-abilities.json` regen | Deterministic per W3-A precedent; first Maintenance ability under `recommendations/` |
 | `services::recommendations::feedback` doc comments | Document the §1 mapping table inline so future readers don't need to find this packet |
 | Per-Actor dry-run test | Asserts `[User, SurfaceClient]` admit; `[System, Agent, Admin, McpClient]` deny with `Capability` error. Lives in `abilities-runtime/src/abilities/recommendations/mod.rs::tests`. CI-enforced gate. |
-| Parametric mapping test | All 10 mapping rows from §1; asserts `(FeedbackAction, EffectKind, note/payload_json shape)` per row. |
-| Idempotent compare-and-set test | Re-submit feedback for an already-Decided claim → `EffectKind::NoMutation`; zero new `claim_feedback` rows. |
-| `validate_feedback_payload` admits `note` for `NotRelevantHere` | L1 either confirms via grep + test, or extends the validator allowlist for the new key + action pair |
-| L2-status in commit messages | `passed` per memory rule |
+| Parametric mapping test | All 10 mapping rows from §1; asserts `(FeedbackAction, EffectKind)` pair per row + `payload_json` shape per `validate_feedback_action_metadata` requirements at `claims.rs:5560-5570`. |
+| Idempotent compare-and-set test | Re-submit feedback for an already-Decided claim → `EffectKind::NoMutation`; zero new `claim_feedback` rows. Tests both predicate halves: pre-Pending claim succeeds, pre-Decided claim short-circuits. |
+| `validate_feedback_action_metadata` extension | L1 adds optional `note` key admission for `NotRelevantHere` at `claims.rs:5560-5570` (3-line addition; preserves required `invocation_id` check). |
+| `actor_id` populated correctly | Test: `Actor::User` direct → `actor_id = None`; `Actor::SurfaceClient { instance, .. }` → `actor_id = Some(instance_string)`. Per B17. |
 
-**No new `signals/policy_registry.rs` row** — per B3, W4-A consumes the existing `claim_feedback_recorded` signal (`claims.rs:9127`); no new SignalType variant declared. W0 ownership preserved.
+**No new `signals/policy_registry.rs` row** — per B3 + B18, W4-A consumes the existing `claim_feedback_recorded` signal at `claims.rs:9112-9136`; no new SignalType variant declared. W0 ownership preserved.
+
+**No `L2-status` row** — per cycle 2 scope-guardian TRIM: L2-status in commit messages is process hygiene enforced by the `.githooks/commit-msg` hook, not a W4-A deliverable artifact. Covered by CLAUDE.md, not by this packet.
 
 ---
 
@@ -538,3 +747,37 @@ Per CLAUDE.md DoD section:
 7. **Privacy non-leak documented.** `EffectKind` carries no subject identity beyond what the caller already knows about its own claim (B12).
 8. **Auth overhaul note.** Per the 2026-05-21 auth overhaul memory, ADR-0111 §193 nonce requirement for write events is being stripped for local same-user contexts. W4-A does NOT add nonce machinery; relies on the post-overhaul actor-allowlist model. L1 verifies the current state via a transport-layer grep (B12).
 9. K-out: any class-pattern findings from L2 filed via `/ce-compound mode:headless` at retro close.
+
+---
+
+## §15 Verified-against-codebase appendix (cycle 3 grounding pass)
+
+Per adversarial cycle-2 recommendation. Every "X already exists" claim in this packet has been grep-verified against `public/dev@2a6ec716`. Citations below.
+
+| Claim | File:Line | Verified shape |
+|---|---|---|
+| `claim_feedback` table schema | `src-tauri/src/migrations/245_dos_484_feedback_merge_intent.sql:25-45` | Columns: `id, claim_id, feedback_type (CHECK IN 10 ADR-0123 variants), actor, actor_id, payload_json, submitted_at, applied_at`. **No `note` column.** |
+| `ClaimFeedbackInput` struct | `src-tauri/src/services/claims.rs:230-236` | Fields: `claim_id, action, actor, actor_id, payload_json`. **No `note` field.** |
+| `validate_feedback_action_metadata` | `src-tauri/src/services/claims.rs:5560-5570` | Per-action required keys: WrongSource→`source_ref`; NeedsNuance→`corrected_text`; SurfaceInappropriate→`surface`; NotRelevantHere→`invocation_id`; MergeIntent→`merge_target`; rest unrestricted. L1 extends NotRelevantHere to admit optional `note` (B15). |
+| `validate_feedback_actor` | `src-tauri/src/services/claims.rs:5507-5527` | Admits only `ClaimActorClass::User`; rejects all others. Normalization required (B5). |
+| `actor_class_for_actor` | `src-tauri/src/services/claims.rs:5488-5504` | Maps `"user"\|"human"` → User. Splits on `[:/@]` so `"user:surface-id"` also admits (allowing audit-rich actor strings if desired). |
+| `record_claim_feedback` | `src-tauri/src/services/claims.rs:7128-7170` | Wraps in `with_claim_transaction` + `MutationGuard`; generates UUID feedback_id at line 7156; returns `ClaimFeedbackOutcome`. |
+| `claim_feedback_recorded` signal emission | `src-tauri/src/services/claims.rs:9112-9136` | Payload: `{action, claim_id, verification_state_before, verification_state_after}`. **No `feedback_id` in emitted payload.** |
+| `FeedbackAction` enum (10 ADR-0123 variants) | `src-tauri/abilities-runtime/src/abilities/feedback.rs:39` | All 10 variants present: `ConfirmCurrent, MarkOutdated, MarkFalse, WrongSubject, WrongSource, CannotVerify, NeedsNuance, SurfaceInappropriate, NotRelevantHere, MergeIntent`. |
+| `FeedbackState` serde shape | `src-tauri/src/services/recommendations/contracts.rs:103-106` | External tagging default (no `#[serde(tag = ...)]`): `Pending` → bare JSON string `"pending"`; `Decided(x)` → `{"decided": x}`. |
+| `feedback_state` storage in `metadata_json` | `src-tauri/src/migrations/269_recommendation_claim_metadata_indexes.sql:9-18` | Indexed via `json_extract(metadata_json, '$.recommendation.feedbackState')`. Not a column. |
+| `json_extract` behavior on primitive strings | SQLite empirical test (`sqlite3 :memory:`) | Returns the UNQUOTED text value. `json_extract(...) = 'pending'` matches; `json_extract(...) LIKE '%"pending"%'` does NOT match. |
+| `surfacing.rs` cooldown read | `src-tauri/src/services/recommendations/surfacing.rs:724` (`latest_feedback_suppression`); policy at `:120, 136` (`feedback_suppression_days: 14`) | Cooldown derived from `claim_feedback` rows within `feedback_suppression_days` window. No bump_cooldown writer needed (B2). |
+| `SURFACING_DECISION_SIGNAL` declaration pattern | `src-tauri/src/services/recommendations/surfacing.rs:33` | `pub const X: &str = "..."` — stringly-typed module constant. Not a centralized SignalType enum. |
+| `ConversionState` enum | `src-tauri/src/services/recommendations/contracts.rs` (existing W1-A type) | Variants carry IDs of pre-existing entities: `ConvertedToAction { action_id }`, `ConvertedToClaimCorrection { claim_id }`, `ConvertedToReviewQueue { queue_item_id }`. **No external attachment call required** (B16). |
+| `sync_action_open_loop_claim` | `src-tauri/src/services/action_claims.rs` | Takes `&DbAction` (existing); syncs open-loop claim shape. Not a recommendation attachment function. **`attach_from_recommendation` does NOT exist** — Convert{Action} doesn't need it (B16). |
+| Existing scope-name convention | `src-tauri/abilities-runtime/src/abilities/registry.rs:2759, 2845` | `verb.noun` (e.g., `read.account_overview`, `submit.feedback`). No `maintenance.*` prefix exists. W4-A uses `submit.recommendations.feedback` (B19). |
+| WP REST transport | `wp/dailyos/includes/transport/class-dailyos-runtime-client.php:85` | `invoke_ability(name, payload, scope_set)` is category-agnostic. Maintenance category traverses without changes (B9). |
+
+**Hallucinations dropped at cycle 3** (each replaced by its grounded primitive in the table above):
+- `bump_cooldown` API — read-derived per surfacing.rs:724 instead
+- Typed `note: Option<String>` column on claim_feedback — encoded in `payload_json` instead
+- `attach_from_recommendation` retry infrastructure — `ConversionState` already carries the action_id; no attachment needed
+- New `RecommendationFeedbackRecorded` SignalType variant — reuse existing `claim_feedback_recorded` per claims.rs:9112
+- `LIKE '%"pending"%'` predicate — replaced with `= 'pending'` (empirically verified)
+- `maintenance.recommendations.feedback` scope name — replaced with `submit.recommendations.feedback` matching codebase convention
