@@ -433,10 +433,10 @@ No `ce-design-lens-reviewer` — substrate-only. No `ce-security-lens-reviewer` 
 | `Dismiss { reason: NotRelevant }` | `NotRelevantHere` | No trust delta | 14-day cooldown via `feedback_suppression_days` |
 | `Dismiss { reason: AlreadyKnew }` | `NotRelevantHere` | No trust delta | 14-day cooldown |
 | `Dismiss { reason: WrongSubject }` | `WrongSubject` | -0.3 subject_evidence on linker; source untouched | Tombstones the claim on the asserted subject (per-subject) |
-| `Dismiss { reason: Other(BoundedNote) }` | `NotRelevantHere` with `note` field populated | No trust delta; note captured in ADR-0123 typed `note: Option<String>` column | 14-day cooldown |
+| `Dismiss { reason: Other(BoundedNote) }` | `NotRelevantHere` with `note` encoded in `payload_json` | No trust delta; note encoded as `{"invocation_id": ..., "note": "..."}` in `payload_json` (per B15 — `claim_feedback` has no typed `note` column; validator extended to admit optional `note` key) | 14-day cooldown |
 | `NotUseful { at }` | `SurfaceInappropriate` | No trust delta | 14-day cooldown |
 | `TooNoisy { at }` | `SurfaceInappropriate` | No trust delta | 14-day cooldown (same as NotUseful at substrate level; intensity is UX framing, not substrate distinction) |
-| `Convert { at, into: Action(action_id) }` | `ConfirmCurrent` | +α on source / agent | None. **Open-loop attachment is a separate at-least-once call** (`services::actions::attach_from_recommendation` or equivalent); not transactional with the feedback write because attachment may invoke external side effects (calendar / message scheduling). If attachment fails, the feedback row stays (truth-feedback is authoritative); attachment retries via existing action retry infrastructure. |
+| `Convert { at, into: Action(action_id) }` | `ConfirmCurrent` | +α on source / agent | None. **Pure state update** (per B16): `conversion_state` set to `ConvertedToAction { action_id }` via `json_set` on `metadata_json`. The `action_id` references an already-existing action the caller created/holds; W4-A does NOT create the action and does NOT attach. No external service call. If the caller submits a bogus `action_id`, the conversion_state points at a non-existent action (acceptable — see AC#14). |
 | `Convert { at, into: ClaimCorrection(claim_id) }` | `NeedsNuance` with `corrected_text` payload referencing the corrected claim_id | Refinement path per ADR-0123 §149 row #7 | Cooldown on original subject |
 | `Convert { at, into: ReviewQueue(queue_item_id) }` | None (no claim_feedback row) | No trust delta | None — DOS-336 review queue routes independently |
 
@@ -600,6 +600,7 @@ All steps 4–7 are within `with_claim_transaction` (SQLite serializable isolati
 11. **W3-A filter-flip is L4-gated, not auto-merged.** Per B12: the `dailyos_suggested_next_steps_feedback_enabled` filter flip from `false` to `true` is a separate L4-gated change requiring hands-on QA of the full WP block → REST → ability → record_claim_feedback → surfacing read pickup vertical. The flip does NOT ship with W4-A merge.
 12. **First Maintenance ability under `recommendations/`.** Per B4 + feas #8: existing `dailyos-abilities.json` inventory has Read/Transform/Maintenance categories; transport admits Maintenance without changes. L1 confirms regen handles it as passthrough.
 13. **Cycle hygiene.** `cargo clippy -- -D warnings && cargo test --lib && pnpm tsc --noEmit` clean.
+14. **Caller responsibility for Convert{into:*} ID references** — per B16 + cycle-3 adversarial NEEDS_REVISION on phantom-id: W4-A does NOT validate that `action_id` / `claim_id` / `queue_item_id` references exist before writing `conversion_state` via json_set. The caller (a surface or test seeder) is responsible for supplying IDs of real entities. If the conversion target is later deleted or never existed, the recommendation's `conversion_state` points at a phantom — acceptable today since: (a) the substrate doesn't enforce referential integrity on JSON-encoded refs anywhere else, (b) surfaces render conversion confirmation eagerly so phantom refs are caller-bug not substrate-bug, (c) downstream consumers (W4-B/C analytics) can detect dangling refs at read time if needed. If future surface evolution requires substrate-side validation, it's an additive ability change.
 
 ---
 
@@ -671,7 +672,7 @@ Per W3-A's A8 pattern (channels enumerated before merge):
 
 - **W3-A (merged):** W3-A's WP block has affordance markup gated by `dailyos_suggested_next_steps_feedback_enabled` filter (default false). Post W4-A merge, a one-line follow-up flips this filter. That follow-up is NOT W4-A scope per the UI Surface Deferral — it depends on WP surface readiness.
 - **DOS-802 (parked):** Tauri carve-out follows the same pattern when it unblocks.
-- **W4-B (DOS-316 deviation):** consumes feedback signal as Novelty factor input. W4-B's L0 reads from `RecommendationFeedbackRecorded` signal declared here.
+- **W4-B (DOS-316 deviation):** consumes feedback signal as Novelty factor input. W4-B's L0 reads from the existing `claim_feedback_recorded` signal (`claims.rs:9112-9136`), filtering recommendation-specific events via JOIN against `intelligence_claims` on `claim_type = 'recommendation'`.
 - **W4-C (DOS-317 engagement):** distinct from feedback (engagement is implicit observation; feedback is explicit click). W4-C imports the same `EngagementSignal` types from W1-A contracts but does not call into W4-A's service.
 - **W5 eval (DOS-338):** the eval harness tests "feedback updates ranking on next cycle" — depends on W4-A's signal + W1-B's salience consumer.
 
@@ -706,16 +707,17 @@ K-in needs to confirm: no prior `submit_recommendation_feedback` solution exists
 
 ## §12 Open questions
 
-**All cycle-0 open questions resolved by B10.** Remaining open items are L1-resolvable, not L0-blocking:
+**All cycle-0/1/2 open questions resolved by B10 + B14-B21.** No remaining L0-blocking questions.
 
-1. **`validate_feedback_payload` admits `{ note: "..." }` for `NotRelevantHere`?** L1 reads `claims.rs:5525+` (the `validate_feedback_payload` body). If admitted: proceed. If not admitted: either (a) extend the validator allowlist for `NotRelevantHere` + `note` key, or (b) re-map `Dismiss{Other}` to `SurfaceInappropriate` if THAT action admits a note. Decision made at L1 against the live validator; not blocking L0.
-2. **`services::actions::attach_from_recommendation`** — the exact function name + signature for the open-loop attachment in `Convert{Action}` step 6. L1 grep confirms the existing function; if no such function exists, L1 either authors one (small scope, matches existing action service patterns) or routes through whatever the current attachment path is. Not blocking L0.
+Cycle 3 confirmed:
+- `validate_feedback_action_metadata` for `NotRelevantHere` requires `invocation_id` only (per §15 row); L1 adds optional `note` key admission (3-line addition at `claims.rs:5560`).
+- `attach_from_recommendation` does NOT exist and is NOT needed — per B16, Convert{Action} is pure state update on `conversion_state` via json_set; no external service call.
 
 **Resolved at cycle 1:**
-- Q1 (cycle 0) `Dismiss { Other }` → `NotRelevantHere` with typed `note` column (B1)
+- Q1 (cycle 0) `Dismiss { Other }` → `NotRelevantHere` with `note` encoded in `payload_json` (B1 + B15)
 - Q2 (cycle 0) `NotUseful` vs `TooNoisy` → same `SurfaceInappropriate` (B1)
 - Q3 (cycle 0) `Convert { ClaimCorrection }` → `NeedsNuance` (B1)
-- Q4 (cycle 0) Signal payload → consume existing `claim_feedback_recorded` (B3)
+- Q4 (cycle 0) Signal payload → consume existing `claim_feedback_recorded` (B3 + B18)
 - Q5 (cycle 0) WP REST endpoint → existing transport admits all categories (B9)
 
 ---
@@ -724,13 +726,13 @@ K-in needs to confirm: no prior `submit_recommendation_feedback` solution exists
 
 | Risk | Severity | Mitigation |
 |---|---|---|
-| Mapping table is wrong (a variant punishes source when it shouldn't) | HIGH | Reviewer panel hits this hardest; parametric test asserts each variant's downstream_effect_kind matches the documented contract |
+| Mapping table is wrong (a variant punishes source when it shouldn't) | HIGH | Parametric test asserts each variant's `(FeedbackAction, EffectKind)` pair matches §1 + ADR-0123 citations |
 | Atomicity bug — claim_feedback row written but recommendation_claim feedback_state not updated | HIGH | Single transaction wrap via `with_claim_transaction`; integration test asserts both observe same state |
-| Idempotent re-submission accidentally double-writes | MED | Explicit feedback_state check at step 2 of service flow; test asserts re-submission returns NoMutation |
-| `BoundedNote` 200-char enforcement bypassed | LOW | Already enforced at `BoundedNote::try_from` construction; can't bypass without unsafe code |
-| New `write.recommendations` scope isn't registered in WP allowlist → block can't call ability | MED | A8 channel enumeration covers this; L1 grep before merge |
-| `Convert { Action }` writes both `ConfirmCurrent` AND an open-loop attachment — what if the open-loop service fails? | MED | Wrap both in the same transaction; if open-loop create fails, rollback the feedback too |
-| `RecommendationFeedbackRecorded` signal fires before downstream consumers (W4-B/C) exist | LOW | Signal type declared but unused for one wave; no harm |
+| Idempotent re-submission silently fails to short-circuit (predicate bug) | HIGH | Cycle 3 B14 fixed the `LIKE '%"pending"%'` to `= 'pending'` (empirically verified). Test asserts predicate matches Pending state shape from `contracts.rs:103-106`. |
+| `BoundedNote` 200-char enforcement bypassed | LOW | Already enforced at `BoundedNote::try_from` construction (`contracts.rs:148`); validator extension imposes server-side cap on `note` value (B15) |
+| `submit.recommendations.feedback` scope not registered in WP allowlist → block can't call ability | LOW | Transport at `class-dailyos-runtime-client.php:85` is category-agnostic (verified B9); scope is allowlist-runtime-registered per `SurfaceScope::new` (verified §15) |
+| Convert{Action(action_id)} accepts phantom action_id | LOW | Explicit per AC#14 — caller responsibility; W4-A does not validate action existence. If validation needed later, additive ability change |
+| Convert{ClaimCorrection(claim_id)} accepts phantom claim_id | LOW | Same as above — `corrected_text` payload references claim_id; W4-A trusts the caller-supplied reference |
 
 ---
 
@@ -742,7 +744,7 @@ Per CLAUDE.md DoD section:
 2. End-to-end flow tested: ability invocation → `record_claim_feedback` → `claim_feedback` row written → `claim_feedback_recorded` signal fires automatically → `latest_feedback_suppression` returns the row on next read
 3. No stubs or TODOs
 4. `cargo clippy -- -D warnings && cargo test --lib && pnpm tsc --noEmit` clean
-5. L2-status declared in commit messages
+5. **L2-status declared in commit messages** — enforced by `.githooks/commit-msg` per CLAUDE.md; this is process hygiene every PR observes, not a W4-A-specific artifact (per cycle 2 scope TRIM moved out of §7 CI gate table). Still binding as a project rule.
 6. **No L4 evidence required for the W4-A merge itself** (no UI surface introduced by this lane). However: the `dailyos_suggested_next_steps_feedback_enabled` filter flip in the W3-A WP block is an **L4-gated change**, shipped separately from W4-A merge, gated by hands-on QA of the WP block → REST → ability → record_claim_feedback → claim_feedback row → surfacing read pickup vertical (B12).
 7. **Privacy non-leak documented.** `EffectKind` carries no subject identity beyond what the caller already knows about its own claim (B12).
 8. **Auth overhaul note.** Per the 2026-05-21 auth overhaul memory, ADR-0111 §193 nonce requirement for write events is being stripped for local same-user contexts. W4-A does NOT add nonce machinery; relies on the post-overhaul actor-allowlist model. L1 verifies the current state via a transport-layer grep (B12).
