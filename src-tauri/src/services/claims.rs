@@ -299,6 +299,11 @@ pub enum ClaimError {
     UnknownClaimType(String),
     #[error("unknown claim_id: {0}")]
     UnknownClaimId(String),
+    #[error("claim {claim_id} has unsupported claim_type {claim_type}")]
+    UnsupportedClaimType {
+        claim_id: String,
+        claim_type: String,
+    },
     #[error("claim not found: {0}")]
     ClaimNotFound(String),
     #[error("stale claim version for {claim_id}: expected {expected}, current {current}")]
@@ -3358,7 +3363,7 @@ where
     Ok(serde_json::from_value(serde_json::Value::String(value))?)
 }
 
-fn with_claim_transaction<T>(
+pub(crate) fn with_claim_transaction<T>(
     db: &ActionDb,
     f: impl FnOnce(&ActionDb) -> Result<T, ClaimError>,
 ) -> Result<T, ClaimError> {
@@ -5561,13 +5566,44 @@ fn validate_feedback_action_metadata(
         FeedbackAction::WrongSource => require_payload_string(action, payload, "source_ref"),
         FeedbackAction::NeedsNuance => require_payload_string(action, payload, "corrected_text"),
         FeedbackAction::SurfaceInappropriate => require_payload_string(action, payload, "surface"),
-        FeedbackAction::NotRelevantHere => require_payload_string(action, payload, "invocation_id"),
+        FeedbackAction::NotRelevantHere => {
+            require_payload_string(action, payload, "invocation_id")?;
+            validate_optional_payload_string_chars(action, payload, "note", 200)
+        }
         // MergeIntent (ADR-0123 V1.1) requires merge_target as a JSON-encoded
         // SubjectRef. The receipt-side validator already deep-decodes the
         // SubjectRef shape (`services::claim_receipt::feedback`); here the
         // writer enforces presence + non-empty.
         FeedbackAction::MergeIntent => require_payload_object(action, payload, "merge_target"),
         _ => Ok(()),
+    }
+}
+
+fn validate_optional_payload_string_chars(
+    action: FeedbackAction,
+    payload: &serde_json::Value,
+    key: &str,
+    max_chars: usize,
+) -> Result<(), ClaimError> {
+    let Some(value) = payload.get(key) else {
+        return Ok(());
+    };
+    let Some(value) = value.as_str() else {
+        return Err(ClaimError::InvalidFeedback(format!(
+            "{} feedback requires payload_json.{} to be a string when present",
+            action.as_str(),
+            key
+        )));
+    };
+    let actual = value.chars().count();
+    if actual <= max_chars {
+        Ok(())
+    } else {
+        Err(ClaimError::InvalidFeedback(format!(
+            "{} feedback payload_json.{} is {actual} characters; maximum is {max_chars}",
+            action.as_str(),
+            key
+        )))
     }
 }
 

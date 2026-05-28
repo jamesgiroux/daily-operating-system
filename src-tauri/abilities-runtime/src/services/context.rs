@@ -47,9 +47,11 @@ pub use crate::abilities::markdown_preview::contracts::{
 };
 pub use crate::abilities::recommendations::contracts::{
     ListSuggestedNextStepsInput, ListSuggestedNextStepsResponse, SalienceReadError,
-    ScoreSalienceReadRequest, ScoreSalienceResponse, SuggestedNextStepsReadError,
+    ScoreSalienceReadRequest, ScoreSalienceResponse, SubmitRecommendationFeedbackError,
+    SubmitRecommendationFeedbackInput, SubmitRecommendationFeedbackResponse,
+    SuggestedNextStepsReadError,
 };
-use crate::abilities::registry::ActorKind;
+use crate::abilities::registry::{Actor, ActorKind};
 pub use crate::abilities::source_management_ledger::contracts::{
     SourceManagementActionReceipt, SourceManagementActionRequest,
     SourceManagementLedgerReadRequest, SourceManagementLedgerResponse,
@@ -871,6 +873,7 @@ pub struct ServiceContext<'a> {
     source_management_ledger_reader: Option<Arc<dyn SourceManagementLedgerReadHandle>>,
     salience_reader: Option<Arc<dyn SalienceReadHandle>>,
     suggested_next_steps_reader: Option<Arc<dyn SuggestedNextStepsReadHandle>>,
+    recommendation_feedback_writer: Option<Arc<dyn RecommendationFeedbackWriteHandle>>,
     source_management_action_handler: Option<Arc<dyn SourceManagementActionHandle>>,
     workspace_intake: Option<Arc<dyn WorkspaceIntakeService>>,
 }
@@ -1270,6 +1273,34 @@ pub trait SuggestedNextStepsReadHandle: Send + Sync {
         input: ListSuggestedNextStepsInput,
         actor: ActorKind,
     ) -> SuggestedNextStepsReadFuture<'a>;
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct RecommendationFeedbackWriteRequest {
+    pub input: SubmitRecommendationFeedbackInput,
+    pub actor: Actor,
+    pub mode: ExecutionMode,
+    pub recorded_at: DateTime<Utc>,
+    pub ability_id: Option<String>,
+}
+
+pub type RecommendationFeedbackWriteFuture<'a> = Pin<
+    Box<
+        dyn Future<
+                Output = Result<
+                    SubmitRecommendationFeedbackResponse,
+                    SubmitRecommendationFeedbackError,
+                >,
+            > + Send
+            + 'a,
+    >,
+>;
+
+pub trait RecommendationFeedbackWriteHandle: Send + Sync {
+    fn submit_recommendation_feedback<'a>(
+        &'a self,
+        request: RecommendationFeedbackWriteRequest,
+    ) -> RecommendationFeedbackWriteFuture<'a>;
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
@@ -1997,6 +2028,7 @@ impl<'a> ServiceContext<'a> {
             source_management_ledger_reader: None,
             salience_reader: None,
             suggested_next_steps_reader: None,
+            recommendation_feedback_writer: None,
             source_management_action_handler: None,
             workspace_intake: None,
         }
@@ -2037,6 +2069,7 @@ impl<'a> ServiceContext<'a> {
             source_management_ledger_reader: None,
             salience_reader: None,
             suggested_next_steps_reader: None,
+            recommendation_feedback_writer: None,
             source_management_action_handler: None,
             workspace_intake: None,
         }
@@ -2088,6 +2121,7 @@ impl<'a> ServiceContext<'a> {
             source_management_ledger_reader: None,
             salience_reader: None,
             suggested_next_steps_reader: None,
+            recommendation_feedback_writer: None,
             source_management_action_handler: None,
             workspace_intake: None,
         }
@@ -2246,6 +2280,14 @@ impl<'a> ServiceContext<'a> {
         reader: Arc<dyn SuggestedNextStepsReadHandle>,
     ) -> Self {
         self.suggested_next_steps_reader = Some(reader);
+        self
+    }
+
+    pub fn with_recommendation_feedback_writer(
+        mut self,
+        writer: Arc<dyn RecommendationFeedbackWriteHandle>,
+    ) -> Self {
+        self.recommendation_feedback_writer = Some(writer);
         self
     }
 
@@ -2555,6 +2597,28 @@ impl<'a> ServiceContext<'a> {
         };
 
         reader.list_suggested_next_steps(input, actor).await
+    }
+
+    pub async fn submit_recommendation_feedback(
+        &self,
+        input: SubmitRecommendationFeedbackInput,
+        actor: Actor,
+    ) -> Result<SubmitRecommendationFeedbackResponse, SubmitRecommendationFeedbackError> {
+        let Some(writer) = &self.recommendation_feedback_writer else {
+            return Err(SubmitRecommendationFeedbackError::WriteFailed(
+                self.missing_reader_error("recommendation_feedback_write"),
+            ));
+        };
+
+        writer
+            .submit_recommendation_feedback(RecommendationFeedbackWriteRequest {
+                input,
+                actor,
+                mode: self.mode,
+                recorded_at: self.clock.now(),
+                ability_id: self.ability_id.map(str::to_string),
+            })
+            .await
     }
 
     pub async fn apply_source_management_action(

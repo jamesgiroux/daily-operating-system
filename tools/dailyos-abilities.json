@@ -442,6 +442,27 @@
       }
     },
     {
+      "name": "submit_recommendation_feedback",
+      "description": "",
+      "category": "maintenance",
+      "annotations": {},
+      "wp_permission": "none",
+      "allowed_actors": [
+        "user",
+        "surface_client"
+      ],
+      "required_scopes": [
+        "submit.recommendations.feedback"
+      ],
+      "mcp_exposure": "none",
+      "client_side_executable": false,
+      "idempotency_class": "side_effect",
+      "composition_kind": {
+        "produces_blocks": false,
+        "block_types": []
+      }
+    },
+    {
       "name": "workspace_graph",
       "description": "",
       "category": "read",

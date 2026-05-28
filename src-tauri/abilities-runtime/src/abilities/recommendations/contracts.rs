@@ -8,6 +8,7 @@ use crate::abilities::claim_receipt::{ClaimReceiptSnapshot, ClaimReceiptSurfaceC
 use crate::abilities::provenance::SubjectRef;
 use crate::abilities::registry::ActorKind;
 use crate::abilities::trust::types::TrustBand;
+use crate::sensitivity::RenderSurface;
 
 pub const SCORE_SALIENCE_ABILITY_NAME: &str = "score_salience";
 pub const SCORE_SALIENCE_SCHEMA_VERSION: u32 = 1;
@@ -15,6 +16,9 @@ pub const SCORE_SALIENCE_SCOPE: &str = "read.recommendations";
 pub const LIST_SUGGESTED_NEXT_STEPS_ABILITY_NAME: &str = "list_suggested_next_steps";
 pub const LIST_SUGGESTED_NEXT_STEPS_SCHEMA_VERSION: u16 = 1;
 pub const LIST_SUGGESTED_NEXT_STEPS_SCOPE: &str = SCORE_SALIENCE_SCOPE;
+pub const SUBMIT_RECOMMENDATION_FEEDBACK_ABILITY_NAME: &str = "submit_recommendation_feedback";
+pub const SUBMIT_RECOMMENDATION_FEEDBACK_SCHEMA_VERSION: u32 = 1;
+pub const SUBMIT_RECOMMENDATION_FEEDBACK_SCOPE: &str = "submit.recommendations.feedback";
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
 #[serde(transparent)]
@@ -199,6 +203,13 @@ pub enum BoundedNoteError {
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
 #[serde(rename_all = "camelCase")]
+pub struct RecommendationFeedbackContext {
+    pub surface: RenderSurface,
+    pub invocation_id: String,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[serde(rename_all = "camelCase")]
 pub enum ConversionTarget {
     Action(String),
     ClaimCorrection(ClaimId),
@@ -216,6 +227,34 @@ pub enum ConversionState {
     ConvertedToAction { action_id: String },
     ConvertedToClaimCorrection { claim_id: ClaimId },
     ConvertedToReviewQueue { queue_item_id: String },
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[serde(rename_all = "camelCase")]
+pub struct SubmitRecommendationFeedbackInput {
+    pub schema_version: u32,
+    pub claim_id: ClaimId,
+    pub decision: RecommendationFeedbackDecision,
+    pub context: RecommendationFeedbackContext,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[serde(rename_all = "camelCase")]
+pub struct SubmitRecommendationFeedbackResponse {
+    pub schema_version: u32,
+    pub claim_id: ClaimId,
+    pub feedback_state: FeedbackState,
+    pub conversion_state: ConversionState,
+    pub effect_kind: EffectKind,
+    #[schemars(with = "String")]
+    pub recorded_at: DateTime<Utc>,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[serde(rename_all = "camelCase")]
+pub enum EffectKind {
+    ClaimFeedbackRecorded,
+    NoMutation,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
@@ -332,4 +371,23 @@ pub enum SuggestedNextStepsReadError {
     ClaimNotVisible(String),
     #[error("{0}")]
     ReadFailed(String),
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
+pub enum SubmitRecommendationFeedbackError {
+    #[error("unsupported schema_version `{0}` for submit_recommendation_feedback")]
+    UnsupportedSchemaVersion(u32),
+    #[error("unknown claim_id: {0}")]
+    UnknownClaimId(String),
+    #[error("claim `{claim_id}` has unsupported claim_type `{claim_type}`")]
+    UnsupportedClaimType {
+        claim_id: String,
+        claim_type: String,
+    },
+    #[error("invalid recommendation feedback: {0}")]
+    InvalidFeedback(String),
+    #[error("recommendation feedback mutation blocked: {0}")]
+    MutationBlocked(String),
+    #[error("recommendation feedback write failed: {0}")]
+    WriteFailed(String),
 }
