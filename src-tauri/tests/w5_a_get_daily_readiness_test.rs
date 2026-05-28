@@ -684,6 +684,7 @@ fn meeting(workspace_scope: &str, id: &str, title: &str) -> DailyReadinessMeetin
         starts_at: Some("2026-05-14T14:00:00Z".to_string()),
         ends_at: Some("2026-05-14T14:30:00Z".to_string()),
         workspace_scope: workspace_scope.to_string(),
+        meeting_type: "customer".to_string(),
     }
 }
 
