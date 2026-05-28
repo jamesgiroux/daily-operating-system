@@ -626,8 +626,7 @@ impl Executor {
 
         log::info!("Running archive workflow with reconciliation");
 
-        // Step 1: Reconcile BEFORE archive (schedule.json gets cleaned)
-        // Own DB connection to avoid starving foreground IPC commands
+        // Step 1: Reconcile BEFORE archive (schedule.json gets cleaned).
         let recon = {
             let own_db =
                 crate::db::ActionDb::open(std::sync::Arc::new(crate::db::LocalKeychain::new()))
@@ -1048,7 +1047,6 @@ impl Executor {
             .map_err(|e| ExecutionError::ParseError(format!("Failed to load directive: {}", e)))?;
 
         // Deliver schedule + actions (with DB for entity ID resolution + dedup).
-        // Own DB connection to avoid starving foreground IPC commands.
         let own_db =
             crate::db::ActionDb::open(std::sync::Arc::new(crate::db::LocalKeychain::new())).ok();
         let schedule_data = {

@@ -572,6 +572,20 @@ pub fn get_latency_rollups() -> crate::latency::LatencyRollupsPayload {
     crate::latency::get_rollups()
 }
 
+/// Record a frontend main-thread stall observed by `longtaskObserver`. AC2
+/// of the W0 measurement protocol gates on zero stalls > 100 ms during the
+/// scripted load; the frontend's `PerformanceObserver` fires this with the
+/// stall duration so rollups can pass/fail the gate without per-event
+/// console scraping. Budget set to 100 ms so any sample IS a violation.
+#[tauri::command]
+pub fn record_frontend_main_thread_stall(duration_ms: u64) {
+    crate::latency::record_latency(
+        "frontend.main_thread_stall",
+        u128::from(duration_ms),
+        100,
+    );
+}
+
 #[allow(
     clippy::let_underscore_must_use,
     reason = "tauri::command macro emits internal Result glue that discards generated metadata"

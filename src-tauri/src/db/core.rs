@@ -209,7 +209,10 @@ impl ActionDb {
         }
 
         let gate_started = std::time::Instant::now();
-        let mut next_wait_log_at = std::time::Duration::from_secs(5);
+        // W0-B: log gate waits beginning at 250 ms (was 5 s). The previous
+        // threshold only surfaced storms; the lower one surfaces the routine
+        // contention that drives 8.8 s foreground beachballs.
+        let mut next_wait_log_at = std::time::Duration::from_millis(250);
         let wait_limit = std::time::Duration::from_secs(120);
         let _write_gate = loop {
             if let Some(gate) =
@@ -237,11 +240,25 @@ impl ActionDb {
             }
         };
         let _holder_guard = WriteTransactionHolderGuard::set(std::panic::Location::caller());
+        // W0-B: budget tightened from 500 ms to 100 ms so the latency rollup's
+        // budget_violations counter surfaces routine contention. The 250 ms
+        // AC threshold is captured by the separate `_over_250ms` rollup below.
+        let gate_wait_ms = gate_started.elapsed().as_millis();
         crate::latency::record_latency(
             "action_db.write_transaction_gate_wait",
-            gate_started.elapsed().as_millis(),
-            500,
+            gate_wait_ms,
+            100,
         );
+        // Dedicated rollup for the AC4 threshold (zero gate-waits > 250 ms at
+        // user-active times). Records only when above the threshold so the
+        // rollup's sample count IS the violation count.
+        if gate_wait_ms > 250 {
+            crate::latency::record_latency(
+                "action_db.write_transaction_gate_wait_over_250ms",
+                gate_wait_ms,
+                250,
+            );
+        }
 
         self.conn
             .execute_batch("BEGIN IMMEDIATE")

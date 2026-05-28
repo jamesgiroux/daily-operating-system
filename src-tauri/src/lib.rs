@@ -1035,6 +1035,7 @@ pub fn run() {
             commands::clear_claude_status_cache,
             commands::install_claude_cli,
             commands::get_latency_rollups,
+            commands::record_frontend_main_thread_stall,
             commands::get_ai_usage_diagnostics,
             commands::fail_improve_generate_test_cases,
             commands::get_fail_improve_diagnostics,

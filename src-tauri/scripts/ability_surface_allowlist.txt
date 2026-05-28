@@ -132,6 +132,7 @@ launch_claude_login
 clear_claude_status_cache
 install_claude_cli
 get_latency_rollups
+record_frontend_main_thread_stall
 get_ai_usage_diagnostics
 install_inbox_sample
 get_frequent_correspondents

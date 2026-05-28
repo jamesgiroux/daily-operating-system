@@ -37,9 +37,39 @@ use crate::db::key_provider::{rekey_database_standalone, DbKeyProvider, Encrypti
 use crate::db::DbError;
 
 /// Number of read connections in the pool.
-const NUM_READERS: usize = 2;
+///
+/// Sized to the N+1 latency-tier rule: foreground UI / foreground sync command /
+/// background task / maintenance = 4 tiers. W0-B introduces the count without
+/// tier ownership; W1-D adds strict ownership if telemetry shows wrong-tier
+/// routing as a residual bottleneck. See ADR-0134 (reader pool sizing).
+const NUM_READERS: usize = 4;
 const DB_QUEUE_LATENCY_BUDGET_MS: u128 = 100;
 const DB_EXECUTION_LATENCY_BUDGET_MS: u128 = 250;
+
+/// Target WAL bytes before SQLite truncates via autocheckpoint. 200 frames ≈
+/// 800 KB at 4 KB pages — small enough that readers don't walk a fat frame
+/// index, large enough that a single enrichment burst doesn't thrash truncate.
+const WAL_AUTOCHECKPOINT_FRAMES: i64 = 200;
+
+/// Target mmap window for the SQLite page cache. Reduces userspace copy cost
+/// on reads when the OS can serve pages from the unified buffer cache. Probed
+/// post-set; if SQLCipher silently disables mmap the open fails so we don't
+/// quietly run without the speedup (see ADR-0092 SQLCipher compatibility).
+const MMAP_TARGET_BYTES: i64 = 268_435_456; // 256 MB
+
+/// Negative cache_size means kibibytes (positive would mean pages). -64 MB
+/// gives readers room to keep hot pages resident without ballooning RSS.
+const CACHE_SIZE_KIB: i64 = -65_536;
+
+/// Cap WAL growth even if a long-running writer prevents PASSIVE checkpoint
+/// from truncating. Defends against the 18+ MB WAL bloat measured pre-W0.
+const JOURNAL_SIZE_LIMIT_BYTES: i64 = 67_108_864; // 64 MB
+
+/// Interval between PASSIVE checkpoints on the writer thread. 30 s is the
+/// canonical SQLite forum recommendation under continuous write load — short
+/// enough to keep WAL from accumulating mid-burst, long enough to avoid
+/// thrashing truncate during user-active windows.
+const WAL_CHECKPOINT_INTERVAL_SECS: u64 = 30;
 
 type CallResult = Result<Box<dyn Any + Send>, PooledCallError>;
 type WorkerTask =
@@ -48,12 +78,14 @@ type WorkerTask =
 enum CallMessage {
     Async {
         label: &'static str,
+        tier_label: Option<&'static str>,
         enqueued_at: Instant,
         task: WorkerTask,
         respond_to: oneshot::Sender<CallResult>,
     },
     Sync {
         label: &'static str,
+        tier_label: Option<&'static str>,
         enqueued_at: Instant,
         task: WorkerTask,
         respond_to: mpsc::Sender<CallResult>,
@@ -187,10 +219,34 @@ impl From<DbAccessError> for String {
     }
 }
 
+/// Slot identity for telemetry. The split lets the W1 hard gate route between
+/// W2 (writer-side dominant) and WX (reader-CPU dominant) instead of guessing
+/// which side of the pool is saturated.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum SlotKind {
+    Writer,
+    Reader,
+}
+
+impl SlotKind {
+    fn as_label(self) -> &'static str {
+        match self {
+            Self::Writer => "writer",
+            Self::Reader => "reader",
+        }
+    }
+}
+
 /// Shared worker internals.
 struct PooledConnectionInner {
     sender: mpsc::Sender<CallMessage>,
     handle: StdMutex<Option<std::thread::JoinHandle<()>>>,
+    slot_kind: SlotKind,
+    /// Optional caller-supplied tier annotation (e.g. "foreground_ui",
+    /// "background"). When set, latency samples carry an extra
+    /// `{label}.{phase}.tier.{tier}` rollup so W1-D's earn signal can
+    /// distinguish wrong-tier routing from genuine pool saturation.
+    tier_label: Option<&'static str>,
 }
 
 impl PooledConnectionInner {
@@ -235,12 +291,40 @@ fn run_task(task: WorkerTask, conn: &mut Connection) -> CallResult {
     }
 }
 
-fn record_worker_latency(label: &'static str, phase: &str, elapsed_ms: u128, budget_ms: u128) {
+fn record_worker_latency(
+    label: &'static str,
+    phase: &str,
+    slot_kind: SlotKind,
+    tier_label: Option<&'static str>,
+    elapsed_ms: u128,
+    budget_ms: u128,
+) {
+    // Base rollup: backwards-compatible with existing dashboards.
     crate::latency::record_latency(&format!("{label}.{phase}"), elapsed_ms, budget_ms);
+    // Writer/reader split: surface which side of the pool is saturated so the
+    // W1 hard gate can route between W2 (writer-side dominant) and WX
+    // (reader-CPU dominant).
+    crate::latency::record_latency(
+        &format!("{label}.{phase}.{}", slot_kind.as_label()),
+        elapsed_ms,
+        budget_ms,
+    );
+    // Tier-of-origin (optional): only emitted when the caller used a
+    // tier-labeled accessor. Lets W1-D distinguish "foreground used a slot
+    // also serving background" from "all slots saturated."
+    if let Some(tier) = tier_label {
+        crate::latency::record_latency(
+            &format!("{label}.{phase}.tier.{tier}"),
+            elapsed_ms,
+            budget_ms,
+        );
+    }
 }
 
 fn run_timed_task(
     label: &'static str,
+    slot_kind: SlotKind,
+    tier_label: Option<&'static str>,
     enqueued_at: Instant,
     task: WorkerTask,
     conn: &mut Connection,
@@ -248,6 +332,8 @@ fn run_timed_task(
     record_worker_latency(
         label,
         "queue_wait",
+        slot_kind,
+        tier_label,
         enqueued_at.elapsed().as_millis(),
         DB_QUEUE_LATENCY_BUDGET_MS,
     );
@@ -256,6 +342,8 @@ fn run_timed_task(
     record_worker_latency(
         label,
         "execution",
+        slot_kind,
+        tier_label,
         started.elapsed().as_millis(),
         DB_EXECUTION_LATENCY_BUDGET_MS,
     );
@@ -263,31 +351,33 @@ fn run_timed_task(
 }
 
 impl PooledConnection {
-    fn new(conn: Connection) -> Result<Self, DbError> {
+    fn new(conn: Connection, slot_kind: SlotKind) -> Result<Self, DbError> {
         let (sender, receiver) = mpsc::channel();
         let handle = thread::Builder::new()
-            .name("dailyos-db-connection".to_string())
+            .name(format!("dailyos-db-{}", slot_kind.as_label()))
             .spawn(move || {
                 let mut conn = conn;
                 while let Ok(message) = receiver.recv() {
                     match message {
                         CallMessage::Async {
                             label,
+                            tier_label,
                             enqueued_at,
                             task,
                             respond_to,
                         } => {
                             #[allow(clippy::let_underscore_must_use, reason = "intentional best-effort discard; preserves existing non-blocking behavior")]
-                            let _ = respond_to.send(run_timed_task(label, enqueued_at, task, &mut conn));
+                            let _ = respond_to.send(run_timed_task(label, slot_kind, tier_label, enqueued_at, task, &mut conn));
                         }
                         CallMessage::Sync {
                             label,
+                            tier_label,
                             enqueued_at,
                             task,
                             respond_to,
                         } => {
                             #[allow(clippy::let_underscore_must_use, reason = "intentional best-effort discard; preserves existing non-blocking behavior")]
-                            let _ = respond_to.send(run_timed_task(label, enqueued_at, task, &mut conn));
+                            let _ = respond_to.send(run_timed_task(label, slot_kind, tier_label, enqueued_at, task, &mut conn));
                         }
                         CallMessage::Shutdown => {
                             break;
@@ -301,8 +391,29 @@ impl PooledConnection {
             inner: Arc::new(PooledConnectionInner {
                 sender,
                 handle: StdMutex::new(Some(handle)),
+                slot_kind,
+                tier_label: None,
             }),
         })
+    }
+
+    /// Return a cheap clone of this connection annotated with a tier label.
+    /// Subsequent `call*` invocations record latency under
+    /// `{label}.{phase}.tier.{tier}` in addition to the base and slot rollups.
+    ///
+    /// Pre-W1-D this is opt-in: only the highest-frequency foreground call
+    /// sites take a tier annotation, which is enough for the W1 hard gate to
+    /// distinguish "tier confusion" from "pool saturation." Universal
+    /// migration (197 sites) is W1-D's earn signal, not W0-B's.
+    pub fn with_tier(&self, tier: &'static str) -> Self {
+        Self {
+            inner: Arc::new(PooledConnectionInner {
+                sender: self.inner.sender.clone(),
+                handle: StdMutex::new(None),
+                slot_kind: self.inner.slot_kind,
+                tier_label: Some(tier),
+            }),
+        }
     }
 
     fn split_payload<T: Send + 'static>(payload: CallResult) -> Result<T, PooledCallError> {
@@ -334,6 +445,7 @@ impl PooledConnection {
             .sender
             .send(CallMessage::Async {
                 label,
+                tier_label: self.inner.tier_label,
                 enqueued_at: Instant::now(),
                 task,
                 respond_to: tx,
@@ -364,6 +476,7 @@ impl PooledConnection {
             .sender
             .send(CallMessage::Sync {
                 label,
+                tier_label: self.inner.tier_label,
                 enqueued_at: Instant::now(),
                 task,
                 respond_to: tx,
@@ -379,6 +492,12 @@ impl PooledConnection {
 
 /// Apply standard pragmas to a connection. `read_only` adds `query_only=ON`.
 /// PRAGMA key MUST be first for SQLCipher (ADR-0092).
+///
+/// W0-A adds WAL throughput pragmas: `wal_autocheckpoint`, `mmap_size`,
+/// `cache_size`, `journal_size_limit`. The `mmap_size` setting is probed
+/// post-set and fails loud on 0 — SQLCipher silently disables mmap on builds
+/// without `SQLITE_ENABLE_MMAP_SIZE`, and we want that surfaced at open rather
+/// than discovered as missing read-path acceleration during a beachball.
 fn apply_pragmas(
     conn: &Connection,
     read_only: bool,
@@ -389,6 +508,22 @@ fn apply_pragmas(
     conn.execute_batch("PRAGMA busy_timeout = 5000;")?;
     conn.execute_batch("PRAGMA synchronous = NORMAL;")?;
     conn.execute_batch("PRAGMA foreign_keys = ON;")?;
+    conn.execute_batch(&format!(
+        "PRAGMA wal_autocheckpoint = {WAL_AUTOCHECKPOINT_FRAMES};"
+    ))?;
+    conn.execute_batch(&format!("PRAGMA mmap_size = {MMAP_TARGET_BYTES};"))?;
+    conn.execute_batch(&format!("PRAGMA cache_size = {CACHE_SIZE_KIB};"))?;
+    conn.execute_batch(&format!(
+        "PRAGMA journal_size_limit = {JOURNAL_SIZE_LIMIT_BYTES};"
+    ))?;
+    let mmap_size: i64 = conn.query_row("PRAGMA mmap_size;", [], |row| row.get(0))?;
+    if mmap_size == 0 {
+        return Err(rusqlite::Error::InvalidParameterName(format!(
+            "PRAGMA mmap_size returned 0 after setting {MMAP_TARGET_BYTES} — \
+             SQLCipher build does not support mmap. Rebuild with \
+             SQLITE_ENABLE_MMAP_SIZE or relax the W0-A mmap requirement."
+        )));
+    }
     if read_only {
         conn.execute_batch("PRAGMA query_only = ON;")?;
     }
@@ -432,10 +567,10 @@ struct DbConnectionPool {
 
 impl DbConnectionPool {
     fn from_connections(writer: Connection, readers: Vec<Connection>) -> Result<Self, DbError> {
-        let writer = PooledConnection::new(writer)?;
+        let writer = PooledConnection::new(writer, SlotKind::Writer)?;
         let readers = readers
             .into_iter()
-            .map(PooledConnection::new)
+            .map(|conn| PooledConnection::new(conn, SlotKind::Reader))
             .collect::<Result<Vec<_>, _>>()?;
         Ok(Self { writer, readers })
     }
@@ -540,11 +675,83 @@ impl DbService {
         }
 
         let pool = DbConnectionPool::from_connections(writer, reader_conns)?;
-        Ok(Arc::new(Self {
+        let svc = Arc::new(Self {
             path,
             pool: parking_lot::RwLock::new(pool),
             read_idx: AtomicUsize::new(0),
-        }))
+        });
+        // Restore long-window latency counters from the previous run before
+        // any new samples land. Best-effort: missing rows / parse errors are
+        // logged and we proceed with empty counters.
+        hydrate_latency_snapshot_from_kv(&svc.reader()).await;
+        Self::spawn_checkpoint_task(Arc::downgrade(&svc));
+        Ok(svc)
+    }
+
+    /// Run `PRAGMA wal_checkpoint(PASSIVE)` on the writer thread every
+    /// [`WAL_CHECKPOINT_INTERVAL_SECS`]. The task holds a `Weak<DbService>` so
+    /// it exits cleanly when the last strong ref is dropped (DbService Drop ⇒
+    /// pool shutdown ⇒ writer channel closed). PASSIVE is the right mode here
+    /// because it never blocks readers or writers — if a writer is mid-commit,
+    /// the call returns without truncating and we try again next interval.
+    fn spawn_checkpoint_task(weak_svc: std::sync::Weak<DbService>) {
+        tokio::spawn(async move {
+            let mut interval = tokio::time::interval(std::time::Duration::from_secs(
+                WAL_CHECKPOINT_INTERVAL_SECS,
+            ));
+            interval.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Skip);
+            // First tick fires immediately; consume it so the first real
+            // checkpoint happens one interval after open, not at t=0.
+            interval.tick().await;
+            let mut tick_counter: u32 = 0;
+            loop {
+                interval.tick().await;
+                tick_counter = tick_counter.wrapping_add(1);
+                let Some(svc) = weak_svc.upgrade() else {
+                    log::debug!("db_service: checkpoint task exiting (DbService dropped)");
+                    break;
+                };
+                let writer = svc.writer();
+                drop(svc);
+                let started = Instant::now();
+                let result = writer
+                    .call_labeled("db.wal_checkpoint_passive", |conn| {
+                        conn.query_row("PRAGMA wal_checkpoint(PASSIVE);", [], |row| {
+                            Ok((
+                                row.get::<_, i64>(0)?,
+                                row.get::<_, i64>(1)?,
+                                row.get::<_, i64>(2)?,
+                            ))
+                        })
+                    })
+                    .await;
+                let elapsed_ms = started.elapsed().as_millis();
+                match result {
+                    Ok((busy, log_frames, ckpt_frames)) => {
+                        if busy != 0 || log_frames > WAL_AUTOCHECKPOINT_FRAMES.saturating_mul(4) {
+                            log::warn!(
+                                "db.wal_checkpoint_passive elevated: busy={busy} log_frames={log_frames} checkpointed={ckpt_frames} elapsed_ms={elapsed_ms}"
+                            );
+                        } else {
+                            log::trace!(
+                                "db.wal_checkpoint_passive: log_frames={log_frames} checkpointed={ckpt_frames} elapsed_ms={elapsed_ms}"
+                            );
+                        }
+                    }
+                    Err(PooledCallError::Closed) => {
+                        log::debug!("db_service: checkpoint task exiting (writer closed)");
+                        break;
+                    }
+                    Err(error) => {
+                        log::warn!("db.wal_checkpoint_passive failed: {error}");
+                    }
+                }
+                // Persist latency counters every N ticks for restart durability.
+                if tick_counter.is_multiple_of(LATENCY_PERSIST_INTERVAL_TICKS) {
+                    persist_latency_snapshot_to_kv(&writer).await;
+                }
+            }
+        });
     }
 
     #[cfg(test)]
@@ -578,6 +785,12 @@ impl DbService {
             conn.execute_batch("PRAGMA busy_timeout = 5000;")?;
             conn.execute_batch("PRAGMA synchronous = NORMAL;")?;
             conn.execute_batch("PRAGMA foreign_keys = ON;")?;
+            conn.execute_batch(&format!(
+                "PRAGMA wal_autocheckpoint = {WAL_AUTOCHECKPOINT_FRAMES};"
+            ))?;
+            conn.execute_batch(&format!(
+                "PRAGMA journal_size_limit = {JOURNAL_SIZE_LIMIT_BYTES};"
+            ))?;
             crate::migrations::run_migrations(&conn).map_err(DbError::Migration)?;
             Ok(conn)
         })
@@ -594,6 +807,9 @@ impl DbService {
                 conn.execute_batch("PRAGMA synchronous = NORMAL;")?;
                 conn.execute_batch("PRAGMA foreign_keys = ON;")?;
                 conn.execute_batch("PRAGMA query_only = ON;")?;
+                conn.execute_batch(&format!(
+                    "PRAGMA wal_autocheckpoint = {WAL_AUTOCHECKPOINT_FRAMES};"
+                ))?;
                 Ok(conn)
             })
             .await
@@ -721,6 +937,93 @@ impl DbService {
         let idx = self.read_idx.fetch_add(1, Ordering::Relaxed) % pool.readers.len();
         pool.readers[idx].clone()
     }
+
+    /// Reader connection, round-robin, annotated with a tier label for
+    /// telemetry. Equivalent to `reader().with_tier(tier)` but a single call
+    /// for the hot foreground sites. See [`PooledConnection::with_tier`] for
+    /// W0-B / W1-D earn-signal context.
+    pub fn reader_for_tier(&self, tier: &'static str) -> PooledConnection {
+        self.reader().with_tier(tier)
+    }
+}
+
+/// app_state_kv key for the persisted latency-counter snapshot. Written every
+/// `LATENCY_PERSIST_INTERVAL_TICKS` checkpoint cycles by `spawn_checkpoint_task`
+/// and hydrated once from `open_at`. v1 schema: `LatencyPersistentSnapshot`
+/// JSON. A schema change here requires bumping the key (`...v2`) so old keys
+/// don't deserialize incorrectly.
+const LATENCY_KV_KEY: &str = "db.latency.persistent_snapshot.v1";
+
+/// One persist per N checkpoint cycles. 30 s × 2 = 60 s persist cadence,
+/// which trades restart granularity against writer-thread budget.
+const LATENCY_PERSIST_INTERVAL_TICKS: u32 = 2;
+
+/// Persist current latency counters to `app_state_kv` via the writer queue.
+/// Best-effort: a failure here is logged but does not propagate, because a
+/// failed persist must not break a foreground command or stop the checkpoint
+/// loop. The next tick will retry.
+///
+/// Wraps the write in `ActionDb::with_transaction` so the call satisfies
+/// ADR-0133 §2's "explicit transaction wrapper" requirement, even though the
+/// single INSERT OR REPLACE would auto-commit on its own.
+async fn persist_latency_snapshot_to_kv(writer: &PooledConnection) {
+    let snapshot = crate::latency::snapshot_for_persistence();
+    let Ok(value_json) = serde_json::to_string(&snapshot) else {
+        log::warn!("latency snapshot serialize failed");
+        return;
+    };
+    let timestamp = chrono::Utc::now().to_rfc3339();
+    let result = writer
+        .call_labeled("db.latency.persist_snapshot", move |conn| {
+            let db = crate::db::ActionDb::from_conn(conn);
+            db.with_transaction(|inner| {
+                inner
+                    .conn_ref()
+                    .execute(
+                        "INSERT OR REPLACE INTO app_state_kv (key, value_json, updated_at) \
+                         VALUES (?1, ?2, ?3)",
+                        rusqlite::params![LATENCY_KV_KEY, value_json, timestamp],
+                    )
+                    .map(|_| ())
+                    .map_err(|e| e.to_string())
+            })
+            .map_err(rusqlite::Error::InvalidParameterName)
+        })
+        .await;
+    if let Err(error) = result {
+        log::warn!("latency snapshot persist failed: {error}");
+    }
+}
+
+/// Hydrate latency counters from the most recent persisted snapshot, if any.
+/// Called once from `open_at` so the W0 measurement protocol's long-window
+/// counters survive process restarts. Missing keys / parse errors are
+/// non-fatal — startup must not block on telemetry plumbing.
+async fn hydrate_latency_snapshot_from_kv(reader: &PooledConnection) {
+    let row_result = reader
+        .call_labeled("db.latency.hydrate_snapshot", |conn| {
+            conn.query_row(
+                "SELECT value_json FROM app_state_kv WHERE key = ?1",
+                rusqlite::params![LATENCY_KV_KEY],
+                |row| row.get::<_, String>(0),
+            )
+            .map(Some)
+            .or_else(|e| match e {
+                rusqlite::Error::QueryReturnedNoRows => Ok(None),
+                other => Err(other),
+            })
+        })
+        .await;
+    let Ok(Some(value_json)) = row_result else {
+        return;
+    };
+    let Ok(snapshot) =
+        serde_json::from_str::<crate::latency::LatencyPersistentSnapshot>(&value_json)
+    else {
+        log::warn!("latency snapshot deserialize failed; ignoring");
+        return;
+    };
+    crate::latency::apply_persistent_snapshot(snapshot);
 }
 
 impl Drop for DbService {
