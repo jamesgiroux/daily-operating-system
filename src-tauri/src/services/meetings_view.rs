@@ -35,7 +35,7 @@ use crate::helpers::today_meeting_filter_for_date;
 // wrap it in a newtype with a phantom intent tag so the projection invariant
 // is compile-time.
 pub use abilities_runtime::services::context::{
-    DailyReadinessMeetingSnapshot as SurfaceMeeting, MeetingsViewIntent,
+    is_customer_facing, DailyReadinessMeetingSnapshot as SurfaceMeeting, MeetingsViewIntent,
 };
 
 /// Surface-relevant meetings for one local day, filtered to the rows the
@@ -64,29 +64,28 @@ pub fn read_surface_meetings(
     let rows = stmt
         .query_map(rusqlite::params![window.utc_start, window.utc_end], |row| {
             let meeting_type: String = row.get(4)?;
-            Ok((
-                SurfaceMeeting {
-                    id: row.get(0)?,
-                    title: row.get(1)?,
-                    starts_at: row.get(2)?,
-                    ends_at: row.get(3)?,
-                    workspace_scope: workspace_scope.to_string(),
-                },
+            Ok(SurfaceMeeting {
+                id: row.get(0)?,
+                title: row.get(1)?,
+                starts_at: row.get(2)?,
+                ends_at: row.get(3)?,
+                workspace_scope: workspace_scope.to_string(),
                 meeting_type,
-            ))
+            })
         })
         .map_err(|error| error.to_string())?;
 
     let mut out = Vec::new();
     for row in rows {
-        let (meeting, meeting_type) = row.map_err(|error| error.to_string())?;
-        if !intent_includes(intent, &meeting_type) {
+        let meeting = row.map_err(|error| error.to_string())?;
+        if !intent_includes(intent, &meeting.meeting_type) {
             continue;
         }
         out.push(meeting);
     }
     Ok(out)
 }
+
 
 fn intent_includes(intent: MeetingsViewIntent, meeting_type: &str) -> bool {
     match intent {

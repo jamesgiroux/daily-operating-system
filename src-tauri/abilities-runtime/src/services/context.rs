@@ -1617,6 +1617,11 @@ pub struct DailyReadinessMeetingSnapshot {
     pub starts_at: Option<String>,
     pub ends_at: Option<String>,
     pub workspace_scope: String,
+    /// Lower-snake_case meeting_type discriminant (`customer`, `qbr`,
+    /// `partnership`, `external`, `internal`, `team_sync`, `one_on_one`,
+    /// `all_hands`, `training`). Consumers gate advisory-class logic on
+    /// `is_customer_facing` — surface display still iterates every row.
+    pub meeting_type: String,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -1700,6 +1705,18 @@ pub enum MeetingsViewIntent {
     Briefing,
     Schedule,
     AllRows,
+}
+
+/// Customer-facing meeting types — the ones that warrant prep documents and
+/// customer/account entity attribution. Internal team meetings stay in the
+/// schedule but should not drive `needs_prep` / `unlinked_meetings`
+/// advisories. Pure-function, no allocation; callers pass the snapshot's
+/// `meeting_type` discriminant directly.
+pub fn is_customer_facing(meeting_type: &str) -> bool {
+    matches!(
+        meeting_type,
+        "customer" | "qbr" | "partnership" | "external"
+    )
 }
 
 /// Narrow read handle for daily-readiness seed assembly. Ability code receives

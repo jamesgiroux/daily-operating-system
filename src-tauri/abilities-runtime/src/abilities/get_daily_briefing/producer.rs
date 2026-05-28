@@ -39,8 +39,8 @@ use crate::abilities::{
     AbilityCategory, AbilityContext, AbilityError, AbilityErrorKind, AbilityResult, Actor,
 };
 use crate::services::context::{
-    DailyReadinessContextSnapshot, DailyReadinessMeetingSnapshot, MeetingPrepStatusReadError,
-    MeetingPrepStatusSnapshot,
+    is_customer_facing, DailyReadinessContextSnapshot, DailyReadinessMeetingSnapshot,
+    MeetingPrepStatusReadError, MeetingPrepStatusSnapshot,
 };
 use crate::types::{ClaimSensitivity, ClaimState};
 
@@ -125,22 +125,42 @@ pub async fn build_daily_briefing(
             .await
         {
             Ok(snapshot) => {
-                if prep_status_is_needs_preparation(&snapshot.status) {
+                // Only customer-facing meeting types drive the "needs prep"
+                // advisory. Internal syncs / 1:1s / team meetings legitimately
+                // have no prep doc; counting them inflates the strip and
+                // recreates the DOS-771 phantom-row shape one level up.
+                if prep_status_is_needs_preparation(&snapshot.status)
+                    && is_customer_facing(&meeting.meeting_type)
+                {
                     needs_prep_meeting_ids.push(snapshot.meeting_id.clone());
                 }
                 prep_snapshots.insert(meeting.id.clone(), snapshot);
             }
             Err(MeetingPrepStatusReadError::MeetingNotFound(_)) => {
                 // Meeting in readiness context but not in prep table → treat
-                // as NeedsPreparation; do NOT enqueue (AC-507.3).
-                needs_prep_meeting_ids.push(meeting.id.clone());
+                // as NeedsPreparation; do NOT enqueue (AC-507.3). Same
+                // customer-facing gate as the Ok branch.
+                if is_customer_facing(&meeting.meeting_type) {
+                    needs_prep_meeting_ids.push(meeting.id.clone());
+                }
             }
             Err(MeetingPrepStatusReadError::ReadFailed(message)) => {
                 prep_read_failures.push(message);
-                needs_prep_meeting_ids.push(meeting.id.clone());
+                if is_customer_facing(&meeting.meeting_type) {
+                    needs_prep_meeting_ids.push(meeting.id.clone());
+                }
             }
         }
     }
+
+    // Set of meeting IDs that are NOT customer-facing — passed to
+    // derive_advisories so its unlinked-meetings filter can skip internal
+    // / team-sync / 1:1 rows that legitimately have no customer entity.
+    let non_customer_meeting_ids: std::collections::HashSet<String> = meetings
+        .iter()
+        .filter(|m| !is_customer_facing(&m.meeting_type))
+        .map(|m| m.id.clone())
+        .collect();
 
     // ---- compose: meeting brief refs --------------------------------------
     let current_meeting = current_meeting_seed
@@ -222,6 +242,7 @@ pub async fn build_daily_briefing(
     let advisories = derive_advisories(
         &readiness,
         &expanded_meeting_refs,
+        &non_customer_meeting_ids,
         &prep_read_failures,
         &envelope_failures,
     );
@@ -671,6 +692,7 @@ fn ambiguity_pair_placeholder(a: &str, b: &str, reason: &str) -> AmbiguityPair {
 fn derive_advisories(
     readiness: &DailyReadinessContextSnapshot,
     meetings: &[MeetingBriefRef],
+    non_customer_meeting_ids: &std::collections::HashSet<String>,
     prep_read_failures: &[String],
     envelope_failures: &[String],
 ) -> Vec<BriefingAdvisory> {
@@ -678,6 +700,9 @@ fn derive_advisories(
     let unlinked = meetings
         .iter()
         .filter(|m| m.linked_entity_id.is_none())
+        // Internal / team-sync / 1:1 meetings have no customer entity by
+        // design — they shouldn't trip the "link N meetings" advisory.
+        .filter(|m| !non_customer_meeting_ids.contains(&m.meeting_id))
         .map(|m| m.meeting_id.clone())
         .collect::<Vec<_>>();
     if !unlinked.is_empty() {
@@ -1052,6 +1077,7 @@ mod state_matrix_fixtures {
             starts_at,
             ends_at: None,
             workspace_scope: "local".to_string(),
+            meeting_type: "customer".to_string(),
         }
     }
 
@@ -1066,6 +1092,7 @@ mod state_matrix_fixtures {
             starts_at: Some(starts_at.to_string()),
             ends_at: ends_at.map(str::to_string),
             workspace_scope: "local".to_string(),
+            meeting_type: "customer".to_string(),
         }
     }
 
@@ -1432,5 +1459,125 @@ mod state_matrix_fixtures {
         assert_eq!(parse_entity_kind("person"), Some(EntityKind::Person));
         assert!(parse_entity_kind("meeting").is_none());
         assert!(parse_entity_kind("").is_none());
+    }
+
+    /// DOS-816 regression: internal / team-sync / 1:1 meetings must NOT trip
+    /// the "Link N meetings" unlinked-meetings advisory. Customer-facing rows
+    /// continue to advisory normally.
+    #[test]
+    fn derive_advisories_skips_non_customer_facing_meetings() {
+        let readiness = DailyReadinessContextSnapshot {
+            workspace_scope: "local".to_string(),
+            date: "2026-05-28".to_string(),
+            meetings: Vec::new(),
+            tracked_subjects: Vec::new(),
+            overnight_changes: Vec::new(),
+            risk_shifts: Vec::new(),
+            open_loops: Vec::new(),
+            coverage_warnings: Vec::new(),
+        };
+        let meetings = vec![
+            // 4 internal, 1 customer — none has linked_entity_id
+            meeting_brief_unlinked("m-internal-1"),
+            meeting_brief_unlinked("m-internal-2"),
+            meeting_brief_unlinked("m-internal-3"),
+            meeting_brief_unlinked("m-internal-4"),
+            meeting_brief_unlinked("m-customer-1"),
+        ];
+        let non_customer: std::collections::HashSet<String> = [
+            "m-internal-1",
+            "m-internal-2",
+            "m-internal-3",
+            "m-internal-4",
+        ]
+        .iter()
+        .map(|s| s.to_string())
+        .collect();
+
+        let advisories = derive_advisories(&readiness, &meetings, &non_customer, &[], &[]);
+
+        // Only the customer meeting should appear in the unlinked advisory.
+        // Pre-fix this would have produced "Link 5 meetings" — DOS-816 shape.
+        let unlinked_ids: Vec<&str> = advisories
+            .iter()
+            .find_map(|a| match a {
+                BriefingAdvisory::UnlinkedMeetings { meeting_ids } => {
+                    Some(meeting_ids.iter().map(String::as_str).collect())
+                }
+                _ => None,
+            })
+            .expect("UnlinkedMeetings advisory present");
+        assert_eq!(unlinked_ids, vec!["m-customer-1"]);
+    }
+
+    /// DOS-816 regression: when every meeting is internal, no
+    /// UnlinkedMeetings advisory should fire at all.
+    #[test]
+    fn derive_advisories_emits_no_unlinked_advisory_when_all_internal() {
+        let readiness = DailyReadinessContextSnapshot {
+            workspace_scope: "local".to_string(),
+            date: "2026-05-28".to_string(),
+            meetings: Vec::new(),
+            tracked_subjects: Vec::new(),
+            overnight_changes: Vec::new(),
+            risk_shifts: Vec::new(),
+            open_loops: Vec::new(),
+            coverage_warnings: Vec::new(),
+        };
+        let meetings = vec![
+            meeting_brief_unlinked("m-internal-1"),
+            meeting_brief_unlinked("m-internal-2"),
+        ];
+        let non_customer: std::collections::HashSet<String> =
+            ["m-internal-1", "m-internal-2"]
+                .iter()
+                .map(|s| s.to_string())
+                .collect();
+
+        let advisories = derive_advisories(&readiness, &meetings, &non_customer, &[], &[]);
+
+        let has_unlinked = advisories
+            .iter()
+            .any(|a| matches!(a, BriefingAdvisory::UnlinkedMeetings { .. }));
+        assert!(
+            !has_unlinked,
+            "internal-only day must not emit UnlinkedMeetings advisory; got {:?}",
+            advisories
+        );
+    }
+
+    fn meeting_brief_unlinked(id: &str) -> MeetingBriefRef {
+        MeetingBriefRef {
+            meeting_id: id.to_string(),
+            title: Some(id.to_string()),
+            starts_at: Some("2026-05-28T10:00:00Z".to_string()),
+            ends_at: Some("2026-05-28T10:30:00Z".to_string()),
+            linked_entity_type: None,
+            linked_entity_id: None,
+            prep_status: "prep_needed".to_string(),
+            blocking_reason: None,
+            stale_reason: None,
+            last_prepared_at: None,
+        }
+    }
+
+    #[test]
+    fn is_customer_facing_recognizes_canonical_set() {
+        for ty in ["customer", "qbr", "partnership", "external"] {
+            assert!(is_customer_facing(ty), "{ty} should be customer-facing");
+        }
+        for ty in [
+            "internal",
+            "team_sync",
+            "one_on_one",
+            "all_hands",
+            "training",
+            "personal",
+        ] {
+            assert!(
+                !is_customer_facing(ty),
+                "{ty} should not be customer-facing"
+            );
+        }
     }
 }
