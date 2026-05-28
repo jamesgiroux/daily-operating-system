@@ -46,7 +46,7 @@
 
 <!-- If false, cite the exemption ID and rationale. -->
 
-**Exemption ID** (if `security_auditor_invoked: false`): `EXEMPT-DOC-ONLY` | `EXEMPT-TEST-FIXTURE` | `EXEMPT-RENAME-NON-SENSITIVE` | `EXEMPT-STYLE` | _none_
+**Exemption ID** (when the field above is set false): `EXEMPT-DOC-ONLY` | `EXEMPT-TEST-FIXTURE` | `EXEMPT-RENAME-NON-SENSITIVE` | `EXEMPT-STYLE` | _none_
 
 **Exemption rationale**:
 
