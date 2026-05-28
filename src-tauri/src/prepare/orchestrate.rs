@@ -779,7 +779,30 @@ pub async fn prepare_today(state: &AppState, workspace: &Path) -> Result<(), Exe
                     has_new_signals: None,
                     last_viewed_at: None,
                 };
-                if let Err(e) = db.upsert_meeting(&db_meeting) {
+                // Routes through ReconcileWriter because the upstream data
+                // (incomplete calendar JSON from the timeline fallback path)
+                // doesn't always carry end_time / attendees that CalendarWriter
+                // requires. ReconcileWriter accepts optional fields and
+                // preserves the lenient upsert semantics this path has always
+                // had.
+                let write_req = crate::services::meetings_writer::WriteRequest {
+                    source: crate::services::meetings_writer::MeetingSource::Reconcile,
+                    id: db_meeting.id.clone(),
+                    title: db_meeting.title.clone(),
+                    meeting_type: db_meeting.meeting_type.clone(),
+                    start_time: db_meeting.start_time.clone(),
+                    end_time: db_meeting.end_time.clone(),
+                    calendar_event_id: db_meeting.calendar_event_id.clone(),
+                    attendees: db_meeting.attendees.clone(),
+                    description: db_meeting.description.clone(),
+                    notes_path: db_meeting.notes_path.clone(),
+                    transcript_path: db_meeting.transcript_path.clone(),
+                    prep_context_json: db_meeting.prep_context_json.clone(),
+                    user_agenda_json: db_meeting.user_agenda_json.clone(),
+                    user_notes: db_meeting.user_notes.clone(),
+                    intelligence_state: db_meeting.intelligence_state.clone(),
+                };
+                if let Err(e) = crate::services::meetings_writer::write(&db, &write_req) {
                     log::warn!("prepare_today: failed to upsert meeting '{}': {}", title, e);
                     continue;
                 }
@@ -1227,7 +1250,26 @@ pub async fn prepare_week(state: &AppState, workspace: &Path) -> Result<(), Exec
                         has_new_signals: None,
                         last_viewed_at: None,
                     };
-                    if let Err(e) = db.upsert_meeting(&db_meeting) {
+                    // ReconcileWriter for the same reason as prepare_today
+                    // above — incomplete calendar JSON, lenient upsert semantics.
+                    let write_req = crate::services::meetings_writer::WriteRequest {
+                        source: crate::services::meetings_writer::MeetingSource::Reconcile,
+                        id: db_meeting.id.clone(),
+                        title: db_meeting.title.clone(),
+                        meeting_type: db_meeting.meeting_type.clone(),
+                        start_time: db_meeting.start_time.clone(),
+                        end_time: db_meeting.end_time.clone(),
+                        calendar_event_id: db_meeting.calendar_event_id.clone(),
+                        attendees: db_meeting.attendees.clone(),
+                        description: db_meeting.description.clone(),
+                        notes_path: db_meeting.notes_path.clone(),
+                        transcript_path: db_meeting.transcript_path.clone(),
+                        prep_context_json: db_meeting.prep_context_json.clone(),
+                        user_agenda_json: db_meeting.user_agenda_json.clone(),
+                        user_notes: db_meeting.user_notes.clone(),
+                        intelligence_state: db_meeting.intelligence_state.clone(),
+                    };
+                    if let Err(e) = crate::services::meetings_writer::write(&db, &write_req) {
                         log::warn!("prepare_week: failed to upsert meeting '{}': {}", title, e);
                         continue;
                     }

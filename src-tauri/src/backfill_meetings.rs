@@ -7,7 +7,7 @@
 use crate::db::ActionDb;
 use crate::types::Config;
 use crate::util::slugify;
-use chrono::{DateTime, NaiveDate, Utc};
+use chrono::NaiveDate;
 use regex::Regex;
 use rusqlite::params;
 use std::collections::HashSet;
@@ -341,9 +341,6 @@ fn create_meeting_record(db: &ActionDb, meeting: &DiscoveredMeeting) -> Result<(
         .and_utc()
         .to_rfc3339();
 
-    let created_at: DateTime<Utc> = Utc::now();
-    let created_at_str = created_at.to_rfc3339();
-
     // Get absolute path for notes_path / transcript_path
     let absolute_path = meeting
         .file_path
@@ -356,35 +353,27 @@ fn create_meeting_record(db: &ActionDb, meeting: &DiscoveredMeeting) -> Result<(
         _ => (absolute_path, None),
     };
 
-    // Insert meeting record
-    conn.execute(
-        "INSERT INTO meetings (
-            id, title, meeting_type, start_time, created_at,
-            notes_path
-         ) VALUES (?1, ?2, ?3, ?4, ?5, ?6)",
-        params![
-            &meeting_id,
-            &meeting.title,
-            meeting_type,
-            &start_time,
-            &created_at_str,
-            &notes_path,
-        ],
-    )
-    .map_err(|e| e.to_string())?;
-
-    // Ensure child table rows exist (3-table schema invariant)
-    conn.execute(
-        "INSERT OR IGNORE INTO meeting_prep (meeting_id) VALUES (?1)",
-        params![&meeting_id],
-    )
-    .map_err(|e| e.to_string())?;
-    conn.execute(
-        "INSERT OR IGNORE INTO meeting_transcripts (meeting_id, transcript_path)
-         VALUES (?1, ?2)",
-        params![&meeting_id, &transcript_path],
-    )
-    .map_err(|e| e.to_string())?;
+    // Route the meeting row through the BackfillWriter adapter so historical
+    // backfill obeys the substrate invariant matrix (intelligence_state
+    // defaults to 'archived' for backfilled rows).
+    let write_req = crate::services::meetings_writer::WriteRequest {
+        source: crate::services::meetings_writer::MeetingSource::Backfill,
+        id: meeting_id.clone(),
+        title: meeting.title.clone(),
+        meeting_type: meeting_type.to_string(),
+        start_time: start_time.clone(),
+        end_time: None,
+        calendar_event_id: None,
+        attendees: None,
+        description: None,
+        notes_path: notes_path.clone(),
+        transcript_path: transcript_path.clone(),
+        prep_context_json: None,
+        user_agenda_json: None,
+        user_notes: None,
+        intelligence_state: None,
+    };
+    crate::services::meetings_writer::write(db, &write_req).map_err(|e| e.to_string())?;
 
     // Link to entity via meeting_entities table
     conn.execute(

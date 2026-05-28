@@ -96,23 +96,30 @@ pub(crate) fn record_calendar_attendance_batch(
                 .optional()
                 .map_err(|e| e.to_string())?;
 
-            match tx
-                .ensure_meeting_in_history(crate::db::EnsureMeetingHistoryInput {
-                    id: &event.meeting_id,
-                    title: &event.title,
-                    meeting_type: &event.meeting_type,
-                    start_time: &event.start_time,
-                    end_time: event.end_time.as_deref(),
-                    calendar_event_id: Some(&event.calendar_event_id),
-                    attendees: Some(&event.attendees_json),
-                    description: None,
-                })
+            let write_req = crate::services::meetings_writer::WriteRequest {
+                source: crate::services::meetings_writer::MeetingSource::Calendar,
+                id: event.meeting_id.clone(),
+                title: event.title.clone(),
+                meeting_type: event.meeting_type.clone(),
+                start_time: event.start_time.clone(),
+                end_time: event.end_time.clone(),
+                calendar_event_id: Some(event.calendar_event_id.clone()),
+                attendees: Some(event.attendees_json.clone()),
+                description: None,
+                notes_path: None,
+                transcript_path: None,
+                prep_context_json: None,
+                user_agenda_json: None,
+                user_notes: None,
+                intelligence_state: None,
+            };
+            match crate::services::meetings_writer::write(tx, &write_req)
                 .map_err(|e| e.to_string())?
             {
-                crate::db::MeetingSyncOutcome::New => {
+                crate::services::meetings_writer::WriteOutcome::Created => {
                     outcome.new_meetings.push(event.meeting_id.clone());
                 }
-                crate::db::MeetingSyncOutcome::Changed => {
+                crate::services::meetings_writer::WriteOutcome::Updated => {
                     tx.mark_meeting_new_signals(&event.meeting_id)
                         .map_err(|e| e.to_string())?;
                     outcome.changed_meetings.push(event.meeting_id.clone());
@@ -139,7 +146,7 @@ pub(crate) fn record_calendar_attendance_batch(
                         }
                     }
                 }
-                crate::db::MeetingSyncOutcome::Unchanged => {}
+                crate::services::meetings_writer::WriteOutcome::Unchanged => {}
             }
 
             for email_lower in &event.attendee_emails {

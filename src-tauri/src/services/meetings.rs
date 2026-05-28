@@ -26,7 +26,25 @@ pub fn upsert_meeting_for_reconcile(
 ) -> Result<(), String> {
     ctx.check_mutation_allowed().map_err(|e| e.to_string())?;
     db.with_transaction(|tx| {
-        tx.upsert_meeting(meeting).map_err(|e| e.to_string())?;
+        let write_req = crate::services::meetings_writer::WriteRequest {
+            source: crate::services::meetings_writer::MeetingSource::Reconcile,
+            id: meeting.id.clone(),
+            title: meeting.title.clone(),
+            meeting_type: meeting.meeting_type.clone(),
+            start_time: meeting.start_time.clone(),
+            end_time: meeting.end_time.clone(),
+            calendar_event_id: meeting.calendar_event_id.clone(),
+            attendees: meeting.attendees.clone(),
+            description: meeting.description.clone(),
+            notes_path: meeting.notes_path.clone(),
+            transcript_path: meeting.transcript_path.clone(),
+            prep_context_json: meeting.prep_context_json.clone(),
+            user_agenda_json: meeting.user_agenda_json.clone(),
+            user_notes: meeting.user_notes.clone(),
+            intelligence_state: meeting.intelligence_state.clone(),
+        };
+        crate::services::meetings_writer::write(tx, &write_req)
+            .map_err(|e| e.to_string())?;
         crate::services::signals::emit(
             ctx,
             tx,
@@ -1116,17 +1134,25 @@ async fn mutate_meeting_entities_and_refresh_briefing(
                         start_time,
                         meeting_type,
                     } => {
-                        db.ensure_meeting_in_history(crate::db::EnsureMeetingHistoryInput {
-                            id: &meeting_id,
-                            title: &meeting_title,
-                            meeting_type: &meeting_type,
-                            start_time: &start_time,
+                        let write_req = crate::services::meetings_writer::WriteRequest {
+                            source: crate::services::meetings_writer::MeetingSource::Manual,
+                            id: meeting_id.clone(),
+                            title: meeting_title.clone(),
+                            meeting_type: meeting_type.clone(),
+                            start_time: start_time.clone(),
                             end_time: None,
                             calendar_event_id: None,
                             attendees: None,
                             description: None,
-                        })
-                        .map_err(|e| e.to_string())?;
+                            notes_path: None,
+                            transcript_path: None,
+                            prep_context_json: None,
+                            user_agenda_json: None,
+                            user_notes: None,
+                            intelligence_state: None,
+                        };
+                        crate::services::meetings_writer::write(db, &write_req)
+                            .map_err(|e| e.to_string())?;
 
                         db.clear_meeting_entities(&meeting_id)
                             .map_err(|e| e.to_string())?;
@@ -1218,17 +1244,25 @@ async fn mutate_meeting_entities_and_refresh_briefing(
                         start_time,
                         meeting_type,
                     } => {
-                        db.ensure_meeting_in_history(crate::db::EnsureMeetingHistoryInput {
-                            id: &meeting_id,
-                            title: &meeting_title,
-                            meeting_type: &meeting_type,
-                            start_time: &start_time,
+                        let write_req = crate::services::meetings_writer::WriteRequest {
+                            source: crate::services::meetings_writer::MeetingSource::Manual,
+                            id: meeting_id.clone(),
+                            title: meeting_title.clone(),
+                            meeting_type: meeting_type.clone(),
+                            start_time: start_time.clone(),
                             end_time: None,
                             calendar_event_id: None,
                             attendees: None,
                             description: None,
-                        })
-                        .map_err(|e| e.to_string())?;
+                            notes_path: None,
+                            transcript_path: None,
+                            prep_context_json: None,
+                            user_agenda_json: None,
+                            user_notes: None,
+                            intelligence_state: None,
+                        };
+                        crate::services::meetings_writer::write(db, &write_req)
+                            .map_err(|e| e.to_string())?;
 
                         db.link_meeting_entity(&meeting_id, &entity_id, &entity_type)
                             .map_err(|e| e.to_string())?;

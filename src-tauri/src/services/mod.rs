@@ -40,6 +40,7 @@ pub mod mcp_v2;
 pub mod meeting_prep_status;
 pub mod meetings;
 pub mod meetings_view;
+pub mod meetings_writer;
 pub mod mutations;
 pub mod people;
 pub mod projection_signing;
