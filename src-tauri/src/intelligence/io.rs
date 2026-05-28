@@ -63,6 +63,66 @@ fn default_recommended_priority() -> i32 {
     3
 }
 
+fn deserialize_optional_stringish<'de, D>(deserializer: D) -> Result<Option<String>, D::Error>
+where
+    D: serde::Deserializer<'de>,
+{
+    let value = Option::<serde_json::Value>::deserialize(deserializer)?;
+    Ok(value.as_ref().and_then(stringish_value))
+}
+
+fn deserialize_stringish_vec<'de, D>(deserializer: D) -> Result<Vec<String>, D::Error>
+where
+    D: serde::Deserializer<'de>,
+{
+    let value = Option::<serde_json::Value>::deserialize(deserializer)?;
+    Ok(value.as_ref().map(stringish_vec).unwrap_or_default())
+}
+
+fn deserialize_stringish_default<'de, D>(deserializer: D) -> Result<String, D::Error>
+where
+    D: serde::Deserializer<'de>,
+{
+    let value = Option::<serde_json::Value>::deserialize(deserializer)?;
+    Ok(value.as_ref().and_then(stringish_value).unwrap_or_default())
+}
+
+fn stringish_vec(value: &serde_json::Value) -> Vec<String> {
+    match value {
+        serde_json::Value::Array(values) => values.iter().filter_map(stringish_value).collect(),
+        other => stringish_value(other).into_iter().collect(),
+    }
+}
+
+fn stringish_value(value: &serde_json::Value) -> Option<String> {
+    match value {
+        serde_json::Value::String(value) => {
+            let trimmed = value.trim();
+            if trimmed.is_empty() {
+                None
+            } else {
+                Some(trimmed.to_string())
+            }
+        }
+        serde_json::Value::Number(value) => Some(value.to_string()),
+        serde_json::Value::Bool(value) => Some(value.to_string()),
+        serde_json::Value::Object(obj) => [
+            "direction",
+            "text",
+            "title",
+            "action",
+            "description",
+            "summary",
+            "rationale",
+            "value",
+        ]
+        .iter()
+        .filter_map(|key| obj.get(*key))
+        .find_map(stringish_value),
+        _ => None,
+    }
+}
+
 /// Tombstone for user-dismissed intelligence items.
 /// Prevents enrichment from re-creating items the user explicitly removed.
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -236,7 +296,11 @@ pub struct AccountHealth {
     pub divergence: Option<HealthDivergence>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub narrative: Option<String>,
-    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    #[serde(
+        default,
+        deserialize_with = "deserialize_stringish_vec",
+        skip_serializing_if = "Vec::is_empty"
+    )]
     pub recommended_actions: Vec<String>,
 }
 
@@ -259,11 +323,21 @@ pub struct HealthTrendTag {
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
 #[serde(rename_all = "camelCase")]
 pub struct HealthTrend {
-    #[serde(default = "default_health_trend_direction")]
+    #[serde(
+        default = "default_health_trend_direction",
+        deserialize_with = "deserialize_stringish_default"
+    )]
     pub direction: String,
-    #[serde(skip_serializing_if = "Option::is_none")]
+    #[serde(
+        default,
+        deserialize_with = "deserialize_optional_stringish",
+        skip_serializing_if = "Option::is_none"
+    )]
     pub rationale: Option<String>,
-    #[serde(default = "default_timeframe")]
+    #[serde(
+        default = "default_timeframe",
+        deserialize_with = "deserialize_stringish_default"
+    )]
     pub timeframe: String,
     #[serde(default)]
     pub confidence: f64,
@@ -304,9 +378,16 @@ pub struct DimensionScore {
     pub score: f64,
     #[serde(default)]
     pub weight: f64,
-    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    #[serde(
+        default,
+        deserialize_with = "deserialize_stringish_vec",
+        skip_serializing_if = "Vec::is_empty"
+    )]
     pub evidence: Vec<String>,
-    #[serde(default = "default_dimension_trend")]
+    #[serde(
+        default = "default_dimension_trend",
+        deserialize_with = "deserialize_stringish_default"
+    )]
     pub trend: String,
 }
 
@@ -646,13 +727,19 @@ pub struct CadenceAssessment {
     /// Meetings per month (30d rolling average).
     pub meetings_per_month: Option<f64>,
     /// Trend: "increasing" | "stable" | "declining" | "erratic"
+    #[serde(default, deserialize_with = "deserialize_optional_stringish")]
     pub trend: Option<String>,
     /// Days since last meeting.
     pub days_since_last: Option<u32>,
     /// Assessment: "healthy" | "adequate" | "sparse" | "cold"
+    #[serde(default, deserialize_with = "deserialize_optional_stringish")]
     pub assessment: Option<String>,
     /// Evidence strings for transparency.
-    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    #[serde(
+        default,
+        deserialize_with = "deserialize_stringish_vec",
+        skip_serializing_if = "Vec::is_empty"
+    )]
     pub evidence: Vec<String>,
 }
 
@@ -661,13 +748,20 @@ pub struct CadenceAssessment {
 #[serde(rename_all = "camelCase")]
 pub struct ResponsivenessAssessment {
     /// Trend in reply cadence: "improving" | "stable" | "slowing" | "gone_quiet"
+    #[serde(default, deserialize_with = "deserialize_optional_stringish")]
     pub trend: Option<String>,
     /// Volume trend: "increasing" | "stable" | "decreasing"
+    #[serde(default, deserialize_with = "deserialize_optional_stringish")]
     pub volume_trend: Option<String>,
     /// Assessment: "responsive" | "normal" | "slow" | "unresponsive"
+    #[serde(default, deserialize_with = "deserialize_optional_stringish")]
     pub assessment: Option<String>,
     /// Evidence strings.
-    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    #[serde(
+        default,
+        deserialize_with = "deserialize_stringish_vec",
+        skip_serializing_if = "Vec::is_empty"
+    )]
     pub evidence: Vec<String>,
 }
 
@@ -749,24 +843,43 @@ pub struct ExpansionSignal {
 #[serde(rename_all = "camelCase")]
 pub struct AgreementOutlook {
     /// high | moderate | low — AI-assessed confidence in successful renewal.
+    #[serde(default, deserialize_with = "deserialize_optional_stringish")]
     pub confidence: Option<String>,
     /// Specific risk factors for THIS renewal.
-    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    #[serde(
+        default,
+        deserialize_with = "deserialize_stringish_vec",
+        skip_serializing_if = "Vec::is_empty"
+    )]
     pub risk_factors: Vec<String>,
     /// Is there upsell/expansion potential tied to the renewal conversation?
+    #[serde(default, deserialize_with = "deserialize_optional_stringish")]
     pub expansion_potential: Option<String>,
     /// One-paragraph editorial read on the renewal — rendered as a
     /// pull-quote below the outlook grid. Distinct from `expansion_potential`.
     /// The AI emits this from the commercial_financial dimension prompt.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[serde(
+        default,
+        deserialize_with = "deserialize_optional_stringish",
+        skip_serializing_if = "Option::is_none"
+    )]
     pub renewal_narrative: Option<String>,
     /// When to start the renewal conversation.
+    #[serde(default, deserialize_with = "deserialize_optional_stringish")]
     pub recommended_start: Option<String>,
     /// What strengthens our position.
-    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    #[serde(
+        default,
+        deserialize_with = "deserialize_stringish_vec",
+        skip_serializing_if = "Vec::is_empty"
+    )]
     pub negotiation_leverage: Vec<String>,
     /// What weakens our position.
-    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    #[serde(
+        default,
+        deserialize_with = "deserialize_stringish_vec",
+        skip_serializing_if = "Vec::is_empty"
+    )]
     pub negotiation_risk: Vec<String>,
     /// Peer-cohort renewal benchmark for the Outlook panel's
     /// Benchmark cell. Optional — the cell collapses to the 2-col layout
@@ -823,12 +936,15 @@ pub struct SupportHealth {
     /// Tickets with severity P1/P2.
     pub critical_tickets: Option<u32>,
     /// Average resolution time (hours or days).
+    #[serde(default, deserialize_with = "deserialize_optional_stringish")]
     pub avg_resolution_time: Option<String>,
     /// Trend: "improving" | "stable" | "degrading"
+    #[serde(default, deserialize_with = "deserialize_optional_stringish")]
     pub trend: Option<String>,
     /// CSAT score if available (0-100).
     pub csat: Option<f64>,
     /// Source: "glean_zendesk" | "glean_intercom" | etc.
+    #[serde(default, deserialize_with = "deserialize_optional_stringish")]
     pub source: Option<String>,
 }
 
@@ -839,13 +955,20 @@ pub struct AdoptionSignals {
     /// Active users / licensed users ratio (0.0-1.0).
     pub adoption_rate: Option<f64>,
     /// Trend: "growing" | "stable" | "declining"
+    #[serde(default, deserialize_with = "deserialize_optional_stringish")]
     pub trend: Option<String>,
     /// Key features adopted or not adopted.
-    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    #[serde(
+        default,
+        deserialize_with = "deserialize_stringish_vec",
+        skip_serializing_if = "Vec::is_empty"
+    )]
     pub feature_adoption: Vec<String>,
     /// Last login or usage date (ISO).
+    #[serde(default, deserialize_with = "deserialize_optional_stringish")]
     pub last_active: Option<String>,
     /// Source: "glean" | "product_data"
+    #[serde(default, deserialize_with = "deserialize_optional_stringish")]
     pub source: Option<String>,
 }
 
@@ -858,10 +981,13 @@ pub struct SatisfactionData {
     /// CSAT score (0-100).
     pub csat: Option<f64>,
     /// Survey date (ISO).
+    #[serde(default, deserialize_with = "deserialize_optional_stringish")]
     pub survey_date: Option<String>,
     /// Verbatim feedback if available.
+    #[serde(default, deserialize_with = "deserialize_optional_stringish")]
     pub verbatim: Option<String>,
     /// Source: "glean" | "survey_tool"
+    #[serde(default, deserialize_with = "deserialize_optional_stringish")]
     pub source: Option<String>,
 }
 

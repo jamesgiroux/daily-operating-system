@@ -2265,6 +2265,7 @@ fn build_intelligence_prompt_inner(
     prompt.push_str(&format!(
         "Return ONLY a JSON object — no other text before or after.\n\
          The JSON must conform exactly to this schema:\n\n\
+         Use the exact camelCase field names and value types shown below. Do not use snake_case, renamed fields, or object values where the schema shows strings.\n\n\
          ```json\n\
          {{\n\
            \"executiveAssessment\": \"2-4 paragraphs separated by \\\\n\\\\n. \
@@ -2631,7 +2632,7 @@ struct AiIntelResponse {
     #[serde(default)]
     success_plan_signals: Option<crate::types::SuccessPlanSignals>,
     /// AI-recommended actions from intelligence enrichment.
-    #[serde(default)]
+    #[serde(default, deserialize_with = "deserialize_recommended_actions")]
     recommended_actions: Vec<super::io::RecommendedAction>,
 }
 
@@ -2700,6 +2701,7 @@ struct AiSuccessMetric {
 struct AiOpenCommitment {
     #[serde(default)]
     commitment_id: Option<String>,
+    #[serde(default)]
     description: String,
     #[serde(default)]
     owner: Option<String>,
@@ -2799,6 +2801,7 @@ struct AiPortfolioHotspot {
 #[derive(Debug, Deserialize)]
 #[serde(rename_all = "camelCase")]
 struct AiRisk {
+    #[serde(default)]
     text: String,
     #[serde(default)]
     source: Option<String>,
@@ -2822,6 +2825,7 @@ struct AiRisk {
 #[derive(Debug, Deserialize)]
 #[serde(rename_all = "camelCase")]
 struct AiWin {
+    #[serde(default)]
     text: String,
     #[serde(default)]
     source: Option<String>,
@@ -2847,6 +2851,7 @@ struct AiCurrentState {
 #[derive(Debug, Deserialize)]
 #[serde(rename_all = "camelCase")]
 struct AiStakeholder {
+    #[serde(default)]
     name: String,
     #[serde(default)]
     role: Option<String>,
@@ -2873,6 +2878,7 @@ struct AiStakeholder {
 struct AiValue {
     #[serde(default)]
     date: Option<String>,
+    #[serde(default)]
     statement: String,
     #[serde(default)]
     source: Option<String>,
@@ -2923,6 +2929,100 @@ where
             }
         }),
     )
+}
+
+fn deserialize_recommended_actions<'de, D>(
+    deserializer: D,
+) -> Result<Vec<super::io::RecommendedAction>, D::Error>
+where
+    D: serde::Deserializer<'de>,
+{
+    let value = Option::<serde_json::Value>::deserialize(deserializer)?;
+    Ok(value
+        .as_ref()
+        .map(parse_recommended_actions_value)
+        .unwrap_or_default())
+}
+
+fn parse_recommended_actions_value(value: &serde_json::Value) -> Vec<super::io::RecommendedAction> {
+    value
+        .as_array()
+        .map(|items| {
+            items
+                .iter()
+                .filter_map(parse_recommended_action_value)
+                .collect()
+        })
+        .unwrap_or_default()
+}
+
+fn parse_recommended_action_value(
+    value: &serde_json::Value,
+) -> Option<super::io::RecommendedAction> {
+    if let Ok(action) = serde_json::from_value::<super::io::RecommendedAction>(value.clone()) {
+        if !action.title.trim().is_empty() {
+            return Some(action);
+        }
+    }
+
+    if let Some(title) = stringish_value(value) {
+        return Some(super::io::RecommendedAction {
+            title,
+            rationale: "Recommended from current intelligence signals.".to_string(),
+            priority: 3,
+            suggested_due: None,
+        });
+    }
+
+    let obj = value.as_object()?;
+    let title = first_stringish_field(obj, &["title", "action", "text", "description"])?;
+    let rationale = first_stringish_field(obj, &["rationale", "why", "evidence", "context"])
+        .unwrap_or_else(|| "Recommended from current intelligence signals.".to_string());
+    let priority = obj
+        .get("priority")
+        .and_then(|value| {
+            value
+                .as_i64()
+                .and_then(|n| i32::try_from(n).ok())
+                .or_else(|| value.as_str().and_then(|s| s.trim().parse::<i32>().ok()))
+        })
+        .unwrap_or(3);
+    let suggested_due = first_stringish_field(obj, &["suggestedDue", "suggested_due", "dueDate"]);
+
+    Some(super::io::RecommendedAction {
+        title,
+        rationale,
+        priority,
+        suggested_due,
+    })
+}
+
+fn first_stringish_field(
+    obj: &serde_json::Map<String, serde_json::Value>,
+    keys: &[&str],
+) -> Option<String> {
+    keys.iter()
+        .filter_map(|key| obj.get(*key))
+        .find_map(stringish_value)
+}
+
+fn stringish_value(value: &serde_json::Value) -> Option<String> {
+    match value {
+        serde_json::Value::String(value) => {
+            let trimmed = value.trim();
+            if trimmed.is_empty() {
+                None
+            } else {
+                Some(trimmed.to_string())
+            }
+        }
+        serde_json::Value::Number(value) => Some(value.to_string()),
+        serde_json::Value::Bool(value) => Some(value.to_string()),
+        serde_json::Value::Object(obj) => {
+            first_stringish_field(obj, &["text", "title", "action", "description", "summary"])
+        }
+        _ => None,
+    }
 }
 
 fn deserialize_optional_product_classification<'de, D>(
@@ -3120,26 +3220,39 @@ pub fn parse_intelligence_response(
     source_file_count: usize,
     manifest: Vec<SourceManifestEntry>,
 ) -> Result<IntelligenceJson, String> {
-    // Try JSON first (includes validation + anomaly detection)
-    let mut intel = if let Some(parsed) = try_parse_json_response(
+    // Try JSON first (includes validation + anomaly detection).
+    //
+    // Three outcomes:
+    // - Ok(Some(intel))  → JSON path succeeded.
+    // - Err(msg)         → JSON was found but failed validation or
+    //                      deserialization. Propagate the real error so the
+    //                      per-dimension failure message names the actual
+    //                      cause instead of falling through to the pipe parser
+    //                      and emitting a misleading "No INTELLIGENCE block"
+    //                      message.
+    // - Ok(None)         → No JSON object in the response at all. Legitimate
+    //                      fall-through to the pipe-delimited parser.
+    let mut intel = match try_parse_json_response(
         response,
         entity_id,
         entity_type,
         source_file_count,
         &manifest,
     ) {
-        parsed
-    } else {
-        // Fall back to pipe-delimited format (backwards compat).
-        // Run anomaly detection on the raw response even for non-JSON.
-        crate::intelligence::validation::check_anomalies_public(response);
-        parse_pipe_delimited_response(
-            response,
-            entity_id,
-            entity_type,
-            source_file_count,
-            manifest,
-        )?
+        Ok(Some(parsed)) => parsed,
+        Err(msg) => return Err(msg),
+        Ok(None) => {
+            // Fall back to pipe-delimited format (backwards compat).
+            // Run anomaly detection on the raw response even for non-JSON.
+            crate::intelligence::validation::check_anomalies_public(response);
+            parse_pipe_delimited_response(
+                response,
+                entity_id,
+                entity_type,
+                source_file_count,
+                manifest,
+            )?
+        }
     };
 
     // Cap array sizes to prevent oversized output
@@ -3325,23 +3438,21 @@ fn extract_balanced_json_object(candidate: &str) -> Option<&str> {
     None
 }
 
-fn response_refreshed_fields(json_str: &str) -> Vec<String> {
-    let Ok(value) = serde_json::from_str::<serde_json::Value>(json_str) else {
-        return Vec::new();
-    };
+fn response_refreshed_fields(value: &serde_json::Value) -> Vec<String> {
     let Some(object) = value.as_object() else {
         return Vec::new();
     };
 
     object
         .keys()
-        .filter_map(|key| canonical_response_field_name(key))
+        .filter_map(|key| refreshed_field_root(key))
         .map(ToOwned::to_owned)
         .collect()
 }
 
-fn canonical_response_field_name(field: &str) -> Option<&'static str> {
-    match field {
+fn refreshed_field_root(field: &str) -> Option<&'static str> {
+    let canonical = response_key_for_deserialization(field);
+    match canonical.as_str() {
         "executiveAssessment" => Some("executiveAssessment"),
         "pullQuote" => Some("pullQuote"),
         "health" | "healthScore" | "healthTrend" => Some("health"),
@@ -3358,27 +3469,123 @@ fn canonical_response_field_name(field: &str) -> Option<&'static str> {
         "blockers" => Some("blockers"),
         "contractContext" => Some("contractContext"),
         "expansionSignals" => Some("expansionSignals"),
-        "agreementOutlook" | "renewalOutlook" | "renewal_outlook" => Some("agreementOutlook"),
+        "agreementOutlook" => Some("agreementOutlook"),
         "valueDelivered" => Some("valueDelivered"),
         "successMetrics" => Some("successMetrics"),
         "openCommitments" => Some("openCommitments"),
         "stakeholderInsights" => Some("stakeholderInsights"),
         "companyContext" => Some("companyContext"),
         "gongCallSummaries" => Some("gongCallSummaries"),
+        "coverageAssessment" => Some("coverageAssessment"),
+        "relationshipDepth" => Some("relationshipDepth"),
+        "meetingCadence" => Some("meetingCadence"),
+        "emailResponsiveness" => Some("emailResponsiveness"),
+        "productClassification" => Some("productClassification"),
+        "supportHealth" => Some("supportHealth"),
+        "productAdoption" => Some("productAdoption"),
+        "npsCsat" => Some("npsCsat"),
+        "sourceAttribution" => Some("sourceAttribution"),
+        "successPlanSignals" => Some("successPlanSignals"),
+        "nextMeetingReadiness" => Some("nextMeetingReadiness"),
         _ => None,
     }
 }
 
-/// Try to parse the response as JSON format. Returns None if it fails.
+fn normalize_ai_response_value(value: serde_json::Value) -> serde_json::Value {
+    match value {
+        serde_json::Value::Object(map) => {
+            let mut normalized = serde_json::Map::with_capacity(map.len());
+            for (key, value) in map {
+                let normalized_key = response_key_for_deserialization(&key);
+                normalized.insert(normalized_key, normalize_ai_response_value(value));
+            }
+            serde_json::Value::Object(normalized)
+        }
+        serde_json::Value::Array(values) => serde_json::Value::Array(
+            values
+                .into_iter()
+                .map(normalize_ai_response_value)
+                .collect(),
+        ),
+        other => other,
+    }
+}
+
+fn response_key_for_deserialization(field: &str) -> String {
+    let normalized = field
+        .chars()
+        .filter(|ch| ch.is_ascii_alphanumeric())
+        .map(|ch| ch.to_ascii_lowercase())
+        .collect::<String>();
+
+    match normalized.as_str() {
+        "renewaloutlook" => "agreementOutlook".to_string(),
+        "meetingcadenceassessment" => "meetingCadence".to_string(),
+        "orgchartchanges" | "rolechanges" => "organizationalChanges".to_string(),
+        "commitments" => "openCommitments".to_string(),
+        "criticalissues" => "criticalTickets".to_string(),
+        "recenttrend" => "trend".to_string(),
+        "threat" => "threatLevel".to_string(),
+        "signal" => "opportunity".to_string(),
+        "oldstatus" => "from".to_string(),
+        "newstatus" => "to".to_string(),
+        "personname" => "person".to_string(),
+        "ownedby" => "ownedBy".to_string(),
+        _ if field.contains('_') || field.contains('-') || field.contains(' ') => {
+            lower_camel_key(field)
+        }
+        _ => lower_initial(field),
+    }
+}
+
+fn lower_camel_key(field: &str) -> String {
+    let mut parts = field
+        .split(|ch: char| ch == '_' || ch == '-' || ch.is_ascii_whitespace())
+        .filter(|part| !part.is_empty());
+    let Some(first) = parts.next() else {
+        return String::new();
+    };
+    let mut out = first.to_ascii_lowercase();
+    for part in parts {
+        let mut chars = part.chars();
+        if let Some(first_char) = chars.next() {
+            out.push(first_char.to_ascii_uppercase());
+            out.push_str(&chars.as_str().to_ascii_lowercase());
+        }
+    }
+    out
+}
+
+fn lower_initial(field: &str) -> String {
+    let mut chars = field.chars();
+    let Some(first) = chars.next() else {
+        return String::new();
+    };
+    let mut out = first.to_ascii_lowercase().to_string();
+    out.push_str(chars.as_str());
+    out
+}
+
+/// Try to parse the response as JSON format.
+///
+/// Returns:
+/// - `Ok(Some(intel))` when extraction, validation, and deserialization all succeed.
+/// - `Ok(None)` when no JSON object is found in the response. Caller should
+///   legitimately fall through to the pipe-delimited parser.
+/// - `Err(msg)` when a JSON object IS extracted but fails validation or
+///   deserialization. Caller should propagate the error directly — falling
+///   through to the pipe parser would mask the real cause with a misleading
+///   "No INTELLIGENCE block or JSON found" message.
 fn try_parse_json_response(
     response: &str,
     entity_id: &str,
     entity_type: &str,
     source_file_count: usize,
     manifest: &[SourceManifestEntry],
-) -> Option<IntelligenceJson> {
-    let json_str = extract_json_from_response(response)?;
-    let refreshed_fields = response_refreshed_fields(json_str);
+) -> Result<Option<IntelligenceJson>, String> {
+    let Some(json_str) = extract_json_from_response(response) else {
+        return Ok(None);
+    };
 
     // Validate structure and run anomaly detection before deserialization
     if let Err(e) = super::validation::validate_intelligence_response(json_str) {
@@ -3387,10 +3594,24 @@ fn try_parse_json_response(
             entity_id,
             e
         );
-        return None;
+        return Err(format!("validation: {}", e));
     }
 
-    let ai_resp: AiIntelResponse = match serde_json::from_str(json_str) {
+    let response_value: serde_json::Value = match serde_json::from_str(json_str) {
+        Ok(value) => value,
+        Err(e) => {
+            log::warn!(
+                "Intelligence response JSON parse failed for {}: {}",
+                entity_id,
+                e
+            );
+            return Err(format!("deserialize: {}", e));
+        }
+    };
+    let refreshed_fields = response_refreshed_fields(&response_value);
+    let normalized_response = normalize_ai_response_value(response_value);
+
+    let ai_resp: AiIntelResponse = match serde_json::from_value(normalized_response) {
         Ok(parsed) => parsed,
         Err(e) => {
             log::warn!(
@@ -3398,7 +3619,7 @@ fn try_parse_json_response(
                 entity_id,
                 e
             );
-            return None;
+            return Err(format!("deserialize: {}", e));
         }
     };
 
@@ -3445,7 +3666,7 @@ fn try_parse_json_response(
         portfolio_narrative: p.portfolio_narrative,
     });
 
-    Some(IntelligenceJson {
+    Ok(Some(IntelligenceJson {
         executive_assessment_render_policy: None,
         version: 1,
         entity_id: entity_id.to_string(),
@@ -3459,6 +3680,7 @@ fn try_parse_json_response(
         risks: ai_resp
             .risks
             .into_iter()
+            .filter(|r| !r.text.trim().is_empty())
             .map(|r| IntelRisk {
                 render_policy: None,
                 claim_id: None,
@@ -3475,6 +3697,7 @@ fn try_parse_json_response(
         recent_wins: ai_resp
             .recent_wins
             .into_iter()
+            .filter(|w| !w.text.trim().is_empty())
             .map(|w| IntelWin {
                 render_policy: None,
                 claim_id: None,
@@ -3489,6 +3712,7 @@ fn try_parse_json_response(
         stakeholder_insights: ai_resp
             .stakeholder_insights
             .into_iter()
+            .filter(|s| !s.name.trim().is_empty())
             .map(|s| StakeholderInsight {
                 render_policy: None,
                 claim_id: None,
@@ -3509,6 +3733,7 @@ fn try_parse_json_response(
         value_delivered: ai_resp
             .value_delivered
             .into_iter()
+            .filter(|v| !v.statement.trim().is_empty())
             .map(|v| ValueItem {
                 render_policy: None,
                 claim_id: None,
@@ -3561,6 +3786,7 @@ fn try_parse_json_response(
         open_commitments: ai_resp.open_commitments.map(|commits| {
             commits
                 .into_iter()
+                .filter(|c| !c.description.trim().is_empty())
                 .map(|c| super::io::OpenCommitment {
                     commitment_id: c.commitment_id,
                     description: c.description,
@@ -3608,7 +3834,7 @@ fn try_parse_json_response(
         domains: Vec::new(),
         dismissed_items: Vec::new(),
         recommended_actions: ai_resp.recommended_actions,
-    })
+    }))
 }
 
 /// Parse legacy pipe-delimited format (backwards compatibility).
@@ -4490,6 +4716,190 @@ Some trailing text"#;
     }
 
     #[test]
+    fn test_parse_json_response_accepts_glean_case_and_shape_drift() {
+        let response = r#"{
+  "executive_assessment": "Brief.",
+  "meeting_cadence": {
+    "meetings_per_month": 1.5,
+    "trend": {"direction": "stable", "rationale": "regular calls"},
+    "days_since_last": 7,
+    "assessment": {"summary": "adequate"},
+    "evidence": [{"text": "weekly customer call"}]
+  },
+  "email_responsiveness": {
+    "trend": {"direction": "slowing"},
+    "volume_trend": "decreasing",
+    "assessment": "slow",
+    "evidence": [{"summary": "reply gaps increased"}]
+  },
+  "product_adoption": {
+    "adoption_rate": 0.42,
+    "trend": "stable",
+    "feature_adoption": [{"title": "workflow automation active"}],
+    "last_active": "2026-05-20"
+  },
+  "support_health": {
+    "open_tickets": 2,
+    "critical_tickets": 1,
+    "trend": {"direction": "degrading"},
+    "csat": 82.0
+  },
+  "nps_csat": {
+    "nps": 10,
+    "survey_date": "2026-05-01",
+    "verbatim": {"text": "service is improving"}
+  }
+}"#;
+
+        let intel = parse_intelligence_response(response, "account-1", "account", 1, vec![])
+            .expect("Glean field-name and simple shape drift should still parse");
+
+        assert_eq!(intel.executive_assessment.as_deref(), Some("Brief."));
+        assert_eq!(
+            intel.meeting_cadence.as_ref().unwrap().trend.as_deref(),
+            Some("stable")
+        );
+        assert_eq!(
+            intel
+                .email_responsiveness
+                .as_ref()
+                .unwrap()
+                .evidence
+                .first()
+                .map(String::as_str),
+            Some("reply gaps increased")
+        );
+        assert_eq!(
+            intel
+                .product_adoption
+                .as_ref()
+                .unwrap()
+                .feature_adoption
+                .first()
+                .map(String::as_str),
+            Some("workflow automation active")
+        );
+        assert_eq!(
+            intel.support_health.as_ref().unwrap().trend.as_deref(),
+            Some("degrading")
+        );
+        assert_eq!(
+            intel.nps_csat.as_ref().unwrap().verbatim.as_deref(),
+            Some("service is improving")
+        );
+        assert!(intel
+            .refreshed_fields
+            .contains(&"meetingCadence".to_string()));
+        assert!(intel
+            .refreshed_fields
+            .contains(&"productAdoption".to_string()));
+    }
+
+    #[test]
+    fn test_parse_json_response_propagates_schema_error() {
+        // JSON IS extractable (balanced `{...}`) but `risks` is a string
+        // where the schema expects an array. The lenient normalizer cannot
+        // resolve this, so deserialization fails. We must surface the real
+        // serde error, NOT collapse to the legacy pipe-parser's misleading
+        // "No INTELLIGENCE block or JSON found" message.
+        let response = r#"{"executiveAssessment":"Brief.","risks":"not an array"}"#;
+        let err = parse_intelligence_response(response, "account-1", "account", 1, vec![])
+            .expect_err("malformed risks should propagate a real schema error");
+
+        assert!(
+            err.contains("deserialize") || err.contains("expected") || err.contains("sequence"),
+            "error should name the real cause, got: {}",
+            err
+        );
+        assert!(
+            !err.contains("No INTELLIGENCE block"),
+            "error must not collapse to the legacy fall-through message, got: {}",
+            err
+        );
+    }
+
+    #[test]
+    fn test_parse_json_response_returns_none_when_no_json_present() {
+        // No `{` candidate in the response. The JSON path returns Ok(None)
+        // and the caller falls through to the pipe-delimited parser
+        // (which will then fail on its own terms, but legitimately).
+        let response = "raw prose with no json object at all";
+        let result = parse_intelligence_response(response, "account-1", "account", 1, vec![]);
+
+        // We don't care whether the pipe parser succeeds or fails here —
+        // only that we reached it. If we'd short-circuited with our new
+        // Err path, the error message would name a JSON stage (validation
+        // or deserialize). Any error message here should come from the
+        // pipe parser, not our JSON propagation.
+        if let Err(err) = result {
+            assert!(
+                !err.starts_with("validation:") && !err.starts_with("deserialize:"),
+                "no-JSON case must NOT surface a JSON-stage error; got: {}",
+                err
+            );
+        }
+    }
+
+    #[test]
+    fn test_parse_json_response_tolerates_action_string_and_object_shapes() {
+        let response = r#"{
+  "executiveAssessment": "Brief.",
+  "health": {
+    "narrative": "Health needs attention.",
+    "recommendedActions": [
+      {"title": "Schedule renewal review", "rationale": "commercial timing is close"}
+    ]
+  },
+  "recommended_actions": ["Prepare stakeholder map"]
+}"#;
+
+        let intel = parse_intelligence_response(response, "account-1", "account", 1, vec![])
+            .expect("Glean action shape drift should not reject the response");
+
+        assert_eq!(
+            intel
+                .health
+                .as_ref()
+                .unwrap()
+                .recommended_actions
+                .first()
+                .map(String::as_str),
+            Some("Schedule renewal review")
+        );
+        assert_eq!(intel.recommended_actions.len(), 1);
+        assert_eq!(
+            intel.recommended_actions[0].title,
+            "Prepare stakeholder map"
+        );
+        assert!(!intel.recommended_actions[0].rationale.is_empty());
+        assert!(intel
+            .refreshed_fields
+            .contains(&"recommendedActions".to_string()));
+    }
+
+    #[test]
+    fn test_parse_json_response_drops_blank_items_from_unrequested_arrays() {
+        let response = r#"{
+  "executiveAssessment": "Brief.",
+  "risks": [{"headline": "Risk without body"}],
+  "recentWins": [{"impact": "high"}],
+  "stakeholderInsights": [{"role": "VP Operations"}],
+  "valueDelivered": [{"source": "Glean"}],
+  "openCommitments": [{"owner": "us"}]
+}"#;
+
+        let intel = parse_intelligence_response(response, "account-1", "account", 1, vec![])
+            .expect("missing optional item text should not reject unrelated fields");
+
+        assert_eq!(intel.executive_assessment.as_deref(), Some("Brief."));
+        assert!(intel.risks.is_empty());
+        assert!(intel.recent_wins.is_empty());
+        assert!(intel.stakeholder_insights.is_empty());
+        assert!(intel.value_delivered.is_empty());
+        assert!(intel.open_commitments.unwrap().is_empty());
+    }
+
+    #[test]
     fn test_parse_json_response_raw_no_fence() {
         let response = r#"{"executiveAssessment": "Brief.", "risks": [{"text": "One risk", "urgency": "low"}]}"#;
 
@@ -4980,20 +5390,18 @@ mod eval_tests {
     fn eval_parse_malformed_response_graceful_handling() {
         let response = include_str!("fixtures/enrichment_response_malformed.json");
         // The malformed response has risks as a string instead of array.
-        // serde_json will fail to deserialize AiIntelResponse, so try_parse_json_response
-        // returns None, and it falls through to pipe-delimited parsing which also fails.
-        // Either way, the function should not panic.
+        // serde_json fails to deserialize AiIntelResponse, so
+        // try_parse_json_response now returns Err with the real serde
+        // message. parse_intelligence_response propagates that error and
+        // does NOT fall through to the pipe parser. The key assertion is:
+        // no panic, and graceful degradation if we somehow got Ok.
         let result = parse_intelligence_response(response, "bad-1", "account", 0, Vec::new());
-        // Malformed JSON with wrong types should either produce an error or degrade gracefully.
-        // The key assertion is: no panic.
         if let Ok(intel) = &result {
-            // If it somehow parsed (unlikely), verify it degraded gracefully
             assert!(
                 intel.risks.len() <= 1,
                 "Malformed risks should not produce valid entries"
             );
         }
-        // Either way, we got here without panicking — success
     }
 
     #[test]

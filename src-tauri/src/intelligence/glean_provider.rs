@@ -232,15 +232,12 @@ impl GleanIntelligenceProvider {
         let (tx, mut rx) = tokio::sync::mpsc::channel::<(String, Result<IntelligenceJson, String>)>(
             prompts.len().max(1),
         );
-        let mut wrote_debug_file = false;
 
         for (dim_name, prompt) in prompts {
             let ep = endpoint.clone();
             let eid = entity_id_owned.clone();
             let etype = entity_type_owned.clone();
             let ename = entity_name_owned.clone();
-            let is_first = !wrote_debug_file;
-            wrote_debug_file = true;
             let sender = tx.clone();
 
             tokio::spawn(async move {
@@ -307,14 +304,24 @@ impl GleanIntelligenceProvider {
                     response_text.len()
                 );
 
-                // Write debug file for the first dimension only
-                if is_first {
-                    let debug_path = std::env::temp_dir().join("dailyos-glean-response.txt");
+                // Always capture every dimension's response. Single-file
+                // capture lost dimensions 2-6 when the first one happened to
+                // succeed; per-dim filenames preserve forensic state across
+                // parallel failures.
+                {
+                    let ts = chrono::Utc::now().timestamp_millis();
+                    let debug_path = std::env::temp_dir()
+                        .join(format!("dailyos-glean-{}-{}.txt", dim_name, ts));
                     if let Err(e) = std::fs::write(&debug_path, &response_text) {
-                        log::warn!("[I574] Failed to write debug response: {}", e);
+                        log::warn!(
+                            "[I574] Failed to write debug response for {}: {}",
+                            dim_name,
+                            e
+                        );
                     } else {
                         log::info!(
-                            "[I574] Glean dimension response written to {}",
+                            "[I574] Glean dimension {} response written to {}",
+                            dim_name,
                             debug_path.display()
                         );
                     }

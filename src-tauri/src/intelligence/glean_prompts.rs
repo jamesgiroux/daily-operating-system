@@ -224,6 +224,7 @@ fn build_json_schema(entity_type: &str) -> String {
     // Quality guidance
     schema.push_str("IMPORTANT:\n");
     schema.push_str("- Return ONLY valid JSON. No markdown, no commentary before or after.\n");
+    schema.push_str("- Use the exact camelCase field names and value types shown above. Do not use snake_case, renamed fields, or object values where the schema shows strings.\n");
     schema.push_str("- For risks: RED urgency = champion departure, competitor eval, budget cut. YELLOW = usage decline, reorg. Use \"critical\"/\"watch\"/\"low\".\n");
     schema.push_str("- For wins: only extract verifiable outcomes, not vague sentiment. \"Customer seems happy\" is NOT a win.\n");
     schema.push_str("- For valueDelivered: must include a number (dollars, percentages, time saved). Reject vague usage statements.\n");
