@@ -128,7 +128,8 @@ pub async fn build_daily_briefing(
                 // Only customer-facing meeting types drive the "needs prep"
                 // advisory. Internal syncs / 1:1s / team meetings legitimately
                 // have no prep doc; counting them inflates the strip and
-                // recreates the DOS-771 phantom-row shape one level up.
+                // recreates the phantom-row shape one level up from the
+                // projection-layer filter.
                 if prep_status_is_needs_preparation(&snapshot.status)
                     && is_customer_facing(&meeting.meeting_type)
                 {
@@ -1461,8 +1462,8 @@ mod state_matrix_fixtures {
         assert!(parse_entity_kind("").is_none());
     }
 
-    /// DOS-816 regression: internal / team-sync / 1:1 meetings must NOT trip
-    /// the "Link N meetings" unlinked-meetings advisory. Customer-facing rows
+    /// Regression: internal / team-sync / 1:1 meetings must NOT trip the
+    /// "Link N meetings" unlinked-meetings advisory. Customer-facing rows
     /// continue to advisory normally.
     #[test]
     fn derive_advisories_skips_non_customer_facing_meetings() {
@@ -1497,7 +1498,7 @@ mod state_matrix_fixtures {
         let advisories = derive_advisories(&readiness, &meetings, &non_customer, &[], &[]);
 
         // Only the customer meeting should appear in the unlinked advisory.
-        // Pre-fix this would have produced "Link 5 meetings" — DOS-816 shape.
+        // Pre-fix this would have produced "Link 5 meetings" — the bug shape.
         let unlinked_ids: Vec<&str> = advisories
             .iter()
             .find_map(|a| match a {
@@ -1510,8 +1511,8 @@ mod state_matrix_fixtures {
         assert_eq!(unlinked_ids, vec!["m-customer-1"]);
     }
 
-    /// DOS-816 regression: when every meeting is internal, no
-    /// UnlinkedMeetings advisory should fire at all.
+    /// Regression: when every meeting is internal, no UnlinkedMeetings
+    /// advisory should fire at all.
     #[test]
     fn derive_advisories_emits_no_unlinked_advisory_when_all_internal() {
         let readiness = DailyReadinessContextSnapshot {
