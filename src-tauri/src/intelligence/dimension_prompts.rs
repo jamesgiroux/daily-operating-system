@@ -936,6 +936,9 @@ ACCOUNT TRUTH rules:\n\
 
 const PROMPT_QUALITY_RULES: &str = "\
 ## Quality Rules\n\n\
+- Use the exact camelCase field names shown in the schema. Do not use snake_case, title case, renamed fields, or extra wrapper objects.\n\
+- Values shown as \"a|b|c\" are plain strings. Do not expand string fields into objects like {\"direction\":\"stable\",\"rationale\":\"...\"}.\n\
+- Arrays shown as strings must contain strings only. Arrays shown as objects must contain objects with the exact object fields shown.\n\
 - Prefer empty arrays or null over unsupported claims.\n\
 - If evidence is stale or timing is unknown, say so in the relevant unknowns or narrative field instead of sounding current.\n\
 - Do not write generic summaries. Every sentence should add a concrete source-grounded fact, risk, opportunity, or unknown.\n\
