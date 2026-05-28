@@ -1629,10 +1629,21 @@ fn db_access_error_needs_pool_reopen(error: &DbAccessError) -> bool {
 }
 
 fn db_access_error_requires_manual_recovery(error: &DbAccessError) -> bool {
+    // Only true btree corruption sets the process-wide
+    // `database_recovery_required` flag. Transient SQLCipher key-verification
+    // failures and the disk-I/O class fire from bypass-site fresh-open paths
+    // (documented at `db_service.rs:5-9` and ADR-0133) racing the pool
+    // writer's in-flight WAL frame. Those are recoverable on retry;
+    // classifying them as manual-recovery wedged `task_supervisor`'s 2 s
+    // restart loop on every affected worker (IntelProcessor, Claim recompute,
+    // EmbeddingProcessor) because the flag never cleared and each restart
+    // re-broke immediately.
+    //
+    // The structural close for the bypass-race itself is W1-C (migrate every
+    // bypass-site to `state.db_write`). Until that lands, the workers just
+    // retry on their next supervisor tick instead of wedging the queue.
     let message = error.to_string().to_ascii_lowercase();
-    message.contains("disk i/o error")
-        || message.contains("database disk image is malformed")
-        || message.contains("sqlcipher key verification failed")
+    message.contains("database disk image is malformed")
 }
 
 impl Default for AppState {
@@ -2177,6 +2188,47 @@ pub fn create_execution_record(workflow: WorkflowId, trigger: ExecutionTrigger) 
 mod tests {
     use super::*;
     use crate::types::GoogleConfig;
+
+    #[test]
+    fn manual_recovery_predicate_only_fires_on_btree_malformation() {
+        // Regression: the predicate previously matched
+        // "disk i/o error" and "sqlcipher key verification failed", which
+        // are produced by transient bypass-site SQLCipher WAL races (the
+        // documented anti-pattern at db_service.rs:5-9). That over-match
+        // wedged the IntelProcessor / Claim recompute / EmbeddingProcessor
+        // workers in a 2 s supervisor restart loop because the recovery
+        // flag never cleared. Only true btree corruption should set it.
+        let bypass_race: DbAccessError = DbAccessError::Other(
+            "Failed to open DbService: Encryption error: SQLCipher primary key verification failed: SQLCipher key verification query failed: disk I/O error; no staged rotation key was available".to_string(),
+        );
+        assert!(
+            !db_access_error_requires_manual_recovery(&bypass_race),
+            "transient bypass-race must not trigger manual recovery"
+        );
+
+        let key_verify_only: DbAccessError = DbAccessError::Other(
+            "SQLCipher key verification failed (database unreadable)".to_string(),
+        );
+        assert!(
+            !db_access_error_requires_manual_recovery(&key_verify_only),
+            "SQLCipher key-verify alone must not trigger manual recovery"
+        );
+
+        let disk_io_only: DbAccessError =
+            DbAccessError::Other("disk I/O error".to_string());
+        assert!(
+            !db_access_error_requires_manual_recovery(&disk_io_only),
+            "disk I/O alone must not trigger manual recovery"
+        );
+
+        let malformed: DbAccessError = DbAccessError::Other(
+            "SQLite error: database disk image is malformed".to_string(),
+        );
+        assert!(
+            db_access_error_requires_manual_recovery(&malformed),
+            "real btree corruption must trigger manual recovery"
+        );
+    }
 
     #[test]
     fn test_app_lock_state_default() {

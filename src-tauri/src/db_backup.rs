@@ -198,6 +198,14 @@ fn prune_restore_snapshots(db_path: &Path, keep: usize) -> Result<(), String> {
 ///
 /// Uses SQLite's online backup API so the source DB can remain open and
 /// in use during the backup. Returns the backup file path on success.
+///
+/// Copying happens in chunks of [`BACKUP_PAGES_PER_STEP`] pages with
+/// busy/locked retry, mirroring `migrations.rs::create_backup_via_api`. The
+/// previous one-shot `step(-1)` path returned `Ok(StepResult::Done)` on the
+/// 400 MB encrypted DBs we see in production but did not actually produce a
+/// consistent file — restored `.bak` files surfaced as
+/// `database disk image is malformed` on first open. The fix replicates the
+/// chunked pattern the pre-migration backup path already documents and uses.
 pub fn backup_database(db: &ActionDb) -> Result<String, String> {
     let db_path = active_db_path_for_connection(db)?;
     let backup_path = manual_backup_path(&db_path)?;
@@ -214,19 +222,78 @@ pub fn backup_database(db: &ActionDb) -> Result<String, String> {
         .execute_batch(&encryption_key.to_pragma())
         .map_err(|e| format!("Failed to set backup encryption key: {e}"))?;
 
-    let backup = rusqlite::backup::Backup::new(db.conn_ref(), &mut backup_conn)
-        .map_err(|e| format!("Failed to initialize backup: {}", e))?;
-
-    // Copy all pages in one step (small DB, typically < 10 MB)
-    backup
-        .step(-1)
-        .map_err(|e| format!("Backup failed: {}", e))?;
+    run_chunked_backup(db.conn_ref(), &mut backup_conn)
+        .map_err(|e| format!("Backup failed: {e}"))?;
 
     // Restrict backup file permissions
     crate::db::hardening::set_file_permissions(&backup_path);
 
     log::info!("Database backed up to {}", backup_path.display());
     Ok(backup_path.to_string_lossy().to_string())
+}
+
+/// Pages copied per `Backup::step` iteration.
+///
+/// Matches `migrations.rs::PAGES_PER_STEP`. Single `step(-1)` calls on 100+ MB
+/// SQLCipher DBs returned `Ok(StepResult::Done)` while leaving the destination
+/// silently inconsistent (the historic "not an error" mapping); chunked
+/// stepping does not exhibit that pathology and gives us progress logging on
+/// large copies.
+const BACKUP_PAGES_PER_STEP: i32 = 1024;
+
+/// Cap consecutive Busy/Locked retries during a chunked backup. At 50 ms per
+/// retry this gives a 30 s wall clock — long enough to outlast normal writer
+/// activity, short enough to fail loudly rather than wedge.
+const BACKUP_MAX_BUSY_RETRIES: u32 = 600;
+
+/// Drive a `rusqlite::backup::Backup` to completion using chunked stepping
+/// with Busy/Locked retry. Shared shape with `migrations.rs::create_backup_via_api`
+/// so both startup-time and live-time backups go through the same proven path.
+fn run_chunked_backup(
+    source: &rusqlite::Connection,
+    destination: &mut rusqlite::Connection,
+) -> Result<(), String> {
+    let backup = rusqlite::backup::Backup::new(source, destination)
+        .map_err(|e| format!("Failed to initialize backup: {e}"))?;
+    let mut step_count = 0_u64;
+    let mut busy_retries = 0_u32;
+    loop {
+        match backup.step(BACKUP_PAGES_PER_STEP) {
+            Ok(rusqlite::backup::StepResult::More) => {
+                step_count += 1;
+                busy_retries = 0;
+                if step_count.is_multiple_of(64) {
+                    log::info!(
+                        "Database backup in progress: ~{} pages copied",
+                        step_count * BACKUP_PAGES_PER_STEP as u64
+                    );
+                }
+            }
+            Ok(rusqlite::backup::StepResult::Done) => return Ok(()),
+            Ok(rusqlite::backup::StepResult::Busy) | Ok(rusqlite::backup::StepResult::Locked) => {
+                busy_retries += 1;
+                if busy_retries >= BACKUP_MAX_BUSY_RETRIES {
+                    return Err(format!(
+                        "Database backup gave up after {} consecutive Busy/Locked retries (~{}s); a long writer may be holding the source DB",
+                        busy_retries,
+                        (busy_retries as u64 * 50) / 1000
+                    ));
+                }
+                if busy_retries.is_multiple_of(40) {
+                    log::warn!(
+                        "Database backup waiting on Busy/Locked source: retry {} of {}",
+                        busy_retries,
+                        BACKUP_MAX_BUSY_RETRIES
+                    );
+                }
+                std::thread::sleep(std::time::Duration::from_millis(50));
+            }
+            Ok(other) => {
+                return Err(format!("Database backup unexpected step result: {other:?}"));
+            }
+            Err(e) => return Err(format!("Database backup step failed: {e}")),
+        }
+    }
 }
 
 /// List known backup files for the active database.
@@ -649,5 +716,46 @@ mod tests {
         assert!(kinds.contains(&"manual"));
         assert!(kinds.contains(&"pre-migration"));
         assert!(kinds.contains(&"restore-point"));
+    }
+
+    #[test]
+    fn run_chunked_backup_produces_byte_identical_copy_at_size_above_one_step() {
+        // Regression test for the silent-malformation pattern: source DB
+        // larger than BACKUP_PAGES_PER_STEP must produce a destination that
+        // passes integrity_check and has the same content. The historic
+        // `step(-1)` path on encrypted DBs at this size returned
+        // `Ok(StepResult::Done)` without copying every page.
+        let dir = tempfile::tempdir().expect("tempdir");
+        let src_path = dir.path().join("src.db");
+        let dst_path = dir.path().join("dst.db");
+
+        let src = rusqlite::Connection::open(&src_path).expect("open src");
+        src.execute_batch("PRAGMA journal_mode = WAL; PRAGMA page_size = 4096;")
+            .expect("pragmas");
+        src.execute_batch("CREATE TABLE rows (id INTEGER PRIMARY KEY, payload BLOB);")
+            .expect("schema");
+        // Insert enough rows that the DB exceeds BACKUP_PAGES_PER_STEP * page_size.
+        // 1024 pages * 4 KB = 4 MB; seed with 8 MB worth of payload so the copy
+        // requires at least two chunked-step iterations.
+        let payload = vec![0xA5_u8; 8192];
+        let mut stmt = src.prepare("INSERT INTO rows (payload) VALUES (?1)").expect("prep");
+        for _ in 0..1024 {
+            stmt.execute([&payload]).expect("insert");
+        }
+        drop(stmt);
+
+        let mut dst = rusqlite::Connection::open(&dst_path).expect("open dst");
+        run_chunked_backup(&src, &mut dst).expect("backup");
+        drop(dst);
+
+        let reopened = rusqlite::Connection::open(&dst_path).expect("reopen dst");
+        let integrity: String = reopened
+            .pragma_query_value(None, "integrity_check", |row| row.get(0))
+            .expect("integrity_check");
+        assert_eq!(integrity, "ok", "restored backup must pass integrity_check");
+        let row_count: i64 = reopened
+            .query_row("SELECT COUNT(*) FROM rows", [], |row| row.get(0))
+            .expect("count rows");
+        assert_eq!(row_count, 1024, "restored backup must contain all rows");
     }
 }
