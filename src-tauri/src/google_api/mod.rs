@@ -249,15 +249,11 @@ pub async fn send_with_retry(
 // Token I/O
 // ============================================================================
 
-/// Legacy plaintext Google token file path.
+/// Legacy plaintext Google token file path for the active database mode.
 ///
 /// On macOS this path is migration-only; canonical storage is Keychain.
 pub fn token_path() -> PathBuf {
-    dirs::home_dir()
-        .unwrap_or_default()
-        .join(".dailyos")
-        .join("google")
-        .join("token.json")
+    crate::state::google_token_path()
 }
 
 /// Canonical path to the Google credentials file (primary location).

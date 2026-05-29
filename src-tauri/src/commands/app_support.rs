@@ -1325,7 +1325,7 @@ pub fn dev_purge_mock_data(state: State<'_, Arc<AppState>>) -> Result<String, St
 
 /// Delete stale dev artifact files from disk.
 ///
-/// Removes dailyos-dev.db and optionally ~/Documents/DailyOS-dev/.
+/// Removes the mock database and optionally the isolated mock workspace.
 #[tauri::command]
 pub fn dev_clean_artifacts(include_workspace: bool) -> Result<String, String> {
     if !cfg!(debug_assertions) {
@@ -1570,16 +1570,14 @@ pub async fn delete_all_data(state: State<'_, Arc<AppState>>) -> Result<(), Stri
         let _ = std::fs::remove_file(&shm);
     }
 
-    // Clear workspace directory
-    if let Some(home) = dirs::home_dir() {
-        let workspace = home.join(".dailyos").join("_today");
-        if workspace.exists() {
-            #[allow(
-                clippy::let_underscore_must_use,
-                reason = "intentional best-effort discard; preserves existing non-blocking behavior"
-            )]
-            let _ = std::fs::remove_dir_all(&workspace);
-        }
+    // Clear active-mode scratch data.
+    let workspace = crate::state::mode_scoped_state_path("_today");
+    if workspace.exists() {
+        #[allow(
+            clippy::let_underscore_must_use,
+            reason = "intentional best-effort discard; preserves existing non-blocking behavior"
+        )]
+        let _ = std::fs::remove_dir_all(&workspace);
     }
 
     Ok(())

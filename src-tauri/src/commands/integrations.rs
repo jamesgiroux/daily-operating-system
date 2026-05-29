@@ -1021,10 +1021,7 @@ pub async fn fetch_gravatar(
 
     let profile = client.get_profile(&email).await.unwrap_or_default();
 
-    let data_dir = dirs::home_dir()
-        .unwrap_or_default()
-        .join(".dailyos")
-        .join("avatars");
+    let data_dir = crate::state::mode_scoped_state_path("avatars");
     #[allow(
         clippy::let_underscore_must_use,
         reason = "intentional best-effort discard; preserves existing non-blocking behavior"
@@ -1098,10 +1095,7 @@ pub async fn bulk_fetch_gravatars(state: State<'_, Arc<AppState>>) -> Result<usi
         .await
         .map_err(|e| format!("Connection failed: {}", e))?;
 
-    let data_dir = dirs::home_dir()
-        .unwrap_or_default()
-        .join(".dailyos")
-        .join("avatars");
+    let data_dir = crate::state::mode_scoped_state_path("avatars");
     #[allow(
         clippy::let_underscore_must_use,
         reason = "intentional best-effort discard; preserves existing non-blocking behavior"

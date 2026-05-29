@@ -1,7 +1,7 @@
 use parking_lot::{Mutex, RwLock};
 use std::collections::{HashMap, HashSet};
 use std::fs;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicBool, AtomicU32};
 use std::sync::Arc;
 use std::time::Instant;
@@ -1778,6 +1778,80 @@ pub async fn run_startup_sync(state: Arc<AppState>) {
     }
 }
 
+#[derive(Debug, Clone)]
+struct DbModePaths {
+    config_path: PathBuf,
+    workspace_path: PathBuf,
+    state_dir: PathBuf,
+}
+
+fn mode_paths_for(
+    mode: crate::db::DbMode,
+    configured_workspace_path: Option<&str>,
+) -> Result<DbModePaths, String> {
+    let home = dirs::home_dir().ok_or("Could not find home directory")?;
+    let dailyos_dir = home.join(".dailyos");
+    let live_workspace = configured_workspace_path
+        .and_then(|path| {
+            if path.trim().is_empty() {
+                None
+            } else {
+                Some(PathBuf::from(path))
+            }
+        })
+        .unwrap_or_else(|| home.join("Documents").join("DailyOS"));
+
+    Ok(match mode {
+        crate::db::DbMode::Live => DbModePaths {
+            config_path: dailyos_dir.join("config.json"),
+            workspace_path: live_workspace,
+            state_dir: dailyos_dir,
+        },
+        crate::db::DbMode::Replica => DbModePaths {
+            config_path: dailyos_dir.join("config-replica.json"),
+            workspace_path: dailyos_dir.join("replica-workspace"),
+            state_dir: dailyos_dir.join("replica"),
+        },
+        crate::db::DbMode::Mock => DbModePaths {
+            config_path: dailyos_dir.join("config-dev.json"),
+            workspace_path: dailyos_dir.join("dev-workspace"),
+            state_dir: dailyos_dir.join("dev"),
+        },
+    })
+}
+
+pub fn resolved_workspace_path(configured_workspace_path: Option<&str>) -> Result<PathBuf, String> {
+    Ok(mode_paths_for(crate::db::db_mode(), configured_workspace_path)?.workspace_path)
+}
+
+pub(crate) fn workspace_path_for_mode(
+    mode: crate::db::DbMode,
+    configured_workspace_path: Option<&str>,
+) -> Result<PathBuf, String> {
+    Ok(mode_paths_for(mode, configured_workspace_path)?.workspace_path)
+}
+
+pub fn mode_scoped_state_dir() -> PathBuf {
+    mode_paths_for(crate::db::db_mode(), None)
+        .map(|paths| paths.state_dir)
+        .unwrap_or_else(|_| PathBuf::from(".dailyos"))
+}
+
+pub fn mode_scoped_state_path(relative_path: impl AsRef<Path>) -> PathBuf {
+    mode_scoped_state_dir().join(relative_path)
+}
+
+fn apply_active_mode_paths(config: &mut Config) -> Result<bool, String> {
+    let workspace_path = resolved_workspace_path(Some(&config.workspace_path))?;
+    let workspace_path = workspace_path.to_string_lossy().to_string();
+    if config.workspace_path == workspace_path {
+        Ok(false)
+    } else {
+        config.workspace_path = workspace_path;
+        Ok(true)
+    }
+}
+
 /// Recover from an unclean dev-mode exit (app quit without restore_live).
 ///
 /// Two recovery signals:
@@ -1802,6 +1876,7 @@ fn recover_from_unclean_dev_exit() {
     let config_contaminated = std::fs::read_to_string(&config)
         .map(|s| {
             s.contains("DailyOS-dev")
+                || s.contains("dev-workspace")
                 || s.contains("\"developerMode\":true")
                 || s.contains("\"developerMode\": true")
         })
@@ -1847,8 +1922,7 @@ fn recover_from_unclean_dev_exit() {
             }
         }
 
-        // Ensure DEV_DB_MODE is false (already defaults to false on startup, but be explicit)
-        crate::db::set_dev_db_mode(false);
+        // Recovery restores files only; process mode remains the bootstrap choice.
 
         // Clean up sentinel file
         #[allow(
@@ -1881,30 +1955,24 @@ pub(crate) fn dev_mode_sentinel_path() -> Result<std::path::PathBuf, String> {
     Ok(home.join(".dailyos").join(".dev-mode-active"))
 }
 
-/// Get the active config file path.
-///
-/// When dev mode is active, returns `~/.dailyos/config-dev.json` so the live
-/// `config.json` is never modified during dev mode.
+/// Get the active config file path for the current database mode.
 pub fn config_path() -> Result<PathBuf, String> {
-    let home = dirs::home_dir().ok_or("Could not find home directory")?;
-    let dailyos_dir = home.join(".dailyos");
-    if crate::db::is_dev_db_mode() {
-        Ok(dailyos_dir.join("config-dev.json"))
-    } else {
-        Ok(dailyos_dir.join("config.json"))
-    }
+    Ok(mode_paths_for(crate::db::db_mode(), None)?.config_path)
 }
 
 /// Get the live config file path (always `config.json`, ignores dev mode).
 pub fn live_config_path() -> Result<PathBuf, String> {
-    let home = dirs::home_dir().ok_or("Could not find home directory")?;
-    Ok(home.join(".dailyos").join("config.json"))
+    Ok(mode_paths_for(crate::db::DbMode::Live, None)?.config_path)
+}
+
+/// Get the replica config file path (`~/.dailyos/config-replica.json`).
+pub fn replica_config_path() -> Result<PathBuf, String> {
+    Ok(mode_paths_for(crate::db::DbMode::Replica, None)?.config_path)
 }
 
 /// Get the dev config file path (~/.dailyos/config-dev.json).
 pub fn dev_config_path() -> Result<PathBuf, String> {
-    let home = dirs::home_dir().ok_or("Could not find home directory")?;
-    Ok(home.join(".dailyos").join("config-dev.json"))
+    Ok(mode_paths_for(crate::db::DbMode::Mock, None)?.config_path)
 }
 
 /// Create or update config.json atomically.
@@ -1969,8 +2037,9 @@ pub fn create_or_update_config(
     };
 
     mutator(&mut config);
+    apply_active_mode_paths(&mut config)?;
 
-    // Ensure ~/.dailyos/ exists
+    // Ensure the active config directory exists.
     let path = config_path()?;
     if let Some(parent) = path.parent() {
         if !parent.exists() {
@@ -2047,10 +2116,9 @@ pub fn initialize_workspace(path: &std::path::Path, entity_mode: &str) -> Result
     Ok(())
 }
 
-/// Get the state directory (~/.dailyos)
+/// Get the active mode's state directory.
 fn get_state_dir() -> Result<PathBuf, String> {
-    let home = dirs::home_dir().ok_or("Could not find home directory")?;
-    let state_dir = home.join(".dailyos");
+    let state_dir = mode_paths_for(crate::db::db_mode(), None)?.state_dir;
 
     if !state_dir.exists() {
         fs::create_dir_all(&state_dir).map_err(|e| format!("Failed to create state dir: {}", e))?;
@@ -2060,8 +2128,6 @@ fn get_state_dir() -> Result<PathBuf, String> {
 }
 
 /// Load configuration from the active config path.
-///
-/// In dev mode, reads from `config-dev.json`. Otherwise reads `config.json`.
 pub fn load_config() -> Result<Config, String> {
     let config_path = config_path()?;
 
@@ -2079,7 +2145,8 @@ pub fn load_config() -> Result<Config, String> {
         serde_json::from_str(&content).map_err(|e| format!("Failed to parse config: {}", e))?;
     let original_routing_version = config.ai_model_routing_version;
     config.normalize();
-    if config.ai_model_routing_version != original_routing_version {
+    let workspace_path_changed = apply_active_mode_paths(&mut config)?;
+    if config.ai_model_routing_version != original_routing_version || workspace_path_changed {
         let normalized = serde_json::to_string_pretty(&config)
             .map_err(|e| format!("Failed to serialize normalized config: {}", e))?;
         crate::util::atomic_write_str(&config_path, &normalized)
@@ -2121,7 +2188,7 @@ fn load_execution_history() -> Result<Vec<ExecutionRecord>, String> {
     serde_json::from_str(&content).map_err(|e| format!("Failed to parse history: {}", e))
 }
 
-/// Load transcript records from `~/.dailyos/transcript_records.json`.
+/// Load transcript records from the active mode's state directory.
 fn load_transcript_records() -> Result<HashMap<String, TranscriptRecord>, String> {
     let path = get_state_dir()?.join("transcript_records.json");
     if !path.exists() {
@@ -2132,7 +2199,7 @@ fn load_transcript_records() -> Result<HashMap<String, TranscriptRecord>, String
     serde_json::from_str(&content).map_err(|e| format!("Failed to parse transcript records: {}", e))
 }
 
-/// Save transcript records to `~/.dailyos/transcript_records.json`.
+/// Save transcript records to the active mode's state directory.
 pub fn save_transcript_records(records: &HashMap<String, TranscriptRecord>) -> Result<(), String> {
     let path = get_state_dir()?.join("transcript_records.json");
     let content =
@@ -2149,10 +2216,9 @@ pub fn reload_config(state: &AppState) -> Result<Config, String> {
     Ok(config)
 }
 
-/// Get the legacy Google token file path (used for non-macOS storage and migration).
+/// Get the active mode's legacy Google token file path.
 pub fn google_token_path() -> PathBuf {
-    let home = dirs::home_dir().unwrap_or_default();
-    home.join(".dailyos").join("google").join("token.json")
+    mode_scoped_state_path("google").join("token.json")
 }
 
 /// Detect existing Google authentication from the configured token store.

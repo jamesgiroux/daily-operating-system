@@ -272,10 +272,7 @@ async fn process_gravatar_queue(state: &AppState) -> u32 {
         }
     };
 
-    let data_dir = dirs::home_dir()
-        .unwrap_or_default()
-        .join(".dailyos")
-        .join("avatars");
+    let data_dir = crate::state::mode_scoped_state_path("avatars");
     #[allow(
         clippy::let_underscore_must_use,
         reason = "intentional best-effort discard; preserves existing non-blocking behavior"

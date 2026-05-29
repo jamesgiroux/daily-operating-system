@@ -83,7 +83,6 @@ fn assert_dev_db_connection(db: &ActionDb) -> Result<(), String> {
 }
 
 /// Check that all dev mode signals agree: either ALL dev or ALL live.
-/// On invariant violation, force to live mode (safe default).
 fn assert_dev_mode_invariant() -> Result<(), String> {
     let db_flag = crate::db::is_dev_db_mode();
     let sentinel = crate::state::dev_mode_sentinel_path()
@@ -106,31 +105,14 @@ fn assert_dev_mode_invariant() -> Result<(), String> {
             sentinel,
             dev_config_exists
         );
-        // Force to live on invariant violation — safe default
-        crate::db::set_dev_db_mode(false);
-        #[allow(
-            clippy::let_underscore_must_use,
-            reason = "intentional best-effort discard; preserves existing non-blocking behavior"
-        )]
-        let _ = restore_config_backup();
-        if let Ok(s) = crate::state::dev_mode_sentinel_path() {
-            #[allow(
-                clippy::let_underscore_must_use,
-                reason = "intentional best-effort discard; preserves existing non-blocking behavior"
-            )]
-            let _ = std::fs::remove_file(&s);
-        }
-        return Err("Dev mode invariant violated — forced to live mode".into());
+        return Err("Dev mode invariant violated — refusing mode transition".into());
     }
     Ok(())
 }
 
 /// Dev workspace path — never touches the real workspace.
 fn dev_workspace() -> std::path::PathBuf {
-    dirs::home_dir()
-        .unwrap_or_default()
-        .join("Documents")
-        .join("DailyOS-dev")
+    crate::state::workspace_path_for_mode(crate::db::DbMode::Mock, None).unwrap_or_default()
 }
 
 /// Backup live config.json before dev mode so crash recovery can restore it.
@@ -303,10 +285,12 @@ pub fn exit_dev_mode(state: &AppState) -> Result<(), String> {
             let mut config: crate::types::Config = serde_json::from_str(&content)
                 .map_err(|e| format!("Failed to parse live config: {e}"))?;
             config.normalize();
-            // Verify the loaded config doesn't point at the dev workspace
-            if config.workspace_path.contains("DailyOS-dev") {
+            // Verify the loaded config doesn't point at the dev workspace.
+            if config.workspace_path.contains("DailyOS-dev")
+                || config.workspace_path.contains("dev-workspace")
+            {
                 log::warn!(
-                    "Live config.json workspace points to DailyOS-dev — restoring from backup"
+                    "Live config.json workspace points to dev workspace — restoring from backup"
                 );
                 restore_config_backup()?;
                 let content2 = std::fs::read_to_string(&live_path)
@@ -425,7 +409,7 @@ pub struct DevState {
     pub is_dev_db_mode: bool,
     /// Stale `dailyos-dev.db` file exists on disk.
     pub has_dev_db_file: bool,
-    /// `~/Documents/DailyOS-dev/` workspace directory exists.
+    /// Isolated dev workspace directory exists.
     pub has_dev_workspace: bool,
 }
 
@@ -870,14 +854,14 @@ pub fn purge_mock_data(_state: &AppState) -> Result<String, String> {
 pub fn check_dev_artifacts() -> (bool, bool) {
     let home = dirs::home_dir().unwrap_or_default();
     let dev_db_exists = home.join(".dailyos").join("dailyos-dev.db").exists();
-    let dev_workspace_exists = home.join("Documents").join("DailyOS-dev").exists();
+    let dev_workspace_exists = dev_workspace().exists();
     (dev_db_exists, dev_workspace_exists)
 }
 
 /// Delete stale dev artifacts from disk.
 ///
 /// Removes `~/.dailyos/dailyos-dev.db` (+ WAL/SHM) and optionally
-/// the `~/Documents/DailyOS-dev/` workspace directory.
+/// the isolated dev workspace directory.
 pub fn clean_dev_artifacts(include_workspace: bool) -> Result<String, String> {
     if !cfg!(debug_assertions) {
         return Err("Dev tools not available in release builds".into());
@@ -898,11 +882,11 @@ pub fn clean_dev_artifacts(include_workspace: bool) -> Result<String, String> {
 
     // Dev workspace
     if include_workspace {
-        let dev_ws = home.join("Documents").join("DailyOS-dev");
+        let dev_ws = dev_workspace();
         if dev_ws.exists() {
             std::fs::remove_dir_all(&dev_ws)
-                .map_err(|e| format!("Failed to delete DailyOS-dev: {}", e))?;
-            cleaned.push("DailyOS-dev/".to_string());
+                .map_err(|e| format!("Failed to delete dev workspace: {}", e))?;
+            cleaned.push("dev-workspace/".to_string());
         }
     }
 
@@ -1009,11 +993,12 @@ fn reset_all(state: &AppState) -> Result<(), String> {
     // Use config_path() so dev mode deletes config-dev.json, not live config.json
     let active_config =
         crate::state::config_path().unwrap_or_else(|_| dailyos_dir.join("config.json"));
+    let state_dir = crate::state::mode_scoped_state_dir();
     let mut files_to_delete = vec![
         active_config,
-        dailyos_dir.join("execution_history.json"),
-        dailyos_dir.join("transcript_records.json"),
-        dailyos_dir.join("google").join("token.json"),
+        state_dir.join("execution_history.json"),
+        state_dir.join("transcript_records.json"),
+        state_dir.join("google").join("token.json"),
     ];
     files_to_delete.extend(db_files);
 
@@ -7433,6 +7418,7 @@ mod tests {
     #[test]
     fn test_dev_workspace_path() {
         let path = dev_workspace();
-        assert!(path.to_string_lossy().contains("DailyOS-dev"));
+        assert!(path.to_string_lossy().contains(".dailyos"));
+        assert!(path.to_string_lossy().contains("dev-workspace"));
     }
 }

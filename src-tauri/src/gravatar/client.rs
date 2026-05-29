@@ -249,10 +249,7 @@ pub async fn run_gravatar_fetcher(state: Arc<AppState>) {
         // Connect once for the batch
         match GravatarClient::connect(api_key.as_deref()).await {
             Ok(client) => {
-                let data_dir = dirs::home_dir()
-                    .unwrap_or_default()
-                    .join(".dailyos")
-                    .join("avatars");
+                let data_dir = crate::state::mode_scoped_state_path("avatars");
                 #[allow(
                     clippy::let_underscore_must_use,
                     reason = "intentional best-effort discard; preserves existing non-blocking behavior"

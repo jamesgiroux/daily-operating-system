@@ -160,7 +160,7 @@ pub fn db_mode() -> DbMode {
 }
 
 /// Legacy shim: "dev mode" == `Mock` (fixture DB). Preserved for callers not yet
-/// migrated to `db_mode()` (820-B migrates them). Returns `false` in Replica/Live.
+/// migrated to `db_mode()`. Returns `false` in Replica/Live.
 pub fn is_dev_db_mode() -> bool {
     db_mode() == DbMode::Mock
 }
@@ -1273,6 +1273,85 @@ mod db_mode_tests {
         set_db_mode(DbMode::Live);
         ActionDb::open_readonly_at(&prod_path, Arc::new(FixtureDbKeyProvider::new()))
             .expect("Live mode must allow production DB read path");
+    }
+
+    #[test]
+    fn live_mode_resolves_config_workspace_and_google_token_to_live_paths() {
+        let _lock = DB_MODE_TEST_LOCK.lock().expect("db mode test lock");
+        let _reset = ResetDbMode;
+
+        set_db_mode(DbMode::Live);
+        let home = dirs::home_dir().expect("home dir");
+        let dailyos_dir = home.join(".dailyos");
+        let configured_workspace = home.join("Documents").join("DailyOS");
+        let configured_workspace_str = configured_workspace.to_string_lossy().to_string();
+
+        assert_eq!(
+            crate::state::config_path().expect("config path"),
+            dailyos_dir.join("config.json")
+        );
+        assert_eq!(
+            crate::state::resolved_workspace_path(Some(&configured_workspace_str))
+                .expect("workspace path"),
+            configured_workspace
+        );
+        assert_eq!(
+            crate::state::google_token_path(),
+            dailyos_dir.join("google").join("token.json")
+        );
+        assert_eq!(
+            crate::google_api::token_path(),
+            crate::state::google_token_path()
+        );
+    }
+
+    #[test]
+    fn non_live_modes_resolve_config_workspace_and_google_token_to_isolated_paths() {
+        let _lock = DB_MODE_TEST_LOCK.lock().expect("db mode test lock");
+        let _reset = ResetDbMode;
+
+        let home = dirs::home_dir().expect("home dir");
+        let dailyos_dir = home.join(".dailyos");
+        let live_config = dailyos_dir.join("config.json");
+        let live_workspace = home.join("Documents").join("DailyOS");
+        let live_workspace_str = live_workspace.to_string_lossy().to_string();
+        let live_token = dailyos_dir.join("google").join("token.json");
+
+        for (mode, config_name, workspace_name, state_name) in [
+            (
+                DbMode::Replica,
+                "config-replica.json",
+                "replica-workspace",
+                "replica",
+            ),
+            (DbMode::Mock, "config-dev.json", "dev-workspace", "dev"),
+        ] {
+            set_db_mode(mode);
+
+            let config_path = crate::state::config_path().expect("config path");
+            let workspace_path = crate::state::resolved_workspace_path(Some(&live_workspace_str))
+                .expect("workspace path");
+            let google_token_path = crate::state::google_token_path();
+            let state_dir = dailyos_dir.join(state_name);
+
+            assert_eq!(config_path, dailyos_dir.join(config_name));
+            assert_eq!(workspace_path, dailyos_dir.join(workspace_name));
+            assert_eq!(
+                google_token_path,
+                state_dir.join("google").join("token.json")
+            );
+            assert_eq!(crate::google_api::token_path(), google_token_path);
+            assert_eq!(
+                crate::audit_log::default_audit_log_path(),
+                state_dir.join("audit.log")
+            );
+
+            assert_ne!(config_path, live_config);
+            assert_ne!(workspace_path, live_workspace);
+            assert_ne!(google_token_path, live_token);
+            assert!(workspace_path.starts_with(&dailyos_dir));
+            assert!(google_token_path.starts_with(&state_dir));
+        }
     }
 }
 

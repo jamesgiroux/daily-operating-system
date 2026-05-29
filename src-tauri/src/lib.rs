@@ -458,8 +458,8 @@ pub fn run() {
             }
 
             // One-time filesystem hardening: permissions + Time Machine exclusion
-            if let Some(home) = dirs::home_dir() {
-                let dailyos_dir = home.join(".dailyos");
+            {
+                let dailyos_dir = crate::state::mode_scoped_state_dir();
                 if dailyos_dir.is_dir() {
                     db::hardening::harden_data_directory(&dailyos_dir);
                 }
