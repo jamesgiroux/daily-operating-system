@@ -21,7 +21,7 @@ use sha2::{Digest, Sha256};
 // Dev DB isolation
 // ---------------------------------------------------------------------------
 
-/// Process-wide DB-mode selector (DOS-821 / 820-A). Steers `ActionDb::db_path()`
+/// Process-wide DB-mode selector. Steers `ActionDb::db_path()`
 /// between the production DB and isolated dev files, and — via the structural
 /// guard below — forbids opening the production DB in any non-Live mode.
 ///
@@ -181,7 +181,7 @@ fn prod_db_paths() -> Vec<PathBuf> {
         .unwrap_or_default()
 }
 
-/// Structural prod-open deny (DOS-821 / 820-A). Called at every connection-open
+/// Structural prod-open deny. Called at every connection-open
 /// chokepoint with the resolved path BEFORE the key is fetched or the file is
 /// opened. The encryption key cache is path-blind, so the path layer is the only
 /// barrier — it must be enforced here, not merely in `db_path()`.
@@ -486,7 +486,7 @@ impl ActionDb {
         path: &Path,
         key_provider: Arc<dyn DbKeyProvider>,
     ) -> Result<(Connection, EncryptionKey), DbError> {
-        // DOS-821: structural prod-open deny — before key fetch or file open.
+        // structural prod-open deny — before key fetch or file open.
         guard_path_for_mode(path)?;
 
         // Ensure parent directory exists
@@ -633,7 +633,7 @@ impl ActionDb {
         path: &Path,
         key_provider: Arc<dyn DbKeyProvider>,
     ) -> Result<(Connection, EncryptionKey), DbError> {
-        // DOS-821: structural prod-open deny — before key fetch or file open.
+        // structural prod-open deny — before key fetch or file open.
         guard_path_for_mode(path)?;
 
         if let Some(parent) = path.parent() {
@@ -682,7 +682,7 @@ impl ActionDb {
         path: PathBuf,
         key_provider: Arc<dyn DbKeyProvider>,
     ) -> Result<Self, DbError> {
-        // DOS-821: structural prod-open deny — covers the svc.open_fresh_serialized
+        // structural prod-open deny — covers the svc.open_fresh_serialized
         // branch, which does not route through prepare_encrypted_connection.
         guard_path_for_mode(&path)?;
         let rotation_lock = crate::db::key_provider::rotation_lock_read();
@@ -830,7 +830,7 @@ impl ActionDb {
         let home = dirs::home_dir().ok_or(DbError::HomeDirNotFound)?;
         let dailyos_dir = home.join(".dailyos");
 
-        // DB-mode isolation (DOS-821): non-Live modes resolve to isolated files
+        // DB-mode isolation: non-Live modes resolve to isolated files
         // and never to the production DB.
         match db_mode() {
             DbMode::Replica => return Ok(dailyos_dir.join("dailyos-replica.db")),

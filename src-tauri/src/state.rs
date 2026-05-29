@@ -562,7 +562,7 @@ fn recovery_status_from_db_error(err: &crate::db::DbError) -> DatabaseRecoverySt
         crate::db::DbError::InvalidArgument(message) => {
             DatabaseRecoveryStatus::required("internal_invalid_argument", message.clone())
         }
-        // DOS-821: a deliberate prod-open deny is not a database fault — never
+        // a deliberate prod-open deny is not a database fault — never
         // trigger recovery (which would misclassify the guard as corruption).
         crate::db::DbError::ProdOpenDenied { .. } => DatabaseRecoveryStatus::not_required(),
     }

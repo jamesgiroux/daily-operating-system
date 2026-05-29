@@ -39,7 +39,7 @@ pub enum DbError {
     #[error("Invalid argument: {0}")]
     InvalidArgument(String),
 
-    /// Structural prod-open deny (DOS-821 / 820-A). An attempt was made to open
+    /// Structural prod-open deny. An attempt was made to open
     /// the production database while `db_mode()` is not `Live`. The dev workflow
     /// must never touch the production DB; this is the path-layer barrier.
     #[error("Refused to open production database in {mode} mode (path: {path}). Run with --live / DAILYOS_DB_MODE=live to use the production database.")]
