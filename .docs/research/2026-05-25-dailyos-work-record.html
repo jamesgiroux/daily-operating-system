@@ -203,6 +203,19 @@
     }
     .d-conclusion strong { font-style: normal; color: var(--color-desk-ink); display: block; font-size: 22px; letter-spacing: -0.01em; margin-bottom: 4px; }
 
+    /* Diagram A — asymmetric split: argument left, signals right */
+    .d-split {
+      display: grid;
+      grid-template-columns: 1.15fr 1fr;
+      gap: 120px;
+      width: 100%;
+      align-items: center;
+    }
+    .d-split-text { max-width: 42ch; }
+    .d-split-text .d-headline { margin-bottom: 28px; }
+    .d-split-text .d-lede { margin-bottom: 0; max-width: none; }
+    .d-split .d-signals li { font-size: 24px; }
+
     /* ===================================================================
        DIAGRAM B — Flat memory vs weighted memory
        =================================================================== */
@@ -559,22 +572,23 @@
       </p>
     </section>
 
-    <!-- 4. MICRO-EXPRESSIONS (DIAGRAM A) ===================== -->
+    <!-- 4. MICRO-EXPRESSIONS — HOW HUMANS DO IT ============== -->
     <section class="monthly-wrapped_slide monthly-wrapped_bgWarmWhite">
-      <p class="d-eyebrow">How humans decide trust</p>
-      <h2 class="d-headline d-headline--sm" style="margin-bottom: 16px;">
-        You call it gut instinct. It&rsquo;s really micro-signals compounding.
-      </h2>
-      <p class="d-lede d-lede--wide" style="margin-bottom: 8px;">
-        When you meet someone new, you don&rsquo;t decide to trust them. Your eyes and
-        ears pick up dozens of small things. Face, hands, voice, posture, clothing.
-        They compound into an opinion before you&rsquo;ve thought a sentence. AI has no
-        system for this. We had to build one.
-      </p>
+      <div class="d-split">
+        <div class="d-split-text">
+          <p class="d-eyebrow">How humans decide trust</p>
+          <h2 class="d-headline d-headline--sm">
+            You call it gut instinct. It&rsquo;s really micro-signals compounding.
+          </h2>
+          <p class="d-lede">
+            When you meet someone new, you don&rsquo;t decide to trust them. Your eyes
+            and ears pick up dozens of small signals, and they compound into an opinion
+            before you&rsquo;ve thought a single sentence.
+          </p>
+        </div>
 
-      <div class="d-parallel">
         <div class="d-parallel-side">
-          <p class="d-parallel-title">Human trust</p>
+          <p class="d-parallel-title">The signals</p>
           <ul class="d-signals">
             <li>The face <small>a flicker, an eyebrow</small></li>
             <li>The hands <small>open or guarded</small></li>
@@ -587,24 +601,29 @@
             You didn&rsquo;t decide. You compounded.
           </p>
         </div>
-
-        <div class="d-parallel-rule" aria-hidden="true"></div>
-
-        <div class="d-parallel-side">
-          <p class="d-parallel-title">DailyOS trust</p>
-          <ul class="d-signals">
-            <li>Subject <small>who or what it&rsquo;s about</small></li>
-            <li>Temporal scope <small>when it was true</small></li>
-            <li>Sensitivity <small>who&rsquo;s allowed to see</small></li>
-            <li>Lifecycle <small>whether it&rsquo;s still believed</small></li>
-            <li>Salience <small>whether it&rsquo;s worth surfacing now</small></li>
-          </ul>
-          <p class="d-conclusion">
-            <strong>Trust band.</strong>
-            The system didn&rsquo;t decide. It compounded.
-          </p>
-        </div>
       </div>
+    </section>
+
+    <!-- 4b. THE TRANSLATION — WHAT THAT TAKES IN CODE ========= -->
+    <section class="monthly-wrapped_slide monthly-wrapped_bgLinen">
+      <p class="d-eyebrow">The same logic, in code</p>
+      <h2 class="d-headline d-headline--med">
+        Code has no senses. It has memory.
+      </h2>
+      <p class="d-lede d-lede--wide">
+        A person reads those signals through their senses, in the moment. Code can&rsquo;t.
+        All it has is memory, the facts it can recall later. So if a system is going to
+        do what the gut does, the signals can&rsquo;t live in a glance or a tone. They have
+        to live inside the memory itself.
+      </p>
+      <p class="d-lede d-lede--wide">
+        Every fact has to carry its own evidence. What it&rsquo;s about, when it was true,
+        whether anyone still believes it. A fact that travels with its signals is what we
+        call a claim.
+      </p>
+      <p class="d-meta" style="margin-top: 24px;">
+        Most systems keep the fact and forget everything around it.
+      </p>
     </section>
 
     <!-- 5. THE BLIND SPOT ==================================== -->
@@ -614,11 +633,15 @@
         Smart isn&rsquo;t the same as trustworthy.
       </h2>
       <p class="d-lede d-lede--wide">
-        Karpathy ships a wiki his AI maintains. Garry Tan ships a brain his AI reads
-        before every reply. Kieran Klaassen&rsquo;s compound engineering pattern is in
-        every new agent skill ecosystem. They&rsquo;re all chasing the same thing.
-        Better recall, faster retrieval, longer compounding loops. Personal AI is
-        getting smart.
+        We&rsquo;re not the only ones betting on memory. Karpathy ships a wiki his AI
+        maintains. Garry Tan ships a brain his AI reads before every reply. Kieran
+        Klaassen&rsquo;s compound engineering loop runs in every new agent ecosystem.
+        The whole field is racing to give AI a better memory.
+      </p>
+      <p class="d-lede d-lede--wide">
+        But it&rsquo;s all the same move. Remember more, recall it faster. None of it
+        decides what matters, or what to leave out. The memory keeps getting smarter
+        without getting any more trustworthy.
       </p>
       <p class="d-lede d-lede--narrow">
         How does smart memory know what matters?
