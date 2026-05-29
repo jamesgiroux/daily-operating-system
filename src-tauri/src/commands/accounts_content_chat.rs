@@ -1481,7 +1481,7 @@ pub fn reveal_in_finder(path: String, state: State<'_, Arc<AppState>>) -> Result
     // Allow ~/.dailyos/
     let config_ok = dirs::home_dir()
         .map(|h| {
-            let config_dir = h.join(".dailyos");
+            let config_dir = h.join(".dailyos"); // dailyos-path-allowed: read-only path-prefix allow check, not data construction
             std::fs::canonicalize(&config_dir)
                 .map(|cd| canonical_str.starts_with(&*cd.to_string_lossy()))
                 .unwrap_or(false)

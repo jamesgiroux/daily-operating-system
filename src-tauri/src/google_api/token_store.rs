@@ -2,14 +2,15 @@
 //!
 //! - macOS: Keychain is canonical, with one-time migration from legacy token.json.
 //! - non-macOS: token.json file backend is canonical.
-//! - Dev mode: in-memory store (never touches Keychain or disk).
+//! - Replica mode: mode-scoped Keychain/file storage.
+//! - Mock mode: in-memory store (never touches Keychain or disk).
 
 use parking_lot::Mutex;
 
 use super::{GoogleApiError, GoogleToken};
 
-/// In-memory token store for dev mode (Phase 2: auth isolation).
-/// When dev DB mode is active, tokens are stored here instead of Keychain.
+/// In-memory token store for mock mode auth isolation.
+/// When mock DB mode is active, tokens are stored here instead of Keychain.
 /// Cleared on exit from dev mode.
 static DEV_TOKEN: Mutex<Option<GoogleToken>> = Mutex::new(None);
 
@@ -21,7 +22,7 @@ pub fn clear_dev_token() {
 
 /// Load the current Google OAuth token.
 pub fn load_token() -> Result<GoogleToken, GoogleApiError> {
-    // Dev mode isolation: use in-memory store, never touch Keychain
+    // Mock mode isolation: use in-memory store, never touch Keychain.
     if crate::db::is_dev_db_mode() {
         return DEV_TOKEN
             .lock()
@@ -42,7 +43,7 @@ pub fn load_token() -> Result<GoogleToken, GoogleApiError> {
 
 /// Persist a Google OAuth token.
 pub fn save_token(token: &GoogleToken) -> Result<(), GoogleApiError> {
-    // Dev mode isolation: store in-memory only, never touch Keychain
+    // Mock mode isolation: store in-memory only, never touch Keychain.
     if crate::db::is_dev_db_mode() {
         let mut guard = DEV_TOKEN.lock();
         *guard = Some(token.clone());
@@ -62,7 +63,7 @@ pub fn save_token(token: &GoogleToken) -> Result<(), GoogleApiError> {
 
 /// Remove Google OAuth credentials from local storage.
 pub fn delete_token() -> Result<(), GoogleApiError> {
-    // Dev mode isolation: clear in-memory token only
+    // Mock mode isolation: clear in-memory token only.
     if crate::db::is_dev_db_mode() {
         clear_dev_token();
         return Ok(());
@@ -139,7 +140,20 @@ fn delete_token_file() -> Result<(), GoogleApiError> {
 #[cfg(target_os = "macos")]
 const KEYCHAIN_SERVICE: &str = "com.dailyos.desktop.google-auth";
 #[cfg(target_os = "macos")]
+const REPLICA_KEYCHAIN_SERVICE: &str = "com.dailyos.desktop.google-auth.replica";
+#[cfg(target_os = "macos")]
+const MOCK_KEYCHAIN_SERVICE: &str = "com.dailyos.desktop.google-auth.mock";
+#[cfg(target_os = "macos")]
 const KEYCHAIN_ACCOUNT: &str = "oauth-token-v1";
+
+#[cfg(target_os = "macos")]
+fn keychain_service() -> &'static str {
+    match crate::db::db_mode() {
+        crate::db::DbMode::Live => KEYCHAIN_SERVICE,
+        crate::db::DbMode::Replica => REPLICA_KEYCHAIN_SERVICE,
+        crate::db::DbMode::Mock => MOCK_KEYCHAIN_SERVICE,
+    }
+}
 
 /// Run a `security` CLI command with retry + backoff for transient Keychain
 /// contention (macOS errno 35 / EAGAIN — "Resource temporarily unavailable").
@@ -183,12 +197,13 @@ fn run_security_cmd(args: &[&str]) -> Result<std::process::Output, GoogleApiErro
 
 #[cfg(target_os = "macos")]
 fn load_token_from_keychain() -> Result<GoogleToken, GoogleApiError> {
+    let service = keychain_service();
     let output = run_security_cmd(&[
         "find-generic-password",
         "-a",
         KEYCHAIN_ACCOUNT,
         "-s",
-        KEYCHAIN_SERVICE,
+        service,
         "-w",
     ])?;
 
@@ -210,12 +225,13 @@ fn load_token_from_keychain() -> Result<GoogleToken, GoogleApiError> {
 #[cfg(target_os = "macos")]
 fn save_token_to_keychain(token: &GoogleToken) -> Result<(), GoogleApiError> {
     let payload = serde_json::to_string(token)?;
+    let service = keychain_service();
     let output = run_security_cmd(&[
         "add-generic-password",
         "-a",
         KEYCHAIN_ACCOUNT,
         "-s",
-        KEYCHAIN_SERVICE,
+        service,
         "-w",
         &payload,
         "-U",
@@ -230,12 +246,13 @@ fn save_token_to_keychain(token: &GoogleToken) -> Result<(), GoogleApiError> {
 
 #[cfg(target_os = "macos")]
 fn delete_token_from_keychain() -> Result<(), GoogleApiError> {
+    let service = keychain_service();
     let output = run_security_cmd(&[
         "delete-generic-password",
         "-a",
         KEYCHAIN_ACCOUNT,
         "-s",
-        KEYCHAIN_SERVICE,
+        service,
     ])?;
     if output.status.success() {
         return Ok(());

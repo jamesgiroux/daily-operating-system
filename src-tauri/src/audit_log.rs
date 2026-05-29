@@ -1,6 +1,6 @@
 //! Tamper-evident audit log for enterprise observability (ADR-0094).
 //!
-//! Appends JSON-lines to `~/.dailyos/audit.log` with a SHA-256 hash chain.
+//! Appends JSON-lines to the active mode's audit log with a SHA-256 hash chain.
 //! Each record links to the previous via `prev_hash`, making deletions or
 //! insertions detectable. Records are rotated at 90 days on startup.
 //!
@@ -650,12 +650,9 @@ fn read_last_line_hash(path: &Path) -> Option<String> {
     Some(hash_line(last_line))
 }
 
-/// Get the default audit log path (~/.dailyos/audit.log).
+/// Get the active mode's audit log path.
 pub fn default_audit_log_path() -> PathBuf {
-    dirs::home_dir()
-        .unwrap_or_default()
-        .join(".dailyos")
-        .join("audit.log")
+    crate::state::mode_scoped_state_path("audit.log")
 }
 
 #[cfg(test)]

@@ -828,7 +828,7 @@ fn stable_hash_for_audit(value: &str) -> String {
 
 /// Path to the runtime sentinel file.
 ///
-/// `~/.dailyos/runtime-endpoint.json` — written on bind, removed on shutdown.
+/// Written on bind and removed on shutdown inside the active mode's state dir.
 /// Parent dir is ensured at `0700`, sentinel at `0600`.
 fn runtime_sentinel_path() -> io::Result<PathBuf> {
     #[cfg(test)]
@@ -836,12 +836,9 @@ fn runtime_sentinel_path() -> io::Result<PathBuf> {
         return Ok(path);
     }
 
-    let home = std::env::var_os("HOME")
-        .ok_or_else(|| io::Error::new(io::ErrorKind::NotFound, "HOME unset"))?;
-    let mut path = PathBuf::from(home);
-    path.push(".dailyos");
-    path.push("runtime-endpoint.json");
-    Ok(path)
+    Ok(crate::state::mode_scoped_state_path(
+        "runtime-endpoint.json",
+    ))
 }
 
 #[cfg(test)]
@@ -866,7 +863,7 @@ fn set_runtime_sentinel_path_for_tests(path: PathBuf) -> RuntimeSentinelPathGuar
 
 /// Write the runtime sentinel after a successful bind.
 ///
-/// - Parent dir `~/.dailyos/` ensured at mode `0700`.
+/// - Parent dir ensured at mode `0700`.
 /// - Sentinel itself written at mode `0600` via temp-file + atomic rename.
 /// - `O_NOFOLLOW | O_EXCL` on the temp open prevents symlink + race attacks.
 /// - Payload contains ONLY `port` and `runtime_version`. NEVER auth material.

@@ -458,8 +458,8 @@ pub fn run() {
             }
 
             // One-time filesystem hardening: permissions + Time Machine exclusion
-            if let Some(home) = dirs::home_dir() {
-                let dailyos_dir = home.join(".dailyos");
+            {
+                let dailyos_dir = crate::state::mode_scoped_state_dir();
                 if dailyos_dir.is_dir() {
                     db::hardening::harden_data_directory(&dailyos_dir);
                 }
@@ -499,7 +499,7 @@ pub fn run() {
                 tauri::async_runtime::spawn(async move {
                     let models_dir = dirs::home_dir()
                         .unwrap_or_default()
-                        .join(".dailyos")
+                        .join(".dailyos") // dailyos-path-allowed: shared embedding models dir, retained across DB modes
                         .join("models");
                     match tokio::task::spawn_blocking(move || model.initialize(models_dir)).await {
                         Ok(Ok(())) => log::info!("Embedding model ready (background init)"),
