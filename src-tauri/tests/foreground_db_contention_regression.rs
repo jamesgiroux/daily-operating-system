@@ -191,7 +191,10 @@ fn calendar_hot_path_routes_writes_through_service_batch() {
         "pub(crate) fn record_calendar_attendance_batch",
     );
     assert!(service_batch.contains("db.with_transaction"));
-    assert!(service_batch.contains("ensure_meeting_in_history"));
+    // Meeting writes route through the meetings_writer service inside the batch
+    // transaction (the writer performs the ensure_meeting_in_history upsert),
+    // rather than inlining the DB call in the calendar hot path.
+    assert!(service_batch.contains("meetings_writer::write(tx"));
     assert!(service_batch.contains("record_meeting_attendance"));
     assert!(
         service_batch.contains("emit_and_propagate(")
