@@ -5,6 +5,7 @@ pub(crate) use std::collections::HashMap;
 pub(crate) use crate::entity::{DbEntity, EntityType};
 pub(crate) use crate::types::LinkedEntity;
 pub(crate) use chrono::Utc;
+pub(crate) use core::guard_path_for_mode;
 pub(crate) use rusqlite::params;
 
 pub mod accounts;

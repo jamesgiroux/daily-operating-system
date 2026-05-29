@@ -106,6 +106,9 @@ jobs:
       - name: Enforce DOS-589 dispatcher module boundaries
         run: ./scripts/check_version_dispatcher_boundaries.sh
 
+      - name: Enforce DB open guard allowlist
+        run: bash src-tauri/scripts/check_db_open_guard_allowlist.sh
+
       - name: Enforce ability surface drift guard
         run: |
           bash src-tauri/scripts/check_ability_surface_drift.sh

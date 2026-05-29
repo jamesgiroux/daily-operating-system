@@ -6,7 +6,7 @@
 //! SQLite is not disposable — important state lives here and is written back to the
 //! filesystem at natural synchronization points (archive, dashboard regeneration).
 
-use std::path::{Path, PathBuf};
+use std::path::{Component, Path, PathBuf};
 use std::sync::atomic::{AtomicU8, Ordering};
 use std::sync::Arc;
 
@@ -185,20 +185,80 @@ fn prod_db_paths() -> Vec<PathBuf> {
 /// chokepoint with the resolved path BEFORE the key is fetched or the file is
 /// opened. The encryption key cache is path-blind, so the path layer is the only
 /// barrier — it must be enforced here, not merely in `db_path()`.
-fn guard_path_for_mode(path: &Path) -> Result<(), DbError> {
+pub(crate) fn guard_path_for_mode(path: &Path) -> Result<(), DbError> {
     let mode = db_mode();
     if mode == DbMode::Live {
         return Ok(());
     }
-    let canon = |p: &Path| p.canonicalize().unwrap_or_else(|_| p.to_path_buf());
-    let target = canon(path);
-    if prod_db_paths().iter().any(|p| canon(p) == target) {
+    let target_candidates = guarded_path_candidates(path);
+    if prod_db_paths().iter().any(|prod_path| {
+        let prod_candidates = guarded_path_candidates(prod_path);
+        target_candidates.iter().any(|target| {
+            prod_candidates
+                .iter()
+                .any(|prod| guarded_paths_equal(target, prod))
+        })
+    }) {
         return Err(DbError::ProdOpenDenied {
             mode: format!("{mode:?}"),
             path: path.display().to_string(),
         });
     }
     Ok(())
+}
+
+fn guarded_path_candidates(path: &Path) -> Vec<PathBuf> {
+    let mut candidates = vec![lexically_normalized_path(path)];
+    if let Ok(canonicalized) = path.canonicalize() {
+        let canonicalized = lexically_normalized_path(&canonicalized);
+        if !candidates
+            .iter()
+            .any(|candidate| guarded_paths_equal(candidate, &canonicalized))
+        {
+            candidates.push(canonicalized);
+        }
+    }
+    candidates
+}
+
+fn lexically_normalized_path(path: &Path) -> PathBuf {
+    let mut normalized = PathBuf::new();
+    for component in path.components() {
+        match component {
+            Component::CurDir => {}
+            Component::ParentDir => {
+                let can_pop = matches!(
+                    normalized.components().next_back(),
+                    Some(Component::Normal(_))
+                );
+                if can_pop {
+                    normalized.pop();
+                } else if !normalized.has_root() {
+                    normalized.push(component.as_os_str());
+                }
+            }
+            Component::Prefix(_) | Component::RootDir | Component::Normal(_) => {
+                normalized.push(component.as_os_str());
+            }
+        }
+    }
+    if normalized.as_os_str().is_empty() {
+        PathBuf::from(".")
+    } else {
+        normalized
+    }
+}
+
+#[cfg(target_os = "macos")]
+fn guarded_paths_equal(left: &Path, right: &Path) -> bool {
+    left.as_os_str()
+        .to_string_lossy()
+        .eq_ignore_ascii_case(&right.as_os_str().to_string_lossy())
+}
+
+#[cfg(not(target_os = "macos"))]
+fn guarded_paths_equal(left: &Path, right: &Path) -> bool {
+    left == right
 }
 
 #[repr(transparent)]
@@ -702,6 +762,8 @@ impl ActionDb {
         path: &std::path::Path,
         key_provider: Arc<dyn DbKeyProvider>,
     ) -> Result<Self, DbError> {
+        guard_path_for_mode(path)?;
+
         let user = UserIdentity::local(path.to_path_buf());
         let encryption_key = key_provider.get_or_create_key(&user).map_err(|e| {
             if e.starts_with("KEY_MISSING:") {
@@ -1051,6 +1113,28 @@ mod db_mode_tests {
 
     static DB_MODE_TEST_LOCK: std::sync::Mutex<()> = std::sync::Mutex::new(());
 
+    struct EnvVarGuard {
+        name: &'static str,
+        original: Option<std::ffi::OsString>,
+    }
+
+    impl EnvVarGuard {
+        fn set(name: &'static str, value: &Path) -> Self {
+            let original = std::env::var_os(name);
+            std::env::set_var(name, value);
+            Self { name, original }
+        }
+    }
+
+    impl Drop for EnvVarGuard {
+        fn drop(&mut self) {
+            match &self.original {
+                Some(value) => std::env::set_var(self.name, value),
+                None => std::env::remove_var(self.name),
+            }
+        }
+    }
+
     struct ResetDbMode;
 
     impl Drop for ResetDbMode {
@@ -1066,6 +1150,14 @@ mod db_mode_tests {
             .join("dailyos.db")
     }
 
+    fn production_db_path_with_redundant_dot_segment() -> PathBuf {
+        dirs::home_dir()
+            .expect("home dir")
+            .join(".dailyos")
+            .join(".")
+            .join("dailyos.db")
+    }
+
     fn assert_prod_open_denied(mode: DbMode) {
         set_db_mode(mode);
         let err = guard_path_for_mode(&production_db_path())
@@ -1074,6 +1166,26 @@ mod db_mode_tests {
             matches!(err, DbError::ProdOpenDenied { .. }),
             "expected ProdOpenDenied, got {err:?}"
         );
+    }
+
+    fn assert_readonly_prod_open_denied(path: &Path, mode: DbMode) {
+        set_db_mode(mode);
+        match ActionDb::open_readonly_at(path, Arc::new(FixtureDbKeyProvider::new())) {
+            Err(DbError::ProdOpenDenied { .. }) => {}
+            Err(err) => panic!("expected ProdOpenDenied, got {err:?}"),
+            Ok(_) => panic!("non-Live mode must deny production DB read path"),
+        }
+    }
+
+    fn create_encrypted_prod_db(path: &Path) {
+        std::fs::create_dir_all(path.parent().expect("prod db parent"))
+            .expect("create prod db parent");
+        let provider = FixtureDbKeyProvider::new();
+        let conn = Connection::open(path).expect("create encrypted prod db");
+        conn.execute_batch(&provider.key.to_pragma())
+            .expect("apply fixture key");
+        conn.execute_batch("CREATE TABLE readonly_smoke (id INTEGER PRIMARY KEY);")
+            .expect("create smoke table");
     }
 
     #[test]
@@ -1115,6 +1227,52 @@ mod db_mode_tests {
             guard_path_for_mode(&unrelated_path)
                 .unwrap_or_else(|err| panic!("{mode:?} should allow unrelated temp path: {err}"));
         }
+    }
+
+    #[test]
+    fn open_readonly_at_refuses_prod_path_in_replica_and_mock_when_absent() {
+        let _lock = DB_MODE_TEST_LOCK.lock().expect("db mode test lock");
+        let _reset = ResetDbMode;
+        let temp_home = tempfile::tempdir().expect("temp home");
+        let _home = EnvVarGuard::set("HOME", temp_home.path());
+        let prod_path = production_db_path();
+        assert!(
+            !prod_path.exists(),
+            "test requires the temp production DB file to be absent"
+        );
+
+        assert_readonly_prod_open_denied(&prod_path, DbMode::Replica);
+        assert_readonly_prod_open_denied(&prod_path, DbMode::Mock);
+    }
+
+    #[test]
+    fn open_readonly_at_refuses_prod_path_with_redundant_dot_segment_when_absent() {
+        let _lock = DB_MODE_TEST_LOCK.lock().expect("db mode test lock");
+        let _reset = ResetDbMode;
+        let temp_home = tempfile::tempdir().expect("temp home");
+        let _home = EnvVarGuard::set("HOME", temp_home.path());
+        let prod_path = production_db_path();
+        let redundant_path = production_db_path_with_redundant_dot_segment();
+        assert!(
+            !prod_path.exists(),
+            "test requires the temp production DB file to be absent"
+        );
+
+        assert_readonly_prod_open_denied(&redundant_path, DbMode::Replica);
+    }
+
+    #[test]
+    fn open_readonly_at_allows_prod_path_in_live() {
+        let _lock = DB_MODE_TEST_LOCK.lock().expect("db mode test lock");
+        let _reset = ResetDbMode;
+        let temp_home = tempfile::tempdir().expect("temp home");
+        let _home = EnvVarGuard::set("HOME", temp_home.path());
+        let prod_path = production_db_path();
+        create_encrypted_prod_db(&prod_path);
+
+        set_db_mode(DbMode::Live);
+        ActionDb::open_readonly_at(&prod_path, Arc::new(FixtureDbKeyProvider::new()))
+            .expect("Live mode must allow production DB read path");
     }
 }
 

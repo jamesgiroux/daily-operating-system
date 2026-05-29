@@ -9,6 +9,16 @@ fn main() -> ExitCode {
         .format_timestamp_millis()
         .init();
 
+    let resolved_mode = dailyos_lib::db::db_mode();
+    log::info!("Resolved DbMode: {resolved_mode:?}");
+    if resolved_mode != dailyos_lib::db::DbMode::Live || !explicit_live_db_mode_requested() {
+        eprintln!(
+            "refusing to run maintenance against an implicit or non-Live DB mode; \
+             pass --live or set DAILYOS_DB_MODE=live"
+        );
+        return ExitCode::from(2);
+    }
+
     let args: Vec<String> = std::env::args().skip(1).collect();
     let apply = args.iter().any(|arg| arg == "--apply");
     let opts = match parse_options(&args) {
@@ -65,6 +75,9 @@ fn parse_options(args: &[String]) -> Result<RepairOptions, String> {
             "--dry-run" => {
                 i += 1;
             }
+            "--live" => {
+                i += 1;
+            }
             "--min-batch" => {
                 i += 1;
                 let Some(value) = args.get(i) else {
@@ -98,6 +111,11 @@ fn parse_options(args: &[String]) -> Result<RepairOptions, String> {
 
 fn print_usage() {
     eprintln!(
-        "usage: repair_entity_linking [--dry-run] [--apply] [--min-batch N] [--min-coattendees N]"
+        "usage: repair_entity_linking --live [--dry-run] [--apply] [--min-batch N] [--min-coattendees N]"
     );
+}
+
+fn explicit_live_db_mode_requested() -> bool {
+    std::env::args().any(|arg| arg == "--live")
+        || std::env::var("DAILYOS_DB_MODE").is_ok_and(|value| value.trim() == "live")
 }
