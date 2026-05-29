@@ -11,6 +11,8 @@ compile_error!(
 );
 
 fn main() {
+    dailyos_lib::db::resolve_and_set_db_mode_from_process();
+
     if let Some(code) = dailyos_lib::doctor::run_from_args(std::env::args()) {
         std::process::exit(code);
     }

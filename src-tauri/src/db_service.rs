@@ -644,6 +644,8 @@ impl DbService {
         path: PathBuf,
         key_provider: Arc<dyn DbKeyProvider>,
     ) -> Result<Arc<Self>, DbError> {
+        crate::db::guard_path_for_mode(&path)?;
+
         let path_for_writer = path.clone();
         let path_for_readers = path.to_string_lossy().to_string();
         let writer_key_provider = key_provider.clone();
@@ -838,6 +840,8 @@ impl DbService {
         path: PathBuf,
         encryption_key: EncryptionKey,
     ) -> Result<Connection, DbError> {
+        crate::db::guard_path_for_mode(&path)?;
+
         let started = Instant::now();
         let path = path.to_string_lossy().to_string();
         let writer = self.writer();

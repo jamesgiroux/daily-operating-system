@@ -38,6 +38,12 @@ pub enum DbError {
     /// variant). Indicates a programming error, not a runtime fault.
     #[error("Invalid argument: {0}")]
     InvalidArgument(String),
+
+    /// Structural prod-open deny. An attempt was made to open
+    /// the production database while `db_mode()` is not `Live`. The dev workflow
+    /// must never touch the production DB; this is the path-layer barrier.
+    #[error("Refused to open production database in {mode} mode (path: {path}). Run with --live / DAILYOS_DB_MODE=live to use the production database.")]
+    ProdOpenDenied { mode: String, path: String },
 }
 
 /// A row from the `actions` table.

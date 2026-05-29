@@ -5,8 +5,8 @@
 //! findings.
 //!
 //! Usage:
-//!   reconcile_post_migration              — read-only reconcile; report findings.
-//!   reconcile_post_migration --repair     — apply repair (re-tombstone via commit_claim).
+//!   reconcile_post_migration --live              — read-only reconcile; report findings.
+//!   reconcile_post_migration --live --repair     — apply repair (re-tombstone via commit_claim).
 //!
 //! ## Status (W1 ship)
 //!
@@ -21,9 +21,21 @@ use std::process::ExitCode;
 const RECONCILE_SQL_PATH: &str = "scripts/reconcile_ghost_resurrection.sql";
 
 fn main() -> ExitCode {
+    dailyos_lib::db::resolve_and_set_db_mode_from_process();
+
     env_logger::Builder::from_env(env_logger::Env::default().default_filter_or("info"))
         .format_timestamp_millis()
         .init();
+
+    let resolved_mode = dailyos_lib::db::db_mode();
+    log::info!("Resolved DbMode: {resolved_mode:?}");
+    if resolved_mode != dailyos_lib::db::DbMode::Live || !explicit_live_db_mode_requested() {
+        log::error!(
+            "Refusing to run maintenance against an implicit or non-Live DB mode. \
+             Pass --live or set DAILYOS_DB_MODE=live to run against the production DB."
+        );
+        return ExitCode::from(2);
+    }
 
     let args: Vec<String> = std::env::args().collect();
     let repair_mode = args.iter().any(|a| a == "--repair");
@@ -164,6 +176,11 @@ fn locate_reconcile_sql() -> PathBuf {
         return PathBuf::from(p);
     }
     cwd_relative
+}
+
+fn explicit_live_db_mode_requested() -> bool {
+    std::env::args().any(|arg| arg == "--live")
+        || std::env::var("DAILYOS_DB_MODE").is_ok_and(|value| value.trim() == "live")
 }
 
 #[derive(Debug)]

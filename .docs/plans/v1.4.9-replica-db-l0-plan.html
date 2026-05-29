@@ -1,0 +1,322 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>DB Mode Isolation (DOS-820) · DailyOS L0 Plan</title>
+  <link rel="stylesheet" href="../design/reference/_shared/fonts.css">
+  <link rel="stylesheet" href="../design/reference/_shared/styles/design-tokens.css">
+  <link rel="stylesheet" href="../design/reference/_shared/styles/AtmosphereLayer.module.css">
+  <link rel="stylesheet" href="../design/reference/_shared/styles/MagazinePageLayout.module.css">
+  <link rel="stylesheet" href="../design/reference/_shared/chrome.css">
+  <link rel="stylesheet" href="plans.css">
+  <style>
+    /* TODO(ds): needs pattern — verdict banner for L0/review outcomes */
+    .verdict-banner {
+      display: flex;
+      flex-wrap: wrap;
+      gap: var(--space-md);
+      align-items: center;
+      margin: var(--space-lg) 0;
+      padding: var(--space-md) var(--space-lg);
+      background: var(--color-paper-warm-white);
+      border: 1px solid var(--color-rule-heavy);
+      border-left: 4px solid var(--color-garden-sage);
+      border-radius: 6px;
+      font-family: var(--font-sans);
+      font-size: 13px;
+      color: var(--color-text-secondary);
+    }
+    .verdict-banner strong { color: var(--color-text-primary); }
+    .verdict-pill {
+      font-family: var(--font-mono);
+      font-size: 10px;
+      font-weight: 700;
+      letter-spacing: 0.1em;
+      text-transform: uppercase;
+      padding: 3px 8px;
+      border-radius: 3px;
+      background: var(--color-garden-sage);
+      color: #fff;
+    }
+
+    /* TODO(ds): needs pattern — blocker / finding table */
+    .l0-table {
+      width: 100%;
+      border-collapse: collapse;
+      margin: var(--space-lg) 0;
+      font-family: var(--font-sans);
+      font-size: 13px;
+      background: var(--color-paper-warm-white);
+      border: 1px solid var(--color-rule-heavy);
+      border-radius: 6px;
+      overflow: hidden;
+    }
+    .l0-table th {
+      font-family: var(--font-mono);
+      font-size: 10px;
+      font-weight: 700;
+      letter-spacing: 0.1em;
+      text-transform: uppercase;
+      color: var(--color-text-tertiary);
+      padding: var(--space-md) var(--space-lg);
+      text-align: left;
+      background: var(--color-paper-linen);
+      border-bottom: 1px solid var(--color-rule-heavy);
+      vertical-align: top;
+    }
+    .l0-table td {
+      padding: var(--space-md) var(--space-lg);
+      border-bottom: 1px solid var(--color-rule-light);
+      vertical-align: top;
+      line-height: 1.5;
+      color: var(--color-text-secondary);
+    }
+    .l0-table tbody tr:last-child td { border-bottom: none; }
+    .l0-table td:first-child {
+      font-family: var(--font-mono);
+      font-weight: 700;
+      color: var(--color-text-primary);
+      white-space: nowrap;
+    }
+    .l0-table td code, .l0-table th code {
+      font-family: var(--font-mono);
+      font-size: 11px;
+      background: rgba(0, 0, 0, 0.04);
+      padding: 1px 4px;
+      border-radius: 2px;
+    }
+    .l0-table tr[data-sev="blocker"] td:first-child { border-left: 3px solid var(--color-spice-terracotta); padding-left: calc(var(--space-lg) - 3px); }
+    .l0-table tr[data-sev="sharpen"] td:first-child { border-left: 3px solid var(--color-spice-saffron); padding-left: calc(var(--space-lg) - 3px); }
+
+    /* TODO(ds): needs pattern — per-mode policy matrix (Live/Replica/Mock columns) */
+    .mode-matrix { width: 100%; border-collapse: collapse; margin: var(--space-lg) 0; font-family: var(--font-sans); font-size: 12.5px; background: var(--color-paper-warm-white); border: 1px solid var(--color-rule-heavy); border-radius: 6px; overflow: hidden; }
+    .mode-matrix th, .mode-matrix td { padding: var(--space-sm) var(--space-md); text-align: left; border-bottom: 1px solid var(--color-rule-light); vertical-align: top; line-height: 1.45; }
+    .mode-matrix thead th { font-family: var(--font-mono); font-size: 10px; font-weight: 700; letter-spacing: 0.08em; text-transform: uppercase; color: var(--color-text-tertiary); background: var(--color-paper-linen); border-bottom: 1px solid var(--color-rule-heavy); }
+    .mode-matrix tbody th { font-family: var(--font-mono); font-size: 11px; font-weight: 700; color: var(--color-text-primary); background: var(--color-paper-warm-white); white-space: nowrap; }
+    .mode-matrix col.col-live { background: rgba(0,0,0,0.015); }
+    .mode-matrix col.col-replica { background: var(--color-spice-saffron); }
+    .mode-matrix th.h-replica { color: var(--color-spice-terracotta); }
+    .mode-matrix code { font-family: var(--font-mono); font-size: 10.5px; background: rgba(0,0,0,0.04); padding: 1px 3px; border-radius: 2px; }
+
+    /* TODO(ds): needs pattern — decision cards row */
+    .decisions { display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: var(--space-md); margin: var(--space-lg) 0; }
+    .decision-card { padding: var(--space-lg); background: var(--color-paper-warm-white); border: 1px solid var(--color-rule-heavy); border-radius: 6px; border-top: 3px solid var(--color-spice-saffron); }
+    .decision-card .d-id { font-family: var(--font-mono); font-size: 10px; font-weight: 700; letter-spacing: 0.1em; text-transform: uppercase; color: var(--color-spice-terracotta); margin: 0 0 var(--space-xs); }
+    .decision-card .d-q { font-family: var(--font-sans); font-size: 13.5px; font-weight: 600; color: var(--color-text-primary); margin: 0 0 var(--space-sm); line-height: 1.4; }
+    .decision-card .d-rec { font-family: var(--font-sans); font-size: 12.5px; color: var(--color-text-secondary); line-height: 1.5; }
+    .decision-card .d-rec strong { color: var(--color-text-primary); }
+
+    /* TODO(ds): needs pattern — split chips (820-A/B/C) */
+    .split-row { display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: var(--space-md); margin: var(--space-lg) 0; }
+    .split-card { padding: var(--space-lg); background: var(--color-paper-warm-white); border: 1px solid var(--color-rule-heavy); border-radius: 6px; }
+    .split-card .s-id { font-family: var(--font-mono); font-size: 12px; font-weight: 700; color: var(--color-text-primary); margin: 0 0 var(--space-xs); }
+    .split-card .s-body { font-family: var(--font-sans); font-size: 12.5px; color: var(--color-text-secondary); line-height: 1.5; }
+    .split-card[data-core="true"] { border-left: 3px solid var(--color-garden-sage); }
+
+    .anchor-line { font-family: var(--font-mono); font-size: 11px; line-height: 1.8; color: var(--color-text-tertiary); }
+    .anchor-line code { color: var(--color-text-secondary); }
+  </style>
+</head>
+<body
+  data-tint="eucalyptus"
+  data-active-page="planning">
+<div class="MagazinePageLayout_magazinePage">
+<main class="MagazinePageLayout_pageContainer">
+<div class="plans-shell">
+
+<!-- TOPNAV -->
+<nav class="plans-topnav" aria-label="Planning surface">
+  <a class="plans-mark" href="index.html">
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 433 407" width="16" height="16" aria-hidden="true">
+      <path d="M159 407 161 292 57 355 0 259 102 204 0 148 57 52 161 115 159 0H273L271 115L375 52L433 148L331 204L433 259L375 355L271 292L273 407Z" fill="currentColor"/>
+    </svg>
+    DailyOS · Planning
+  </a>
+  <div class="plans-topnav-links">
+    <a href="engineering-ladder.html">Engineering Ladder</a>
+    <a href="db-throughput-architecture.html">Throughput Architecture</a>
+    <a href="v1.4.9-replica-db-l0-plan.html" data-active="true">Replica-DB L0 (DOS-820)</a>
+    <a href="AUTHORING.md">Authoring Ruleset</a>
+  </div>
+</nav>
+
+<!-- COVER -->
+<section class="plans-cover">
+  <p class="plans-eyebrow">DailyOS · v1.4.9 W1 · Substrate Reset</p>
+  <h1 class="plans-title">The dev workflow must be structurally incapable of touching the production database.</h1>
+  <p class="plans-kicker">An L0 plan for DB-mode isolation — Live / Replica / Mock — so a rebuild-and-<code>pkill</code> loop can never again corrupt the real personal-intelligence DB.</p>
+  <p class="plans-lede">
+    The 2026-05-28 corruption was not a substrate flaw. It was a <strong>dev-workflow artifact</strong> &mdash;
+    <code>tasks/lessons.md:5</code>: <em>&ldquo;Do not edit Rust backend files while <code>pnpm tauri dev</code> is writing
+    to the production SQLCipher DB; hot-restarts terminate WAL writers &rarr; btree corruption.&rdquo;</em> All three root
+    causes are patched (PR #416). The durable fix is structural isolation: production runs untouched; the dev loop runs
+    against a <strong>production replica</strong> (real content &mdash; Glean connectors only work on real account names) or a
+    <strong>mock</strong> fixture set. This unblocks the safe nuke + fresh-install and lets DailyOS run in production daily
+    without corruption or migration fear.
+  </p>
+  <div class="plans-meta">
+    <span>Issue DOS-820 · v1.4.9 W1</span>
+    <span>L0-hardened 2026-05-29 · 4-reviewer panel, unanimous</span>
+    <span>Reinforces ADR-0135 / ADR-0128 · orthogonal to ADR-0104</span>
+    <span>Tier 1 · HTML-first</span>
+  </div>
+</section>
+
+<!-- VERDICT -->
+<div class="verdict-banner">
+  <span class="verdict-pill">L0 · Approve (hardened)</span>
+  <span><strong>codex</strong> + <strong>ce-feasibility</strong> + <strong>ce-security-lens</strong> + <strong>ce-learnings</strong> (K-in) — unanimous. Initial &ldquo;extend the <code>DEV_DB_MODE</code> bool&rdquo; framing rejected by all four; three convergent blockers, now designed against. No reinvented substrate.</span>
+</div>
+
+<!-- SECTION 1 — root cause -->
+<section class="plans-section" aria-labelledby="sec-cause">
+  <header class="plans-section-header">
+    <p class="plans-section-eyebrow">Why this exists</p>
+    <h2 id="sec-cause" class="plans-section-title">The hazard is the developer loop, not the user.</h2>
+    <p class="plans-section-lede">
+      A real user never <code>pkill</code>s a hot WAL writer. The developer does &mdash; on every kill-to-apply-a-fix
+      rebuild &mdash; and today that loop runs against the same <code>~/.dailyos/dailyos.db</code> that holds the real
+      personal-intelligence graph. Isolate the loop from production and the corruption class cannot recur.
+    </p>
+  </header>
+</section>
+
+<!-- SECTION 2 — L0 blockers -->
+<section class="plans-section" aria-labelledby="sec-blockers">
+  <header class="plans-section-header">
+    <p class="plans-section-eyebrow">What the panel caught</p>
+    <h2 id="sec-blockers" class="plans-section-title">Three convergent blockers killed the &ldquo;small flag&rdquo; framing.</h2>
+  </header>
+  <table class="l0-table">
+    <thead><tr><th>Blocker</th><th>Why the naïve flag fails</th><th>Design response</th></tr></thead>
+    <tbody>
+      <tr data-sev="blocker">
+        <td>B1 · Not process-wide enough</td>
+        <td><code>dailyos-mcp</code> + maintenance bins are separate processes with their own <code>main()</code>; none set the mode &rarr; default &rarr; prod. MCP launched by Claude/Cursor with no env opens prod and writes audit/recovery state.</td>
+        <td>DB mode is an <strong>immutable library bootstrap contract used by every binary</strong> (app, MCP, doctor, maintenance, tests). Set once, <code>Acquire/Release</code>, before any thread or open.</td>
+      </tr>
+      <tr data-sev="blocker">
+        <td>B2 · Default-Live isn't a boundary</td>
+        <td><code>beforeDevCommand</code> starts Vite, not the backend; IDE runs, <code>cargo tauri dev</code>, <code>cargo run</code>, doctor all skip it. Default-Live means any no-env launch hits prod.</td>
+        <td><strong>Fail-closed:</strong> non-release builds default <strong>non-Live</strong>; Live requires explicit <code>--live</code> / <code>DAILYOS_DB_MODE=live</code>. A no-env dev process can never fall through to prod.</td>
+      </tr>
+      <tr data-sev="blocker">
+        <td>B3 · <code>db_path()</code> guard too narrow</td>
+        <td>Misses explicit-path opens (<code>open_at</code>), backup/restore/refresh, and — worst — devtools <em>forces Live</em> on invariant mismatch (exact wrong failure mode). Key cache is path-blind, so the path layer is the only barrier.</td>
+        <td><strong>Structural prod-open deny at <code>open_resolved_path()</code></strong> — the one chokepoint every open passes, before key fetch or file touch. Assert: <code>mode != Live &amp;&amp; path == prod</code> &rarr; hard error.</td>
+      </tr>
+    </tbody>
+  </table>
+</section>
+
+<!-- SECTION 3 — policy matrix -->
+<section class="plans-section" aria-labelledby="sec-matrix">
+  <header class="plans-section-header">
+    <p class="plans-section-eyebrow">The hardened design</p>
+    <h2 id="sec-matrix" class="plans-section-title">Three modes, each a full policy &mdash; not three labels on one path.</h2>
+    <p class="plans-section-lede">
+      Reviewers flagged that a mode mixes data source, workspace, config, migrations, external services, and clone
+      direction. Each axis is specified, and ~8 mode-blind <code>~/.dailyos</code> sites (incl. the hardcoded Google
+      OAuth token) must route through the mode-aware resolver.
+    </p>
+  </header>
+  <table class="mode-matrix">
+    <colgroup><col /><col class="col-live" /><col class="col-replica" /><col /></colgroup>
+    <thead><tr><th>Axis</th><th>Live</th><th class="h-replica">Replica (primary dev)</th><th>Mock</th></tr></thead>
+    <tbody>
+      <tr><th>DB</th><td><code>~/.dailyos/dailyos.db</code></td><td><code>dailyos-replica.db</code></td><td><code>dailyos-dev.db</code></td></tr>
+      <tr><th>Workspace</th><td><code>~/Documents/DailyOS</code></td><td><code>~/.dailyos/replica-workspace/</code> (dotfolder — out of iCloud/Spotlight)</td><td><code>~/.dailyos/dev-workspace/</code></td></tr>
+      <tr><th>Config</th><td><code>config.json</code></td><td><code>config-replica.json</code></td><td><code>config-dev.json</code></td></tr>
+      <tr><th>Google / OAuth token</th><td>prod <code>.dailyos/google/</code></td><td>replica-scoped</td><td>mock / none</td></tr>
+      <tr><th>Audit · enrichment · integrations</th><td>prod</td><td>replica-scoped</td><td>mock</td></tr>
+      <tr><th>Migrations</th><td>run</td><td>run — <strong>migration test bed</strong> (validate before prod)</td><td>run</td></tr>
+      <tr><th>External services</th><td>live</td><td>live (real Glean/API — note cost)</td><td>replayed / none</td></tr>
+      <tr><th>Clone</th><td>—</td><td>source = prod (read-only) → dest = replica</td><td>fixtures</td></tr>
+    </tbody>
+  </table>
+  <p class="plans-section-lede">
+    Plus: <strong>guard the prod-destroyers</strong> (<code>start_fresh_database</code>, <code>restore_database_from_backup</code>)
+    with command-level path assertions so a mistakenly-Live session can't nuke prod; <code>replica-refresh</code> clones via
+    <code>run_chunked_backup</code> (SQLite backup API, key applied to destination) with the app closed / WAL-checkpointed for a
+    point-in-time-consistent replica; replace devtools&rsquo; &ldquo;force-Live on mismatch&rdquo; with fail-closed.
+  </p>
+</section>
+
+<!-- SECTION 4 — scope split -->
+<section class="plans-section" aria-labelledby="sec-split">
+  <header class="plans-section-header">
+    <p class="plans-section-eyebrow">Scope — revised</p>
+    <h2 id="sec-split" class="plans-section-title">This is isolation substrate, not flag plumbing. Split it.</h2>
+  </header>
+  <div class="split-row">
+    <div class="split-card" data-core="true">
+      <p class="s-id">820-A · safety core</p>
+      <p class="s-body">Mode bootstrap contract (every binary) + fail-closed default + structural deny at <code>open_resolved_path()</code>. <strong>Lands first; alone makes prod safe</strong> and unblocks the fresh-install.</p>
+    </div>
+    <div class="split-card">
+      <p class="s-id">820-B · resolver</p>
+      <p class="s-body">Per-mode workspace/config resolver + the ~8 subdir sites (Google token, audit, enrichment, integrations) + devtools fail-closed fix.</p>
+    </div>
+    <div class="split-card">
+      <p class="s-id">820-C · clone</p>
+      <p class="s-body"><code>replica-refresh</code> (DB + workspace, read-only source, checkpointed) + destructive-command guards.</p>
+    </div>
+  </div>
+</section>
+
+<!-- SECTION 5 — decisions -->
+<section class="plans-section" aria-labelledby="sec-decisions">
+  <header class="plans-section-header">
+    <p class="plans-section-eyebrow">Open — James's calls</p>
+    <h2 id="sec-decisions" class="plans-section-title">Three decisions before implementation.</h2>
+  </header>
+  <div class="decisions">
+    <div class="decision-card">
+      <p class="d-id">D2 · dev default mode</p>
+      <p class="d-q">Which non-Live mode does <code>pnpm tauri dev</code> land in?</p>
+      <p class="d-rec"><strong>Rec: Replica</strong> (real content; Glean works; closest to reality), with <code>--mock</code> opt-in for surface-state testing.</p>
+    </div>
+    <div class="decision-card">
+      <p class="d-id">D3 · workspace isolation</p>
+      <p class="d-q">How is the replica workspace isolated?</p>
+      <p class="d-rec"><strong>Rec: full copy to <code>~/.dailyos/replica-workspace/</code></strong> (dotfolder — isolates dev writes AND fixes the iCloud/Spotlight exposure). Cost: disk + clone time.</p>
+    </div>
+    <div class="decision-card">
+      <p class="d-id">D5 · governance</p>
+      <p class="d-q">SQLCipher-drop sequencing?</p>
+      <p class="d-rec"><strong>Rec: decouple</strong> — dropping at-rest encryption is a standing ADR-0092 decision and needs its own <strong>ADR amendment</strong>, not part of this ticket.</p>
+    </div>
+  </div>
+</section>
+
+<!-- SECTION 6 — acceptance + verification anchors -->
+<section class="plans-section" aria-labelledby="sec-accept">
+  <header class="plans-section-header">
+    <p class="plans-section-eyebrow">Done means</p>
+    <h2 id="sec-accept" class="plans-section-title">The regression that defines done: prod DB byte-identical across a dev <code>pkill</code>.</h2>
+    <p class="plans-section-lede">
+      Mode set at bootstrap in every binary, no silent default, non-release fail-closed to non-Live. Structural deny proven
+      from a spawned thread AND a separate process. All workspace/config/Google-token/audit sites resolve per mode (CI-gated).
+      <code>start_fresh_database</code> + <code>restore</code> refuse prod from non-Live. <code>pnpm tauri dev</code> + a
+      <code>pkill</code> leaves <code>dailyos.db</code> mtime unchanged. <code>replica-refresh</code> produces a consistent
+      replica from a read-only prod source. DoD gates: <code>cargo clippy -- -D warnings &amp;&amp; cargo test &amp;&amp; pnpm tsc --noEmit</code>.
+    </p>
+  </header>
+  <p class="anchor-line">
+    Verified anchors (Read, 2026-05-29): <code>db/core.rs:638-647</code> (db_path), <code>:24-28</code>/<code>:75-82</code> (DEV_DB_MODE, Relaxed), <code>:423-426</code> (open_resolved_path — deny site), <code>:651-668</code> (checkpoint-before-copy) · <code>key_provider.rs:24-25</code>, <code>:51-87</code> (path-blind CACHED_KEY) · <code>db_backup.rs:252-297</code> (run_chunked_backup, private), <code>:358</code>/<code>:496-506</code> (restore) · <code>devtools/mod.rs:69-83</code> (assert_dev_db_connection), <code>:248-253</code> · <code>state.rs:1885-1893</code> (config_path), <code>:2152</code> (hardcoded google token) · <code>projects_data.rs:277</code> (start_fresh_database) · <code>audit_log.rs:655</code>, <code>enrichment.rs:275</code>, <code>integrations.rs:1024</code>, <code>lib.rs:461-464</code> · <code>abilities-runtime/&hellip;/context.rs:81-93</code> (ExecutionMode — orthogonal).
+  </p>
+</section>
+
+<!-- FINIS -->
+<div class="finis">
+  <div class="finis-mark">DB · MODE · ISOLATION</div>
+  <div class="finis-date">v1.4.9-replica-db-l0-plan &middot; DOS-820 &middot; 2026-05-29</div>
+  <div class="finis-caption">Production is sacred. The dev loop gets a replica. The path layer is the only wall — so build it where every open must pass.</div>
+</div>
+
+</div>
+</main>
+</div>
+</body>
+</html>

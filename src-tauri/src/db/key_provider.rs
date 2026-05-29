@@ -751,6 +751,8 @@ fn rekey_database_standalone_inner(
     new_key: &EncryptionKey,
     rollback_after_rekey_failure: bool,
 ) -> Result<()> {
+    crate::db::guard_path_for_mode(db_path).map_err(|e| e.to_string())?;
+
     let conn = Connection::open(db_path)
         .map_err(|e| format!("Failed to open encrypted DB for key rotation: {e}"))?;
     conn.execute_batch(&old_key.to_pragma())
@@ -814,6 +816,8 @@ fn rollback_after_completed_rekey(
 }
 
 fn verify_database_key(db_path: &Path, key: &EncryptionKey) -> Result<()> {
+    crate::db::guard_path_for_mode(db_path).map_err(|e| e.to_string())?;
+
     let conn = Connection::open(db_path)
         .map_err(|e| format!("Failed to reopen encrypted DB for key verification: {e}"))?;
     conn.execute_batch(&key.to_pragma())

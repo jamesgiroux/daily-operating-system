@@ -38,6 +38,8 @@ const CROSS_WORKSPACE_COUNT: usize = 10;
 const LEGACY_UNMIGRATED_COUNT: usize = 10;
 
 fn main() {
+    dailyos_lib::db::resolve_and_set_db_mode_from_process();
+
     let root = repo_relative(CORPUS_ROOT);
     purge_generated_pairs(&root);
 

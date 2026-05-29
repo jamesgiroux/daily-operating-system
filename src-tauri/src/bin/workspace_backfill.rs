@@ -3,6 +3,8 @@ use clap::{ArgAction, Parser};
 #[derive(Debug, Parser)]
 struct Args {
     #[arg(long, action = ArgAction::SetTrue)]
+    live: bool,
+    #[arg(long, action = ArgAction::SetTrue)]
     apply: bool,
     #[arg(long)]
     workspace_root: Option<std::path::PathBuf>,
@@ -13,7 +15,19 @@ struct Args {
 }
 
 fn main() {
+    dailyos_lib::db::resolve_and_set_db_mode_from_process();
+
     let args = Args::parse();
+    let resolved_mode = dailyos_lib::db::db_mode();
+    eprintln!("Resolved DbMode: {resolved_mode:?}");
+    if resolved_mode != dailyos_lib::db::DbMode::Live || !explicit_live_db_mode_requested(args.live)
+    {
+        eprintln!(
+            "refusing to run maintenance against an implicit or non-Live DB mode; \
+             pass --live or set DAILYOS_DB_MODE=live"
+        );
+        std::process::exit(2);
+    }
     match run(args) {
         Ok(exit_code) => std::process::exit(exit_code),
         Err(error) => {
@@ -21,6 +35,10 @@ fn main() {
             std::process::exit(3);
         }
     }
+}
+
+fn explicit_live_db_mode_requested(live_arg: bool) -> bool {
+    live_arg || std::env::var("DAILYOS_DB_MODE").is_ok_and(|value| value.trim() == "live")
 }
 
 fn run(args: Args) -> Result<i32, String> {
