@@ -1,0 +1,1581 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>DB Throughput Architecture · DailyOS Planning</title>
+  <link rel="stylesheet" href="../design/reference/_shared/fonts.css">
+  <link rel="stylesheet" href="../design/reference/_shared/styles/design-tokens.css">
+  <link rel="stylesheet" href="../design/reference/_shared/styles/AtmosphereLayer.module.css">
+  <link rel="stylesheet" href="../design/reference/_shared/styles/MagazinePageLayout.module.css">
+  <link rel="stylesheet" href="../design/reference/_shared/chrome.css">
+  <link rel="stylesheet" href="plans.css">
+  <style>
+    /* TODO(ds): needs pattern — layer-table for the recurring-class history */
+    .layer-table {
+      width: 100%;
+      border-collapse: collapse;
+      margin: var(--space-lg) 0;
+      font-family: var(--font-sans);
+      font-size: 13px;
+    }
+    .layer-table th,
+    .layer-table td {
+      padding: var(--space-sm) var(--space-md);
+      text-align: left;
+      border-bottom: 1px solid var(--color-rule-light);
+      vertical-align: top;
+    }
+    .layer-table th {
+      font-family: var(--font-mono);
+      font-size: 10px;
+      font-weight: 700;
+      letter-spacing: 0.1em;
+      text-transform: uppercase;
+      color: var(--color-text-tertiary);
+      border-bottom: 1px solid var(--color-rule-heavy);
+    }
+    .layer-table td code {
+      font-family: var(--font-mono);
+      font-size: 12px;
+      color: var(--color-text-primary);
+    }
+
+    /* TODO(ds): needs pattern — alternative-card */
+    .alt-grid {
+      display: grid;
+      grid-template-columns: 1fr;
+      gap: var(--space-lg);
+      margin: var(--space-lg) 0;
+    }
+    @media (min-width: 760px) {
+      .alt-grid { grid-template-columns: repeat(2, 1fr); }
+    }
+    @media (min-width: 1200px) {
+      .alt-grid { grid-template-columns: repeat(4, 1fr); }
+    }
+    .alt-card {
+      background: var(--color-paper-warm-white);
+      border: 1px solid var(--color-rule-heavy);
+      border-radius: 6px;
+      padding: var(--space-xl);
+      position: relative;
+      display: flex;
+      flex-direction: column;
+    }
+    .alt-card::before {
+      content: "";
+      position: absolute;
+      left: 0; top: 0; bottom: 0;
+      width: 4px;
+      background: var(--alt-tone, var(--color-garden-eucalyptus));
+    }
+    .alt-card[data-alt="a"] { --alt-tone: var(--color-garden-sage); }
+    .alt-card[data-alt="a-star"] { --alt-tone: var(--color-garden-eucalyptus); }
+    .alt-card[data-alt="b"] { --alt-tone: var(--color-spice-saffron); }
+    .alt-card[data-alt="c"] { --alt-tone: var(--color-spice-terracotta); }
+    .alt-card-label {
+      font-family: var(--font-mono);
+      font-size: 10px;
+      font-weight: 700;
+      letter-spacing: 0.12em;
+      text-transform: uppercase;
+      color: var(--alt-tone);
+      margin: 0 0 var(--space-xs);
+    }
+    .alt-card-title {
+      font-family: var(--font-serif);
+      font-size: 22px;
+      font-weight: 400;
+      margin: 0 0 var(--space-sm);
+      line-height: 1.25;
+    }
+    .alt-card-meta {
+      font-family: var(--font-mono);
+      font-size: 10px;
+      letter-spacing: 0.06em;
+      color: var(--color-text-tertiary);
+      margin: 0 0 var(--space-md);
+    }
+    .alt-card-prose {
+      font-family: var(--font-sans);
+      font-size: 13.5px;
+      line-height: 1.6;
+      color: var(--color-text-secondary);
+      margin: 0 0 var(--space-md);
+      flex: 1;
+    }
+    .alt-card-section {
+      font-family: var(--font-mono);
+      font-size: 10px;
+      font-weight: 700;
+      letter-spacing: 0.1em;
+      text-transform: uppercase;
+      color: var(--color-text-tertiary);
+      margin: var(--space-md) 0 var(--space-xs);
+    }
+    .alt-card-bullets {
+      list-style: none;
+      margin: 0 0 var(--space-md);
+      padding: 0;
+      display: flex;
+      flex-direction: column;
+      gap: var(--space-xs);
+    }
+    .alt-card-bullets li {
+      font-family: var(--font-sans);
+      font-size: 12.5px;
+      line-height: 1.5;
+      color: var(--color-text-secondary);
+      padding-left: var(--space-md);
+      position: relative;
+    }
+    .alt-card-bullets li::before {
+      content: "→";
+      position: absolute;
+      left: 0;
+      color: var(--alt-tone);
+      font-weight: 700;
+    }
+    .alt-card-bullets li code {
+      font-family: var(--font-mono);
+      font-size: 11px;
+      background: rgba(0, 0, 0, 0.04);
+      padding: 1px 4px;
+      border-radius: 2px;
+    }
+
+    /* TODO(ds): needs pattern — quick-fix code block */
+    .fix-code {
+      background: var(--color-paper-warm-white);
+      border: 1px solid var(--color-rule-heavy);
+      border-radius: 4px;
+      padding: var(--space-lg);
+      font-family: var(--font-mono);
+      font-size: 12px;
+      line-height: 1.55;
+      color: var(--color-text-primary);
+      overflow-x: auto;
+      margin: var(--space-lg) 0;
+      white-space: pre;
+    }
+
+    /* TODO(ds): needs pattern — wave overview table */
+    .wave-overview {
+      width: 100%;
+      border-collapse: collapse;
+      margin: var(--space-lg) 0;
+      font-family: var(--font-sans);
+      font-size: 13px;
+      background: var(--color-paper-warm-white);
+      border: 1px solid var(--color-rule-heavy);
+      border-radius: 6px;
+      overflow: hidden;
+    }
+    .wave-overview th {
+      font-family: var(--font-mono);
+      font-size: 10px;
+      font-weight: 700;
+      letter-spacing: 0.1em;
+      text-transform: uppercase;
+      color: var(--color-text-tertiary);
+      padding: var(--space-md) var(--space-lg);
+      text-align: left;
+      background: var(--color-paper-linen);
+      border-bottom: 1px solid var(--color-rule-heavy);
+    }
+    .wave-overview td {
+      padding: var(--space-md) var(--space-lg);
+      border-bottom: 1px solid var(--color-rule-light);
+      vertical-align: top;
+      line-height: 1.5;
+    }
+    .wave-overview tbody tr:last-child td { border-bottom: none; }
+    .wave-overview tr[data-wave="w0"] td:first-child { border-left: 3px solid var(--color-garden-sage); padding-left: calc(var(--space-lg) - 3px); }
+    .wave-overview tr[data-wave="w1"] td:first-child { border-left: 3px solid var(--color-spice-saffron); padding-left: calc(var(--space-lg) - 3px); }
+    .wave-overview tr[data-wave="wx"] td:first-child { border-left: 3px solid var(--color-spice-terracotta); padding-left: calc(var(--space-lg) - 3px); }
+    .wave-overview td:first-child {
+      font-family: var(--font-mono);
+      font-weight: 700;
+      color: var(--color-text-primary);
+    }
+
+    /* TODO(ds): needs pattern — parallel-fanout (lanes per wave showing parallel agents) */
+    .fanout-wave {
+      margin: var(--space-lg) 0;
+      padding: var(--space-lg);
+      background: var(--color-paper-warm-white);
+      border: 1px solid var(--color-rule-heavy);
+      border-radius: 6px;
+      position: relative;
+    }
+    .fanout-wave::before {
+      content: "";
+      position: absolute;
+      left: 0; top: 0; bottom: 0;
+      width: 4px;
+      background: var(--fanout-tone, var(--color-garden-eucalyptus));
+    }
+    .fanout-wave[data-wave="w0"] { --fanout-tone: var(--color-garden-sage); }
+    .fanout-wave[data-wave="w1"] { --fanout-tone: var(--color-spice-saffron); }
+    .fanout-wave[data-wave="wx"] { --fanout-tone: var(--color-spice-terracotta); }
+    .fanout-wave-header {
+      display: flex;
+      align-items: baseline;
+      gap: var(--space-md);
+      margin-bottom: var(--space-md);
+    }
+    .fanout-wave-id {
+      font-family: var(--font-mono);
+      font-size: 11px;
+      font-weight: 700;
+      letter-spacing: 0.12em;
+      text-transform: uppercase;
+      color: var(--fanout-tone);
+    }
+    .fanout-wave-title {
+      font-family: var(--font-serif);
+      font-size: 20px;
+      font-weight: 400;
+      margin: 0;
+      color: var(--color-text-primary);
+    }
+    .fanout-wave-gate {
+      font-family: var(--font-mono);
+      font-size: 10px;
+      letter-spacing: 0.06em;
+      color: var(--color-text-tertiary);
+      margin-left: auto;
+    }
+    .fanout-lanes {
+      display: grid;
+      gap: var(--space-md);
+      grid-template-columns: 1fr;
+    }
+    @media (min-width: 760px) {
+      .fanout-lanes { grid-template-columns: repeat(2, 1fr); }
+    }
+    @media (min-width: 1080px) {
+      .fanout-lanes[data-cols="3"] { grid-template-columns: repeat(3, 1fr); }
+      .fanout-lanes[data-cols="4"] { grid-template-columns: repeat(4, 1fr); }
+    }
+    .fanout-lane {
+      background: var(--color-paper-cream, #f9f6ee);
+      border: 1px dashed var(--color-rule-heavy);
+      border-radius: 4px;
+      padding: var(--space-md);
+      display: flex;
+      flex-direction: column;
+      gap: var(--space-xs);
+    }
+    .fanout-lane[data-conditional="true"] {
+      background: transparent;
+      border-style: dashed;
+      opacity: 0.92;
+    }
+    .fanout-lane-id {
+      font-family: var(--font-mono);
+      font-size: 10px;
+      font-weight: 700;
+      letter-spacing: 0.12em;
+      color: var(--fanout-tone);
+    }
+    .fanout-lane-title {
+      font-family: var(--font-serif);
+      font-size: 16px;
+      font-weight: 400;
+      margin: 0;
+      line-height: 1.25;
+      color: var(--color-text-primary);
+    }
+    .fanout-lane-meta {
+      font-family: var(--font-mono);
+      font-size: 10px;
+      letter-spacing: 0.06em;
+      color: var(--color-text-tertiary);
+    }
+    .fanout-lane-prose {
+      font-family: var(--font-sans);
+      font-size: 12.5px;
+      line-height: 1.5;
+      color: var(--color-text-secondary);
+      margin: var(--space-xs) 0 0;
+    }
+    .fanout-lane-prose code {
+      font-family: var(--font-mono);
+      font-size: 11px;
+      background: rgba(0, 0, 0, 0.04);
+      padding: 1px 4px;
+      border-radius: 2px;
+    }
+    .fanout-conditional-tag {
+      display: inline-block;
+      font-family: var(--font-mono);
+      font-size: 9px;
+      font-weight: 700;
+      letter-spacing: 0.1em;
+      text-transform: uppercase;
+      padding: 2px 6px;
+      border-radius: 2px;
+      background: var(--color-spice-saffron-12, rgba(222, 184, 65, 0.18));
+      color: var(--color-spice-terracotta);
+      margin-left: var(--space-xs);
+    }
+    .fanout-wave-gate-banner {
+      margin: var(--space-md) 0 0;
+      padding: var(--space-sm) var(--space-md);
+      border-top: 1px solid var(--color-rule-light);
+      font-family: var(--font-mono);
+      font-size: 11px;
+      line-height: 1.5;
+      color: var(--color-spice-terracotta);
+      background: var(--color-spice-saffron-12, rgba(222, 184, 65, 0.10));
+      border-radius: 3px;
+    }
+    .fanout-wave-gate-banner strong { color: var(--color-spice-chili); }
+
+    /* TODO(ds): needs pattern — gap-table */
+    .gap-table {
+      width: 100%;
+      border-collapse: collapse;
+      margin: var(--space-lg) 0;
+      font-family: var(--font-sans);
+      font-size: 13px;
+    }
+    .gap-table th,
+    .gap-table td {
+      padding: var(--space-sm) var(--space-md);
+      text-align: left;
+      border-bottom: 1px solid var(--color-rule-light);
+      vertical-align: top;
+    }
+    .gap-table th {
+      font-family: var(--font-mono);
+      font-size: 10px;
+      font-weight: 700;
+      letter-spacing: 0.1em;
+      text-transform: uppercase;
+      color: var(--color-text-tertiary);
+      border-bottom: 1px solid var(--color-rule-heavy);
+    }
+    .gap-table tr[data-status="documented"] td:first-child {
+      border-left: 3px solid var(--color-garden-sage);
+      padding-left: calc(var(--space-md) - 3px);
+    }
+    .gap-table tr[data-status="deferred"] td:first-child {
+      border-left: 3px solid var(--color-spice-saffron);
+      padding-left: calc(var(--space-md) - 3px);
+    }
+    .gap-table tr[data-status="gap"] td:first-child {
+      border-left: 3px solid var(--color-spice-chili);
+      padding-left: calc(var(--space-md) - 3px);
+    }
+  </style>
+</head>
+<body
+  data-tint="eucalyptus"
+  data-active-page="planning">
+<div class="MagazinePageLayout_magazinePage">
+<main class="MagazinePageLayout_pageContainer">
+<div class="plans-shell">
+
+<!-- TOPNAV -->
+<nav class="plans-topnav" aria-label="Planning surface">
+  <a class="plans-mark" href="index.html">
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 433 407" width="16" height="16" aria-hidden="true">
+      <path d="M159 407 161 292 57 355 0 259 102 204 0 148 57 52 161 115 159 0H273L271 115L375 52L433 148L331 204L433 259L375 355L271 292L273 407Z" fill="currentColor"/>
+    </svg>
+    DailyOS · Planning
+  </a>
+  <div class="plans-topnav-links">
+    <a href="engineering-ladder.html">Engineering Ladder</a>
+    <a href="foreground-db-contention/L0-packet.md">Foreground DB Contention</a>
+    <a href="db-write-queue-consolidation.html">Write-Queue v2 (superseded)</a>
+    <a href="db-throughput-architecture.html" data-active="true">Throughput Architecture</a>
+    <a href="AUTHORING.md">Authoring Ruleset</a>
+  </div>
+</nav>
+
+<!-- COVER -->
+<section class="plans-cover">
+  <p class="plans-eyebrow">DailyOS · Substrate</p>
+  <h1 class="plans-title">Seven layers of lock discipline. Zero of throughput shaping.</h1>
+  <p class="plans-kicker">An architectural reading of why the same class of failure keeps recurring at twenty entities, and what to build instead of an eighth gate.</p>
+  <p class="plans-lede">
+    Over fourteen weeks the team has shipped seven distinct write-discipline layers &mdash; helpers, a pool,
+    a reverted pool, a crate split, a merged helper, a batch closure, a process-wide gate, and a typed
+    writer. Each one was supposed to be the last. None of them has ever addressed two co-equal substrate
+    gaps: <strong>background-write throughput</strong> competing with foreground reads, and <strong>atomicity
+    boundaries</strong> mis-scoped around unrelated subject domains. The current beachball at twenty account
+    entities is the sixth instance of the class.
+  </p>
+  <p class="plans-lede">
+    This proposal stages a different move. Production hygiene first (WAL tuning, reader pool, per-subject-domain
+    transaction decomposition with durable cursor, presence-aware admission) &mdash; as four measurement-gated waves,
+    not one bundle. Production hygiene is overdue and unconditional through W0. The deeper architectural alternatives
+    &mdash; subject-ref-hash partitioned writer queue (A&star;) and in-memory claim graph (B) &mdash; are
+    <strong>each earned</strong> by specific failure modes named in W1&rsquo;s measurements: if multi-subject
+    writer-hold dominates, A&star; is earned; if SQLCipher read-path CPU dominates, B is earned. C (separate cache
+    service process) only earns when multi-surface need joins. The wave plan makes which alternative gets earned an
+    observable claim, not a feeling.
+  </p>
+  <div class="plans-meta">
+    <span>Drafted 2026-05-27</span>
+    <span>v4 amendments after L0 panel: 2 BLOCKED, 3 CONCERNS</span>
+    <span>Supersedes db-write-queue-consolidation.html v2</span>
+    <span>Tier 1 &middot; HTML-first</span>
+  </div>
+</section>
+
+<!-- =====================================================================
+     SECTION 1 — What's broken right now
+     ===================================================================== -->
+<section class="plans-section" aria-labelledby="section-now">
+  <header class="plans-section-header">
+    <p class="plans-section-eyebrow">Today, mechanically</p>
+    <h2 id="section-now" class="plans-section-title">8.8&thinsp;s foreground latency is a missing pragma, an undersized pool, and a transaction shape &mdash; not a lock storm.</h2>
+    <p class="plans-section-lede">
+      The lock-class storm IS resolved. PR #407&rsquo;s <code>WRITE_TRANSACTION_GATE</code> logs zero contention.
+      The current beachball is a separate, smaller, cheaper problem: SQLite WAL bloat starving the reader
+      pool while it&rsquo;s walking the WAL frame index, amplified by sequential reads inside one closure.
+    </p>
+  </header>
+
+  <p class="plans-subhead">Four concurrent issues, ranked by leverage</p>
+
+  <ol style="margin: var(--space-lg) 0; padding-left: var(--space-lg); list-style: decimal;">
+    <li style="margin-bottom: var(--space-md); font-family: var(--font-sans); font-size: 14px; line-height: 1.65;">
+      <strong>No <code>wal_autocheckpoint</code> override</strong> &mdash; <code>db_service.rs:388-394</code> sets WAL mode but
+      not the checkpoint interval. Default 1000 frames in PASSIVE mode means the WAL grows past checkpoint
+      threshold under continuous writes (verified live: 18.6&thinsp;MB right now, up from 12&thinsp;MB when the performance
+      oracle first measured), and readers must walk that frame index on every page lookup. At ~25 sequential queries
+      in <code>build_account_detail_result</code>, that&rsquo;s the bulk of the 8.8&thinsp;s wall-clock.
+    </li>
+    <li style="margin-bottom: var(--space-md); font-family: var(--font-sans); font-size: 14px; line-height: 1.65;">
+      <strong><code>NUM_READERS = 2</code></strong> as a magic constant in <code>db_service.rs:40</code>. With four
+      concurrent foreground commands (account detail + linear status + audit log + context mode) fired by
+      one navigation, two are running and two are queuing in the reader-thread mpsc channels. The synchronized
+      &ldquo;all four release within 32&thinsp;ms&rdquo; signature is the smoking gun.
+    </li>
+    <li style="margin-bottom: var(--space-md); font-family: var(--font-sans); font-size: 14px; line-height: 1.65;">
+      <strong>Per-entity transaction shape combines many claim types + side-effects in one boundary</strong>
+      (<em>atomicity-shape gap</em>) &mdash; <code>persist_enrichment_write_results_via_db_service</code> at
+      <code>intel_queue.rs:2711</code> commits ~150 risks + 162 wins + 9 stakeholders + products + assessment +
+      signal emissions in <strong>one transaction</strong>. Most rows are tied to the entity&rsquo;s own
+      <code>subject_ref</code>; stakeholder insights can switch to person subject_refs. The decomposition unit is
+      <em>claim-type and side-effect class</em>, not strict subject-domain. Splitting reduces critical-section length
+      and is independent of row-batching &mdash; both reduce writer-hold but address different structural problems.
+    </li>
+    <li style="margin-bottom: var(--space-md); font-family: var(--font-sans); font-size: 14px; line-height: 1.65;">
+      <strong>Per-claim transaction count</strong> &mdash; even within one subject domain, each claim&rsquo;s
+      <code>commit_claim</code> wraps its own transaction. ~150 risks &times; one TX each = ~150 BEGIN/COMMIT cycles.
+      Plus 6 progressive snapshots + consolidated commit + 3&ndash;5 post-commit side-effects.
+      ~10&ndash;12 gate acquisitions per entity, each one a separate <code>BEGIN IMMEDIATE</code> / <code>COMMIT</code>
+      cycle. WAL grows at write-burst speed because each commit appends a checkpoint mark the PASSIVE checkpoint
+      can&rsquo;t process.
+    </li>
+  </ol>
+
+  <p>
+    These three problems compound. Fixing any one in isolation will reduce magnitude but the symptom
+    returns when the load increases. The cheap fix sequence (Alternative A below) closes all three at
+    once and recovers most of the headroom &mdash; without committing to the larger architectural shift
+    that the user&rsquo;s framing correctly points toward.
+  </p>
+</section>
+
+<!-- =====================================================================
+     SECTION 2 — The recurring class
+     ===================================================================== -->
+<section class="plans-section" aria-labelledby="section-class">
+  <header class="plans-section-header">
+    <p class="plans-section-eyebrow">The pattern</p>
+    <h2 id="section-class" class="plans-section-title">Six instances of one class. Seven attempts to fix the wrong abstraction.</h2>
+    <p class="plans-section-lede">
+      The git history shows the same problem class returning under different surface symptoms.
+      Each remediation has been a lock-semantics or serialization layer. None has ever shaped throughput
+      &mdash; bounded the rate at which background work consumes the writer, given foreground commands
+      priority, or removed the persistent store from the synchronous read path.
+    </p>
+  </header>
+
+  <p class="plans-subhead">Write-discipline layers shipped in 14 weeks</p>
+  <table class="layer-table">
+    <thead>
+      <tr>
+        <th>Date</th>
+        <th>Layer</th>
+        <th>Shape</th>
+        <th>Class</th>
+      </tr>
+    </thead>
+    <tbody>
+      <tr>
+        <td>2026-02-12</td>
+        <td>ADR-0067 staged split-lock helpers</td>
+        <td><code>with_db_try_read/read/write</code> convention</td>
+        <td>Lock semantics</td>
+      </tr>
+      <tr>
+        <td>2026-04-20</td>
+        <td>Pool unification</td>
+        <td>218 <code>ActionDb::open</code> sites &rarr; pool</td>
+        <td>Serialization (reverted)</td>
+      </tr>
+      <tr>
+        <td>2026-04-20</td>
+        <td>Pool revert</td>
+        <td><code>parking_lot</code> mutex across 240&thinsp;s Glean <code>.await</code> &rarr; beachball</td>
+        <td>Same class &mdash; worse failure mode</td>
+      </tr>
+      <tr>
+        <td>2026-05-08</td>
+        <td>Ability-runtime crate split (ADR-0102)</td>
+        <td>Compile-time boundary on DB access</td>
+        <td>Lock semantics</td>
+      </tr>
+      <tr>
+        <td>2026-05-10</td>
+        <td><code>with_db</code> merge</td>
+        <td>Helper consolidation</td>
+        <td>Lock semantics</td>
+      </tr>
+      <tr>
+        <td>2026-05-22</td>
+        <td>Foreground DB contention L0 PR1</td>
+        <td>Make <code>get_*</code> routes read-pure; calendar batch closure</td>
+        <td>Lock semantics on the foreground side. Phase 2 (read-models) deferred.</td>
+      </tr>
+      <tr>
+        <td>2026-05-27</td>
+        <td>PR #407 <code>WRITE_TRANSACTION_GATE</code></td>
+        <td>Process-wide <code>parking_lot::Mutex</code> on every <code>with_transaction</code></td>
+        <td>Serialization gate</td>
+      </tr>
+      <tr>
+        <td>2026-05-27</td>
+        <td>PTY <code>ai_usage</code> queue-routing</td>
+        <td>Single auto-commit bypass route through writer</td>
+        <td>Lock semantics &mdash; same shape as 2026-04-20 fresh-open class, fifth instance</td>
+      </tr>
+    </tbody>
+  </table>
+
+  <p class="plans-subhead">What every layer has in common</p>
+  <p>
+    Every intervention shipped above is, structurally, about <strong>who is allowed to write and
+    in what order</strong>. None of them constrains the <strong>rate</strong> of writes, prioritizes
+    foreground over background, or removes contention by moving the foreground reader off the embedded
+    database entirely.
+  </p>
+
+  <p>
+    The L0 packet on foreground DB contention came closest. It explicitly named &ldquo;materialized read
+    models / cross-render cache&rdquo; as the Phase 2 answer, and explicitly deferred it pending
+    measurements that prove Phase 1 insufficient. <strong>Today is that measurement.</strong>
+    Twenty entities, 387&thinsp;MB DB, 8.8&thinsp;s foreground latency on a routine click. Phase 1 was
+    necessary. It is not sufficient.
+  </p>
+
+  <p class="plans-subhead">The 2026-04-20 revert is load-bearing context</p>
+  <p>
+    The previous attempt to unify on a single pool (commit <code>72e7b036</code>) was reverted the same day
+    (<code>8bfdfdd8</code>) because it held a <code>parking_lot</code> mutex across a 240-second Glean <code>.await</code> call.
+    Thirty-one threads parked. macOS beachballed worse than before. The team&rsquo;s reasonable conclusion was
+    &ldquo;pool unification is dangerous,&rdquo; and every subsequent fix has been incremental gate-tightening
+    instead. That revert is why the conversation has gravitated toward more locks rather than fewer
+    consumers. It is the lesson the new proposal must honor &mdash; do not put a lock in a path that crosses an
+    LLM <code>.await</code> &mdash; without taking it as evidence that the topology itself can&rsquo;t be improved.
+  </p>
+</section>
+
+<!-- =====================================================================
+     SECTION 3 — What comparable apps do
+     ===================================================================== -->
+<section class="plans-section" aria-labelledby="section-external">
+  <header class="plans-section-header">
+    <p class="plans-section-eyebrow">Cross-domain</p>
+    <h2 id="section-external" class="plans-section-title">Linear, Notion, Slack do not put SQLite on the synchronous read path.</h2>
+    <p class="plans-section-lede">
+      Across the closest comparable systems &mdash; Linear (MobX object pool over IndexedDB
+      transaction queue), Notion (in-memory record store hydrated from SQLite, OPFS serialized through
+      one SharedWorker), Obsidian (in-memory index persisted out-of-band), Slack (retreated from local
+      caching entirely, then moved <code>libchat</code> to a separate process) &mdash; the persistent embedded
+      store is a cache or replay log, not the live read path. The UI reads from memory.
+    </p>
+  </header>
+
+  <p>
+    That is the pattern DailyOS is not yet using. The team has been trying to make SQLite fast enough for
+    the synchronous foreground path; the industry pattern is to take it off that path entirely.
+    Linear&rsquo;s Tuomas Artman talks and the Notion offline writeup are the canonical references; the Slack
+    case is the cautionary tale (caching the world locally exceeded the contention it was meant to avoid).
+  </p>
+
+  <p>
+    The relevant SQLite-specific findings reinforce this:
+  </p>
+
+  <ul style="margin: var(--space-md) 0 var(--space-lg) var(--space-lg); padding-left: 0; font-family: var(--font-sans); font-size: 14px; line-height: 1.65;">
+    <li><strong>WAL alone is not enough when you have a long-running writer.</strong> Commits still serialize,
+      and PASSIVE checkpointing can&rsquo;t truncate when writers/readers overlap. A dedicated checkpoint thread
+      running <code>PRAGMA wal_checkpoint(PASSIVE)</code> every ~30&thinsp;s is the standard mitigation.</li>
+    <li><strong>SQLCipher CPU cost on reads is real.</strong> Every page read decrypts via AES; at 387&thinsp;MB
+      with <code>cipher_page_size=4096</code> a full-table scan touches ~100&thinsp;K pages through AES. Under
+      concurrent load this is CPU starvation, not lock contention. Yet another reason &ldquo;make foreground reads
+      pure&rdquo; only partially helps.</li>
+    <li><strong>Reader pool sizing rule of thumb: N+1 where N = number of read-path latency tiers.</strong>
+      For DailyOS: foreground UI / foreground sync command / background task / maintenance = 4 connections,
+      strict ownership, never share connections across tiers.</li>
+    <li><strong>Smaller writer-hold windows via claim-type / side-effect decomposition + row-chunked durable cursor.</strong>
+      A 150-row enrichment held in one transaction combining many claim types + side-effects + assessment upsert is
+      the floor for foreground write latency. Split the atomic boundary by claim-type and side-effect class (architectural),
+      then row-chunk within a class by committing per ~100 rows, returning to the writer&rsquo;s mpsc loop, and re-enqueuing
+      the next chunk from the caller using a durable batch-offset cursor. Same correctness with smaller critical sections
+      and explicit partial-commit recovery.
+      <em>Note: the DailyOS writer runs on a sync <code>std::thread</code>, not async; the chunking is caller-driven
+      re-enqueue, not <code>yield_now().await</code> inside the writer.</em></li>
+    <li><strong>Same-DB CQRS-lite has known SQLCipher pain.</strong> <code>ATTACH</code> for a read-only file
+      doubles key rotation and sync complexity; the forum threads on this are uniformly negative for
+      encrypted setups. In-memory layer outperforms it in every dimension we care about.</li>
+  </ul>
+</section>
+
+<!-- =====================================================================
+     SECTION 4 — Three architectural alternatives
+     ===================================================================== -->
+<section class="plans-section" aria-labelledby="section-alternatives">
+  <header class="plans-section-header">
+    <p class="plans-section-eyebrow">Alternatives</p>
+    <h2 id="section-alternatives" class="plans-section-title">Four paths, ranked by &ldquo;solves the user-visible problem at acceptable cost&rdquo;.</h2>
+    <p class="plans-section-lede">
+      A is mandatory production hygiene. A&star; (subject-ref-hash partitioned writer queue) is a separate architectural
+      move that&rsquo;s potentially much cheaper than B and addresses the recurring class more directly than yieldable
+      writers do. B (in-memory claim graph) is earned only when A and A&star; leave reader-CPU as the residual
+      bottleneck. C requires multi-surface need. The right alternative is the cheapest one that closes the user-defined
+      issues &mdash; not the most architecturally complete.
+    </p>
+  </header>
+
+  <div class="alt-grid">
+
+    <article class="alt-card" data-alt="a">
+      <p class="alt-card-label">Alternative A &middot; Hygiene, staged</p>
+      <h3 class="alt-card-title">Production hygiene. Four measurement gates, not one bundle.</h3>
+      <p class="alt-card-meta">~600&ndash;1,200 LOC &middot; staged + measured &middot; reversible</p>
+      <p class="alt-card-prose">
+        WAL tuning, larger reader pool, yieldable writer, presence-aware admission, batched claim commits,
+        and the bypass closure. <strong>This is overdue production hygiene for SQLite under background
+        write load &mdash; not architectural completion.</strong> Treating A as a single bundle invites the
+        &ldquo;we did architecture, no need for B&rdquo; trap. The fix: stage A as four sub-decisions, each gated on
+        measurements that name whether the next sub-PR is even needed. A1&ndash;A2 are unconditional. A3, A4, A5
+        run only if the data after A1&ndash;A2 says so.
+      </p>
+      <p class="alt-card-section">Changes</p>
+      <ul class="alt-card-bullets">
+        <li>WAL pragmas: <code>wal_autocheckpoint = 200</code>, <code>mmap_size = 256MB</code>, <code>cache_size = -64MB</code>, <code>journal_size_limit = 64MB</code></li>
+        <li>Dedicated checkpoint thread running <code>wal_checkpoint(PASSIVE)</code> every ~30&thinsp;s</li>
+        <li><code>NUM_READERS</code>: 2 &rarr; 4, with strict tier ownership (foreground UI / foreground sync / background / maintenance)</li>
+        <li>Per-subject-domain TX decomposition + row-chunked durable cursor: split the atomic boundary per domain, commit per ~100 rows, re-enqueue from caller (sync writer; no <code>yield_now()</code>)</li>
+        <li>Presence-aware admission: pause non-urgent enrichment when Tauri window has focus AND last user input &lt; 30&thinsp;s</li>
+        <li>Parallelize <code>build_account_detail_result</code> sub-queries via <code>tokio::join!</code> across reader tiers</li>
+        <li>Close 16+ <code>conn_ref().execute()</code> single-statement bypasses found in the architecture map (route through queue)</li>
+      </ul>
+      <p class="alt-card-section">Tradeoff</p>
+      <p class="alt-card-prose" style="margin-top: 0">
+        Total enrichment throughput drops 30&ndash;50%. A 150-row write goes from &ldquo;1.5&thinsp;s blocking&rdquo; to
+        &ldquo;5&thinsp;s in chunks with yields.&rdquo; UI stays responsive. SQLCipher CPU cost remains.
+      </p>
+    </article>
+
+    <article class="alt-card" data-alt="a-star">
+      <p class="alt-card-label">Alternative A&star; &middot; 1 week</p>
+      <h3 class="alt-card-title">Subject-ref-hash partitioned writer queue.</h3>
+      <p class="alt-card-meta">~600&ndash;1,000 LOC &middot; substrate change &middot; conditional on W1 measurement</p>
+      <p class="alt-card-prose">
+        Partition the single writer queue into N writer threads keyed by <code>hash(subject_ref) % N</code>. With 18
+        background workers operating on disjoint subject domains (accounts vs meetings vs people vs projects), A&star;
+        <strong>eliminates app-level mpsc head-of-line blocking and improves writer fairness across subject domains</strong>.
+        Note: SQLite WAL allows exactly one file-level writer, and DailyOS&rsquo;s process-wide
+        <code>WRITE_TRANSACTION_GATE</code> (<code>db/core.rs:214-238</code>) serializes every transaction. A&star; does
+        NOT enable concurrent WAL writes &mdash; what it does is prevent account-A&rsquo;s long enrichment from queueing
+        meeting-B&rsquo;s prep rebuild on the same mpsc channel. Each writer still reaches the SQLite gate independently
+        and interleaves at <code>BEGIN</code>/<code>COMMIT</code> granularity.
+      </p>
+      <p class="alt-card-section">Why it might suffice</p>
+      <ul class="alt-card-bullets">
+        <li>If W1-A1 (per-subject-domain TX decomposition) shortens individual writer critical sections from seconds to
+            tens of ms, then app-level mpsc HOL-blocking IS the bottleneck and A&star;&rsquo;s fairness win is real.</li>
+        <li>Reuses the existing PooledConnection infrastructure with minimal surface change &mdash; adds N writer
+            instances instead of one.</li>
+        <li>Improves UX consistency: foreground writes don&rsquo;t see arbitrary multi-second waits because some
+            unrelated background entity&rsquo;s mpsc is full of work.</li>
+      </ul>
+      <p class="alt-card-section">Why it might not</p>
+      <ul class="alt-card-bullets">
+        <li>If W1-A1 already shortens TXs to tens of ms, A&star;&rsquo;s residual marginal value at the SQLite layer
+            may be small. The win is fairness, not throughput. The W1 hard gate measurement names whether this matters.</li>
+        <li>SQLCipher read-path CPU cost is unaffected. If the residual bottleneck is reader-CPU under encryption,
+            A&star; doesn&rsquo;t fix it; B is still earned.</li>
+        <li>Multi-subject claim mutations (entity-merge, batch reconciliation) need explicit cross-partition coordination
+            via a dedicated writer that takes all partitions&rsquo; locks in canonical order &mdash; W2-B owns this audit.</li>
+      </ul>
+    </article>
+
+    <article class="alt-card" data-alt="b">
+      <p class="alt-card-label">Alternative B &middot; 2&ndash;3 weeks</p>
+      <h3 class="alt-card-title">In-memory claim graph.</h3>
+      <p class="alt-card-meta">~3,000&ndash;5,000 LOC &middot; substrate-tier &middot; matches Intelligence Loop semantics</p>
+      <p class="alt-card-prose">
+        Materialize the active claim set + entity graph as an in-memory Rust structure (DashMap or
+        <code>Arc&lt;RwLock&lt;...&gt;&gt;</code> with versioned snapshots). Foreground reads hit memory.
+        Background writes update SQLite, then dispatch a delta to the in-memory store. Boot hydrates from
+        SQLite. This is the Linear / Notion pattern applied to DailyOS&rsquo;s claim substrate.
+      </p>
+      <p class="alt-card-section">Why it fits DailyOS specifically</p>
+      <ul class="alt-card-bullets">
+        <li>Claims have lifecycle, provenance, trust bands, sensitivity. All of which the in-memory model can carry as typed structures.</li>
+        <li>The Intelligence Loop&rsquo;s 5-question integration check becomes the cache-coherence contract: every claim mutation already emits a signal &rarr; that&rsquo;s your invalidation primitive.</li>
+        <li>SQLCipher CPU cost on reads disappears entirely &mdash; reads are in-memory pointer chases.</li>
+        <li>Open question: memory budget. 16&thinsp;k active claims today &times; ~1&thinsp;KB each = ~16&thinsp;MB resident. At 100&times; scale that&rsquo;s 1.6&thinsp;GB. Need a working-set policy.</li>
+      </ul>
+      <p class="alt-card-section">Tradeoff</p>
+      <p class="alt-card-prose" style="margin-top: 0">
+        Cache invalidation complexity. Harder debugging when memory and disk diverge. Doesn&rsquo;t help
+        non-claim queries (accounts, meetings, actions) unless they&rsquo;re also mirrored.
+      </p>
+    </article>
+
+    <article class="alt-card" data-alt="c">
+      <p class="alt-card-label">Alternative C &middot; 4&ndash;6 weeks</p>
+      <h3 class="alt-card-title">Separate cache service process.</h3>
+      <p class="alt-card-meta">~8,000&ndash;15,000 LOC &middot; multi-surface architecture &middot; only when needed</p>
+      <p class="alt-card-prose">
+        Dedicated Rust process owns SQLCipher (single writer, single reader pool), exposes a query/mutation
+        API over Unix socket or shared memory. Tauri renderer talks to it. Background enrichment talks to it.
+        MCP servers talk to it. DB is touched by exactly one process; renderer can never be starved by DB CPU.
+      </p>
+      <p class="alt-card-section">When to consider</p>
+      <ul class="alt-card-bullets">
+        <li>Multi-surface architecture becomes load-bearing (Tauri renderer + MCP service + WordPress surface all needing live claim access)</li>
+        <li>Substrate-tier vision matures: per <code>project_dailyos_product_path_uncertain.md</code> memory, DailyOS substrate may go OSS or layer onto WordPress. A separate cache service is a natural API boundary for that.</li>
+        <li>B&rsquo;s in-memory layer grows IPC needs anyway &mdash; might as well skip the intermediate step.</li>
+      </ul>
+      <p class="alt-card-section">Tradeoff</p>
+      <p class="alt-card-prose" style="margin-top: 0">
+        IPC serialization overhead on every read (50&ndash;200&thinsp;&mu;s). Process lifecycle management.
+        Harder local dev. SQLCipher key handoff across processes is non-trivial. Overkill for solo-user
+        macOS app at current scale.
+      </p>
+    </article>
+
+  </div>
+</section>
+
+<!-- =====================================================================
+     SECTION 5 — Recommendation + decision gate
+     ===================================================================== -->
+<section class="plans-section" aria-labelledby="section-recommend">
+  <header class="plans-section-header">
+    <p class="plans-section-eyebrow">Recommendation</p>
+    <h2 id="section-recommend" class="plans-section-title">The cheapest alternative that closes the user-defined issues wins. Earn each next step with measurement.</h2>
+    <p class="plans-section-lede">
+      The user-defined issue is foreground responsiveness during normal app use under continuous background work
+      at twenty entities. The goal is not architectural completion; the goal is no beachballs and acceptable
+      foreground latency at acceptable cost. A is the floor. Beyond A, the data names which alternative
+      (A&star; or B) is earned &mdash; and they don&rsquo;t address the same residual bottleneck, so picking the right
+      one matters. C is out until multi-surface need joins.
+    </p>
+  </header>
+
+  <p class="plans-subhead">Decision tree</p>
+
+  <p>
+    <strong>W0 &mdash; Production hygiene foundation. Unconditional.</strong><br>
+    WAL pragmas + checkpoint thread (W0-A), reader pool resize 2&rarr;4 + per-command queue/exec/writer-hold telemetry (W0-B),
+    two ADRs + K-out doc (W0-C). Land all three in parallel. Then run the W0 measurement protocol (below).
+  </p>
+
+  <p>
+    <strong>W0 gate &mdash; the threshold to stop.</strong><br>
+    Under a 10&ndash;15&nbsp;minute scripted peak load (20 entities, 3 concurrent Glean enrichments, all 18 background
+    workers active, ~50 foreground IPC invocations distributed across the window): p95 <code>get_account_detail</code> &lt;
+    <strong>200&thinsp;ms</strong>, no main-thread interaction stall &gt; <strong>100&thinsp;ms</strong> (Apple
+    responsiveness guidance), zero writer-gate waits &gt; <strong>250&thinsp;ms</strong>, WAL stays under 5&thinsp;MB,
+    growth-slope predicts no breach at 100 entities. <strong>If all five pass, W1 is unjustified.</strong> File the ADRs,
+    K-out, and the Linear ticket for the 50/100/200-entity re-measure (mandatory before W0 closes), and stop.
+  </p>
+
+  <p>
+    <strong>W1 &mdash; Earned hygiene extensions. Conditional on W0 gate missing.</strong><br>
+    Three lanes, each gated by a specific signal from W0&rsquo;s telemetry:
+  </p>
+  <ul style="margin: var(--space-md) 0 var(--space-lg) var(--space-lg); padding-left: 0; font-family: var(--font-sans); font-size: 14px; line-height: 1.65;">
+    <li><strong>W1-A (per-subject-domain TX decomposition + row-chunked durable cursor)</strong> &mdash; earned if writer
+      <code>execution_ms</code> p95 &gt; 500&thinsp;ms during enrichment bursts. <em>Two-PR structure:</em> (a) split
+      <code>persist_enrichment_write_results_via_db_service</code> into per-subject-domain transactions (the architectural
+      fix); (b) row-chunking within a single domain with a durable batch-offset cursor, idempotency keys, and crash
+      property tests. Requires a new ADR explicitly amending ADR-0104&rsquo;s atomicity contract.</li>
+    <li><strong>W1-B (presence-aware admission)</strong> &mdash; earned if foreground p99 &gt; 3&times; p50 during
+      user-active windows, measured across at least 5 sessions. Tracks <code>last_user_input_at</code> across mousemove,
+      keypress, scroll, and focus-within (broader than mouse alone).</li>
+    <li><strong>W1-C (bypass closure + CI gate)</strong> &mdash; unconditional, mechanical. Confirmed bypass count is
+      <strong>~190+</strong> via feasibility re-audit (filtering test files; codex&rsquo;s earlier ~90 was a partial count;
+      architecture map&rsquo;s 16 was the high-frequency hot subset); the existing
+      <code>startup_background_db_access_lint_test.rs</code> gate covers 5 startup files. W1-C migrates the high-frequency
+      hot sites first (the original 16+) AND adds a forbidden-pattern CI gate on <code>conn_ref().execute*</code> outside an
+      explicit transaction allowlist. The remaining ~170 lower-frequency sites become forbidden-by-default; allowlist
+      entries require review.</li>
+    <li><strong>W1-D (ReaderTier enum migration)</strong> &mdash; earned if W0-B instrumentation shows tier confusion as
+      a bottleneck. The 197 db_read call sites (not ~80) are too large to migrate unconditionally in W0; defer to W1
+      until the measurement names the need.</li>
+  </ul>
+
+  <p>
+    <strong>W1 hard gate &mdash; which downstream alternative is earned.</strong><br>
+    Re-measure. If p95 foreground &lt; 200&thinsp;ms under real load &rArr; stop; A1&ndash;W1 is sufficient.
+    Otherwise diagnose the residual bottleneck:
+  </p>
+  <ul style="margin: var(--space-md) 0 var(--space-lg) var(--space-lg); padding-left: 0; font-family: var(--font-sans); font-size: 14px; line-height: 1.65;">
+    <li><strong>If writer <code>execution_ms</code> p95 remains the dominant cost AND multiple subject domains contend
+      concurrently &rarr; W2 (A&star;) is earned.</strong> Partitioned writer queue is potentially much cheaper than B
+      and is the cheapest substrate change that addresses the recurring class directly.</li>
+    <li><strong>If reader-side latency dominates AND CPU on SQLCipher page decryption is the residual &rarr; WX (B) is earned.</strong>
+      A&star; won&rsquo;t close reader-CPU starvation; only moving the read path off SQLite does.</li>
+    <li><strong>Both can be true at scale.</strong> If they are, W2 lands first (cheaper), then WX re-evaluates on
+      W2&rsquo;s residual measurement.</li>
+  </ul>
+
+  <p>
+    <strong>WX &mdash; In-memory claim graph (Alternative B). Conditional on reader-CPU as residual.</strong><br>
+    Out of scope for this packet&rsquo;s implementation. Opens its own L0 with measurements from W1 (or W2) as trigger
+    evidence. Must answer all five Intelligence Loop integration questions, not just the signal-invalidation leg.
+  </p>
+
+  <p>
+    <strong>C &mdash; Separate cache service process. Earned by multi-surface need, not latency.</strong><br>
+    Latency measurements alone do not justify the IPC overhead. C earns when a second surface (MCP service, WordPress
+    layer, public substrate) joins the system and needs live claim access. Until then, C is overhead without payoff.
+  </p>
+
+  <p class="plans-subhead">Measurement protocol (re-run after W0 close and W1 close)</p>
+  <p>
+    <strong>Scripted peak load</strong>, 10&ndash;15 minutes: 20 entities, 3 concurrent Glean enrichments staggered to overlap,
+    all 18 background workers active, ~50 foreground IPC invocations distributed across the window (account-detail navigation,
+    meeting-intelligence open, refresh actions, audit-log opens). <strong>Durable telemetry</strong> (persistent rollups or
+    SQLite-backed metrics table; not 256-sample in-memory windows). Capture: p50/p95/p99 of <code>get_account_detail</code>,
+    <code>get_meeting_intelligence</code>, <code>get_linear_status</code>; writer <code>execution_ms</code> distribution per
+    subject-domain; WAL file size sampled every 5&thinsp;s; per-tier reader queue depth; <strong>gate-wait at the 250&thinsp;ms
+    threshold, not the 5&thinsp;s warn threshold</strong> (instrument the gate to record waits above 50&thinsp;ms);
+    main-thread interaction stalls &gt; 100&thinsp;ms (from frontend perf marks).
+  </p>
+
+  <p class="plans-subhead">Re-measure commitment is a Linear ticket, not prose</p>
+  <p>
+    W0 close requires: a Linear ticket created and assigned for &ldquo;Re-run measurement protocol at 50, 100, 200
+    entities,&rdquo; with sequencing and target dates. If the ticket doesn&rsquo;t exist, W0 is not done. This is the only
+    way the &ldquo;A treated as architectural completion&rdquo; failure mode gets observable mitigation, not a calendar wish.
+  </p>
+</section>
+
+<!-- =====================================================================
+     SECTION 6 — Documentation gaps
+     ===================================================================== -->
+<section class="plans-section" aria-labelledby="section-docs">
+  <header class="plans-section-header">
+    <p class="plans-section-eyebrow">Capture obligations</p>
+    <h2 id="section-docs" class="plans-section-title">Eight documentation gaps. Three must be written for the proposal to be honest.</h2>
+    <p class="plans-section-lede">
+      The architecture map surfaced eight architectural questions with no authoritative document. The first three
+      are load-bearing; the rest follow naturally from the work A introduces.
+    </p>
+  </header>
+
+  <table class="gap-table">
+    <thead>
+      <tr>
+        <th>Status</th>
+        <th>Question</th>
+        <th>Owns</th>
+        <th>Resolution</th>
+      </tr>
+    </thead>
+    <tbody>
+      <tr data-status="gap">
+        <td><strong>GAP</strong></td>
+        <td>What is the writer queue&rsquo;s responsibility &mdash; and what is it not?</td>
+        <td>(nobody)</td>
+        <td>Write new ADR <em>before</em> A&rsquo;s W1 lands. Closes the &ldquo;own DB connection to avoid starving&rdquo; inverted-model anti-pattern.</td>
+      </tr>
+      <tr data-status="gap">
+        <td><strong>GAP</strong></td>
+        <td>What&rsquo;s the right reader pool size?</td>
+        <td>(nobody &mdash; <code>NUM_READERS=2</code> is a magic constant)</td>
+        <td>Write ADR justifying the N+1-tier rule and the 4-tier configuration A introduces.</td>
+      </tr>
+      <tr data-status="gap">
+        <td><strong>GAP</strong></td>
+        <td>How should claim batch writes be sized and yielded?</td>
+        <td>(nobody)</td>
+        <td>Write ADR specifying batch size, yield strategy, and the &ldquo;foreground waiter present&rdquo; backpressure signal A introduces.</td>
+      </tr>
+      <tr data-status="deferred">
+        <td>DEFERRED</td>
+        <td>When to materialize a read projection vs. query live?</td>
+        <td>ADR-0062 (says &ldquo;don&rsquo;t cache until measured&rdquo;); L0 packet Phase 2 (gated on measurement)</td>
+        <td>The decision gate after A is the measurement that triggers this. If B is earned, write the projection contract ADR then.</td>
+      </tr>
+      <tr data-status="deferred">
+        <td>DEFERRED</td>
+        <td>Foreground / background write priority</td>
+        <td>db-write-queue-consolidation v2 named <code>WritePriority::Background</code>; deferred</td>
+        <td>A&rsquo;s presence-aware admission addresses the same shape without typed priority. If A insufficient, write the priority-queue ADR with B.</td>
+      </tr>
+      <tr data-status="deferred">
+        <td>DEFERRED</td>
+        <td>Signal-based invalidation throttling / coalescing</td>
+        <td>ADR-0080 establishes signals; throttling never specified</td>
+        <td>177&thinsp;k signal_events rows is the trigger. Write ADR on coalescing windows when A&rsquo;s WAL pressure measurements surface this.</td>
+      </tr>
+      <tr data-status="gap">
+        <td>K-OUT</td>
+        <td>DB-lock-storm class entry in <code>docs/solutions/</code></td>
+        <td>(nobody)</td>
+        <td>File a <code>docs/solutions/architecture-patterns/db-lock-storm-class-2026-05-27.md</code> capturing the six instances + the inverted-model anti-pattern + the proposal. Mandatory K-out from this work.</td>
+      </tr>
+      <tr data-status="documented">
+        <td>EXISTS</td>
+        <td>SQLCipher key handling, transactional semantics, mode-aware mutations, abilities-runtime crate boundary</td>
+        <td>ADR-0092, 0101, 0102, 0103, 0104, 0126</td>
+        <td>Cite + preserve. None of A&rsquo;s changes invalidate them.</td>
+      </tr>
+    </tbody>
+  </table>
+</section>
+
+<!-- =====================================================================
+     SECTION 7 — Sequencing for Alternative A
+     ===================================================================== -->
+<section class="plans-section" aria-labelledby="section-sequencing">
+  <header class="plans-section-header">
+    <p class="plans-section-eyebrow">Wave plan</p>
+    <h2 id="section-sequencing" class="plans-section-title">Two unconditional waves. One conditional. WX deferred to its own L0.</h2>
+    <p class="plans-section-lede">
+      Standard DailyOS wave protocol: no wave starts until prior wave clears its gate, agents fan out within a wave on
+      non-overlapping files, two revision cycles &rarr; L6. W0 is unconditional hygiene. W1 is conditional on W0&rsquo;s
+      measurement gate naming each lane&rsquo;s earn signal. W2 (Alternative A&star;, partitioned writer queue) is
+      conditional on W1&rsquo;s hard gate showing multi-subject writer-hold as residual bottleneck. WX (Alternative B) is
+      a separate L0 packet opened only when reader-CPU dominates as residual.
+    </p>
+  </header>
+
+  <!-- Wave overview table -->
+  <p class="plans-subhead">Wave overview</p>
+  <table class="wave-overview">
+    <thead>
+      <tr>
+        <th>Wave</th>
+        <th>Scope</th>
+        <th>Parallel agents</th>
+        <th>Wall-clock target</th>
+        <th>Gate at close</th>
+      </tr>
+    </thead>
+    <tbody>
+      <tr data-wave="w0">
+        <td>W0 &middot; Hygiene foundation</td>
+        <td>WAL pragmas + checkpoint thread (W0-A); reader pool resize 2&rarr;4 + per-command instrumentation (W0-B); two ADRs + K-out doc (W0-C)</td>
+        <td><strong>3 parallel</strong> (code + code + docs)</td>
+        <td>2&ndash;3 days</td>
+        <td>Measurement protocol &middot; 10-15 min scripted peak load &middot; p95 &lt; 200&thinsp;ms</td>
+      </tr>
+      <tr data-wave="w1">
+        <td>W1 &middot; Earned hygiene extensions</td>
+        <td>Per-subject-domain TX + durable cursor (W1-A, two PRs); presence-aware admission (W1-B); bypass closure + CI gate (W1-C); ReaderTier migration (W1-D)</td>
+        <td><strong>up to 4 parallel</strong>; conditional per lane</td>
+        <td>4&ndash;7 days, only if W0 gate misses</td>
+        <td>Hard gate: diagnose residual bottleneck &rarr; W2 (multi-subject writer-hold) or WX (reader-CPU)</td>
+      </tr>
+      <tr data-wave="w1" style="--fanout-tone: var(--color-garden-eucalyptus);">
+        <td>W2 &middot; Partitioned writer queue (A&star;)</td>
+        <td>Subject-ref-hash partition the writer pool; N writer threads. Cross-partition ops audit and explicit serialization.</td>
+        <td><strong>1&ndash;2 parallel</strong></td>
+        <td>~1 week, only if W1 names multi-subject writer-hold</td>
+        <td>Re-measure under load; if reader-CPU still dominates, WX is earned</td>
+      </tr>
+      <tr data-wave="wx">
+        <td>WX &middot; In-memory claim graph (B)</td>
+        <td>Alternative B &mdash; separate L0 packet, separate wave program. Must answer all 5 Intelligence Loop questions before opening.</td>
+        <td>To be planned in its own L0</td>
+        <td>Out of scope here</td>
+        <td>Separate program</td>
+      </tr>
+    </tbody>
+  </table>
+
+  <p>
+    Two unconditional waves (W0, plus W1 if W0 gate misses), one conditional wave (W2), one deferred packet (WX). The
+    measurement gate at each wave close <strong>names</strong> the next wave by diagnosing the residual bottleneck &mdash;
+    multi-subject writer-hold &rarr; W2, reader-CPU starvation &rarr; WX. The diagnosis is data-driven, not vibes.
+  </p>
+
+  <!-- Parallel paths within waves -->
+  <p class="plans-subhead">Parallel paths within each wave</p>
+  <p>
+    Each lane below is an independently assignable codex agent (or codebase area for a human pair). Lanes within a
+    wave touch non-overlapping files and have no inter-dependencies; they can land in any order. Solid border = unconditional.
+    Dashed border = conditional on the prior wave&rsquo;s gate signal.
+  </p>
+
+  <div class="fanout-wave" data-wave="w0">
+    <div class="fanout-wave-header">
+      <span class="fanout-wave-id">W0</span>
+      <h3 class="fanout-wave-title">Hygiene foundation (unconditional)</h3>
+      <span class="fanout-wave-gate">Gate: 10-15 min scripted load &middot; p95 &lt; 200&thinsp;ms &middot; durable telemetry</span>
+    </div>
+    <div class="fanout-lanes" data-cols="3">
+      <div class="fanout-lane">
+        <p class="fanout-lane-id">W0-A &middot; PR W0-A</p>
+        <h4 class="fanout-lane-title">WAL tuning + checkpoint thread</h4>
+        <p class="fanout-lane-meta">~120 LOC &middot; db_service.rs only</p>
+        <p class="fanout-lane-prose">
+          Set <code>wal_autocheckpoint = 200</code>, <code>mmap_size = 256MB</code>, <code>cache_size = -65536</code>,
+          <code>journal_size_limit = 64MB</code> in <code>apply_pragmas</code>. Probe <code>PRAGMA mmap_size;</code> post-set
+          and fail loud if it returns 0 (SQLCipher compatibility). Spawn a dedicated tokio task running
+          <code>PRAGMA wal_checkpoint(PASSIVE)</code> every 30&thinsp;s on the writer thread; document the PASSIVE/TRUNCATE
+          matrix vs the existing TRUNCATE callers (key rotation, encryption, shutdown).
+        </p>
+      </div>
+      <div class="fanout-lane">
+        <p class="fanout-lane-id">W0-B &middot; PR W0-B</p>
+        <h4 class="fanout-lane-title">Reader pool resize + durable instrumentation</h4>
+        <p class="fanout-lane-meta">~250 LOC &middot; db_service.rs + latency.rs + ~12 call sites</p>
+        <p class="fanout-lane-prose">
+          <code>NUM_READERS</code> 2 &rarr; 4 (no tier ownership yet &mdash; that&rsquo;s W1-D). Extend
+          <code>get_latency_rollups</code> to surface per-command queue-wait + execution-time, plus writer
+          <code>execution_ms</code> distribution per call label, <strong>separated into writer-execution time and
+          reader-side time</strong> so the W1 hard gate can route between W2 (writer-side dominant) and WX (reader-CPU
+          dominant). <strong>Durable telemetry</strong>: persistent rollups (not 256-sample in-memory windows). Instrument
+          the gate at the 50&thinsp;ms wait threshold to record waits above 250&thinsp;ms (existing log fires only at
+          5&thinsp;s). Per-reader-tier <em>tier-of-origin</em> labels so W1-D&rsquo;s earn signal can distinguish wrong-tier
+          routing from genuine pool saturation. Frontend perf marks for main-thread interaction stalls &gt; 100&thinsp;ms.
+        </p>
+      </div>
+      <div class="fanout-lane">
+        <p class="fanout-lane-id">W0-C &middot; Docs</p>
+        <h4 class="fanout-lane-title">Two ADRs + K-out + Linear re-measure ticket</h4>
+        <p class="fanout-lane-meta">~600 lines markdown + 1 Linear ticket &middot; reviewed at L2 alongside W0-B</p>
+        <p class="fanout-lane-prose">
+          ADR &mdash; writer-queue responsibility (closes <code>executor.rs:632/1052</code> anti-pattern). ADR &mdash; reader
+          pool sizing (justifies pool-of-4 + tier policy). K-out solution doc:
+          <code>docs/solutions/architecture-patterns/db-lock-storm-class-2026-05-27.md</code>. <strong>Linear ticket</strong>:
+          &ldquo;Re-run measurement protocol at 50, 100, 200 entities&rdquo; with sequencing + target dates. W0 is
+          <strong>not done</strong> until that ticket exists and is assigned.
+        </p>
+      </div>
+    </div>
+    <p class="fanout-wave-gate-banner">
+      <strong>W0 close gate &middot;</strong> 10&ndash;15 min scripted peak load (20 entities, 3 concurrent Glean, all 18 background workers,
+      ~50 foreground IPC invocations). Pass: p95 &lt; 200&thinsp;ms AND no main-thread stall &gt; 100&thinsp;ms AND zero gate-waits
+      &gt; 250&thinsp;ms AND WAL &lt; 5&thinsp;MB AND growth-slope predicts no breach at 100 entities. If all five pass,
+      W1 is unjustified &mdash; file ADRs + K-out, confirm Linear re-measure ticket is assigned, done.
+    </p>
+  </div>
+
+  <div class="fanout-wave" data-wave="w1">
+    <div class="fanout-wave-header">
+      <span class="fanout-wave-id">W1</span>
+      <h3 class="fanout-wave-title">Earned hygiene extensions (conditional on W0 gate)</h3>
+      <span class="fanout-wave-gate">Hard gate: diagnose residual &rarr; W2 (A&star;) or WX (B)</span>
+    </div>
+    <div class="fanout-lanes" data-cols="4">
+      <div class="fanout-lane" data-conditional="true">
+        <p class="fanout-lane-id">W1-A &middot; <strong>2-PR structure</strong> <span class="fanout-conditional-tag">conditional</span></p>
+        <h4 class="fanout-lane-title">Per-subject-domain TX + row-chunked durable cursor</h4>
+        <p class="fanout-lane-meta">~800&ndash;1,200 LOC &middot; intel_queue.rs + claims.rs + new ADR amending ADR-0104</p>
+        <p class="fanout-lane-prose">
+          Earn signal: writer <code>execution_ms</code> p95 &gt; 500&thinsp;ms during enrichment bursts.
+          <strong>Prereq (1-day investigation before PR W1-A1):</strong> measure the actual <code>subject_ref</code> and
+          claim-type grouping in <code>persist_enrichment_write_results_via_db_service</code> to identify the natural
+          decomposition boundaries (most rows likely share one subject_ref; stakeholder insights cross to person; side-effects
+          and assessment are their own classes). Output: a concrete split plan with file:line citations.
+          <strong>PR W1-A1 (architectural):</strong> decompose the function by claim-type and side-effect class per the
+          investigation&rsquo;s findings &mdash; many small transactions stop sharing one atomic boundary.
+          <strong>PR W1-A2 (mechanical):</strong> within a class, row-chunk commits with a durable batch-offset cursor
+          (reuses <code>migration_state</code> pattern from <code>runtime_evidence_backfill</code>), idempotency keys per
+          claim, and crash property tests. New ADR explicitly amending ADR-0104&rsquo;s atomicity contract.
+        </p>
+      </div>
+      <div class="fanout-lane" data-conditional="true">
+        <p class="fanout-lane-id">W1-B <span class="fanout-conditional-tag">conditional</span></p>
+        <h4 class="fanout-lane-title">Presence-aware admission</h4>
+        <p class="fanout-lane-meta">~250 LOC &middot; gated on user-active variance signal</p>
+        <p class="fanout-lane-prose">
+          Earn signal: foreground p99 &gt; 3&times; p50 during user-active windows, measured across at least 5 user-active
+          sessions in W0-B telemetry. Track <code>last_user_input_at</code> across mousemove, keypress, scroll, focus-within
+          (broader than mousemove alone). Intel queue, hygiene loop, embeddings, enrichment processor honor the check for
+          non-Manual priorities. Aging mitigation: deferred background work overrides admission after 10 min to prevent
+          indefinite starvation.
+        </p>
+      </div>
+      <div class="fanout-lane">
+        <p class="fanout-lane-id">W1-C</p>
+        <h4 class="fanout-lane-title">Bypass closure + CI gate</h4>
+        <p class="fanout-lane-meta">~800 LOC &middot; ~190+ sites (hot subset migrated; tail gated by CI) &middot; mechanical, unconditional</p>
+        <p class="fanout-lane-prose">
+          Codex grep finds <strong>~90 direct <code>conn_ref().execute*</code> sites</strong> outside writer-queue closures
+          (architecture map's 16+ undercounted by 5&times;). Migrate high-frequency hot sites to <code>state.db_write</code>.
+          <strong>Add CI gate</strong>: extend <code>startup_background_db_access_lint_test.rs</code> to fail on
+          <code>conn_ref().execute*</code> outside an explicit transaction or named allowlist file. This is the durable
+          enforcement that ADR-0101 Phase 3 (<code>pub(in crate::db)</code> on <code>ActionDb::open</code>) would otherwise
+          require. Parallelize <code>build_account_detail_result</code>&rsquo;s 25 sub-queries via <code>tokio::join!</code>
+          (split across reader tiers if W1-D ships).
+        </p>
+      </div>
+      <div class="fanout-lane" data-conditional="true">
+        <p class="fanout-lane-id">W1-D <span class="fanout-conditional-tag">conditional</span></p>
+        <h4 class="fanout-lane-title">ReaderTier enum + 197-site migration</h4>
+        <p class="fanout-lane-meta">~900&ndash;1,200 LOC &middot; gated on tier-confusion signal</p>
+        <p class="fanout-lane-prose">
+          Earn signal: W0-B&rsquo;s <em>tier-of-origin</em> telemetry shows wrong-tier routing (foreground commands
+          consistently using a reader slot that&rsquo;s also serving background work, even when another slot is idle),
+          NOT just pool saturation. Without tier-of-origin labels the saturation signal alone is ambiguous between
+          &ldquo;need more readers&rdquo; (W0-B fixes by bumping NUM_READERS) and &ldquo;need tier separation&rdquo;
+          (W1-D fixes by adding ownership). Introduce <code>ReaderTier</code> enum (<code>ForegroundUi</code>,
+          <code>ForegroundSync</code>, <code>Background</code>, <code>Maintenance</code>),
+          <code>DbService::reader_for(tier)</code>, migrate the 197 <code>state.db_read</code> call sites. Per-site tier
+          decision is a judgment call, not mechanical &mdash; lane is staffed accordingly. Deferred from W0 to here
+          because it&rsquo;s 5&times; the W0-B estimate; bundling it unconditionally invited scope creep.
+        </p>
+      </div>
+    </div>
+    <p class="fanout-wave-gate-banner">
+      <strong>W1 hard gate &middot;</strong> Re-run measurement protocol with W0+W1 landed. If p95 &lt; 200&thinsp;ms passes, stop &mdash;
+      A1&ndash;W1 is sufficient. Otherwise diagnose the residual: writer-side dominant &amp; multiple subject domains contending
+      concurrently &rArr; <strong>W2 (A&star;) earned</strong>. Reader-CPU dominant &amp; SQLCipher decryption hot &rArr;
+      <strong>WX (B) earned</strong>. Pick the cheaper one (W2) first if both signals are present.
+    </p>
+  </div>
+
+  <div class="fanout-wave" data-wave="w1" style="--fanout-tone: var(--color-garden-eucalyptus);">
+    <div class="fanout-wave-header">
+      <span class="fanout-wave-id">W2</span>
+      <h3 class="fanout-wave-title">Subject-ref-hash partitioned writer queue (Alternative A&star;)</h3>
+      <span class="fanout-wave-gate">Conditional on W1 hard gate naming multi-subject writer-hold</span>
+    </div>
+    <div class="fanout-lanes" data-cols="2">
+      <div class="fanout-lane" data-conditional="true">
+        <p class="fanout-lane-id">W2-A <span class="fanout-conditional-tag">conditional</span></p>
+        <h4 class="fanout-lane-title">Partition the writer pool by subject_ref hash</h4>
+        <p class="fanout-lane-meta">~400&ndash;600 LOC &middot; db_service.rs + state.rs</p>
+        <p class="fanout-lane-prose">
+          Replace single writer thread with N writer threads (likely N=4) keyed by <code>hash(subject_ref) % N</code>.
+          Reuse the existing <code>PooledConnection</code> infrastructure; add N writer instances. Each writer owns a
+          dedicated SQLite connection. <strong>The SQLite WAL itself still allows only one writer at the file level, and
+          <code>WRITE_TRANSACTION_GATE</code> remains process-wide</strong>; A&star; does not enable concurrent WAL writes.
+          What it does: break app-level mpsc head-of-line blocking so account-A&rsquo;s enrichment and meeting-B&rsquo;s
+          prep rebuild reach the SQLite gate independently and interleave at <code>BEGIN</code>/<code>COMMIT</code>
+          granularity. <code>state.db_write</code> takes a subject_ref hint to route correctly. LOC estimate is for the
+          partition substrate only; cross-partition coordination is W2-B.
+        </p>
+      </div>
+      <div class="fanout-lane" data-conditional="true">
+        <p class="fanout-lane-id">W2-B <span class="fanout-conditional-tag">conditional</span></p>
+        <h4 class="fanout-lane-title">Cross-partition coordination audit + serialization</h4>
+        <p class="fanout-lane-meta">~200&ndash;400 LOC &middot; services audit + explicit serialization paths</p>
+        <p class="fanout-lane-prose">
+          Some operations span multiple subject domains: entity-merge, batch reconciliation, multi-subject claim
+          mutations. Audit which call sites need cross-partition atomicity; route those through a dedicated
+          coordinator that takes all relevant partitions&rsquo; locks in canonical order (subject_ref hash sorted) to
+          prevent deadlock. ADR captures the partitioning contract and the cross-partition exception list.
+          <strong>Prerequisite (drafted at W1 close, not deferred to W2 L0):</strong> concrete enumeration of every
+          cross-partition operation in the current codebase, with file:line citations, so W2 L0 has a complete audit
+          to vote on rather than discovering it during implementation.
+        </p>
+      </div>
+    </div>
+    <p class="fanout-wave-gate-banner">
+      <strong>W2 close gate &middot;</strong> Re-run measurement protocol with W0+W1+W2 landed. If p95 &lt; 200&thinsp;ms passes, stop &mdash;
+      A&star; was the cheaper-than-B answer. If reader-CPU now dominates as residual, WX (B) earns; A&star; doesn&rsquo;t close
+      SQLCipher read-path decryption cost. Re-measure growth-slope at 30/40 entities before declaring done.
+    </p>
+  </div>
+
+  <div class="fanout-wave" data-wave="wx">
+    <div class="fanout-wave-header">
+      <span class="fanout-wave-id">WX</span>
+      <h3 class="fanout-wave-title">In-memory claim graph (Alternative B)</h3>
+      <span class="fanout-wave-gate">Opened only if W1 OR W2 hard gate names reader-CPU as residual</span>
+    </div>
+    <div class="fanout-lanes" data-cols="2">
+      <div class="fanout-lane" data-conditional="true">
+        <p class="fanout-lane-id">WX-L0 <span class="fanout-conditional-tag">conditional</span></p>
+        <h4 class="fanout-lane-title">L0 packet authoring</h4>
+        <p class="fanout-lane-prose">
+          Open a fresh L0 packet for in-memory claim graph (Linear/Notion pattern). Trigger evidence: W1 measurement results.
+          Owner ADRs: cache-coherence contract, working-set policy, hydration / shutdown semantics. Out of scope here &mdash;
+          this becomes its own wave program.
+        </p>
+      </div>
+      <div class="fanout-lane" data-conditional="true">
+        <p class="fanout-lane-id">WX-impl <span class="fanout-conditional-tag">conditional</span></p>
+        <h4 class="fanout-lane-title">Implementation waves (illustrative; binding decomposition owned by WX L0)</h4>
+        <p class="fanout-lane-prose">
+          ~3,000&ndash;5,000 LOC across 2&ndash;3 weeks. <strong>Illustrative</strong> structure (to be validated at WX
+          L0, not pre-approved here): WX-W0 hydration substrate; WX-W1 reader migration; WX-W2 invalidation contract.
+          The WX L0 packet owns the actual decomposition; this proposal cannot bind it.
+        </p>
+      </div>
+    </div>
+  </div>
+
+  <!-- Reviewer matrix -->
+  <p class="plans-subhead">Reviewer matrix</p>
+  <p>L0 panel scales with wave scope. W0 needs the full canonical 4-panel + architecture strategist. W1&rsquo;s panel depends on which lanes ship.</p>
+  <table class="reviewer-matrix">
+    <thead>
+      <tr>
+        <th>Agent profile</th>
+        <th>L0 reviewer</th>
+        <th>L2 reviewer (per PR)</th>
+      </tr>
+    </thead>
+    <tbody>
+      <tr>
+        <td>W0 plan (this proposal)</td>
+        <td><code>/codex challenge</code> + <code>ce-architecture-strategist</code> + <code>ce-scope-guardian-reviewer</code> + <code>ce-feasibility-reviewer</code> + <code>ce-learnings-researcher</code> (K-in)</td>
+        <td>n/a (planning doc)</td>
+      </tr>
+      <tr>
+        <td>W0-A &middot; WAL + checkpoint thread</td>
+        <td>n/a</td>
+        <td><code>/codex review</code> + <code>ce-performance-reviewer</code> + <code>ce-correctness-reviewer</code> + <code>ce-security-reviewer</code> (SQLCipher pragma additions)</td>
+      </tr>
+      <tr>
+        <td>W0-B &middot; Reader pool resize + instrumentation</td>
+        <td>n/a</td>
+        <td><code>/codex review</code> + <code>ce-architecture-strategist</code> + <code>ce-performance-reviewer</code></td>
+      </tr>
+      <tr>
+        <td>W0-C &middot; ADRs + K-out (reviewed alongside W0-B)</td>
+        <td>n/a (markdown, L2 with W0-B)</td>
+        <td><code>ce-coherence-reviewer</code> + <code>ce-doc-review</code></td>
+      </tr>
+      <tr>
+        <td>W1-A &middot; Per-subject-domain TX + durable cursor (2 PRs)</td>
+        <td><code>/codex challenge</code> + <code>ce-data-integrity-guardian</code> (atomicity-contract amendment) + <code>ce-reliability-reviewer</code> (crash recovery)</td>
+        <td><code>/codex review</code> + <code>ce-data-integrity-guardian</code> + <code>ce-performance-reviewer</code></td>
+      </tr>
+      <tr>
+        <td>W1-B &middot; Presence-aware admission</td>
+        <td><code>ce-scope-guardian-reviewer</code> (no scope creep into priority queues)</td>
+        <td><code>/codex review</code> + <code>ce-reliability-reviewer</code></td>
+      </tr>
+      <tr>
+        <td>W1-C &middot; Bypass closure + CI gate (90+ sites)</td>
+        <td>n/a (mechanical sweep)</td>
+        <td><code>/codex review</code> + <code>ce-maintainability-reviewer</code> + <code>l2-bounded-reviewer</code></td>
+      </tr>
+      <tr>
+        <td>W1-D &middot; ReaderTier migration (197 sites)</td>
+        <td><code>ce-architecture-strategist</code> (tier policy)</td>
+        <td><code>/codex review</code> + <code>ce-maintainability-reviewer</code></td>
+      </tr>
+      <tr>
+        <td>W2 &middot; Partitioned writer queue (A&star;)</td>
+        <td><code>/codex challenge</code> + <code>ce-architecture-strategist</code> + <code>ce-data-integrity-guardian</code> (cross-partition atomicity audit)</td>
+        <td><code>/codex review</code> + <code>ce-architecture-strategist</code> + <code>ce-reliability-reviewer</code></td>
+      </tr>
+      <tr>
+        <td>WX (if opened)</td>
+        <td>Full canonical 5-panel; new L0 packet</td>
+        <td>Per-PR within WX waves</td>
+      </tr>
+    </tbody>
+  </table>
+
+  <!-- S/P/E suite cards -->
+  <p class="plans-subhead">Test suites &mdash; S, P, E gate L3 wave close</p>
+  <div class="suite-grid">
+    <article class="suite-card" data-suite="s">
+      <span class="suite-letter">S</span>
+      <h3 class="suite-name">Security</h3>
+      <p class="suite-prose">SQLCipher invariants preserved across pool resize + checkpoint thread. PRAGMA-key first ordering not broken by added pragmas. Key-rotation path untouched (ADR-0092). No PII in instrumentation labels.</p>
+      <p class="suite-owner"><span class="suite-owner-label">Owner</span> <code>ce-security-reviewer</code> + <code>ce-data-integrity-guardian</code></p>
+      <p class="suite-pass-rule"><span class="suite-pass-label">Pass</span> zero Critical/High; cipher_compatibility unchanged; ADR-0092 invariants hold</p>
+    </article>
+    <article class="suite-card" data-suite="p">
+      <span class="suite-letter">P</span>
+      <h3 class="suite-name">Performance</h3>
+      <p class="suite-prose">The measurement protocol IS the P suite. p50/p95/p99 of <code>get_account_detail</code> + <code>get_meeting_intelligence</code> under real load with all background workers. WAL size over 10-min enrichment burst. Reader tier queue depth distribution.</p>
+      <p class="suite-owner"><span class="suite-owner-label">Owner</span> <code>ce-performance-oracle</code> + <code>ce-performance-reviewer</code></p>
+      <p class="suite-pass-rule"><span class="suite-pass-label">Pass</span> p99 &lt; 500&thinsp;ms foreground; WAL &lt; 5&thinsp;MB; zero gate-busy at user-active times</p>
+    </article>
+    <article class="suite-card" data-suite="e">
+      <span class="suite-letter">E</span>
+      <h3 class="suite-name">Edge cases</h3>
+      <p class="suite-prose">Yieldable writer mid-batch crash: claims either fully applied or recoverable from offset. Checkpoint thread races writer commit: no WAL corruption. Reader-tier exhaustion: foreground command falls back gracefully. Presence-aware admission: no indefinite starvation (aging mitigation).</p>
+      <p class="suite-owner"><span class="suite-owner-label">Owner</span> <code>ce-reliability-reviewer</code> + property tests under <code>src-tauri/tests/</code></p>
+      <p class="suite-pass-rule"><span class="suite-pass-label">Pass</span> property tests green; no new corruption modes; aging bounded to 10&thinsp;min</p>
+    </article>
+  </div>
+
+  <!-- Pacing + bounding callouts -->
+  <p class="plans-subhead">Pacing + bounding</p>
+  <div class="callout-grid">
+    <article class="callout">
+      <h3 class="callout-title">Pacing</h3>
+      <p class="callout-prose">
+        W1 does not start until W0 measurement protocol runs and produces data. W0 lanes (A1/A2/C) can land in any order;
+        the gate is the post-merge measurement, not the calendar. Two L2 revision cycles on any PR &rarr; L6 escalation.
+        No PR in W1 lands without the W0 signal that earned it being captured in the PR description.
+      </p>
+    </article>
+    <article class="callout">
+      <h3 class="callout-title">Bounding</h3>
+      <p class="callout-prose">
+        L2 bounded by acceptance criteria. Path-&alpha; findings &rarr; <code>Codebase Maintenance &amp; Production Quality</code>
+        Linear project (id <code>b8e6aea4-d47e-4f3a-b03d-a05bec914aeb</code>). Specifically NOT in scope: new type-system
+        ReadDb/WriteHandle split (deferred in db-write-queue-consolidation v2 under its own trigger); same-DB CQRS
+        projections (B replaces); separate read DB file (rejected at foreground-db-contention L0).
+      </p>
+    </article>
+    <article class="callout">
+      <h3 class="callout-title">No migration slots needed</h3>
+      <p class="callout-prose">
+        W0 introduces no schema changes; W1 introduces no schema changes. The only DB-mutating change is W1-A&rsquo;s commit
+        cadence, which doesn&rsquo;t alter any table or index. Migration slot reservations (the v1.4.1 W3-C/W4-A/W4-B collision
+        pattern) don&rsquo;t apply here. If WX (in-memory claim graph) opens, its own L0 will manage migration slots independently.
+      </p>
+    </article>
+  </div>
+</section>
+
+<!-- =====================================================================
+     SECTION 8 — Risks + non-goals
+     ===================================================================== -->
+<section class="plans-section" aria-labelledby="section-risks">
+  <header class="plans-section-header">
+    <p class="plans-section-eyebrow">Bounds</p>
+    <h2 id="section-risks" class="plans-section-title">Honest risks and what this plan deliberately does not do.</h2>
+  </header>
+
+  <p class="plans-subhead">Risks</p>
+  <ul style="margin: var(--space-md) 0 var(--space-lg) var(--space-lg); padding-left: 0; font-family: var(--font-sans); font-size: 14px; line-height: 1.65;">
+    <li><strong>A treated as architectural completion is the primary failure mode.</strong> The team lands W0,
+      foreground latency drops, things feel better for a few days, and the 20/50/100/200-entity proof never runs.
+      <strong>Mitigation:</strong> a Linear ticket for the 50/100/200 re-measure is a HARD gate on W0 close &mdash; W0
+      is not &ldquo;done&rdquo; until the ticket exists, is assigned, and has target dates. Growth-slope AC enforces that
+      a 20-entity pass at point-in-time doesn&rsquo;t obscure trajectory toward breach. The wave plan&rsquo;s data-driven
+      diagnosis at each gate (W2 vs WX) keeps &ldquo;earned&rdquo; observable rather than felt.</li>
+    <li><strong>Hot-restart during landing can corrupt the DB</strong> (per 2026-05-25 lessons.md). W0-A (WAL pragma changes)
+      and W1-A (transaction-cadence changes) are exactly the kind of edits where <code>pnpm tauri dev</code>&rsquo;s
+      hot-restart can terminate an active WAL writer mid-commit, producing real btree corruption even when later
+      <code>quick_check</code> passes. <strong>Mitigation:</strong> land both PRs against a stopped dev app; test on a
+      fresh DB or restored snapshot; never edit Rust DB files while the dev app is writing.</li>
+    <li><strong>W1-A partial-commit recovery is contractual, not assumed.</strong> The yieldable batch cursor is a
+      <em>new substrate</em> (not <code>with_transaction_async</code>) that explicitly relaxes ADR-0104&rsquo;s atomicity
+      guarantee. Each batch must be idempotent and durable; a worker crash mid-batch must leave committed claims with
+      correct provenance and resumable from the offset cursor. <strong>Mitigation:</strong> crash property tests are part of
+      W1-A&rsquo;s AC, not optional; the new ADR explicitly names the atomicity relaxation; <code>l2-bounded-reviewer</code>
+      gates on the crash semantics.</li>
+    <li><strong>Forbidden pattern: holding any DB guard / writer permit / foreground flag across <code>.await</code>.</strong>
+      The 2026-04-20 unify-pool revert (<code>8bfdfdd8</code>) was caused by a <code>parking_lot</code> mutex held across a
+      240-second Glean <code>.await</code>, parking 31 threads. <strong>Mitigation:</strong> ADR (writer queue responsibility)
+      explicitly forbids any guard / permit / atomic flag from spanning an <code>.await</code> point; lint catches
+      <code>parking_lot::Mutex</code> + <code>.await</code> in the same function body.</li>
+    <li><strong>A&rsquo;s checkpoint thread + WAL pragmas interact with SQLCipher.</strong> Need to verify checkpoint
+      doesn&rsquo;t race the key-verification path. Mitigation: run checkpoint on the writer thread (it already owns the encrypted handle).</li>
+    <li><strong>Yieldable writer changes claim transaction semantics.</strong> If batch N commits and batch N+1 fails,
+      the work is partially persisted. Mitigation: design batches so partial completion is recoverable &mdash; each
+      claim has its own subject_ref; the worker can resume from the last committed offset. This is the same
+      pattern <code>runtime_evidence_backfill</code> uses for its slice offsets.</li>
+    <li><strong>Presence-aware admission can starve background work indefinitely on heavy-use days.</strong>
+      Mitigation: aging mechanism &mdash; if a background entity has been deferred for &gt;10 min, override the
+      user-active check once and let it run.</li>
+    <li><strong>Reader-tier ownership requires migrating every <code>db_read</code> caller.</strong> Scope: 197 sites (per feasibility audit, not ~80).
+      Mechanical change. Mitigation: clippy lint that flags missing tier parameter; default-to-ForegroundUi for
+      Tauri commands minimizes call-site changes.</li>
+    <li><strong>A may not be enough.</strong> Possible. The decision gate names what we measure to find out. If
+      A is insufficient at 20 entities, B&rsquo;s in-memory layer is the documented next step.</li>
+  </ul>
+
+  <p class="plans-subhead">Non-goals</p>
+  <ul style="margin: var(--space-md) 0 var(--space-lg) var(--space-lg); padding-left: 0; font-family: var(--font-sans); font-size: 14px; line-height: 1.65;">
+    <li><strong>No second SQLCipher DB file.</strong> Rejected at the foreground-db-contention L0 packet for
+      sync / key-rotation / purge complexity. The in-memory layer (B) replaces this option.</li>
+    <li><strong>No same-DB materialized projections.</strong> Same-DB CQRS-lite is a known anti-pattern in SQLCipher
+      (key rotation across attached files, sync-from-live writer load). ADR-0062 says &ldquo;compute live until profiling
+      shows otherwise&rdquo;; if profiling demands it, B (in-memory) is the projection, not a second SQLite table.</li>
+    <li><strong>No type-system <code>ReadDb</code> / <code>WriteHandle</code> split.</strong> The
+      db-write-queue-consolidation v2 deferred this behind &ldquo;third storm proves the gate insufficient.&rdquo;
+      Current storm class is WAL-management + atomicity-shape, not bypass-permission. Hold the deferral.</li>
+    <li><strong>No cooperative-yield scheduler or task-priority system.</strong> v1 of this proposal included one;
+      L0 BLOCKED it. Presence-aware admission (W1-B) is the only admission-control primitive built here. A general
+      scheduler is out of scope.</li>
+    <li><strong>No new ADR-0067 amendment.</strong> ADR-0067 was right at the time; W0&rsquo;s additions are the
+      &ldquo;earn it&rdquo; outcome ADR-0067 named. Cite it, don&rsquo;t rewrite it.</li>
+  </ul>
+
+  <p class="plans-subhead">Invariants preserved (not non-goals &mdash; never up for negotiation)</p>
+  <ul style="margin: var(--space-md) 0 var(--space-lg) var(--space-lg); padding-left: 0; font-family: var(--font-sans); font-size: 14px; line-height: 1.65;">
+    <li><strong>Claim correctness.</strong> Batching transactions changes commit cadence, not contract. Each claim is
+      validated, deduplicated, signal-emitted per existing rules. ADR-0126 memory substrate invariants hold.</li>
+    <li><strong>SQLCipher key initialization order.</strong> ADR-0092 invariants hold; PRAGMA key first.</li>
+    <li><strong>Service boundary.</strong> ADR-0101 contract holds; W1-C closes <code>conn_ref().execute*</code>
+      bypass sites and adds CI enforcement.</li>
+  </ul>
+</section>
+
+<!-- =====================================================================
+     SECTION 9 — Acceptance criteria
+     ===================================================================== -->
+<section class="plans-section" aria-labelledby="section-ac">
+  <header class="plans-section-header">
+    <p class="plans-section-eyebrow">Done means done</p>
+    <h2 id="section-ac" class="plans-section-title">Acceptance criteria the implementation must meet.</h2>
+    <p class="plans-section-lede">
+      Each criterion is testable against real data, with all 18 background workers active and Glean
+      enrichment running on at least three entities concurrently. The decision gate after A passes or
+      fails on these numbers.
+    </p>
+  </header>
+
+  <ul style="margin: var(--space-md) 0 var(--space-lg) var(--space-lg); padding-left: 0; font-family: var(--font-sans); font-size: 14px; line-height: 1.65;">
+    <li><strong>AC1 &middot; p95 <code>get_account_detail</code> &lt; 200&thinsp;ms</strong> under the 10&ndash;15 min scripted
+      peak protocol (20 entities, 3 concurrent Glean enrichments, all 18 background workers active, ~50 foreground IPC
+      invocations distributed across the window). p99 &lt; 500&thinsp;ms is the degraded ceiling, not the target.</li>
+    <li><strong>AC2 &middot; No main-thread interaction stall &gt; 100&thinsp;ms</strong> (Apple responsiveness guidance) during the scripted load.</li>
+    <li><strong>AC3 &middot; WAL file size stays &lt; 5&thinsp;MB</strong> across the 15-min enrichment burst. Continuous checkpoint thread proves itself.</li>
+    <li><strong>AC4 &middot; Zero writer gate-waits &gt; 250&thinsp;ms</strong> at user-active times (gate must be instrumented at the 50&thinsp;ms threshold, not the 5&thinsp;s existing log).</li>
+    <li><strong>AC5 &middot; Zero <code>database is locked</code> errors</strong> in any worker for 24 hours of normal use.</li>
+    <li><strong>AC6 &middot; Growth-slope criterion.</strong> Re-measure at 30 and 40 entities; fit a line through {20, 30, 40} datapoints; if the slope predicts p95 breach at 100 entities, open the WX L0 packet for B even if 20-entity passes. Trajectory matters, not just point-in-time.</li>
+    <li><strong>AC7 &middot; Linear ticket filed</strong> at W0 close: &ldquo;Re-run measurement protocol at 50 / 100 / 200 entities&rdquo; with sequencing + target dates. <strong>W0 is not done until the ticket exists and is assigned.</strong></li>
+    <li><strong>AC8 &middot; ADRs filed.</strong> Writer queue responsibility ADR exists, names what the queue serializes and what it doesn&rsquo;t, and the <code>executor.rs:632/1052</code> &ldquo;own DB connection&rdquo; comment is removed. Reader pool sizing ADR exists. If W1-A ships, ADR amending ADR-0104 atomicity contract exists.</li>
+    <li><strong>AC9 &middot; K-out solution doc filed</strong> at <code>docs/solutions/architecture-patterns/db-lock-storm-class-2026-05-27.md</code>.</li>
+    <li><strong>AC10 &middot; W1-A crash recovery proven (if W1-A ships).</strong> Property test demonstrates that a worker crash mid-batch leaves committed claims with correct provenance and the resume cursor advances to the next un-attempted offset. Idempotency-key replay test passes.</li>
+    <li><strong>AC11 &middot; W1-C 90+ bypass sites closed.</strong> CI gate fails on new <code>conn_ref().execute*</code> outside named allowlist.</li>
+    <li><strong>AC12 &middot; W2 cross-partition audit landed (if W2 ships).</strong> Multi-subject-domain operations (entity-merge, batch reconciliation) explicitly serialize via the cross-partition coordinator. No deadlock detected in property tests across 1,000 randomized partition-locking sequences.</li>
+  </ul>
+
+  <p>
+    <strong>Stop criteria, in order of cost:</strong> If AC1+AC2+AC3+AC4+AC6 pass after W0, stop &mdash; W1 unjustified.
+    If they pass only after W1, stop &mdash; W2 / WX unjustified. If they pass only after W2, stop &mdash; WX unjustified.
+    If they still miss after W2 AND the residual is reader-CPU-dominated, open WX.
+  </p>
+
+  <p>
+    The point of these criteria is to make &ldquo;the storm class is closed&rdquo; an observable claim grounded in tighter
+    thresholds (p95 not p99; 100&thinsp;ms not 500&thinsp;ms; 250&thinsp;ms gate not 5&thinsp;s; growth-slope not point-in-time)
+    and a Linear-ticket commitment to re-measure at higher scale. No wave beyond W0 lands without the prior wave&rsquo;s
+    measurement gate proving it&rsquo;s needed.
+  </p>
+</section>
+
+<!-- =====================================================================
+     SECTION 10 — Related work
+     ===================================================================== -->
+<section class="plans-section plans-section-footer" aria-labelledby="section-related">
+  <header class="plans-section-header">
+    <p class="plans-section-eyebrow">Related</p>
+    <h2 id="section-related" class="plans-section-title">How this proposal relates to existing plans + ADRs.</h2>
+  </header>
+  <ul style="list-style:none;padding:0;margin:0;display:flex;flex-direction:column;gap:var(--space-md);font-family:var(--font-sans);font-size:14px;line-height:1.6;color:var(--color-text-secondary)">
+    <li>
+      <strong>foreground-db-contention/L0-packet.md</strong> (V0.3 approved 2026-05-22) &mdash;
+      Phase 1 shipped (foreground read purity). Phase 2 (materialized read models) was deferred behind
+      &ldquo;measurements still miss target.&rdquo; This proposal is the measurement that names which path: A (no projections needed)
+      or B (in-memory projection earned).
+    </li>
+    <li>
+      <strong>db-write-queue-consolidation.html</strong> v2 (2026-05-27, today) &mdash;
+      <strong>Superseded by this document.</strong> v2&rsquo;s bypass-closure work becomes A&rsquo;s PR A5 with the bypass list
+      expanded from 12 to 16+ sites per the architecture map. v2&rsquo;s deferred type-system split stays deferred under the
+      same trigger.
+    </li>
+    <li>
+      <strong>ADR-0067 &middot; resume-latency-and-db-concurrency-guardrails</strong> &mdash;
+      Said &ldquo;earn pool/queue work via measurements.&rdquo; Today&rsquo;s measurements (8.8&thinsp;s foreground latency at 20 entities)
+      are the trigger. A&rsquo;s WAL + reader pool + yieldable writer ARE the &ldquo;earn it&rdquo; outcome. Cite + extend.
+    </li>
+    <li>
+      <strong>ADR-0062 &middot; briefing-artifacts-vs-live-queries</strong> &mdash;
+      Said &ldquo;compute live until profiling shows otherwise.&rdquo; A respects this. B would trigger an amendment if earned.
+    </li>
+    <li>
+      <strong>ADR-0092 &middot; data-security-at-rest-and-operational-hardening</strong> &mdash;
+      SQLCipher key init untouched. A&rsquo;s checkpoint thread runs on the writer&rsquo;s encrypted connection. No regression.
+    </li>
+    <li>
+      <strong>ADR-0101 &middot; service-boundary-enforcement</strong> &mdash;
+      Phase 3 (compile-time <code>pub(in crate::db)</code> on <code>ActionDb::open</code>) is still relevant.
+      A&rsquo;s PR A5 closes call-sites; ADR-0101 Phase 3 closes the door.
+    </li>
+    <li>
+      <strong>ADR-0102 / ADR-0103 &middot; abilities-runtime + maintenance-constraints</strong> &mdash;
+      Untouched. Abilities receive a database handle through context; A doesn&rsquo;t change the handle&rsquo;s shape.
+    </li>
+    <li>
+      <strong>ADR-0104 &middot; execution-mode-and-mode-aware-services</strong> &mdash;
+      ADR-0104 specifies a <code>with_transaction_async</code> contract (non-reentrant, holds the write lock for its
+      duration) <em>which has not yet landed in code</em>; the current writer surface is sync <code>with_transaction</code>
+      in <code>db/core.rs:200</code>. W1-A&rsquo;s row-chunked durable cursor is a <strong>sibling primitive that explicitly
+      relaxes ADR-0104&rsquo;s atomicity guarantee</strong>: each chunk commits independently, the caller re-enqueues
+      the next chunk from a persisted offset, and partial-commit recovery is part of the contract. The new ADR amending
+      ADR-0104 names the relaxation and the batch-resume contract, and does not depend on <code>with_transaction_async</code>
+      landing first.
+    </li>
+    <li>
+      <strong>ADR-0080 &middot; signal-intelligence-architecture</strong> &mdash;
+      Establishes the propagation engine and <code>signal_events</code> table (177&thinsp;k rows at current scale).
+      W1-A&rsquo;s per-subject-domain TX decomposition preserves signal emission per-claim; B&rsquo;s cache-coherence
+      contract reuses the existing signal channel as invalidation event source.
+    </li>
+    <li>
+      <strong>ADR-0103 &sect;propagation containment</strong> &mdash;
+      <code>propagation_depth_limit</code> + <code>maintenance_invocation_id</code> interact with W1-B&rsquo;s aging
+      mitigation. Compose, don&rsquo;t conflict.
+    </li>
+    <li>
+      <strong>ADR-0115 &middot; signal-granularity-audit</strong> &mdash;
+      Governs <code>signal_events</code> cardinality. W1-A&rsquo;s decomposition keeps signal granularity unchanged;
+      throttling/coalescing addendum deferred to a measurement-triggered amendment.
+    </li>
+    <li>
+      <strong>ADR-0120 &middot; observability-contract</strong> &mdash;
+      W0-B&rsquo;s per-command instrumentation conforms to ADR-0120&rsquo;s observability contract (stable PII-free labels,
+      bounded sample windows or persistent rollups, latency-budget violations as WARN log lines).
+    </li>
+    <li>
+      <strong>ADR-0126 &middot; memory-substrate-invariants</strong> &mdash;
+      Claim lifecycle, additive weight, dormancy, fork-on-contradiction all preserved under W0+W1+W2. Under B, these
+      become invariants the in-memory cache must enforce on hydration / mutation.
+    </li>
+    <li>
+      <strong>tasks/lessons.md (2026-05-25)</strong> &mdash;
+      &ldquo;Do not edit Rust backend files while <code>pnpm tauri dev</code> is writing to the production SQLCipher database
+      &mdash; Tauri dev hot-restarts can terminate active WAL writers during runtime backfills or enrichment, producing real
+      btree corruption even when earlier quick_check passes.&rdquo; Directly relevant to W0-A and W1-A landing risk; flagged in &sect;Risks.
+    </li>
+    <li>
+      <strong>Engineering Ladder</strong> &mdash; Wave-tier program. L0 review by the canonical four-panel
+      (codex challenge + scope-guardian + feasibility-reviewer + learnings-researcher), plus
+      <code>ce-architecture-strategist</code> as a 5th slot given the architectural scope. K-in research in this
+      proposal cites ADR-0067, 0062, 0101, 0104, 0126, plus the foreground-db-contention packet. K-out: file the
+      lock-storm-class solution doc post-merge.
+    </li>
+  </ul>
+</section>
+
+<!-- FINIS -->
+<div class="finis">
+  <div class="finis-mark">DB · THROUGHPUT · ARCHITECTURE</div>
+  <div class="finis-date">db-throughput-architecture &middot; 2026-05-27</div>
+  <div class="finis-caption">Seven layers of lock discipline. Time for one of throughput. Earn the bigger shift with measurements, not vibes.</div>
+</div>
+
+</div>
+</main>
+</div>
+</body>
+</html>

@@ -1,0 +1,612 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>DB Write-Queue Consolidation · DailyOS Planning</title>
+  <link rel="stylesheet" href="../design/reference/_shared/fonts.css">
+  <link rel="stylesheet" href="../design/reference/_shared/styles/design-tokens.css">
+  <link rel="stylesheet" href="../design/reference/_shared/styles/AtmosphereLayer.module.css">
+  <link rel="stylesheet" href="../design/reference/_shared/styles/MagazinePageLayout.module.css">
+  <link rel="stylesheet" href="../design/reference/_shared/chrome.css">
+  <link rel="stylesheet" href="plans.css">
+  <style>
+    /* TODO(ds): needs pattern — bypass-inventory table */
+    .bypass-table {
+      width: 100%;
+      border-collapse: collapse;
+      margin: var(--space-lg) 0;
+      font-family: var(--font-sans);
+      font-size: 13px;
+    }
+    .bypass-table th,
+    .bypass-table td {
+      padding: var(--space-sm) var(--space-md);
+      text-align: left;
+      border-bottom: 1px solid var(--color-rule-light);
+      vertical-align: top;
+    }
+    .bypass-table th {
+      font-family: var(--font-mono);
+      font-size: 10px;
+      font-weight: 700;
+      letter-spacing: 0.1em;
+      text-transform: uppercase;
+      color: var(--color-text-tertiary);
+      border-bottom: 1px solid var(--color-rule-heavy);
+    }
+    .bypass-table td code {
+      font-family: var(--font-mono);
+      font-size: 12px;
+      color: var(--color-text-primary);
+    }
+    .bypass-table tr[data-severity="critical"] td:first-child {
+      border-left: 3px solid var(--color-spice-chili);
+      padding-left: calc(var(--space-md) - 3px);
+    }
+    .bypass-table tr[data-severity="high"] td:first-child {
+      border-left: 3px solid var(--color-spice-terracotta);
+      padding-left: calc(var(--space-md) - 3px);
+    }
+
+    /* TODO(ds): needs pattern — code-block */
+    .code-block {
+      background: var(--color-paper-warm-white);
+      border: 1px solid var(--color-rule-heavy);
+      border-radius: 4px;
+      padding: var(--space-lg);
+      font-family: var(--font-mono);
+      font-size: 12px;
+      line-height: 1.55;
+      color: var(--color-text-primary);
+      overflow-x: auto;
+      margin: var(--space-lg) 0;
+      white-space: pre;
+    }
+
+    /* TODO(ds): needs pattern — change-card */
+    .change-grid {
+      display: grid;
+      grid-template-columns: 1fr;
+      gap: var(--space-lg);
+      margin: var(--space-lg) 0;
+    }
+    .change-card {
+      background: var(--color-paper-warm-white);
+      border: 1px solid var(--color-rule-heavy);
+      border-radius: 6px;
+      padding: var(--space-xl);
+      position: relative;
+    }
+    .change-card::before {
+      content: "";
+      position: absolute;
+      left: 0; top: 0; bottom: 0;
+      width: 4px;
+      background: var(--change-tone, var(--color-garden-eucalyptus));
+    }
+    .change-card[data-tone="larkspur"]   { --change-tone: var(--color-garden-larkspur); }
+    .change-card[data-tone="eucalyptus"] { --change-tone: var(--color-garden-eucalyptus); }
+    .change-card[data-tone="saffron"]    { --change-tone: var(--color-spice-saffron); }
+    .change-card[data-tone="sage"]       { --change-tone: var(--color-garden-sage); }
+    .change-card[data-tone="terracotta"] { --change-tone: var(--color-spice-terracotta); }
+    .change-card-id {
+      font-family: var(--font-mono);
+      font-size: 10px;
+      font-weight: 700;
+      letter-spacing: 0.12em;
+      text-transform: uppercase;
+      color: var(--change-tone);
+      margin: 0 0 var(--space-xs);
+    }
+    .change-card-title {
+      font-family: var(--font-serif);
+      font-size: 22px;
+      font-weight: 400;
+      margin: 0 0 var(--space-sm);
+      line-height: 1.25;
+    }
+    .change-card-meta {
+      font-family: var(--font-mono);
+      font-size: 10px;
+      letter-spacing: 0.06em;
+      color: var(--color-text-tertiary);
+      margin: 0 0 var(--space-md);
+    }
+    .change-card-prose {
+      font-family: var(--font-sans);
+      font-size: 14px;
+      line-height: 1.6;
+      color: var(--color-text-secondary);
+      margin: 0 0 var(--space-md);
+    }
+    .change-card-bullets {
+      list-style: none;
+      margin: 0;
+      padding: 0;
+      display: flex;
+      flex-direction: column;
+      gap: var(--space-xs);
+    }
+    .change-card-bullets li {
+      font-family: var(--font-sans);
+      font-size: 13px;
+      line-height: 1.5;
+      color: var(--color-text-secondary);
+      padding-left: var(--space-md);
+      position: relative;
+    }
+    .change-card-bullets li::before {
+      content: "→";
+      position: absolute;
+      left: 0;
+      color: var(--change-tone);
+      font-weight: 700;
+    }
+    .change-card-bullets li code {
+      font-family: var(--font-mono);
+      font-size: 11px;
+      background: rgba(0, 0, 0, 0.04);
+      padding: 1px 5px;
+      border-radius: 2px;
+    }
+  </style>
+</head>
+<body
+  data-tint="eucalyptus"
+  data-active-page="planning">
+<div class="MagazinePageLayout_magazinePage">
+<main class="MagazinePageLayout_pageContainer">
+<div class="plans-shell">
+
+<!-- TOPNAV -->
+<nav class="plans-topnav" aria-label="Planning surface">
+  <a class="plans-mark" href="index.html">
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 433 407" width="16" height="16" aria-hidden="true">
+      <path d="M159 407 161 292 57 355 0 259 102 204 0 148 57 52 161 115 159 0H273L271 115L375 52L433 148L331 204L433 259L375 355L271 292L273 407Z" fill="currentColor"/>
+    </svg>
+    DailyOS · Planning
+  </a>
+  <div class="plans-topnav-links">
+    <a href="engineering-ladder.html">Engineering Ladder</a>
+    <a href="foreground-db-contention/L0-packet.md">Foreground DB Contention</a>
+    <a href="db-write-queue-consolidation.html" data-active="true">Write-Queue Consolidation</a>
+    <a href="AUTHORING.md">Authoring Ruleset</a>
+  </div>
+</nav>
+
+<!-- COVER -->
+<section class="plans-cover">
+  <p class="plans-eyebrow">DailyOS · Substrate</p>
+  <h1 class="plans-title">Five small changes. One gate. Earn the rest.</h1>
+  <p class="plans-kicker">A surgical sweep that closes today&rsquo;s storm class and catches future regressions, without rewriting type signatures we may never need to.</p>
+  <p class="plans-lede">
+    The substrate is right. The pool is right. What&rsquo;s missing is fixing the five hot bypass sites that
+    fire constantly, closing the one pathological row inside the backfill, and adding a CI gate so a
+    sixth bypass can&rsquo;t land. About 400 lines of real change across five independently-shippable PRs. The
+    bigger structural refactor (type-system split between read and write handles) is named here as a
+    contingent next step, gated on whether a third storm proves the gate insufficient.
+  </p>
+  <div class="plans-meta">
+    <span>Drafted 2026-05-26</span>
+    <span>Triggered by DOS-7 backfill storm</span>
+    <span>v2 &middot; supersedes v1 draft</span>
+    <span>Tier 1 &middot; HTML-first</span>
+  </div>
+</section>
+
+<!-- =====================================================================
+     SECTION 1 — What we're fixing
+     ===================================================================== -->
+<section class="plans-section" aria-labelledby="section-fixing">
+  <header class="plans-section-header">
+    <p class="plans-section-eyebrow">The actual problem</p>
+    <h2 id="section-fixing" class="plans-section-title">Two real things broke. Everything else is downstream of them.</h2>
+    <p class="plans-section-lede">
+      Today&rsquo;s storm has one cause inside one transaction (a runaway backfill row) and one amplifier outside it
+      (five high-frequency writers that bypass the queue). Fix those two and the storm class closes. The rest of
+      the substrate is fine.
+    </p>
+  </header>
+
+  <p class="plans-subhead">Cause &middot; one pathological row inside one transaction</p>
+  <p>
+    <code>runtime_evidence_backfill</code> slice 12 entered <code>BEGIN IMMEDIATE</code> on the writer queue and held it for
+    10+ minutes. The slice is fine in general &mdash; slices 1&ndash;11 ran ~2s each. Slice 12 hits an action at
+    offset 110 that triggers one of three things: an exponential <code>withdraw_claim</code> chain (an action with many
+    historical claims, each withdrawn in its own nested transaction), an unbounded <code>claim_corroborations</code>
+    LEFT JOIN inside <code>projection_claim_preflight</code> with no covering index, or a runaway
+    <code>shadow_canonicalization_record</code> against thousands of candidate inputs. These are correctness bugs
+    inside the claim substrate, not architecture bugs in the queue.
+  </p>
+
+  <p class="plans-subhead">Amplifier &middot; five high-frequency writers competing for the WAL lock</p>
+  <p>
+    While slice 12 holds the writer queue&rsquo;s connection, five other writers fire on their own cadences against
+    their own independent <code>SQLite::Connection</code> handles obtained via <code>ActionDb::open(&hellip;)</code>. Each one waits
+    <code>busy_timeout = 5,000ms</code> on <code>BEGIN IMMEDIATE</code>, fails with &ldquo;database is locked,&rdquo; and tries again. The
+    queue&rsquo;s serial guarantee covers its own connection only, not the database file.
+  </p>
+
+  <table class="bypass-table">
+    <thead>
+      <tr>
+        <th>Site</th>
+        <th>What it writes</th>
+        <th>Firing cadence</th>
+        <th>Severity</th>
+      </tr>
+    </thead>
+    <tbody>
+      <tr data-severity="critical">
+        <td><code>pty.rs:387</code></td>
+        <td><code>app_state_kv</code> rows for <code>ai_usage_daily</code> / <code>ai_usage_recent</code> / <code>ai_daily_token_usage</code></td>
+        <td>Every PTY call (~5s)</td>
+        <td>Critical</td>
+      </tr>
+      <tr data-severity="critical">
+        <td><code>intel_queue.rs:1185</code></td>
+        <td>Enrichment side-writes + assessment upsert per dequeued entity</td>
+        <td>Every enrichment event</td>
+        <td>Critical</td>
+      </tr>
+      <tr data-severity="high">
+        <td><code>processor/transcript.rs:2072</code></td>
+        <td><code>captured_commitments</code> + role-change + key-advocate upserts</td>
+        <td>Per transcript processed</td>
+        <td>High</td>
+      </tr>
+      <tr data-severity="high">
+        <td><code>self_healing/scheduler.rs</code> + <code>quality.rs</code></td>
+        <td><code>entity_quality</code> coherence updates</td>
+        <td>Background coherence sweep</td>
+        <td>High</td>
+      </tr>
+      <tr data-severity="high">
+        <td><code>capture.rs:290</code></td>
+        <td>Downstream transcript writes via <code>process_transcript</code></td>
+        <td>On transcript capture</td>
+        <td>High</td>
+      </tr>
+      <tr data-severity="high">
+        <td><code>executor.rs:633</code></td>
+        <td><code>reconcile::run_reconciliation</code> writes via passed-in <code>&amp;ActionDb</code></td>
+        <td>Archive workflow run</td>
+        <td>High</td>
+      </tr>
+      <tr data-severity="high">
+        <td><code>executor.rs:658</code></td>
+        <td><code>impact_rollup::rollup_daily_impact</code> &mdash; wins/risks rolled up</td>
+        <td>Daily impact rollup</td>
+        <td>High</td>
+      </tr>
+      <tr data-severity="high">
+        <td><code>executor.rs:690</code></td>
+        <td><code>db.archive_stale_actions(30)</code> &mdash; archives stale pending actions</td>
+        <td>Archive workflow run</td>
+        <td>High</td>
+      </tr>
+      <tr data-severity="high">
+        <td><code>executor.rs:702</code></td>
+        <td><code>reconcile::persist_meetings</code> &mdash; meeting persistence + prep freeze</td>
+        <td>Archive workflow run</td>
+        <td>High</td>
+      </tr>
+      <tr data-severity="high">
+        <td><code>executor.rs:807</code></td>
+        <td><code>processor::process_all</code> &mdash; inbox classification writes</td>
+        <td>Inbox pipeline run</td>
+        <td>High</td>
+      </tr>
+      <tr data-severity="high">
+        <td><code>executor.rs:1053</code></td>
+        <td><code>deliver_schedule</code> + <code>deliver_actions</code> &mdash; entity-resolution dedup writes</td>
+        <td>Today pipeline run</td>
+        <td>High</td>
+      </tr>
+      <tr data-severity="high">
+        <td><code>workspace_backfill.rs:226</code></td>
+        <td><code>LifecycleRepo</code> upserts via <code>with_transaction</code> on a fresh open</td>
+        <td>Workspace backfill runs</td>
+        <td>High</td>
+      </tr>
+    </tbody>
+  </table>
+
+  <p>
+    The audit found ~850 total write sites across <code>src-tauri/src/</code>. ~259 already route through
+    <code>state.db_write</code>. ~195 use <code>ActionDb::open()</code> but most are read-only. The twelve rows above are the
+    confirmed write bypasses. Closing them closes the storm class for everything we&rsquo;ve observed.
+  </p>
+
+  <p class="plans-subhead">The anti-pattern hiding in <code>executor.rs</code></p>
+  <p>
+    Lines 632 and 1052 both carry the comment <em>&ldquo;Own DB connection to avoid starving foreground IPC commands.&rdquo;</em>
+    The reasoning is inverted. A separate <code>SQLite::Connection</code> doesn&rsquo;t dodge the writer queue &mdash; it competes
+    with the writer queue&rsquo;s connection for the WAL write reservation. Two callers both invoking <code>BEGIN IMMEDIATE</code>
+    is exactly the contention pattern that produces &ldquo;database is locked.&rdquo; The author was being polite to the
+    queue and feeding the storm at the same time.
+  </p>
+  <p>
+    This comment is worth capturing as a K-out learning: <strong>opening a separate connection does not avoid
+    contention; it creates it.</strong> The right way to be polite to foreground commands is to use
+    <code>WritePriority::Background</code> (deferred) or to break the work into smaller transactions that release the
+    writer between slices &mdash; both of which are the &ldquo;earn the rest&rdquo; work, not today&rsquo;s work. Today&rsquo;s work is
+    just to remove the inverted-model bypass and route through the queue.
+  </p>
+
+  <p class="plans-subhead">Caller-dependent &middot; <code>services/claims_backfill.rs</code></p>
+  <p>
+    The file contains 40+ <code>conn_ref()</code> write sites and <code>with_transaction</code> blocks. As a service module,
+    it&rsquo;s designed to receive a <code>db: &amp;ActionDb</code> from a caller. Whether each write bypasses depends entirely on
+    the caller&rsquo;s context: safe if invoked from <code>state.db_write(|db| ...)</code>, bypass if invoked from a fresh
+    <code>ActionDb::open()</code>. A caller audit is part of Change 2 &mdash; the fix is to enforce one entry path.
+  </p>
+</section>
+
+<!-- =====================================================================
+     SECTION 2 — The five changes
+     ===================================================================== -->
+<section class="plans-section" aria-labelledby="section-changes">
+  <header class="plans-section-header">
+    <p class="plans-section-eyebrow">The plan</p>
+    <h2 id="section-changes" class="plans-section-title">Five PRs. ~400 lines. Each one independently shippable.</h2>
+    <p class="plans-section-lede">
+      Ordered from highest leverage to lowest. Change 1 unblocks the running app today. Changes 2&ndash;3 close
+      the storm class. Changes 4&ndash;5 keep it closed.
+    </p>
+  </header>
+
+  <div class="change-grid">
+
+    <article class="change-card" data-tone="terracotta">
+      <p class="change-card-id">Change 1 &middot; Correctness</p>
+      <h3 class="change-card-title">Find and fix the slice-12 hang itself.</h3>
+      <p class="change-card-meta">~50&ndash;150 LOC &middot; <code>src-tauri/src/services/action_claims.rs</code>, <code>services/claims.rs</code>, <code>services/intelligence.rs</code></p>
+      <p class="change-card-prose">
+        Diagnose first; fix second. Add per-row logging in <code>backfill_action_open_loop_claims_batch</code> so we know which
+        action ID is pathological. Inspect that action&rsquo;s claim history. The fix is one of three known patterns
+        depending on what we find.
+      </p>
+      <ul class="change-card-bullets">
+        <li>Add <code>log::info!</code> before each action loop iteration with <code>action.id</code> and active-claim count</li>
+        <li>Replay the storm; capture the offending action ID</li>
+        <li>If exponential <code>withdraw_claim</code> chain: cap claim withdrawal at N per pass, defer the rest</li>
+        <li>If unbounded <code>claim_corroborations</code> JOIN: add covering index on <code>(claim_id, data_source)</code></li>
+        <li>If runaway <code>shadow_canonicalization</code>: bound candidate set or move outside the per-row transaction</li>
+        <li>Regression test: a single action with 100+ historical claims completes its slice in &lt; 1s</li>
+      </ul>
+    </article>
+
+    <article class="change-card" data-tone="larkspur">
+      <p class="change-card-id">Change 2 &middot; Hot-bypass sweep</p>
+      <h3 class="change-card-title">Route the twelve confirmed bypasses through state.db_write.</h3>
+      <p class="change-card-meta">~300&ndash;400 LOC &middot; one PR per site &middot; mechanical &middot; parallel-codex eligible</p>
+      <p class="change-card-prose">
+        Each site from the audit table becomes a <code>state.db_write</code> closure. The transformations are local and
+        well-typed. Parallel-codex can land most of these from the table as input. No ordering required between
+        them. The <code>executor.rs</code> sites all carry the same inverted-model comment &mdash; remove the comment and
+        route through the queue in the same PR.
+      </p>
+      <ul class="change-card-bullets">
+        <li><strong>Critical:</strong> <code>pty.rs:387</code> &mdash; <code>write_json_kv</code> + <code>read_json_kv</code> take <code>&amp;AppState</code>; <code>record_ai_usage</code> awaits <code>state.db_write</code></li>
+        <li><strong>Critical:</strong> <code>intel_queue.rs:1185</code> &mdash; <code>apply_enrichment_side_writes</code> + <code>upsert_assessment_from_enrichment</code> move inside <code>state.db_write</code></li>
+        <li><strong>High:</strong> <code>processor/transcript.rs:2072</code> &mdash; transcript writes use <code>state.db_write</code> for the commit phase</li>
+        <li><strong>High:</strong> <code>capture.rs:290</code> &mdash; capture path takes <code>&amp;AppState</code>, routes through queue</li>
+        <li><strong>High:</strong> <code>self_healing/scheduler.rs</code> + <code>quality.rs</code> &mdash; coherence updates routed through queue</li>
+        <li><strong>Workflow:</strong> <code>executor.rs</code> archive flow &mdash; lines 633, 658, 690, 702 routed through queue; strip the &ldquo;own DB connection&rdquo; comment</li>
+        <li><strong>Workflow:</strong> <code>executor.rs</code> inbox + today flows &mdash; lines 807, 1053 routed through queue</li>
+        <li><strong>Backfill:</strong> <code>workspace_backfill.rs:226</code> &mdash; fresh open replaced; callers pass <code>&amp;AppState</code> and use <code>state.db_write</code> for the upsert paths</li>
+        <li><strong>Audit:</strong> <code>services/claims_backfill.rs</code> caller audit &mdash; trace every public-fn caller; confirm each invocation is from a <code>db_write</code> closure</li>
+      </ul>
+    </article>
+
+    <article class="change-card" data-tone="eucalyptus">
+      <p class="change-card-id">Change 3 &middot; CI gate</p>
+      <h3 class="change-card-title">Forbidden-pattern lint on ActionDb::open + writes.</h3>
+      <p class="change-card-meta">~50 LOC &middot; new <code>.github/workflows/db-bypass-check.yml</code> + <code>scripts/check-db-bypass.sh</code></p>
+      <p class="change-card-prose">
+        A grep-based gate that blocks PRs introducing <code>ActionDb::open(&hellip;)</code> followed by <code>INSERT</code>,
+        <code>UPDATE</code>, <code>DELETE</code>, or <code>with_transaction</code> in the same function. Maintains a small allowlist
+        for the known legitimate fresh-open paths (<code>db_backup.rs</code>, <code>doctor.rs</code>, migrations, startup). New
+        bypasses require an allowlist entry, which is reviewable.
+      </p>
+      <ul class="change-card-bullets">
+        <li>Allowlist file at <code>.docs/decisions/db-fresh-open-allowlist.md</code> &mdash; named sites with rationale</li>
+        <li>Grep pattern: <code>ActionDb::open</code> within 30 lines of <code>INSERT|UPDATE|DELETE|with_transaction</code>, minus allowlist</li>
+        <li>Runs on every PR touching <code>src-tauri/</code></li>
+        <li>Failure message points to this plan and the foreground-db-contention L0 packet</li>
+        <li>Optional follow-up: clippy lint via a custom <code>dylint</code> if the grep gate proves too coarse</li>
+      </ul>
+    </article>
+
+    <article class="change-card" data-tone="saffron">
+      <p class="change-card-id">Change 4 &middot; Error variants</p>
+      <h3 class="change-card-title">Split DbError::Migration into two variants.</h3>
+      <p class="change-card-meta">~30 LOC &middot; <code>src-tauri/src/db/types.rs</code> + a handful of call-site updates</p>
+      <p class="change-card-prose">
+        Today every busy/locked error inside a service helper gets wrapped as &ldquo;Schema migration failed.&rdquo; That label
+        is wrong and it&rsquo;s drowning real migration failures in runtime contention noise. Two variants, one rename,
+        no behavior change.
+      </p>
+      <ul class="change-card-bullets">
+        <li>Rename <code>DbError::Migration</code> &rarr; <code>DbError::SchemaMigration</code></li>
+        <li>Add <code>DbError::WriteContention(String)</code> for busy/locked at runtime</li>
+        <li>Update wrapping sites in <code>services/invalidation_jobs.rs</code> and friends to emit the right variant</li>
+        <li>Telemetry can now distinguish &ldquo;migrations are broken&rdquo; from &ldquo;writers are starving&rdquo;</li>
+      </ul>
+    </article>
+
+    <article class="change-card" data-tone="sage">
+      <p class="change-card-id">Change 5 &middot; Deprecation signpost</p>
+      <h3 class="change-card-title">#[deprecated] on ActionDb::open with a note pointing at db_write.</h3>
+      <p class="change-card-meta">~10 LOC &middot; <code>src-tauri/src/db/core.rs</code></p>
+      <p class="change-card-prose">
+        Once Change 2 lands, the remaining <code>ActionDb::open</code> sites are read-only or on the allowlist. Mark the
+        function <code>#[deprecated]</code> with a note that says &ldquo;use <code>state.db_read</code> or <code>state.db_write</code>; see
+        <code>db-write-queue-consolidation.html</code>.&rdquo; New callers see the warning in their IDE; reviewers see it in
+        the diff. Belt and suspenders with Change 3&rsquo;s CI gate.
+      </p>
+      <ul class="change-card-bullets">
+        <li>Single <code>#[deprecated(note = &quot;&hellip;&quot;)]</code> annotation</li>
+        <li>Allowlist entries suppress the warning via <code>#[allow(deprecated)]</code> with a comment naming the entry</li>
+        <li>Compiler+IDE catches new uses before CI does &mdash; cheaper feedback loop than the gate</li>
+      </ul>
+    </article>
+
+  </div>
+
+  <p class="plans-subhead">Total scope</p>
+  <p>
+    Across all five PRs, roughly 300&ndash;450 lines of real code change plus the gate workflow. No new types. No
+    new queue infrastructure. No new dispatch logic. The existing <code>DbService</code> stays exactly as it is &mdash; one
+    writer, two readers, dedicated threads, serialized SQLCipher key verification, busy-timeout
+    pragmas, GLOBAL singleton. The plan is to <em>use</em> it consistently, not to <em>replace</em> it.
+  </p>
+</section>
+
+<!-- =====================================================================
+     SECTION 3 — What we're explicitly NOT building (yet)
+     ===================================================================== -->
+<section class="plans-section" aria-labelledby="section-not-yet">
+  <header class="plans-section-header">
+    <p class="plans-section-eyebrow">Earn the rest</p>
+    <h2 id="section-not-yet" class="plans-section-title">Type-system split and cooperative-yield scheduler are named and gated, not built.</h2>
+    <p class="plans-section-lede">
+      Two pieces of larger structural work were in the v1 draft of this plan. Both are on hold with explicit
+      trigger criteria. If neither trigger fires, they don&rsquo;t get built. ADR-0067&rsquo;s &ldquo;earn it&rdquo; discipline,
+      applied one level deeper.
+    </p>
+  </header>
+
+  <p class="plans-subhead">Held &middot; ReadDb / WriteHandle type-system split</p>
+  <p>
+    A compile-time split between read-only and write-capable database handles makes bypass structurally impossible.
+    It also touches hundreds of method signatures across the codebase. Today we can&rsquo;t justify that scope &mdash; the
+    five known bypass sites are concrete and the CI gate catches future ones cheaply.
+  </p>
+  <p>
+    <strong>Trigger to build it:</strong> if a sixth high-frequency bypass lands and the CI gate didn&rsquo;t catch it,
+    or if two more storms in this class fire within six months. Either of those proves the grep gate is too
+    coarse and structural enforcement is worth the migration cost.
+  </p>
+
+  <p class="plans-subhead">Held &middot; Priority queue with cooperative yield</p>
+  <p>
+    The v1 draft proposed a <code>WritePriority</code> enum and a <code>YieldableJob</code> path so long backfills release the writer
+    between slices. Today this is unnecessary: the existing 15-second <code>SLICE_PAUSE_MS</code> between slices already
+    gives the queue plenty of breathing room, and Change 1 fixes the per-row hang that turned slice 12 into a
+    10-minute writer hold.
+  </p>
+  <p>
+    <strong>Trigger to build it:</strong> if a backfill is observed holding the writer for &gt; 5 seconds in any slice
+    after Change 1 lands. The new <code>db_writer.slot_held_ms</code> telemetry (a side-effect of Change 4&rsquo;s rename pass)
+    will catch this. Without that signal, the yield infrastructure is solving a problem we don&rsquo;t have.
+  </p>
+
+  <p class="plans-subhead">Also out of scope</p>
+  <ul class="change-card-bullets">
+    <li>No second encrypted DB. Rejected at the foreground-db-contention L0 for sync / key-rotation / purge cost.</li>
+    <li>No CQRS or materialized read models. Those remain gated on read-side metrics, not write-side contention.</li>
+    <li>No async driver swap. Sync-on-dedicated-thread is fine.</li>
+    <li>No rewrite of the abilities runtime. Abilities accept a writer handle through context, whatever shape that handle has today.</li>
+  </ul>
+</section>
+
+<!-- =====================================================================
+     SECTION 4 — Acceptance criteria
+     ===================================================================== -->
+<section class="plans-section" aria-labelledby="section-ac">
+  <header class="plans-section-header">
+    <p class="plans-section-eyebrow">Done means done</p>
+    <h2 id="section-ac" class="plans-section-title">Acceptance criteria.</h2>
+    <p class="plans-section-lede">
+      Each criterion is testable against real data. No surrogates.
+    </p>
+  </header>
+
+  <ul class="change-card-bullets">
+    <li><strong>AC1 &middot; Storm reproduction safe.</strong> Replay the DOS-7 backfill-after-restore scenario; backfill completes; no &ldquo;database is locked&rdquo; warnings; PTY <code>ai_usage</code> flush never fails.</li>
+    <li><strong>AC2 &middot; Pathological action handled.</strong> The specific action ID found in Change 1 completes its slice in &lt; 1s in a regression test.</li>
+    <li><strong>AC3 &middot; Hot bypasses closed.</strong> The twelve confirmed bypass sites in the audit table either route through <code>state.db_write</code> or are on the documented allowlist with rationale. <code>claims_backfill.rs</code> caller audit complete with every public-fn caller invoked from a <code>db_write</code> closure.</li>
+    <li><strong>AC4 &middot; Gate active.</strong> A test PR that introduces <code>ActionDb::open</code> followed by an <code>INSERT</code> fails CI. A test PR that adds an allowlist entry passes.</li>
+    <li><strong>AC5 &middot; Telemetry separates classes.</strong> <code>DbError::Migration</code> is no longer reachable from runtime busy paths. <code>WriteContention</code> labels every runtime busy/locked error.</li>
+    <li><strong>AC6 &middot; Deprecation visible.</strong> <code>cargo clippy -- -D warnings</code> still passes, but new <code>ActionDb::open</code> uses without <code>#[allow(deprecated)]</code> trigger an IDE warning.</li>
+  </ul>
+</section>
+
+<!-- =====================================================================
+     SECTION 5 — Sequencing and review
+     ===================================================================== -->
+<section class="plans-section" aria-labelledby="section-sequencing">
+  <header class="plans-section-header">
+    <p class="plans-section-eyebrow">Sequencing</p>
+    <h2 id="section-sequencing" class="plans-section-title">Order matters between Changes 1 and 2. Everything else is parallel.</h2>
+    <p class="plans-section-lede">
+      Change 1 first because it&rsquo;s the running-app blocker. Change 2 second because closing the amplifiers
+      prevents the next storm. Changes 3&ndash;5 can land in any order after that, or in parallel.
+    </p>
+  </header>
+
+  <ul class="change-card-bullets">
+    <li><strong>Day 0&ndash;1 &middot; Change 1.</strong> Add diagnostic logging, replay storm, identify offending action, ship fix. L2 review by <code>ce-correctness-reviewer</code> + <code>codex review</code>.</li>
+    <li><strong>Day 1&ndash;4 &middot; Change 2.</strong> ~Twelve PRs in parallel via codex sweep. Each one routes one site through <code>state.db_write</code>. Group the six <code>executor.rs</code> sites into one PR (same anti-pattern, same fix). L2 review per PR; the executor PR also captures the inverted-model anti-pattern as a K-out learning.</li>
+    <li><strong>Day 2&ndash;4 &middot; Changes 3, 4, 5 in parallel.</strong> CI gate, error rename, deprecation annotation. Cheap. Mostly mechanical.</li>
+    <li><strong>L0 review:</strong> the canonical 4-reviewer panel (codex challenge + ce-feasibility + ce-scope-guardian + ce-architecture-strategist). No 5th slot needed; the surface is small.</li>
+    <li><strong>L3 review:</strong> codex challenge on integrated diff + <code>ce-architecture-strategist</code>. Storm-reproduction test in the proof bundle.</li>
+  </ul>
+</section>
+
+<!-- =====================================================================
+     SECTION 6 — Related work
+     ===================================================================== -->
+<section class="plans-section plans-section-footer" aria-labelledby="section-related">
+  <header class="plans-section-header">
+    <p class="plans-section-eyebrow">Related</p>
+    <h2 id="section-related" class="plans-section-title">How this plan relates to others.</h2>
+  </header>
+  <ul style="list-style:none;padding:0;margin:0;display:flex;flex-direction:column;gap:var(--space-md);font-family:var(--font-sans);font-size:14px;line-height:1.6;color:var(--color-text-secondary)">
+    <li>
+      <strong>foreground-db-contention/L0-packet.md</strong> &mdash;
+      The L0 packet&rsquo;s Phase 1 (foreground read purity) shipped and stays. This plan is the lighter half of what
+      that packet called &ldquo;Phase 2,&rdquo; with the heavier half (type-system split) deferred behind explicit triggers.
+    </li>
+    <li>
+      <strong>ADR-0067 &middot; resume-latency-and-db-concurrency-guardrails</strong> &mdash;
+      Its &ldquo;earn the pool/queue&rdquo; discipline applies here too: earn the type-system split with a second storm,
+      not a hypothetical one.
+    </li>
+    <li>
+      <strong>ADR-0092 &middot; data-security-at-rest-and-operational-hardening</strong> &mdash;
+      Untouched. SQLCipher key initialization stays where it is. <code>open_fresh_serialized</code> stays.
+    </li>
+    <li>
+      <strong>ADR-0102 / ADR-0103 &middot; abilities-runtime + maintenance-constraints</strong> &mdash;
+      Abilities continue to receive a database handle through context. The shape of that handle (current
+      <code>ActionDb</code> vs future <code>WriteHandle</code>) doesn&rsquo;t change in this plan.
+    </li>
+    <li>
+      <strong>K-out solution (post-merge)</strong> &mdash;
+      <code>docs/solutions/architecture-patterns/db-write-queue-storm-closure-2026-05-NN.md</code>: the storm class, the
+      five-site sweep, the CI gate, and the triggers for the deferred structural work.
+    </li>
+    <li>
+      <strong>Unwritten ADR at <code>db_service.rs:11</code></strong> &mdash;
+      The &ldquo;ADR followup, not yet numbered&rdquo; reference stays unwritten for now. When the structural split is
+      earned, that ADR gets written then. Today, this plan + the K-out solution are sufficient capture.
+    </li>
+  </ul>
+</section>
+
+<!-- FINIS -->
+<div class="finis">
+  <div class="finis-mark">DB · STORM · CLOSURE</div>
+  <div class="finis-date">db-write-queue-consolidation v2 &middot; 2026-05-26</div>
+  <div class="finis-caption">Fix what&rsquo;s broken. Gate what could break. Earn what hasn&rsquo;t broken yet.</div>
+</div>
+
+</div>
+</main>
+</div>
+</body>
+</html>
