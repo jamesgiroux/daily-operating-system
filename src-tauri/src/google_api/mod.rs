@@ -260,7 +260,7 @@ pub fn token_path() -> PathBuf {
 pub fn credentials_path() -> PathBuf {
     dirs::home_dir()
         .unwrap_or_default()
-        .join(".dailyos")
+        .join(".dailyos") // dailyos-path-allowed: OAuth client credentials are app-level, shared across DB modes
         .join("google")
         .join("credentials.json")
 }

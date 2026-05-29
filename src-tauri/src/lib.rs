@@ -499,7 +499,7 @@ pub fn run() {
                 tauri::async_runtime::spawn(async move {
                     let models_dir = dirs::home_dir()
                         .unwrap_or_default()
-                        .join(".dailyos")
+                        .join(".dailyos") // dailyos-path-allowed: shared embedding models dir, retained across DB modes
                         .join("models");
                     match tokio::task::spawn_blocking(move || model.initialize(models_dir)).await {
                         Ok(Ok(())) => log::info!("Embedding model ready (background init)"),

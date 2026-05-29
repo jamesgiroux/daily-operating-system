@@ -189,7 +189,7 @@ where
 fn doctor_runtime_sentinel_path() -> Option<PathBuf> {
     std::env::var_os("HOME").map(|home| {
         let mut path = PathBuf::from(home);
-        path.push(".dailyos");
+        path.push(".dailyos"); // dailyos-path-allowed: diagnostic mirror of the runtime sentinel path via HOME, usable when the runtime can't boot
         path.push("runtime-endpoint.json");
         path
     })
@@ -318,7 +318,7 @@ pub fn inspect_pairing() -> PairingDoctorReport {
     // the runtime would be able to emit audit rows; it does NOT write a probe record.
     if let Some(home) = std::env::var_os("HOME") {
         let mut audit_path = PathBuf::from(home);
-        audit_path.push(".dailyos");
+        audit_path.push(".dailyos"); // dailyos-path-allowed: diagnostic audit-log writeability probe via HOME
         audit_path.push("audit.log");
         report.audit_log_writable = std::fs::OpenOptions::new()
             .create(true)
@@ -387,7 +387,7 @@ mod tests {
     fn pairing_doctor_parses_valid_sentinel() {
         let _guard = HOME_ENV_LOCK.lock().unwrap();
         let dir = tempfile::tempdir().expect("tempdir");
-        let dailyos_dir = dir.path().join(".dailyos");
+        let dailyos_dir = dir.path().join(".dailyos"); // dailyos-path-allowed: test temp dir
         std::fs::create_dir_all(&dailyos_dir).expect("mkdir");
         std::fs::write(
             dailyos_dir.join("runtime-endpoint.json"),
@@ -425,7 +425,7 @@ mod tests {
     fn pairing_doctor_flags_unparseable_sentinel() {
         let _guard = HOME_ENV_LOCK.lock().unwrap();
         let dir = tempfile::tempdir().expect("tempdir");
-        let dailyos_dir = dir.path().join(".dailyos");
+        let dailyos_dir = dir.path().join(".dailyos"); // dailyos-path-allowed: test temp dir
         std::fs::create_dir_all(&dailyos_dir).expect("mkdir");
         std::fs::write(dailyos_dir.join("runtime-endpoint.json"), "not json")
             .expect("write sentinel");

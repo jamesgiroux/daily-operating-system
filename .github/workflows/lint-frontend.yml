@@ -109,6 +109,9 @@ jobs:
       - name: Enforce DB open guard allowlist
         run: bash src-tauri/scripts/check_db_open_guard_allowlist.sh
 
+      - name: Enforce DailyOS data-path resolver allowlist
+        run: bash src-tauri/scripts/check_dailyos_path_resolver_allowlist.sh
+
       - name: Enforce ability surface drift guard
         run: |
           bash src-tauri/scripts/check_ability_surface_drift.sh

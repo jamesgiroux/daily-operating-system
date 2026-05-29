@@ -853,7 +853,7 @@ pub fn purge_mock_data(_state: &AppState) -> Result<String, String> {
 /// Returns indicators for: dev DB file exists, dev workspace dir exists.
 pub fn check_dev_artifacts() -> (bool, bool) {
     let home = dirs::home_dir().unwrap_or_default();
-    let dev_db_exists = home.join(".dailyos").join("dailyos-dev.db").exists();
+    let dev_db_exists = home.join(".dailyos").join("dailyos-dev.db").exists(); // dailyos-path-allowed: debug-only dev-artifact probe (Mock-mode file)
     let dev_workspace_exists = dev_workspace().exists();
     (dev_db_exists, dev_workspace_exists)
 }
@@ -872,7 +872,7 @@ pub fn clean_dev_artifacts(include_workspace: bool) -> Result<String, String> {
 
     // Dev DB files
     for filename in &["dailyos-dev.db", "dailyos-dev.db-wal", "dailyos-dev.db-shm"] {
-        let path = home.join(".dailyos").join(filename);
+        let path = home.join(".dailyos").join(filename); // dailyos-path-allowed: debug-only dev-artifact cleanup (Mock-mode files)
         if path.exists() {
             std::fs::remove_file(&path)
                 .map_err(|e| format!("Failed to delete {}: {}", filename, e))?;
@@ -957,7 +957,7 @@ pub fn get_dev_state(state: &AppState, counts: DevStateCounts) -> Result<DevStat
 /// Reset everything to first-run state.
 fn reset_all(state: &AppState) -> Result<(), String> {
     let home = dirs::home_dir().ok_or("Could not find home directory")?;
-    let dailyos_dir = home.join(".dailyos");
+    let dailyos_dir = home.join(".dailyos"); // dailyos-path-allowed: root for mode-scoped delete list below
 
     // Reset deletes the active DB file. Drop the process-wide sync routing
     // first so subsequent ActionDb::open() calls cannot go through a stale
@@ -971,15 +971,21 @@ fn reset_all(state: &AppState) -> Result<(), String> {
     };
 
     // 2. Delete config and state files.
-    // When dev DB mode is active, only delete the dev DB — not the live one.
-    let db_files: Vec<std::path::PathBuf> = if crate::db::is_dev_db_mode() {
-        vec![
+    // Mode-aware: each DB mode only deletes its own DB file, never another
+    // mode's. The filenames mirror ActionDb::db_path()'s per-mode resolution,
+    // so Replica/Mock resets can never reach the production DB.
+    let db_files: Vec<std::path::PathBuf> = match crate::db::db_mode() {
+        crate::db::DbMode::Mock => vec![
             dailyos_dir.join("dailyos-dev.db"),
             dailyos_dir.join("dailyos-dev.db-wal"),
             dailyos_dir.join("dailyos-dev.db-shm"),
-        ]
-    } else {
-        vec![
+        ],
+        crate::db::DbMode::Replica => vec![
+            dailyos_dir.join("dailyos-replica.db"),
+            dailyos_dir.join("dailyos-replica.db-wal"),
+            dailyos_dir.join("dailyos-replica.db-shm"),
+        ],
+        crate::db::DbMode::Live => vec![
             dailyos_dir.join("dailyos.db"),
             dailyos_dir.join("dailyos.db-wal"),
             dailyos_dir.join("dailyos.db-shm"),
@@ -987,7 +993,7 @@ fn reset_all(state: &AppState) -> Result<(), String> {
             dailyos_dir.join("actions.db"),
             dailyos_dir.join("actions.db-wal"),
             dailyos_dir.join("actions.db-shm"),
-        ]
+        ],
     };
 
     // Use config_path() so dev mode deletes config-dev.json, not live config.json

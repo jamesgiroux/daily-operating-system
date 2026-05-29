@@ -1790,7 +1790,10 @@ fn mode_paths_for(
     configured_workspace_path: Option<&str>,
 ) -> Result<DbModePaths, String> {
     let home = dirs::home_dir().ok_or("Could not find home directory")?;
-    let dailyos_dir = home.join(".dailyos");
+    // Single source of truth for the `.dailyos` data root. In test builds this
+    // resolves to a process-isolated temp dir so the resolver can never reach
+    // the real user data directory, matching ActionDb's DB-path isolation.
+    let dailyos_dir = crate::db::dailyos_data_dir().map_err(|e| e.to_string())?;
     let live_workspace = configured_workspace_path
         .and_then(|path| {
             if path.trim().is_empty() {
@@ -1860,11 +1863,10 @@ fn apply_active_mode_paths(config: &mut Config) -> Result<bool, String> {
 ///
 /// Either signal triggers recovery. Also cleans up `config-dev.json` (Phase 4).
 fn recover_from_unclean_dev_exit() {
-    let home = match dirs::home_dir() {
-        Some(h) => h,
-        None => return,
+    let dailyos_dir = match crate::db::dailyos_data_dir() {
+        Ok(dir) => dir,
+        Err(_) => return,
     };
-    let dailyos_dir = home.join(".dailyos");
     let config = dailyos_dir.join("config.json");
     let backup = config.with_extension("json.dev-backup");
     let sentinel = dailyos_dir.join(".dev-mode-active");
@@ -1951,8 +1953,8 @@ fn recover_from_unclean_dev_exit() {
 
 /// Path to the dev-mode sentinel file.
 pub(crate) fn dev_mode_sentinel_path() -> Result<std::path::PathBuf, String> {
-    let home = dirs::home_dir().ok_or("Could not find home directory")?;
-    Ok(home.join(".dailyos").join(".dev-mode-active"))
+    let dailyos_dir = crate::db::dailyos_data_dir().map_err(|e| e.to_string())?;
+    Ok(dailyos_dir.join(".dev-mode-active"))
 }
 
 /// Get the active config file path for the current database mode.

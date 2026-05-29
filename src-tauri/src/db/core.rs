@@ -9,6 +9,8 @@
 use std::path::{Component, Path, PathBuf};
 use std::sync::atomic::{AtomicU8, Ordering};
 use std::sync::Arc;
+#[cfg(test)]
+use std::sync::OnceLock;
 
 use super::types::*;
 use crate::db::encryption;
@@ -85,6 +87,9 @@ static WRITE_TRANSACTION_HOLDER: parking_lot::Mutex<Option<WriteTransactionHolde
     parking_lot::const_mutex(None);
 const WORKSPACE_GRAPH_DIAGNOSTIC_KEY_DERIVATION_DOMAIN: &[u8] =
     b"DAILYOS-WORKSPACE-GRAPH-DIAGNOSTIC-HANDLE-V1\n";
+
+#[cfg(test)]
+static TEST_DAILYOS_DATA_DIR: OnceLock<PathBuf> = OnceLock::new();
 
 #[derive(Clone, Debug)]
 struct WriteTransactionHolder {
@@ -170,14 +175,56 @@ pub fn set_dev_db_mode(enabled: bool) {
     set_db_mode(if enabled { DbMode::Mock } else { DbMode::Live });
 }
 
+/// Resolve the root directory for DailyOS application data.
+///
+/// Production builds use the user's normal data directory. Test builds use a
+/// process-unique directory under the system temp directory so tests cannot
+/// resolve the real user data directory, even when the DB mode is forced Live.
+#[cfg(not(test))]
+pub fn dailyos_data_dir() -> Result<PathBuf, DbError> {
+    dirs::home_dir()
+        .map(|home| home.join(".dailyos"))
+        .ok_or(DbError::HomeDirNotFound)
+}
+
+/// Resolve the root directory for DailyOS application data.
+///
+/// Production builds use the user's normal data directory. Test builds use a
+/// process-unique directory under the system temp directory so tests cannot
+/// resolve the real user data directory, even when the DB mode is forced Live.
+#[cfg(test)]
+pub fn dailyos_data_dir() -> Result<PathBuf, DbError> {
+    // Resolve and create the isolated test root exactly once. Creating it inside
+    // the OnceLock initializer avoids a per-call `create_dir_all` syscall on a
+    // shared path, which adds filesystem contention when thousands of tests
+    // resolve data paths concurrently.
+    Ok(TEST_DAILYOS_DATA_DIR
+        .get_or_init(|| {
+            let unique = std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .map(|duration| duration.as_nanos())
+                .unwrap_or(0);
+            let dir = std::env::temp_dir()
+                .join(format!(
+                    "dailyos-test-home-{}-{unique}",
+                    std::process::id()
+                ))
+                .join(".dailyos");
+            #[allow(
+                clippy::let_underscore_must_use,
+                reason = "best-effort create of the isolated test root; downstream writes surface real errors"
+            )]
+            let _ = std::fs::create_dir_all(&dir);
+            dir
+        })
+        .clone())
+}
+
 /// The production database file paths (live + legacy). These may be opened ONLY
 /// when `db_mode() == Live`; the guard below enforces it.
 fn prod_db_paths() -> Vec<PathBuf> {
-    dirs::home_dir()
-        .map(|home| {
-            let dir = home.join(".dailyos");
-            vec![dir.join("dailyos.db"), dir.join("actions.db")]
-        })
+    dailyos_data_dir()
+        .map(|dir| vec![dir.join("dailyos.db"), dir.join("actions.db")])
         .unwrap_or_default()
 }
 
@@ -827,8 +874,7 @@ impl ActionDb {
     }
 
     fn db_path() -> Result<PathBuf, DbError> {
-        let home = dirs::home_dir().ok_or(DbError::HomeDirNotFound)?;
-        let dailyos_dir = home.join(".dailyos");
+        let dailyos_dir = dailyos_data_dir()?;
 
         // DB-mode isolation: non-Live modes resolve to isolated files
         // and never to the production DB.
@@ -1113,28 +1159,6 @@ mod db_mode_tests {
 
     static DB_MODE_TEST_LOCK: std::sync::Mutex<()> = std::sync::Mutex::new(());
 
-    struct EnvVarGuard {
-        name: &'static str,
-        original: Option<std::ffi::OsString>,
-    }
-
-    impl EnvVarGuard {
-        fn set(name: &'static str, value: &Path) -> Self {
-            let original = std::env::var_os(name);
-            std::env::set_var(name, value);
-            Self { name, original }
-        }
-    }
-
-    impl Drop for EnvVarGuard {
-        fn drop(&mut self) {
-            match &self.original {
-                Some(value) => std::env::set_var(self.name, value),
-                None => std::env::remove_var(self.name),
-            }
-        }
-    }
-
     struct ResetDbMode;
 
     impl Drop for ResetDbMode {
@@ -1144,16 +1168,12 @@ mod db_mode_tests {
     }
 
     fn production_db_path() -> PathBuf {
-        dirs::home_dir()
-            .expect("home dir")
-            .join(".dailyos")
-            .join("dailyos.db")
+        dailyos_data_dir().expect("data dir").join("dailyos.db")
     }
 
     fn production_db_path_with_redundant_dot_segment() -> PathBuf {
-        dirs::home_dir()
-            .expect("home dir")
-            .join(".dailyos")
+        dailyos_data_dir()
+            .expect("data dir")
             .join(".")
             .join("dailyos.db")
     }
@@ -1230,33 +1250,20 @@ mod db_mode_tests {
     }
 
     #[test]
-    fn open_readonly_at_refuses_prod_path_in_replica_and_mock_when_absent() {
+    fn open_readonly_at_refuses_prod_path_in_replica_and_mock() {
         let _lock = DB_MODE_TEST_LOCK.lock().expect("db mode test lock");
         let _reset = ResetDbMode;
-        let temp_home = tempfile::tempdir().expect("temp home");
-        let _home = EnvVarGuard::set("HOME", temp_home.path());
         let prod_path = production_db_path();
-        assert!(
-            !prod_path.exists(),
-            "test requires the temp production DB file to be absent"
-        );
 
         assert_readonly_prod_open_denied(&prod_path, DbMode::Replica);
         assert_readonly_prod_open_denied(&prod_path, DbMode::Mock);
     }
 
     #[test]
-    fn open_readonly_at_refuses_prod_path_with_redundant_dot_segment_when_absent() {
+    fn open_readonly_at_refuses_prod_path_with_redundant_dot_segment() {
         let _lock = DB_MODE_TEST_LOCK.lock().expect("db mode test lock");
         let _reset = ResetDbMode;
-        let temp_home = tempfile::tempdir().expect("temp home");
-        let _home = EnvVarGuard::set("HOME", temp_home.path());
-        let prod_path = production_db_path();
         let redundant_path = production_db_path_with_redundant_dot_segment();
-        assert!(
-            !prod_path.exists(),
-            "test requires the temp production DB file to be absent"
-        );
 
         assert_readonly_prod_open_denied(&redundant_path, DbMode::Replica);
     }
@@ -1265,8 +1272,6 @@ mod db_mode_tests {
     fn open_readonly_at_allows_prod_path_in_live() {
         let _lock = DB_MODE_TEST_LOCK.lock().expect("db mode test lock");
         let _reset = ResetDbMode;
-        let temp_home = tempfile::tempdir().expect("temp home");
-        let _home = EnvVarGuard::set("HOME", temp_home.path());
         let prod_path = production_db_path();
         create_encrypted_prod_db(&prod_path);
 
@@ -1276,13 +1281,36 @@ mod db_mode_tests {
     }
 
     #[test]
+    fn live_mode_db_paths_stay_under_test_data_dir() {
+        let _lock = DB_MODE_TEST_LOCK.lock().expect("db mode test lock");
+        let _reset = ResetDbMode;
+
+        set_db_mode(DbMode::Live);
+
+        let test_data_dir = dailyos_data_dir().expect("test data dir");
+        let db_path = ActionDb::db_path().expect("db path");
+        let prod_paths = prod_db_paths();
+        let real_dailyos_dir = dirs::home_dir().expect("home dir").join(".dailyos");
+
+        assert!(test_data_dir.starts_with(std::env::temp_dir()));
+        assert_ne!(test_data_dir, real_dailyos_dir);
+        assert!(db_path.starts_with(&test_data_dir));
+        assert!(!db_path.starts_with(&real_dailyos_dir));
+        assert!(!prod_paths.is_empty());
+        for prod_path in prod_paths {
+            assert!(prod_path.starts_with(&test_data_dir));
+            assert!(!prod_path.starts_with(&real_dailyos_dir));
+        }
+    }
+
+    #[test]
     fn live_mode_resolves_config_workspace_and_google_token_to_live_paths() {
         let _lock = DB_MODE_TEST_LOCK.lock().expect("db mode test lock");
         let _reset = ResetDbMode;
 
         set_db_mode(DbMode::Live);
         let home = dirs::home_dir().expect("home dir");
-        let dailyos_dir = home.join(".dailyos");
+        let dailyos_dir = dailyos_data_dir().expect("data dir");
         let configured_workspace = home.join("Documents").join("DailyOS");
         let configured_workspace_str = configured_workspace.to_string_lossy().to_string();
 
@@ -1311,7 +1339,7 @@ mod db_mode_tests {
         let _reset = ResetDbMode;
 
         let home = dirs::home_dir().expect("home dir");
-        let dailyos_dir = home.join(".dailyos");
+        let dailyos_dir = dailyos_data_dir().expect("data dir");
         let live_config = dailyos_dir.join("config.json");
         let live_workspace = home.join("Documents").join("DailyOS");
         let live_workspace_str = live_workspace.to_string_lossy().to_string();
