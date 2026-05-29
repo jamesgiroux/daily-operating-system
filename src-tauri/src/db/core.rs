@@ -7,7 +7,7 @@
 //! filesystem at natural synchronization points (archive, dashboard regeneration).
 
 use std::path::{Path, PathBuf};
-use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::atomic::{AtomicU8, Ordering};
 use std::sync::Arc;
 
 use super::types::*;
@@ -21,11 +21,47 @@ use sha2::{Digest, Sha256};
 // Dev DB isolation
 // ---------------------------------------------------------------------------
 
-/// Process-wide flag steering `ActionDb::db_path()` between live and dev files.
-/// Background threads (executor, intel_queue, watcher, hygiene) all call
-/// `ActionDb::open()` independently — the static flag means they automatically
-/// pick up the right path without plumbing config through every thread.
-static DEV_DB_MODE: AtomicBool = AtomicBool::new(false);
+/// Process-wide DB-mode selector (DOS-821 / 820-A). Steers `ActionDb::db_path()`
+/// between the production DB and isolated dev files, and — via the structural
+/// guard below — forbids opening the production DB in any non-Live mode.
+///
+/// Background threads (executor, intel_queue, watcher, hygiene) and separate
+/// binaries (MCP, doctor, maintenance) all call `ActionDb::open()` independently;
+/// the process-wide value means each picks up the right path without plumbing.
+/// Set ONCE at process bootstrap, before any thread spawn or open. `0` = unset
+/// (resolves to the fail-closed default in `db_mode()`).
+static DB_MODE: AtomicU8 = AtomicU8::new(0);
+
+/// Which database a process operates against. Process-wide, set once at bootstrap.
+/// Orthogonal to ADR-0104 `ExecutionMode` (request-scoped mutation-gating) — this
+/// is process-wide path-selection. Do not merge the two.
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+pub enum DbMode {
+    /// Production. `~/.dailyos/dailyos.db`. The ONLY mode allowed to open prod.
+    Live,
+    /// Production replica with real content. `~/.dailyos/dailyos-replica.db`.
+    Replica,
+    /// Fixtures / surface-state testing. `~/.dailyos/dailyos-dev.db`.
+    Mock,
+}
+
+impl DbMode {
+    fn as_u8(self) -> u8 {
+        match self {
+            DbMode::Live => 1,
+            DbMode::Replica => 2,
+            DbMode::Mock => 3,
+        }
+    }
+    fn from_u8(v: u8) -> Option<Self> {
+        match v {
+            1 => Some(DbMode::Live),
+            2 => Some(DbMode::Replica),
+            3 => Some(DbMode::Mock),
+            _ => None,
+        }
+    }
+}
 static WRITE_TRANSACTION_GATE: parking_lot::Mutex<()> = parking_lot::const_mutex(());
 static WRITE_TRANSACTION_HOLDER: parking_lot::Mutex<Option<WriteTransactionHolder>> =
     parking_lot::const_mutex(None);
@@ -70,15 +106,63 @@ fn write_transaction_holder_summary() -> String {
         .unwrap_or_else(|| "unknown holder".to_string())
 }
 
-/// Activate dev-mode DB isolation. All subsequent `ActionDb::open()` calls
-/// will target `~/.dailyos/dailyos-dev.db` instead of `dailyos.db`.
-pub fn set_dev_db_mode(enabled: bool) {
-    DEV_DB_MODE.store(enabled, Ordering::Relaxed);
+/// Set the process-wide DB mode. Must be called once at bootstrap, before any
+/// thread spawn or `ActionDb::open()`. Changing it after the first open is a bug.
+pub fn set_db_mode(mode: DbMode) {
+    DB_MODE.store(mode.as_u8(), Ordering::Release);
 }
 
-/// Check whether dev-mode DB isolation is active.
+/// Resolve the active DB mode. **Fail-closed default when unset:** non-release
+/// (`debug_assertions`) builds default to `Replica`, release builds to `Live`.
+/// A no-env dev process can therefore never fall through to the production DB.
+pub fn db_mode() -> DbMode {
+    match DbMode::from_u8(DB_MODE.load(Ordering::Acquire)) {
+        Some(mode) => mode,
+        None if cfg!(debug_assertions) => DbMode::Replica,
+        None => DbMode::Live,
+    }
+}
+
+/// Legacy shim: "dev mode" == `Mock` (fixture DB). Preserved for callers not yet
+/// migrated to `db_mode()` (820-B migrates them). Returns `false` in Replica/Live.
 pub fn is_dev_db_mode() -> bool {
-    DEV_DB_MODE.load(Ordering::Relaxed)
+    db_mode() == DbMode::Mock
+}
+
+/// Legacy shim. `true` → `Mock`, `false` → `Live`.
+pub fn set_dev_db_mode(enabled: bool) {
+    set_db_mode(if enabled { DbMode::Mock } else { DbMode::Live });
+}
+
+/// The production database file paths (live + legacy). These may be opened ONLY
+/// when `db_mode() == Live`; the guard below enforces it.
+fn prod_db_paths() -> Vec<PathBuf> {
+    dirs::home_dir()
+        .map(|home| {
+            let dir = home.join(".dailyos");
+            vec![dir.join("dailyos.db"), dir.join("actions.db")]
+        })
+        .unwrap_or_default()
+}
+
+/// Structural prod-open deny (DOS-821 / 820-A). Called at every connection-open
+/// chokepoint with the resolved path BEFORE the key is fetched or the file is
+/// opened. The encryption key cache is path-blind, so the path layer is the only
+/// barrier — it must be enforced here, not merely in `db_path()`.
+fn guard_path_for_mode(path: &Path) -> Result<(), DbError> {
+    let mode = db_mode();
+    if mode == DbMode::Live {
+        return Ok(());
+    }
+    let canon = |p: &Path| p.canonicalize().unwrap_or_else(|_| p.to_path_buf());
+    let target = canon(path);
+    if prod_db_paths().iter().any(|p| canon(p) == target) {
+        return Err(DbError::ProdOpenDenied {
+            mode: format!("{mode:?}"),
+            path: path.display().to_string(),
+        });
+    }
+    Ok(())
 }
 
 #[repr(transparent)]
@@ -306,6 +390,9 @@ impl ActionDb {
         path: &Path,
         key_provider: Arc<dyn DbKeyProvider>,
     ) -> Result<(Connection, EncryptionKey), DbError> {
+        // DOS-821: structural prod-open deny — before key fetch or file open.
+        guard_path_for_mode(path)?;
+
         // Ensure parent directory exists
         if let Some(parent) = path.parent() {
             if !parent.exists() {
@@ -450,6 +537,9 @@ impl ActionDb {
         path: &Path,
         key_provider: Arc<dyn DbKeyProvider>,
     ) -> Result<(Connection, EncryptionKey), DbError> {
+        // DOS-821: structural prod-open deny — before key fetch or file open.
+        guard_path_for_mode(path)?;
+
         if let Some(parent) = path.parent() {
             if !parent.exists() {
                 std::fs::create_dir_all(parent).map_err(DbError::CreateDir)?;
@@ -496,6 +586,9 @@ impl ActionDb {
         path: PathBuf,
         key_provider: Arc<dyn DbKeyProvider>,
     ) -> Result<Self, DbError> {
+        // DOS-821: structural prod-open deny — covers the svc.open_fresh_serialized
+        // branch, which does not route through prepare_encrypted_connection.
+        guard_path_for_mode(&path)?;
         let rotation_lock = crate::db::key_provider::rotation_lock_read();
         if let Some(svc) = crate::db_service::try_global() {
             let user = UserIdentity::local(path.clone());
@@ -639,9 +732,12 @@ impl ActionDb {
         let home = dirs::home_dir().ok_or(DbError::HomeDirNotFound)?;
         let dailyos_dir = home.join(".dailyos");
 
-        // Dev-mode: isolated DB, no migration needed
-        if is_dev_db_mode() {
-            return Ok(dailyos_dir.join("dailyos-dev.db"));
+        // DB-mode isolation (DOS-821): non-Live modes resolve to isolated files
+        // and never to the production DB.
+        match db_mode() {
+            DbMode::Replica => return Ok(dailyos_dir.join("dailyos-replica.db")),
+            DbMode::Mock => return Ok(dailyos_dir.join("dailyos-dev.db")),
+            DbMode::Live => {}
         }
 
         let new_path = dailyos_dir.join("dailyos.db");
