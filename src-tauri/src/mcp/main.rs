@@ -1675,8 +1675,16 @@ fn account_status_has_assessment_content(value: &serde_json::Value) -> bool {
 // Main
 // =============================================================================
 
-#[tokio::main]
-async fn main() -> anyhow::Result<()> {
+fn main() -> anyhow::Result<()> {
+    dailyos_lib::db::resolve_and_set_db_mode_from_process();
+
+    tokio::runtime::Builder::new_multi_thread()
+        .enable_all()
+        .build()?
+        .block_on(async_main())
+}
+
+async fn async_main() -> anyhow::Result<()> {
     if std::env::var(DAILYOS_MCP_LEGACY_V1_ENV).as_deref() == Ok("1") {
         return run_legacy_v1_server().await;
     }

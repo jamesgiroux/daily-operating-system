@@ -13,6 +13,8 @@ struct Args {
 }
 
 fn main() {
+    dailyos_lib::db::resolve_and_set_db_mode_from_process();
+
     let args = Args::parse();
     match run(args) {
         Ok(exit_code) => std::process::exit(exit_code),

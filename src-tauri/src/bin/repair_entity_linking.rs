@@ -3,6 +3,8 @@ use std::process::ExitCode;
 use dailyos_lib::services::entity_linking::repair::{apply_repair, build_report, RepairOptions};
 
 fn main() -> ExitCode {
+    dailyos_lib::db::resolve_and_set_db_mode_from_process();
+
     env_logger::Builder::from_env(env_logger::Env::default().default_filter_or("info"))
         .format_timestamp_millis()
         .init();

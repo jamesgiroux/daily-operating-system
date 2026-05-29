@@ -61,6 +61,24 @@ impl DbMode {
             _ => None,
         }
     }
+
+    fn from_process_arg(arg: &str) -> Option<Self> {
+        match arg {
+            "--live" => Some(DbMode::Live),
+            "--replica" => Some(DbMode::Replica),
+            "--mock" => Some(DbMode::Mock),
+            _ => None,
+        }
+    }
+
+    fn from_env_value(value: &str) -> Option<Self> {
+        match value.trim() {
+            "live" => Some(DbMode::Live),
+            "replica" => Some(DbMode::Replica),
+            "mock" => Some(DbMode::Mock),
+            _ => None,
+        }
+    }
 }
 static WRITE_TRANSACTION_GATE: parking_lot::Mutex<()> = parking_lot::const_mutex(());
 static WRITE_TRANSACTION_HOLDER: parking_lot::Mutex<Option<WriteTransactionHolder>> =
@@ -110,6 +128,24 @@ fn write_transaction_holder_summary() -> String {
 /// thread spawn or `ActionDb::open()`. Changing it after the first open is a bug.
 pub fn set_db_mode(mode: DbMode) {
     DB_MODE.store(mode.as_u8(), Ordering::Release);
+}
+
+/// Resolve DB mode from process inputs and set it when explicitly provided.
+///
+/// CLI flags (`--live`, `--replica`, `--mock`) take precedence over
+/// `DAILYOS_DB_MODE=live|replica|mock`. If neither is present, leave DB_MODE
+/// unset so `db_mode()` keeps its fail-closed default.
+pub fn resolve_and_set_db_mode_from_process() {
+    if let Some(mode) = std::env::args().find_map(|arg| DbMode::from_process_arg(&arg)) {
+        set_db_mode(mode);
+        return;
+    }
+
+    if let Ok(value) = std::env::var("DAILYOS_DB_MODE") {
+        if let Some(mode) = DbMode::from_env_value(&value) {
+            set_db_mode(mode);
+        }
+    }
 }
 
 /// Resolve the active DB mode. **Fail-closed default when unset:** non-release
@@ -1006,6 +1042,79 @@ pub mod test_utils {
             .execute_batch("PRAGMA foreign_keys = OFF;")
             .expect("disable FK for tests");
         db
+    }
+}
+
+#[cfg(test)]
+mod db_mode_tests {
+    use super::*;
+
+    static DB_MODE_TEST_LOCK: std::sync::Mutex<()> = std::sync::Mutex::new(());
+
+    struct ResetDbMode;
+
+    impl Drop for ResetDbMode {
+        fn drop(&mut self) {
+            set_db_mode(DbMode::Live);
+        }
+    }
+
+    fn production_db_path() -> PathBuf {
+        dirs::home_dir()
+            .expect("home dir")
+            .join(".dailyos")
+            .join("dailyos.db")
+    }
+
+    fn assert_prod_open_denied(mode: DbMode) {
+        set_db_mode(mode);
+        let err = guard_path_for_mode(&production_db_path())
+            .expect_err("non-Live mode must deny production DB path");
+        assert!(
+            matches!(err, DbError::ProdOpenDenied { .. }),
+            "expected ProdOpenDenied, got {err:?}"
+        );
+    }
+
+    #[test]
+    fn replica_mode_refuses_production_db_path() {
+        let _lock = DB_MODE_TEST_LOCK.lock().expect("db mode test lock");
+        let _reset = ResetDbMode;
+
+        assert_prod_open_denied(DbMode::Replica);
+    }
+
+    #[test]
+    fn mock_mode_refuses_production_db_path() {
+        let _lock = DB_MODE_TEST_LOCK.lock().expect("db mode test lock");
+        let _reset = ResetDbMode;
+
+        assert_prod_open_denied(DbMode::Mock);
+    }
+
+    #[test]
+    fn live_mode_allows_production_db_path() {
+        let _lock = DB_MODE_TEST_LOCK.lock().expect("db mode test lock");
+        let _reset = ResetDbMode;
+
+        set_db_mode(DbMode::Live);
+
+        guard_path_for_mode(&production_db_path())
+            .expect("Live mode must allow production DB path");
+    }
+
+    #[test]
+    fn unrelated_temp_path_is_allowed_in_every_mode() {
+        let _lock = DB_MODE_TEST_LOCK.lock().expect("db mode test lock");
+        let _reset = ResetDbMode;
+        let temp = tempfile::tempdir().expect("tempdir");
+        let unrelated_path = temp.path().join("dailyos.db");
+
+        for mode in [DbMode::Live, DbMode::Replica, DbMode::Mock] {
+            set_db_mode(mode);
+            guard_path_for_mode(&unrelated_path)
+                .unwrap_or_else(|err| panic!("{mode:?} should allow unrelated temp path: {err}"));
+        }
     }
 }
 

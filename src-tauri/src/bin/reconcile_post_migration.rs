@@ -21,6 +21,8 @@ use std::process::ExitCode;
 const RECONCILE_SQL_PATH: &str = "scripts/reconcile_ghost_resurrection.sql";
 
 fn main() -> ExitCode {
+    dailyos_lib::db::resolve_and_set_db_mode_from_process();
+
     env_logger::Builder::from_env(env_logger::Env::default().default_filter_or("info"))
         .format_timestamp_millis()
         .init();
