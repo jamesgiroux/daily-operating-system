@@ -1,0 +1,204 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>v1.4.9 — Substrate Reset &amp; Judgment Maturation · Wave Plan</title>
+<style>
+:root{
+  --ink:#1a1a1a; --paper:#fdfdfb; --muted:#6b6b6b; --rule:#e0ddd6;
+  --accent:#7a2e2e; --accent-soft:#f0e8e8; --ok:#2e5a3a; --warn:#8a6d1f; --chip:#f4f1ea;
+  --mono:ui-monospace,SFMono-Regular,Menlo,monospace;
+  --serif:'Iowan Old Style','Palatino Linotype',Palatino,Georgia,serif;
+  --sans:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;
+}
+*{box-sizing:border-box}
+body{margin:0;background:var(--paper);color:var(--ink);font-family:var(--serif);line-height:1.5;padding:2.5rem 1.25rem}
+.wrap{max-width:940px;margin:0 auto}
+header{border-bottom:3px double var(--rule);padding-bottom:1.25rem;margin-bottom:1.75rem}
+h1{font-size:2rem;margin:0 0 .35rem;letter-spacing:-.01em}
+.sub{color:var(--muted);font-style:italic}
+.meta{font-family:var(--mono);font-size:.8rem;color:var(--muted);margin-top:.6rem}
+.lede{font-size:1.1rem;border-left:3px solid var(--accent);padding-left:1rem;margin:1.5rem 0}
+.lede strong{color:var(--accent)}
+section{margin:2rem 0}
+h2{font-family:var(--sans);font-size:1.05rem;text-transform:uppercase;letter-spacing:.08em;border-bottom:1px solid var(--rule);padding-bottom:.3rem}
+.box{border:1px solid var(--rule);background:#fff;padding:1rem 1.15rem;margin:1rem 0;border-radius:3px}
+.box.head{border-left:4px solid var(--accent)}
+.box.sub{border-left:4px solid var(--muted)}
+h3{margin:.2rem 0 .5rem;font-size:1.1rem}
+h3 .tag{font-family:var(--mono);font-size:.7rem;font-weight:normal;vertical-align:middle}
+.tag.headline{color:var(--accent);background:var(--accent-soft);border:1px solid #e3c9c9;border-radius:10px;padding:.05rem .5rem}
+.tag.substrate{color:var(--muted);background:var(--chip);border:1px solid var(--rule);border-radius:10px;padding:.05rem .5rem}
+table{border-collapse:collapse;width:100%;font-family:var(--sans);font-size:.85rem;margin:.75rem 0}
+th,td{text-align:left;padding:.45rem .6rem;border-bottom:1px solid var(--rule);vertical-align:top}
+th{background:var(--chip);font-size:.75rem;text-transform:uppercase;letter-spacing:.05em}
+.chip{display:inline-block;font-family:var(--mono);font-size:.72rem;background:var(--chip);border:1px solid var(--rule);border-radius:10px;padding:.05rem .5rem;margin:.1rem .15rem}
+code{font-family:var(--mono);font-size:.85em;background:#f4f1ea;padding:.05rem .3rem;border-radius:3px}
+.flow{font-family:var(--mono);font-size:.8rem;background:#fbf9f4;border:1px solid var(--rule);border-radius:3px;padding:.8rem 1rem;white-space:pre-wrap;line-height:1.6}
+.proof{font-family:var(--sans);font-size:.82rem;color:var(--ok);margin-top:.5rem}
+.proof::before{content:"PROOF — ";font-weight:600;letter-spacing:.03em}
+ul{margin:.4rem 0 .4rem 1.1rem;padding:0}
+li{margin:.25rem 0}
+.note{font-family:var(--sans);font-size:.82rem;color:var(--warn)}
+footer{border-top:1px solid var(--rule);margin-top:2.5rem;padding-top:1rem;font-family:var(--mono);font-size:.75rem;color:var(--muted)}
+</style>
+</head>
+<body>
+<div class="wrap">
+<header>
+  <h1>v1.4.9 — Substrate Reset &amp; Judgment Maturation</h1>
+  <div class="sub">Wave execution plan · the version that makes corrections stick</div>
+  <div class="meta">DRAFT 2026-05-30 · Linear project 874a7361 · waves mirror W1–W6 milestones · protocol: <code>.docs/plans/v1.4.0-waves.md</code></div>
+</header>
+
+<p class="lede"><strong>"I correct it once, and it stays corrected — everywhere."</strong></p>
+
+<section>
+  <h2>North Star</h2>
+  <p>A claim carries provenance and a trust band. The user dismisses, contradicts, or re-scopes it — in the app <em>or</em> by editing the claim's readable file — and the system responds: the source's reliability updates, derived claims invalidate, and <strong>what surfaces next visibly changes</strong>, consistently across the macOS app and MCP.</p>
+  <div class="box">
+    <h3>Proof obligation (PRODUCT-THESIS)</h3>
+    <p>Every wave either demonstrates its slice of the correction loop —</p>
+    <div class="flow">claim (provenance + trust band)
+   → user correction  (dismiss / contradict / re-scope / edit file)
+   → source reliability + derived claims update
+   → next surfacing reflects the correction</div>
+    <p style="margin-top:.6rem">— or is <strong>explicitly labelled substrate</strong> (infrastructure with no direct user outcome, justified by what it unblocks). "If a release doesn't move the correction loop, it's substrate maintenance, not product." v1.4.9 carries both: W1–W2 are the reset's substrate; W3–W6 carry the headline.</p>
+  </div>
+  <p class="note">Strategic frame — DailyOS is the personal-<em>judgment</em> substrate (claims · trust · abilities · salience · belief revision). Memory is commoditizing; judgment you can trust is the moat, deepened by the daily-correction loop (the me-shape). Per ADR-0135 the primary programmatic surface is MCP read/write; the macOS app stays the visual + control-plane surface (not deprecated); net-new surface design defers to v1.5.0. SQLite stays canonical (ACID); readable files are a projection <em>out</em>, never files-as-truth.</p>
+</section>
+
+<section>
+  <h2>Wave Structure</h2>
+  <table>
+    <thead><tr><th>Wave</th><th>Theme</th><th>Carries</th><th>Headline?</th></tr></thead>
+    <tbody>
+      <tr><td><strong>W1</strong></td><td>Storage reset &amp; single-writer</td><td>826 cipher-drop · 827 rebuild-from-JSON · 647 (+758) · 823 (820-C) · 767 · 768 · 770 · 812</td><td><span class="tag substrate">substrate</span></td></tr>
+      <tr><td><strong>W2</strong></td><td>Security right-size</td><td>auth overhaul (HMAC/pairing/nonce → OS boundary) · 510</td><td><span class="tag substrate">substrate</span></td></tr>
+      <tr><td><strong>W3</strong></td><td>Claims → editable readable files</td><td>628 (reverse leg + file→claim write-back)</td><td>first loop slice</td></tr>
+      <tr><td><strong>W4</strong></td><td>Judgment moat / correction loop</td><td>8 · 318 · 443 · 447 · 316 · 811 · 338 · 446 · 278 · 277 · 317</td><td><span class="tag headline">HEADLINE</span></td></tr>
+      <tr><td><strong>W5</strong></td><td>MCP-first parity</td><td>169 · 170 · 171 · 172 · 173 · 479 · 777 · 481 · 482</td><td>loop over MCP</td></tr>
+      <tr><td><strong>W6</strong></td><td>Transcript substrate</td><td>343 · 327 · 511</td><td>transcript claims → loop</td></tr>
+    </tbody>
+  </table>
+  <p class="note">Ordering is substrate-first by decision (James, 2026-05-30): W1 → W2 → W3 → W4 → W5; W6 runs after W1 (it needs stable DB ownership, not the loop). The headline lands at <strong>W4</strong>; W3 proves the first end-to-end slice earlier as a de-risk.</p>
+</section>
+
+<section>
+  <h2>Cross-Wave Decisions</h2>
+  <div class="box">
+    <ul>
+      <li><strong>SQLite stays canonical; encryption is dropped, not the database.</strong> Cipher-drop (W1) is an ADR-0092 §D5 amendment: plain SQLite on a FileVault-encrypted volume; at-rest protection moves to the OS disk boundary, matching the local-same-user threat model.</li>
+      <li><strong>Fresh-install rebuild, not migration, is the recovery path.</strong> Canonical workspace JSON + re-enrichment rebuilds the DB from scratch (W1) — the path James exercised in the 2026-05-29 incident recovery, made first-class.</li>
+      <li><strong>Single-process DB ownership + writer-priority lane (647).</strong> Continues db-throughput W0; 758 lands the handler-side request-scoped DB/services contract + nested-writer guard. <span class="note">(The v1.2.2 enrichment write-lock James is hitting right now is exactly the contention this resolves.)</span></li>
+      <li><strong>Files-as-projection, bidirectional via correction only.</strong> W3 projects claims → per-entity markdown out; editing a file is a correction input through the claim service — it does not make the file authoritative.</li>
+      <li><strong>Security right-sized to the OS boundary (W2).</strong> HMAC/pairing/presence-nonce/scope-grant ceremony for local same-OS-user surfaces is stripped; hostile-input proof (510) re-scoped. (759/760 already cancelled.)</li>
+      <li><strong>Trust rendering is centralized.</strong> Same provenance + trust-band + sensitivity rendering serves app and MCP (W5 = agent-native parity, not a second renderer).</li>
+      <li><strong>Migration-slot reservations.</strong> W1 and W6 both add migrations — reserve non-overlapping blocks at kickoff (the v1.4.1 lesson). Confirm next free slot against dev head.</li>
+    </ul>
+  </div>
+</section>
+
+<section>
+  <h2>Wave Detail</h2>
+
+  <div class="box sub">
+    <h3>W1 — Storage reset &amp; single-writer <span class="tag substrate">substrate</span></h3>
+    <p>Make the DB cheap to rebuild, safe to operate, single-writer-owned — the durable fix for the dev-workflow-corrupts-prod hazard (DOS-820).</p>
+    <ul>
+      <li><span class="chip">DOS-826</span> NEW — drop SQLCipher → plain SQLite + FileVault (ADR-0092 §D5 amendment)</li>
+      <li><span class="chip">DOS-827</span> NEW — first-class rebuild-from-canonical-JSON (recovery path)</li>
+      <li><span class="chip">DOS-647</span> single-process DB ownership + writer-priority lane · <span class="chip">DOS-758</span> McpToolHandler request-scoped DB/services + nested-writer guard</li>
+      <li><span class="chip">DOS-823</span> 820-C: <code>replica-refresh</code> clone + destructive-command guards — <strong>completes DOS-820</strong></li>
+      <li><span class="chip">DOS-767</span> <span class="chip">DOS-768</span> <span class="chip">DOS-770</span> <span class="chip">DOS-812</span> ingestion-hygiene + consolidation carryovers (re-validate against rebuilt pipeline)</li>
+    </ul>
+    <p class="proof">substrate; demoable — <code>replica-refresh</code> clones prod→replica, prod-destroyers refuse outside the guard, a from-scratch rebuild reproduces the working DB.</p>
+  </div>
+
+  <div class="box sub">
+    <h3>W2 — Security right-size <span class="tag substrate">substrate</span></h3>
+    <p>Collapse app-layer auth ceremony to the OS user boundary for local same-user surfaces.</p>
+    <ul>
+      <li>Auth overhaul — strip HMAC + pairing + presence-nonce + scope-grant for local-to-local same-OS-user (verify post-overhaul model before re-adding any gate)</li>
+      <li><span class="chip">DOS-510</span> hostile-input / prompt-injection proof gates, re-scoped to the post-overhaul threat model (hostile content is evidence text only, never instructions)</li>
+    </ul>
+    <p class="proof">substrate; demoable — local invoke + WP/MCP loopback reach parity with no signing ceremony; hostile-input fixtures pass.</p>
+  </div>
+
+  <div class="box">
+    <h3>W3 — Claims → editable readable files <span style="font-family:var(--mono);font-size:.7rem">first loop slice</span></h3>
+    <p>The reverse leg of bidirectional markdown↔substrate: project claims out to per-entity readable files, and accept edits to those files as corrections.</p>
+    <ul>
+      <li><span class="chip">DOS-628</span> per-entity claim→markdown projection (out) + file→claim correction write-back through the claim service. SQLite stays canonical.</li>
+    </ul>
+    <p class="proof">edit a claim in its readable file → the claim updates, provenance records the correction, the projection re-renders, trust/derived state reacts.</p>
+  </div>
+
+  <div class="box head">
+    <h3>W4 — Judgment moat / correction loop <span class="tag headline">HEADLINE</span></h3>
+    <p>The full correction loop, visible end-to-end and <strong>measured</strong>.</p>
+    <ul>
+      <li><span class="chip">DOS-8</span> semantic claim feedback (typed <code>claim_feedback</code>) · <span class="chip">DOS-318</span> contradiction UX as review-queue reconciliation (1-byte stub today)</li>
+      <li><span class="chip">DOS-443</span> review-queue daily budget + prioritization · <span class="chip">DOS-447</span> per-<code>claim_type</code> render suppression (stub)</li>
+      <li><span class="chip">DOS-316</span> + <span class="chip">DOS-811</span> deviation / "what's unusual" + <code>expected_presence</code> registry</li>
+      <li><span class="chip">DOS-338</span> <strong>the eval harness that proves the moat</strong> (stub) — usefulness / noise / missed-important + correction-stickiness</li>
+      <li><span class="chip">DOS-446</span> adversarial hundred-claims fixture · <span class="chip">DOS-278</span> briefing count divergence · <span class="chip">DOS-277</span> agenda survives re-enrichment · <span class="chip">DOS-317</span> engagement → ranking (full)</li>
+    </ul>
+    <p class="proof">a correction in any entry point propagates to source reliability + derived claims and changes what surfaces next, with the eval harness (338) measuring stickiness + noise. This is where <em>"correct once, stays corrected"</em> is demonstrated.</p>
+  </div>
+
+  <div class="box">
+    <h3>W5 — MCP-first parity <span style="font-family:var(--mono);font-size:.7rem">loop over MCP</span></h3>
+    <p>The same loop + trust rendering reachable over MCP — no second renderer, no service bypass.</p>
+    <ul>
+      <li><span class="chip">DOS-169</span> create_action · <span class="chip">DOS-170</span> update_action_status · <span class="chip">DOS-171</span>/<span class="chip">DOS-479</span> provenance + source-aware read · <span class="chip">DOS-172</span> pagination/ranked discovery · <span class="chip">DOS-173</span> resources</li>
+      <li><span class="chip">DOS-777</span> daily + meeting briefing read handlers (Phase-B; un-cancelled) — the surface where corrected claims appear over MCP · <span class="chip">DOS-481</span>/<span class="chip">DOS-482</span> evals + E2E validation</li>
+    </ul>
+    <p class="proof">an MCP client sees the same claims, trust bands, and post-correction surfacing the app shows; corrections made over MCP propagate identically.</p>
+  </div>
+
+  <div class="box">
+    <h3>W6 — Transcript substrate <span style="font-family:var(--mono);font-size:.7rem">transcript claims → loop</span></h3>
+    <p>Rebuild transcript extraction as claim-producing abilities so transcript intelligence flows through the same trust + correction loop.</p>
+    <ul>
+      <li><span class="chip">DOS-343</span> transcript extraction → claims; stabilize meeting-record rendering (no-findings / skipped / failure / malformed / not-processed / valid-empty)</li>
+      <li><span class="chip">DOS-327</span> local-first Quote Wall source typing + provenance/UI readiness · <span class="chip">DOS-511</span> formal L0 package split</li>
+    </ul>
+    <p class="proof">a transcript claim carries provenance + trust band, surfaces in briefings, and responds to correction like any other claim.</p>
+  </div>
+</section>
+
+<section>
+  <h2>Dependencies &amp; Critical Path</h2>
+  <div class="flow">W1 (storage reset + single-writer + 820-C) ──┬──> W3 (claims→files) ──> W4 (loop) ──> W5 (MCP parity)
+                                              │
+W2 (security right-size) ─────────────────────┘  (parallel-capable; sequence-stable after W1)
+                                              │
+W6 (transcript) ──────────────────────────────┘  (after W1 DB ownership; feeds W4/W5 loop)</div>
+  <ul>
+    <li><strong>Critical path:</strong> W1 → W3 → W4 → W5 — the headline rides this spine.</li>
+    <li><strong>W2</strong> can run alongside W1 but sequences stable-after to avoid auth churn during the storage reset.</li>
+    <li><strong>W6</strong> starts after W1 (needs stable DB ownership + its migration block); its claims should land before W4's eval harness closes so 338 measures transcript claims too.</li>
+  </ul>
+</section>
+
+<section>
+  <h2>Definition of Done</h2>
+  <div class="box">
+    <ul>
+      <li><strong>Headline proven:</strong> a correction made in the app, in a readable file, and over MCP each propagates to source reliability + derived claims and changes the next surfacing — with real workspace data, measured by the DOS-338 eval harness.</li>
+      <li><strong>Substrate reset complete:</strong> plain SQLite + FileVault; repeatable rebuild-from-JSON; single-writer ownership; <code>replica-refresh</code> + destructive-command guards (DOS-820 closed); auth right-sized with hostile-input proof.</li>
+      <li><strong>Cross-surface parity:</strong> identical claims + trust rendering + post-correction behaviour across Tauri and MCP.</li>
+      <li><strong>No stubs/TODOs/deferrals:</strong> <code>contradiction.rs</code>, <code>render_rules.rs</code>, <code>deviation.rs</code>, <code>eval.rs</code> are real; transcript extraction is claim-producing.</li>
+      <li><strong>Gates green:</strong> <code>cargo clippy -- -D warnings &amp;&amp; cargo test &amp;&amp; pnpm tsc --noEmit</code> (DOS-824 test-flake tracked separately).</li>
+    </ul>
+  </div>
+</section>
+
+<footer>
+  Source of truth: Linear project <code>v1.4.9 — Substrate Reset &amp; Judgment Maturation</code> + this plan. Markdown twin: <code>.docs/plans/v1.4.9-waves.md</code>. Amendments append-only in the markdown.
+</footer>
+</div>
+</body>
+</html>
