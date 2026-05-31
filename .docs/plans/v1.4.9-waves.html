@@ -1,0 +1,179 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>v1.4.9 Wave Plan · DailyOS Planning</title>
+  <link rel="stylesheet" href="../design/reference/_shared/fonts.css">
+  <link rel="stylesheet" href="../design/reference/_shared/styles/design-tokens.css">
+  <link rel="stylesheet" href="../design/reference/_shared/styles/AtmosphereLayer.module.css">
+  <link rel="stylesheet" href="../design/reference/_shared/styles/MagazinePageLayout.module.css">
+  <link rel="stylesheet" href="../design/reference/_shared/chrome.css">
+  <link rel="stylesheet" href="plans.css">
+</head>
+<body data-tint="turmeric">
+<div class="MagazinePageLayout_magazinePage">
+<main class="MagazinePageLayout_pageContainer">
+<div class="plans-shell">
+
+<nav class="plans-topnav" aria-label="Planning surface">
+  <a class="plans-mark" href="index.html">
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 433 407" width="16" height="16" aria-hidden="true">
+      <path d="M159 407 161 292 57 355 0 259 102 204 0 148 57 52 161 115 159 0H273L271 115L375 52L433 148L331 204L433 259L375 355L271 292L273 407Z" fill="currentColor"/>
+    </svg>
+    DailyOS · Planning
+  </a>
+  <div class="plans-topnav-links">
+    <a href="engineering-ladder.html">Engineering Ladder</a>
+    <a href="v1.4.9-waves.html" data-active="true">v1.4.9 Waves</a>
+    <a href="AUTHORING.md">Authoring Ruleset</a>
+  </div>
+</nav>
+
+<section class="plans-cover">
+  <p class="plans-eyebrow">DailyOS · v1.4.9 · Wave Plan</p>
+  <h1 class="plans-title">I correct it once, and it stays corrected — everywhere.</h1>
+  <p class="plans-kicker">Substrate Reset &amp; Judgment Maturation. L0 plan-altitude converged (cycle 4).</p>
+  <p class="plans-lede">
+    A claim carries provenance and a trust band. The user dismisses, contradicts, or re-scopes it — in the app or by editing the claim's readable file — and the source's reliability updates, derived claims invalidate, and what surfaces next visibly changes across the macOS app and MCP, surviving re-enrichment and rebuild. Single-writer is the only hard gate for that loop; storage hardening, security, and transcript run parallel.
+  </p>
+  <div class="plans-meta">
+    <span>2026 (DRAFT, L0 converged)</span>
+    <span>Waves: 6</span>
+    <span>Linear: 874a7361</span>
+    <span>Critical path: single-writer → W3 → W4 → W5</span>
+  </div>
+</section>
+
+<section class="plans-section" aria-labelledby="origin">
+  <header class="plans-section-header">
+    <p class="plans-section-eyebrow">§0 origination · §1 trust topology</p>
+    <h2 id="origin" class="plans-section-title">Mixed origination; local-to-local single-user.</h2>
+  </header>
+  <p><strong>§0 — Mixed.</strong> The storage/security half (single-writer, cipher-drop, rebuild, auth right-size) is <em>debug-driven</em> — it originates from the 2026-05-28 production DB-loss incident. The judgment half (correction loop, MCP, transcript) is <em>extension</em> — it wires already-shipped claim/trust/abilities/salience substrate (ADR-0123/0125/0126/0110/0128) into a visible, measured loop.</p>
+  <p><strong>§1 — local-to-local single-user.</strong> Per James (L6, 2026-05-30): the machine is inside the trust boundary; FedRAMP SC-28/SC-13 is an artificial construct we retire; on-disk content (app DB or downloaded file) carries no additional risk. No multi-actor gates on app/file surfaces. <strong>MCP carve-out:</strong> an MCP client is a third-party AI consumer and MCP egress leaves the machine, so ADR-0125 sensitivity gating stays on the MCP channel — <code>Confidential</code>/<code>UserOnly</code> never cross MCP. Topology-invariant: data hygiene (path/workspace confinement), indirect prompt injection from document content (ADR-0093), log/screenshot redaction (ADR-0108).</p>
+  <pre class="plans-flow">claim (provenance + trust band)
+   → user correction  (dismiss / contradict / re-scope / edit file)
+   → source reliability + derived claims update   ← propagation/invalidation (DOS-834)
+   → next surfacing reflects the correction, and survives re-enrichment + rebuild</pre>
+</section>
+
+<section class="plans-section" aria-labelledby="seq">
+  <header class="plans-section-header">
+    <p class="plans-section-eyebrow">Execution sequencing</p>
+    <h2 id="seq" class="plans-section-title">Single-writer is the only loop gate; storage runs parallel.</h2>
+    <p class="plans-section-lede">Cycle-1 feasibility proved the correction loop has no code dependency on cipher-drop or rebuild — only on single-writer DB ownership. The storage-reset-first spine was an inverted critical path. Corrected below.</p>
+  </header>
+  <pre class="plans-flow">W1a single-writer (647/758) + safety close-out (823)  ── the ONLY hard gate for the loop
+        ├──> W3 claims→files ──> W4 correction loop (HEADLINE) ──> W5 MCP parity   [CRITICAL PATH]
+        ├──> W1b storage hardening (cipher-drop 831, rebuild 832) ── PARALLEL (832 lands after W3)
+        ├──> W2 security right-size (833 auth + 510) ── PARALLEL
+        └──> W6 transcript substrate ── PARALLEL; release valve</pre>
+</section>
+
+<section class="plans-section" aria-labelledby="overview">
+  <header class="plans-section-header">
+    <p class="plans-section-eyebrow">Wave shape</p>
+    <h2 id="overview" class="plans-section-title">Six waves; bucket IDs retained for milestone continuity.</h2>
+  </header>
+  <table class="reviewer-matrix">
+    <thead><tr><th>Wave</th><th>Theme</th><th>Carries</th><th>Role</th></tr></thead>
+    <tbody>
+      <tr><td>W1</td><td>DB ownership + storage hardening</td><td>W1a (gating): 647 · 758 · 823. W1b (parallel): 831 · 832 · 767 · 768 · 770 · 812</td><td>substrate</td></tr>
+      <tr><td>W2</td><td>Security right-size</td><td>833 auth overhaul · 510</td><td>substrate (parallel)</td></tr>
+      <tr><td>W3</td><td>Claims → editable readable files</td><td>628 (projection + corrections sidecar + write-back)</td><td>first loop slice</td></tr>
+      <tr><td>W4</td><td>Judgment moat / correction loop</td><td>8 · 318 · 443 · 447 · 316 · 811 · 338 · 446 · 278 · 277 · 317 · 834 (keystone)</td><td>HEADLINE</td></tr>
+      <tr><td>W5</td><td>MCP-first parity</td><td>171 · 479 · 172 · 173 · 777 · 481 · 482; 169 · 170 reconcile vs ADR-0128 §D</td><td>loop over MCP</td></tr>
+      <tr><td>W6</td><td>Transcript substrate</td><td>343 · 327 · 511</td><td>parallel; release valve</td></tr>
+    </tbody>
+  </table>
+</section>
+
+<section class="plans-section plans-section-callouts" aria-labelledby="decisions">
+  <header class="plans-section-header">
+    <p class="plans-section-eyebrow">Cross-wave decisions (cycle-4 resolved)</p>
+    <h2 id="decisions" class="plans-section-title">The eight architecture calls.</h2>
+  </header>
+  <div class="callout-grid">
+    <article class="callout"><h3 class="callout-title">1 · Drop SQLCipher (supersede 0092)</h3><p class="callout-prose">L6-approved. DOS-831 authors ADR-0136 enumerating ADR-0092's six sub-decisions — retire SQLCipher/perms/Time-Machine/iCloud/app-lock; KEEP PII-log-hygiene (ADR-0108). No fabricated "§D5".</p></article>
+    <article class="callout"><h3 class="callout-title">2 · Decrypt-then-drop</h3><p class="callout-prose">Split build + one-shot decrypt (mirror of <code>migrate_to_encrypted</code>) + sentinel that exits before old auto-encrypt runs; both <code>core.rs:506,650</code> sites deleted. Fallback: rebuild.</p></article>
+    <article class="callout"><h3 class="callout-title">3 · Corrections survive rebuild</h3><p class="callout-prose">Content-identity correction-journal sidecar (<code>compute_dedup_key</code> shape, not raw runtime dedup_key); replay respects <code>claim_state</code> (no tombstone resurrection); tie-break + orphan-when-ambiguous; exact derivation → DOS-832 L0. Amends ADR-0048 P-4.</p></article>
+    <article class="callout"><h3 class="callout-title">4 · Files-as-projection</h3><p class="callout-prose">Edit = correction input via <code>services/claims.rs</code> typed <code>FeedbackAction</code> (ADR-0123/0126); Actor::User; workspace-confined; sensitivity re-validated. Never files-as-truth.</p></article>
+    <article class="callout"><h3 class="callout-title">5 · Single-writer ownership</h3><p class="callout-prose">647/758 consume ADR-0133/0134 + the db-lock-storm-class doc verbatim. The only hard prerequisite for the loop.</p></article>
+    <article class="callout"><h3 class="callout-title">6 · Centralized trust rendering</h3><p class="callout-prose">One provenance + trust-band + sensitivity renderer for app and MCP (ADR-0105/0108). W5 is parity, not a second renderer.</p></article>
+    <article class="callout"><h3 class="callout-title">7 · MCP writes via ADR-0128 §D</h3><p class="callout-prose">169/170 reconcile against §D (already authorizes <code>submit.action</code>/<code>submit.action_status</code>) — confirm it survived reconciliation; not a new amendment.</p></article>
+    <article class="callout"><h3 class="callout-title">8 · Migration slots</h3><p class="callout-prose">Dev head v273. W1b v274–277 · W2 v278–279 · W3 v280–283 · W4 v284–289 · W6 v290–295. Wave lead writes confirmed numbers before branch-open.</p></article>
+  </div>
+</section>
+
+<section class="plans-section" aria-labelledby="detail">
+  <header class="plans-section-header">
+    <p class="plans-section-eyebrow">Wave detail</p>
+    <h2 id="detail" class="plans-section-title">What each wave carries and proves.</h2>
+  </header>
+
+  <h3 class="plans-subhead">W1 — DB ownership + storage hardening · substrate</h3>
+  <p><strong>W1a (gating):</strong> DOS-647 single-writer + priority lane; DOS-758 request-scoped DB/services + nested-writer guard; DOS-823 (820-C) replica-refresh (consumes shipped 820-A DbMode + run_chunked_backup) + destructive-command guards, completes DOS-820.</p>
+  <p><strong>W1b (parallel):</strong> DOS-831 cipher-drop (ADR-0136 + 820-A DB-mode ADR; decrypt-then-drop); DOS-832 rebuild-from-canonical, corrections-preserving (depends on W3); DOS-767/768/770/812 ingestion-hygiene.</p>
+  <p><strong>Proof —</strong> substrate; replica-refresh clones prod→replica read-only, prod-destroyers refuse outside the guard, a rebuild reproduces the working DB <em>including user corrections</em>.</p>
+
+  <h3 class="plans-subhead">W2 — Security right-size · substrate (parallel)</h3>
+  <p>DOS-833 strips HMAC/pairing/nonce/scope-grant for local same-OS-user; <strong>supersedes/amends ADR-0102 + 0128</strong> (they still mandate the auth) and names replacement gateway/auth paths; preserves Actor::McpClient vs User for provenance. DOS-510 hostile-input proof re-scoped to §1 (consumes ADR-0093).</p>
+  <p><strong>Proof —</strong> local invoke + MCP loopback parity, no signing ceremony; hostile-input fixtures pass.</p>
+
+  <h3 class="plans-subhead">W3 — Claims → editable readable files · first loop slice</h3>
+  <p>DOS-628 projects claims→markdown out (ADR-0105 envelopes) + the structured corrections sidecar; file→claim write-back as Actor::User, workspace-confined, sensitivity re-validated, typed FeedbackAction. File-read content is ADR-0093 Tier-2-classified/Tier-3-handled (<code>wrap_user_data</code>); ADR-0108 log hygiene. New producer ⇒ full trust-recompute audit on the write-back path.</p>
+  <p><strong>Proof —</strong> edit a claim's file → claim updates as a new correction source, provenance records it, projection re-renders, derived state reacts.</p>
+
+  <h3 class="plans-subhead">W4 — Judgment moat / correction loop · HEADLINE</h3>
+  <p>DOS-834 propagation/invalidation (keystone) · DOS-8 feedback · DOS-318 contradiction (fork not winner, ADR-0126 §6) · DOS-443 review-queue budget (§8) · DOS-447 render suppression (ADR-0125 registry) · DOS-316+811 deviation (§5) + expected_presence · DOS-338 eval harness (extends bridges/eval.rs; <strong>cross-surface, post-re-enrichment, indirect-surfacing</strong> stickiness) · DOS-446 fixture · DOS-278 count bug · DOS-277 agenda survival (felt-stickiness keystone) · DOS-317 engagement→ranking (ADR-0126 §9, ranking not trust).</p>
+  <p><strong>Irreducible core</strong> if the wave compresses: DOS-8 + DOS-834 + DOS-277 + DOS-338.</p>
+  <p><strong>Proof —</strong> a correction changes a surfacing the user did <em>not</em> directly touch, survives re-enrichment + rebuild, measured by DOS-338's cross-surface stickiness metric.</p>
+
+  <h3 class="plans-subhead">W5 — MCP-first parity · loop over MCP</h3>
+  <p>Feedback + reads (ADR-0128 §5): DOS-777 briefing read handlers (un-cancel), DOS-171/479 provenance reads, DOS-172 pagination, DOS-173 resources, DOS-481/482 evals. <strong>MCP-actor:</strong> the feedback writer rejects non-user actors today — MCP corrections encode Actor::User-with-mcp-provenance or extend the writer (decided W5 L0, no silent bypass). DOS-169/170 reconcile against ADR-0128 §D.</p>
+  <p><strong>Proof —</strong> MCP sees the same claims/trust/post-correction surfacing as the app, modulo the ADR-0125 sensitivity gate (Confidential/UserOnly never cross MCP).</p>
+
+  <h3 class="plans-subhead">W6 — Transcript substrate · parallel; release valve</h3>
+  <p>DOS-343 transcript extraction → claim-producing abilities (PointInTime/immutable, ADR-0044/0125; one transcript = one source, ADR-0126 §7); DOS-327 Quote Wall typing; DOS-511 the W6 L0 package (authored in v1.4.9 even if W6 implementation slips to v1.5.0).</p>
+  <p><strong>Proof —</strong> a transcript claim carries provenance + trust band, surfaces in briefings, responds to correction. <strong>Decoupled from the version DoD</strong> — the headline lands without it.</p>
+</section>
+
+<section class="plans-section" aria-labelledby="dod">
+  <header class="plans-section-header">
+    <p class="plans-section-eyebrow">Definition of done</p>
+    <h2 id="dod" class="plans-section-title">Version-tag gates.</h2>
+  </header>
+  <ul>
+    <li>Headline proven + felt: a correction in app, file, and MCP each changes a surfacing the user did not directly touch, survives re-enrichment + rebuild, measured by DOS-338.</li>
+    <li>Substrate reset: plain SQLite (ADR-0136 landed); decrypt-then-drop done; rebuild preserves corrections; single-writer; replica-refresh + guards (DOS-820 closed); auth right-sized + threat-model/0102 supersession.</li>
+    <li>Cross-surface parity modulo the ADR-0125 sensitivity gate (Confidential/UserOnly app-only).</li>
+    <li>No stubs in shipped waves: contradiction.rs / render_rules.rs / deviation.rs / recommendations/eval.rs real.</li>
+    <li>Gates green: <code>cargo clippy -- -D warnings &amp;&amp; cargo test &amp;&amp; pnpm tsc --noEmit</code> (DOS-824 flake tracked separately).</li>
+    <li>W6 is not a tag-gate (release valve).</li>
+  </ul>
+</section>
+
+<section class="plans-section plans-section-footer">
+  <header class="plans-section-header">
+    <p class="plans-section-eyebrow">Related</p>
+    <h2 class="plans-section-title">Cross-references.</h2>
+  </header>
+  <ul class="plans-related">
+    <li><strong>v1.4.9-waves.md</strong> — markdown twin (canonical for review; amendments + full L0 cycle history there).</li>
+    <li><strong>engineering-ladder.html</strong> — L0–L6 + reviewer routing.</li>
+    <li><strong>Linear DOS-820</strong> — L0 cycle 1–4 verdicts (audit trail).</li>
+  </ul>
+</section>
+
+<div class="finis">
+  <div class="finis-mark">W1 · W2 · W3 · W4 · W5 · W6</div>
+  <div class="finis-date">v1.4.9 Wave Plan · L0 plan-altitude converged · 2026-05-30</div>
+  <div class="finis-caption">Mechanism-depth design routes to the per-wave L0 packets; the version plan converges at plan altitude.</div>
+</div>
+
+</div>
+</main>
+</div>
+</body>
+</html>
