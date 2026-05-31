@@ -121,7 +121,7 @@
   <div class="callout-grid">
     <article class="callout">
       <h3 class="callout-title">Bank WP, don't revert</h3>
-      <p class="callout-prose">The WP-primary work (the ~50 blocks + their per-block <code>render.php</code>, the <code>get_entity_intelligence</code> envelope) is <strong>preserved intact</strong> for the future where DailyOS is a headless runtime powering a local WordPress install. W0 parks it cleanly — nothing deleted, nothing extended. <em>(Note: there is no built unified <code>GutenbergBlockRenderer</code> — it's per-block <code>render.php</code> today; the unified renderer is ADR-0130 §4's <em>planned</em> WP binding.)</em></p>
+      <p class="callout-prose">The WP-primary work (the ~89 blocks + their per-block <code>render.php</code>, the <code>get_entity_intelligence</code> envelope) is <strong>preserved intact</strong> for the future where DailyOS is a headless runtime powering a local WordPress install. W0 parks it cleanly — nothing deleted, nothing extended. <em>(Note: there is no built unified <code>GutenbergBlockRenderer</code> — it's per-block <code>render.php</code> today; the unified renderer is ADR-0130 §4's <em>planned</em> WP binding.)</em></p>
     </article>
     <article class="callout">
       <h3 class="callout-title">Informed, not forked</h3>
@@ -241,9 +241,9 @@
   <h3 class="plans-subhead">W0 — Bank WP + substrate audit · preserve, don't delete</h3>
   <p>Park the reverted WP-primary work cleanly and confirm the engine it produced is surface-generic before the Tauri renderer consumes it. <strong>Nothing is deleted or reverted.</strong></p>
   <ul>
-    <li><strong>Park</strong> the v1.4.4 WP-surface-migration plan + the ~50 <code>wp/dailyos/blocks/</code> blocks (out of active CI/build path, preserved on branch); mark the obsolete WP surface-audit ticket (DOS-677). <strong>Carve-out:</strong> do NOT remove the composition orchestrator or the <code>/v1/local/project-composition</code> loopback route — shared substrate the Tauri renderer reuses (W1). <em>(create ticket)</em></li>
+    <li><strong>Park</strong> the v1.4.4 WP-surface-migration plan + the ~89 <code>wp/dailyos/blocks/</code> blocks (out of active CI/build path, preserved on branch); mark the obsolete WP surface-audit ticket (DOS-677). <strong>Carve-out:</strong> do NOT remove the composition orchestrator or the <code>/v1/local/project-composition</code> loopback route — shared substrate the Tauri renderer reuses (W1). <em>(create ticket)</em></li>
     <li><strong>Audit</strong> the <code>get_entity_intelligence</code> envelope + Composition producers for WordPress-shape assumptions, so the Tauri renderer inherits a generic contract. <em>(create ticket)</em></li>
-    <li><strong>Status ADRs:</strong> ADR-0130 Proposed → Accepted; ADR-0122 Accepted <em>as Option A</em> (all-or-nothing freshness + instrumentation — not per-chapter). The <code>FreshnessIndicator</code> primitive already exists — confirm it covers per-block freshness (the <code>ChapterFreshness</code> rename appears already done; verify, don't chase a ghost). <em>(create ticket)</em></li>
+    <li><strong>Status ADRs + freshness:</strong> ADR-0130 Proposed → Accepted; ADR-0122 Accepted <em>as Option A</em> (all-or-nothing freshness + instrumentation — not per-chapter). The <code>FreshnessIndicator</code> primitive already exists; <code>ChapterFreshness</code> is still referenced in 3 components (<code>StakeholderGallery</code>, <code>StakeholderGrid</code>, <code>AccountDetailPage</code>) — migrate them onto the primitive (real refactor, not a no-op). <em>(create ticket)</em></li>
   </ul>
   <p class="plans-footnote"><strong>In plain terms —</strong> safely shelve the WordPress work for later (don't throw it away), and make sure the engine isn't secretly WordPress-shaped before the Mac app starts using it.</p>
   <p><strong>Proof —</strong> WP work intact + out of the active path; envelope confirmed surface-generic; ADRs accepted.</p>
