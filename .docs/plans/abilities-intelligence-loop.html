@@ -1,0 +1,263 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>Abilities &amp; the Intelligence Loop · DailyOS Planning</title>
+  <link rel="stylesheet" href="../design/reference/_shared/fonts.css">
+  <link rel="stylesheet" href="../design/reference/_shared/styles/design-tokens.css">
+  <link rel="stylesheet" href="../design/reference/_shared/styles/AtmosphereLayer.module.css">
+  <link rel="stylesheet" href="../design/reference/_shared/styles/MagazinePageLayout.module.css">
+  <link rel="stylesheet" href="../design/reference/_shared/chrome.css">
+  <link rel="stylesheet" href="plans.css">
+</head>
+<body data-tint="eucalyptus">
+<div class="MagazinePageLayout_magazinePage">
+<main class="MagazinePageLayout_pageContainer">
+<div class="plans-shell">
+
+<!-- TOPNAV -->
+<nav class="plans-topnav" aria-label="Planning surface">
+  <a class="plans-mark" href="index.html">
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 433 407" width="16" height="16" aria-hidden="true">
+      <path d="M159 407 161 292 57 355 0 259 102 204 0 148 57 52 161 115 159 0H273L271 115L375 52L433 148L331 204L433 259L375 355L271 292L273 407Z" fill="currentColor"/>
+    </svg>
+    DailyOS · Planning
+  </a>
+  <div class="plans-topnav-links">
+    <a href="engineering-ladder.html">Engineering Ladder</a>
+    <a href="v1.5.0-waves.html">v1.5.0 Waves</a>
+    <a href="abilities-intelligence-loop.html" data-active="true">Abilities Explainer</a>
+    <a href="AUTHORING.md">Authoring Ruleset</a>
+  </div>
+</nav>
+
+<!-- COVER -->
+<section class="plans-cover">
+  <p class="plans-eyebrow">DailyOS · Reference · Explainer</p>
+  <h1 class="plans-title">How abilities become what you see.</h1>
+  <p class="plans-kicker">The contract between the backend "abilities," the intelligence loop, and the content on your screen — in plain language.</p>
+  <p class="plans-lede">
+    There are around two dozen "abilities" in DailyOS. They run quietly in the background and they're the reason the app's content changes. This page explains what they are, how they connect to the intelligence loop (claims, trust, signals), and how an ability's work ends up as a risk callout on an Account page. It also names, honestly, the parts that are still fuzzy even to an engineer. It's written to be read top-to-bottom without a CS degree.
+  </p>
+  <div class="plans-meta">
+    <span>Audience: product owner</span>
+    <span>Grounded in code: 2026-05-31</span>
+    <span>Companion: v1.5.0-waves.html</span>
+  </div>
+</section>
+
+<!-- ONE-SENTENCE FRAME -->
+<section class="plans-section" aria-labelledby="frame">
+  <header class="plans-section-header">
+    <p class="plans-section-eyebrow">The whole thing in one breath</p>
+    <h2 id="frame" class="plans-section-title">Something happens → an ability analyzes it → it records a claim with proof → the screen reflects it → your feedback makes it smarter.</h2>
+    <p class="plans-section-lede">Everything below is just that sentence, expanded. The key idea to hold: <strong>abilities are the single source of truth.</strong> Every visible fact traces back to an ability that produced it and the evidence it stood on. Nothing appears on screen that can't be explained.</p>
+  </header>
+  <pre class="plans-flow">an event            (email arrives · meeting scheduled · you confirm a fact)
+  → an ability runs (a mini-analyst reads your data, maybe asks an AI model)
+  → a claim is recorded  (a typed statement + its sources + a confidence/trust band)
+  → a signal fires   (tells the rest of the app "something about Acme changed")
+  → the screen updates   (the Account page re-draws its risks / wins / commitments)
+  → you give feedback (confirm / dismiss / "wrong") → trust adjusts → next time is better</pre>
+</section>
+
+<!-- WHAT IS AN ABILITY -->
+<section class="plans-section" aria-labelledby="what">
+  <header class="plans-section-header">
+    <p class="plans-section-eyebrow">1 · What an ability is</p>
+    <h2 id="what" class="plans-section-title">A mini-analyst with a paper trail.</h2>
+    <p class="plans-section-lede">An ability is a single, well-defined backend function. It takes some structured input, reads claims and context from your workspace, optionally calls an AI model, and returns a result — always wrapped with a record of where everything came from. That wrapper is what makes the system auditable.</p>
+  </header>
+  <div class="callout-grid">
+    <article class="callout">
+      <h3 class="callout-title">It always carries provenance</h3>
+      <p class="callout-prose">Every ability result is wrapped in an envelope that records: which ability ran, what it was given, which sources it read (emails, calendar, notes), and a trust assessment. So "why does it say this?" always has an answer.</p>
+    </article>
+    <article class="callout">
+      <h3 class="callout-title">It's permission-aware</h3>
+      <p class="callout-prose">Each ability declares who's allowed to run it — you, an agent, the system, an external MCP client. Sensitive things stay gated; read-only things are open. The app, MCP, and (later) WordPress all invoke abilities the same way.</p>
+    </article>
+    <article class="callout">
+      <h3 class="callout-title">It outputs one of a few shapes</h3>
+      <p class="callout-prose">A <strong>claim</strong> (a typed fact), an <strong>intelligence envelope</strong> (facts + provenance for an entity), a <strong>Composition</strong> (page blocks, the new path), a <strong>list</strong>, or a <strong>side effect</strong> (e.g. recording your feedback).</p>
+    </article>
+    <article class="callout">
+      <h3 class="callout-title">It's the AI-native boundary</h3>
+      <p class="callout-prose">This is the product's core principle made concrete: <em>AI produces, you consume.</em> Abilities are where the producing happens; surfaces (the Mac app, MCP) are where you consume. The contract between them is the envelope.</p>
+    </article>
+  </div>
+</section>
+
+<!-- THE INVENTORY -->
+<section class="plans-section" aria-labelledby="inventory">
+  <header class="plans-section-header">
+    <p class="plans-section-eyebrow">2 · The roster</p>
+    <h2 id="inventory" class="plans-section-title">The abilities, grouped by what they do.</h2>
+    <p class="plans-section-lede">Around two dozen are registered today. Grouped, the "black hole" gets a lot smaller — most are readers or context-builders; only a couple produce the new page-block output, and that's exactly the gap v1.5.0 closes.</p>
+  </header>
+  <table class="reviewer-matrix">
+    <thead><tr><th>Group</th><th>Abilities</th><th>What they produce</th></tr></thead>
+    <tbody>
+      <tr><td><strong>Readers</strong></td><td><code>list_accounts</code>, <code>list_people</code>, <code>list_projects</code>, <code>list_open_loops</code></td><td>Paginated lists for list pages</td></tr>
+      <tr><td><strong>Context builders</strong></td><td><code>get_entity_context</code>, <code>get_entity_intelligence</code></td><td>An entity's facts/risks/wins + provenance (the envelope today's detail pages read)</td></tr>
+      <tr><td><strong>Briefing &amp; prep</strong></td><td><code>get_daily_briefing</code>, <code>get_daily_readiness</code>, <code>prepare_meeting</code></td><td>Composed daily/meeting summaries</td></tr>
+      <tr><td><strong>Page producers (new path)</strong></td><td><code>account_overview</code> <em>(and, after v1.5.0, project/person/briefing/meeting)</em></td><td>A <strong>Composition</strong> — the typed page blocks</td></tr>
+      <tr><td><strong>Claims &amp; feedback</strong></td><td><code>claim_receipt</code>, <code>feedback</code></td><td>Records a claim; records your confirm/dismiss and adjusts trust</td></tr>
+      <tr><td><strong>Analysis</strong></td><td><code>detect_risk_shift</code>, <code>score_salience</code>, <code>refresh_engagement_curve</code></td><td>Risk deltas, relevance scores, engagement trends</td></tr>
+      <tr><td><strong>Workspace</strong></td><td><code>entity_intake</code>, <code>workspace_graph</code>, <code>workspace_place_document</code>, <code>source_management_ledger</code></td><td>Onboarding, relationship maps, document filing, source audit</td></tr>
+      <tr><td><strong>Rendering helpers</strong></td><td><code>markdown_preview</code></td><td>Safe formatted text</td></tr>
+    </tbody>
+  </table>
+  <p class="plans-footnote"><strong>The one that matters most for v1.5.0:</strong> only <code>account_overview</code> produces the new block output (a Composition) today. Everything else still hands back the older "intelligence envelope," which the current pages read and render by hand. v1.5.0 builds the renderer for blocks and teaches a few more abilities to produce them.</p>
+</section>
+
+<!-- THE LOOP -->
+<section class="plans-section" aria-labelledby="loop">
+  <header class="plans-section-header">
+    <p class="plans-section-eyebrow">3 · The intelligence loop</p>
+    <h2 id="loop" class="plans-section-title">How a raw event becomes trusted, on-screen intelligence.</h2>
+    <p class="plans-section-lede">The loop is the chain that turns an email (or a correction) into something the app can show and stand behind. Five moving parts: claims, provenance, trust, signals, feedback.</p>
+  </header>
+  <div class="callout-grid">
+    <article class="callout">
+      <h3 class="callout-title">Claims</h3>
+      <p class="callout-prose">Typed statements about an entity — "Acme is at renewal risk." Each has a subject, a type, a lifecycle (active → dormant → dismissed → superseded), and the sources behind it. Claims are the substrate everything else hangs on.</p>
+    </article>
+    <article class="callout">
+      <h3 class="callout-title">Provenance</h3>
+      <p class="callout-prose">The "where did this come from" record. Lives once, attached to the ability result; blocks reference it rather than copying it. This is what lets the app show "CRM email · May 30" under a fact.</p>
+    </article>
+    <article class="callout">
+      <h3 class="callout-title">Trust</h3>
+      <p class="callout-prose">A confidence band per claim, aggregated from how many sources corroborate it, how many contradict, and your feedback. It renders as the trust indicator (likely-current / use-with-caution / needs-verification).</p>
+    </article>
+    <article class="callout">
+      <h3 class="callout-title">Signals</h3>
+      <p class="callout-prose">When claims change, a signal fires — "something about Acme changed." Signals invalidate stale derived state: e.g. an upcoming meeting's prep gets re-queued so it reflects the new fact.</p>
+    </article>
+    <article class="callout">
+      <h3 class="callout-title">Feedback</h3>
+      <p class="callout-prose">When you confirm, dismiss, or flag a claim, that routes back through an ability. It updates the claim's lifecycle and trust, and adjusts how reliable that source is judged next time. This is the loop closing.</p>
+    </article>
+    <article class="callout">
+      <h3 class="callout-title">The payoff</h3>
+      <p class="callout-prose">Because every fact is a claim with provenance and trust, the app can show <em>and defend</em> what it tells you — and your corrections compound. That's the "trust as a feature" thesis, working.</p>
+    </article>
+  </div>
+</section>
+
+<!-- ABILITY → SCREEN -->
+<section class="plans-section" aria-labelledby="screen">
+  <header class="plans-section-header">
+    <p class="plans-section-eyebrow">4 · From ability output to on-screen content</p>
+    <h2 id="screen" class="plans-section-title">Two paths — and v1.5.0 is about finishing the second.</h2>
+    <p class="plans-section-lede">An ability's output reaches your screen one of two ways today. Understanding the split is the key to understanding what v1.5.0 changes.</p>
+  </header>
+
+  <h3 class="plans-subhead">Path A — the legacy path (most surfaces today)</h3>
+  <p>An ability (usually <code>get_entity_intelligence</code>) returns an <strong>intelligence envelope</strong> — a bag of facts with provenance. The Mac app reads it, maps the facts into shapes like "risks," "wins," "commitments," and renders them with hand-written React for that specific page. Account / Project / Person detail pages work this way now. It works, but every page is bespoke code, and adding a new section means writing a new page.</p>
+
+  <h3 class="plans-subhead">Path B — the block path (the future, and v1.5.0's job)</h3>
+  <p>An ability (today, only <code>account_overview</code>) returns a <strong>Composition</strong> — a typed list of blocks, each carrying its claims, provenance, and trust. A renderer turns each block into a component. The substrate for this is already built (the block model + a safety net for unknown blocks). What's missing is the Mac app's renderer for it. v1.5.0 builds that renderer, teaches a few more abilities to produce Compositions, and adds the layer that lets you rearrange the blocks.</p>
+
+  <pre class="plans-flow">PATH A (today):  ability → intelligence envelope → app maps facts → hand-written page sections
+PATH B (v1.5.0): ability → Composition (blocks) → BlockRenderer → component per block + your layout</pre>
+  <p class="plans-footnote"><strong>In plain terms —</strong> right now each page is drawn by its own custom code. The future is each page being a stack of standard blocks the AI fills in and the app draws automatically — which is what makes "rearrange your own page" possible. v1.5.0 moves the detail pages from the first way to the second.</p>
+</section>
+
+<!-- WORKED EXAMPLE -->
+<section class="plans-section" aria-labelledby="example">
+  <header class="plans-section-header">
+    <p class="plans-section-eyebrow">5 · One worked example</p>
+    <h2 id="example" class="plans-section-title">A champion sends an email. Here's the whole chain.</h2>
+    <p class="plans-section-lede">Illustrative, but every step is a real part of the system. Follow one email from arrival to changing a meeting prep.</p>
+  </header>
+  <ol class="l6-list-items">
+    <li><span><strong>The event.</strong> John (a champion at Acme) emails: "Let's talk Q3 renewal." The email is ingested; the system recognizes the Account (Acme) and the Person (John).</span></li>
+    <li><span><strong>An ability runs.</strong> <code>get_entity_intelligence</code> reads Acme's existing claims and the new email. An AI step concludes: "John initiated a renewal discussion."</span></li>
+    <li><span><strong>A claim is recorded.</strong> A "renewal opportunity" claim is written for Acme, with the email as its source and a timestamp. Because a prior CRM note also pointed at renewal, the two corroborate.</span></li>
+    <li><span><strong>Trust is computed.</strong> Two corroborating sources, no contradictions, plus a confirmation you gave two weeks ago → the claim lands at high confidence and renders with a strong trust band.</span></li>
+    <li><span><strong>A signal fires.</strong> "Something about Acme changed." A listener finds an upcoming renewal call within 48 hours and queues its prep to be regenerated.</span></li>
+    <li><span><strong>The screen updates.</strong> On the Account page, a "Win" card appears: <em>"Renewal opportunity — John initiated renewal discussion,"</em> sourced "CRM Email · May 30," with a Confirm button.</span></li>
+    <li><span><strong>You give feedback.</strong> You click Confirm. The claim's confidence rises, the CRM-email source is judged a touch more reliable, and the card shows "You confirmed this."</span></li>
+    <li><span><strong>It ripples.</strong> When the renewal-call prep regenerates, it now leads with the confirmed renewal signal — so your meeting brief is already current, without you touching it.</span></li>
+  </ol>
+  <p class="plans-footnote"><strong>In plain terms —</strong> you never told the app to update the Account page or the meeting prep. An ability did the analysis, a claim recorded it with proof, a signal nudged the dependents, and the surfaces redrew themselves — and your one click made all of it more confident.</p>
+</section>
+
+<!-- WHAT'S FUZZY -->
+<section class="plans-section plans-section-callouts" aria-labelledby="fuzzy">
+  <header class="plans-section-header">
+    <p class="plans-section-eyebrow">6 · What's still fuzzy</p>
+    <h2 id="fuzzy" class="plans-section-title">The honest gaps — confusing even to engineers.</h2>
+    <p class="plans-section-lede">You asked to understand the black hole; part of understanding it is knowing where it's genuinely murky. These are real, and several are things v1.5.0 (or a follow-on) should make legible.</p>
+  </header>
+  <div class="callout-grid">
+    <article class="callout">
+      <h3 class="callout-title">Claim lifecycle isn't drawn anywhere</h3>
+      <p class="callout-prose">"When I dismiss a claim, is it gone forever or can it come back?" The answer depends on the claim's policy (some re-surface with new evidence unless you mark them flat-out wrong). The state machine is real but scattered across files — no single diagram.</p>
+    </article>
+    <article class="callout">
+      <h3 class="callout-title">Trust band ≠ whether it shows</h3>
+      <p class="callout-prose">A claim can be high-trust and still hidden, or low-trust and shown with a caution. Confidence (trust) and visibility (render policy) are two different dials that aren't explained together.</p>
+    </article>
+    <article class="callout">
+      <h3 class="callout-title">Freshness decay lives elsewhere</h3>
+      <p class="callout-prose">"If John goes quiet for 3 months, does the renewal claim fade?" There's decay logic, but it's not next to the claim definition, so it's hard to reason about how staleness actually behaves.</p>
+    </article>
+    <article class="callout">
+      <h3 class="callout-title">Which fields are editable, and why</h3>
+      <p class="callout-prose">Blocks can mark some fields as inline-editable (routing to claim feedback). Which ones, and under what permissions, isn't obvious from looking at a block — it's buried in binding logic. v1.5.0's inline-edit work should surface this.</p>
+    </article>
+    <article class="callout">
+      <h3 class="callout-title">Signals quietly merge</h3>
+      <p class="callout-prose">Two fast signals on the same entity can coalesce into one — so you might see one prep refresh, not two. The merge window isn't documented in one place.</p>
+    </article>
+    <article class="callout">
+      <h3 class="callout-title">Composed briefings hide their seams</h3>
+      <p class="callout-prose">The daily briefing stitches together several abilities' outputs. If it looks "off," tracing which sub-ability caused it is hard — the merge logic isn't a documented contract.</p>
+    </article>
+  </div>
+  <p class="plans-footnote"><strong>What would help —</strong> a drawn claim-lifecycle diagram, a table of "claim type → how fast it goes stale," and a clear rule for "this field is editable when…". Worth a small follow-on once v1.5.0's renderer makes these visible on screen.</p>
+</section>
+
+<!-- WHY IT MATTERS FOR v1.5.0 -->
+<section class="plans-section" aria-labelledby="why">
+  <header class="plans-section-header">
+    <p class="plans-section-eyebrow">7 · Why this is the v1.5.0 story</p>
+    <h2 id="why" class="plans-section-title">v1.5.0 finishes the path from ability to block to screen.</h2>
+  </header>
+  <p>The producing side — abilities, claims, trust, the block model — is largely built. The consuming side on the Mac app is where the gap is: it still draws pages by hand instead of rendering blocks, and only one ability produces blocks at all. v1.5.0 builds the renderer, teaches a thin slice of abilities to produce blocks (Project, Person, briefing, meeting), and adds the layer that lets you compose those blocks into the page you want. Once that lands, "AI produces, you consume — and you arrange" is true on screen, not just in the substrate.</p>
+  <p class="plans-footnote">See <a href="v1.5.0-waves.html">v1.5.0 Waves</a> for the build plan. The short version: W1a teaches more abilities to produce blocks; W1b builds the renderer; W2 lets you edit/arrange; W3/W4 land the redesigns and the meeting recap.</p>
+</section>
+
+<!-- ENGINEER REFERENCE -->
+<section class="plans-section plans-section-footer">
+  <header class="plans-section-header">
+    <p class="plans-section-eyebrow">For engineers · file map</p>
+    <h2 class="plans-section-title">Where each piece lives.</h2>
+  </header>
+  <ul class="plans-related">
+    <li><strong>Ability registry / policy / actor</strong> <code>src-tauri/abilities-runtime/src/abilities/registry.rs</code></li>
+    <li><strong>Provenance envelope</strong> <code>src-tauri/abilities-runtime/src/abilities/provenance/envelope.rs</code>; <strong>trust</strong> <code>.../provenance/trust.rs</code></li>
+    <li><strong>Block model</strong> <code>.../abilities/composition.rs</code>; <strong>unknown-block fallback</strong> <code>.../abilities/fallback_projection.rs</code></li>
+    <li><strong>Reference producer</strong> <code>.../abilities/account_overview.rs</code>; <strong>context</strong> <code>.../abilities/get_entity_intelligence/</code></li>
+    <li><strong>Feedback ability</strong> <code>.../abilities/feedback.rs</code>; <strong>signals + invalidation</strong> <code>src-tauri/src/signals/invalidation.rs</code></li>
+    <li><strong>Legacy render path</strong> <code>src/services/entity-intelligence/entity-detail-mapper.ts</code> + the detail pages</li>
+    <li><strong>Contracts</strong> ADR-0102 (abilities), ADR-0105/0108 (provenance/trust), ADR-0080 (signals), ADR-0125 (claim anatomy), ADR-0130 (Composition)</li>
+  </ul>
+</section>
+
+<!-- FINIS -->
+<div class="finis">
+  <div class="finis-mark">event · ability · claim · trust · signal · screen · feedback</div>
+  <div class="finis-date">Abilities &amp; the Intelligence Loop · 2026-05-31</div>
+  <div class="finis-caption">Every visible fact traces back to an ability and the evidence it stood on. Nothing on screen is unexplained.</div>
+</div>
+
+</div>
+</main>
+</div>
+</body>
+</html>

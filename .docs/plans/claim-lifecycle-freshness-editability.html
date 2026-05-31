@@ -1,0 +1,195 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>Claims: Lifecycle, Freshness &amp; Editability · DailyOS Planning</title>
+  <link rel="stylesheet" href="../design/reference/_shared/fonts.css">
+  <link rel="stylesheet" href="../design/reference/_shared/styles/design-tokens.css">
+  <link rel="stylesheet" href="../design/reference/_shared/styles/AtmosphereLayer.module.css">
+  <link rel="stylesheet" href="../design/reference/_shared/styles/MagazinePageLayout.module.css">
+  <link rel="stylesheet" href="../design/reference/_shared/chrome.css">
+  <link rel="stylesheet" href="plans.css">
+</head>
+<body data-tint="saffron">
+<div class="MagazinePageLayout_magazinePage">
+<main class="MagazinePageLayout_pageContainer">
+<div class="plans-shell">
+
+<!-- TOPNAV -->
+<nav class="plans-topnav" aria-label="Planning surface">
+  <a class="plans-mark" href="index.html">
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 433 407" width="16" height="16" aria-hidden="true">
+      <path d="M159 407 161 292 57 355 0 259 102 204 0 148 57 52 161 115 159 0H273L271 115L375 52L433 148L331 204L433 259L375 355L271 292L273 407Z" fill="currentColor"/>
+    </svg>
+    DailyOS · Planning
+  </a>
+  <div class="plans-topnav-links">
+    <a href="v1.5.0-waves.html">v1.5.0 Waves</a>
+    <a href="abilities-intelligence-loop.html">Abilities Explainer</a>
+    <a href="claim-lifecycle-freshness-editability.html" data-active="true">Claims: Lifecycle</a>
+    <a href="AUTHORING.md">Authoring Ruleset</a>
+  </div>
+</nav>
+
+<!-- COVER -->
+<section class="plans-cover">
+  <p class="plans-eyebrow">DailyOS · Reference · Living position</p>
+  <h1 class="plans-title">How claims live, go stale, and accept your edits.</h1>
+  <p class="plans-kicker">The current position on three things the substrate does implicitly — assembled in one place, adapted as the product develops.</p>
+  <p class="plans-lede">
+    A "claim" is one recorded fact (a risk, a win, a commitment) with its sources and a trust band. Three questions follow it through its life, and the answers are scattered across the code and a few ADRs. This page assembles them: <strong>how a claim changes state</strong> as you act on it, <strong>how it ages</strong>, and <strong>when you can edit it inline</strong>. The mechanics here are real and shipped (ADR-0123 / 0125 / 0114 / 0130); the <em>positions</em> — the policy dials — are marked <strong>proposed</strong> and are James's to set. This is a living doc: it states today's position and is revised as the product develops.
+  </p>
+  <div class="plans-meta">
+    <span>Status: living · v0 draft</span>
+    <span>Grounded in code: 2026-05-31</span>
+    <span>Implemented by: v1.5.0 W2 (edit) + W4 (freshness/trust)</span>
+  </div>
+</section>
+
+<!-- 1 · LIFECYCLE -->
+<section class="plans-section" aria-labelledby="lifecycle">
+  <header class="plans-section-header">
+    <p class="plans-section-eyebrow">1 · Lifecycle</p>
+    <h2 id="lifecycle" class="plans-section-title">A claim has four states, and your feedback moves it between them.</h2>
+    <p class="plans-section-lede">Every claim is in one of four states. It starts <code>active</code>. What you do to it — confirm, mark outdated, mark false — moves it, and adjusts how much the system trusts that source next time. (ADR-0123 defines the actions; the schema defines the states.)</p>
+  </header>
+  <pre class="plans-flow">created → ACTIVE ──confirm──────────────→ ACTIVE (more trusted)
+                ──mark outdated────────→ DORMANT (can be replaced by a fresher claim)
+                ──needs nuance / edit──→ SUPERSEDED  (your corrected version becomes the active one)
+                ──mark false───────────→ WITHDRAWN (gone for good; a tombstone shadow blocks the exact claim resurfacing)
+                ──wrong subject────────→ tombstoned for that entity (the fact may be right elsewhere)</pre>
+  <table class="reviewer-matrix">
+    <thead><tr><th>You say…</th><th>What happens to the claim</th><th>Effect on trust</th></tr></thead>
+    <tbody>
+      <tr><td><strong>Confirm</strong> ("still true")</td><td>Stays active</td><td>Source judged more reliable</td></tr>
+      <tr><td><strong>Mark outdated</strong> ("was true, not now")</td><td>Goes dormant; eligible to be replaced by a fresher claim</td><td>Freshness downweighted</td></tr>
+      <tr><td><strong>Edit inline</strong> ("partly right — here's the fix")</td><td>Original superseded; your corrected version becomes active</td><td>Small reinforce or contradiction depending on how much you changed</td></tr>
+      <tr><td><strong>Mark false</strong> ("this is wrong")</td><td>Withdrawn — permanent (a separate tombstone shadow blocks the exact claim from resurfacing; the state itself is <em>withdrawn</em>, not <em>tombstoned</em>)</td><td>Source penalized</td></tr>
+      <tr><td><strong>Wrong subject</strong> ("right fact, wrong account")</td><td>Tombstoned for this entity only</td><td>Small source penalty</td></tr>
+      <tr><td><strong>Wrong source</strong> ("source doesn't say that")</td><td>Stays active unless no qualified source remains</td><td>That source downweighted for this claim type</td></tr>
+      <tr><td><strong>Can't verify</strong></td><td>Stays active; queues a re-check</td><td>No penalty</td></tr>
+      <tr><td><strong>Not here / surface-inappropriate</strong></td><td>Hidden on this surface only; state unchanged</td><td>No trust change</td></tr>
+    </tbody>
+  </table>
+  <p class="plans-footnote"><strong>In plain terms —</strong> confirm makes it stickier; "outdated" lets a newer fact take its place; an inline edit swaps in your version; "false" buries it for good. The one rule worth remembering: <strong>marking false is permanent</strong> — new evidence won't resurrect that exact claim (a fresh, contradicting claim can still be made).</p>
+</section>
+
+<!-- 2 · FRESHNESS -->
+<section class="plans-section" aria-labelledby="freshness">
+  <header class="plans-section-header">
+    <p class="plans-section-eyebrow">2 · Freshness</p>
+    <h2 id="freshness" class="plans-section-title">Each claim type has an age profile.</h2>
+    <p class="plans-section-lede">Claims don't expire on a hard clock; they <em>decay</em> in confidence as they age, and how fast depends on the claim type. A meeting-readiness note goes stale in days; who the champion is stays relevant for months. Decay is a real, computed factor in the trust band (ADR-0114); the per-type profiles are below (from the claim type registry, ADR-0125).</p>
+  </header>
+  <table class="reviewer-matrix">
+    <thead><tr><th>Age profile</th><th>Rough half-life</th><th>Claim types</th></tr></thead>
+    <tbody>
+      <tr><td><strong>Static</strong></td><td>Never decays</td><td>Dismissals / tombstones (a "no" stays no)</td></tr>
+      <tr><td><strong>Slow</strong></td><td>Months</td><td>Wins · value delivered · stakeholder role · entity identity · company context · account facts</td></tr>
+      <tr><td><strong>Medium</strong></td><td>Weeks</td><td>Risks · commitments · open loops · engagement · recommendations</td></tr>
+      <tr><td><strong>Fast</strong></td><td>Days</td><td>Meeting readiness · prep facts</td></tr>
+      <tr><td><strong>Event-bound</strong></td><td>Tied to an event/expiry</td><td>Meeting topics · suggested outcomes · triage snoozes</td></tr>
+    </tbody>
+  </table>
+  <p class="plans-footnote"><strong>In plain terms —</strong> the system shows fresher claims more prominently and lets confidence fade as things age — but it does not, today, hide a stale claim on its own. <em>When</em> a faded claim should gray out or drop off the page is a product position (see §4), and it's exactly what v1.5.0's trust/freshness rendering (W4) will make visible. Note: point-in-time facts ("Bob said X on 4/23") never decay — they're history, not state.</p>
+</section>
+
+<!-- 3 · EDITABILITY -->
+<section class="plans-section" aria-labelledby="editability">
+  <header class="plans-section-header">
+    <p class="plans-section-eyebrow">3 · Editability</p>
+    <h2 id="editability" class="plans-section-title">A field is editable inline only when it's tied to a claim and the claim allows it.</h2>
+    <p class="plans-section-lede">In the new block model (ADR-0130), each field a block shows carries a <em>binding</em> that says whether it's display-only or editable. An inline edit isn't a free-text overwrite — it routes back as a correction to the underlying claim. Here's the rule.</p>
+  </header>
+  <div class="callout-grid">
+    <article class="callout">
+      <h3 class="callout-title">Editable when…</h3>
+      <p class="callout-prose">The field is bound to a claim as a <code>FeedbackTarget</code>, the claim resolves to a real field, the claim type permits refinement, the sensitivity tier allows it on this surface, and the block isn't in the unknown-block fallback state.</p>
+    </article>
+    <article class="callout">
+      <h3 class="callout-title">Not editable when…</h3>
+      <p class="callout-prose">The field is display-only or computed, has no claim behind it, is too sensitive for the current surface, or sits on a block the surface couldn't fully recognize (capped to "needs verification"). Each refusal carries a reason, so the UI can explain why.</p>
+    </article>
+    <article class="callout">
+      <h3 class="callout-title">Free-form vs structured</h3>
+      <p class="callout-prose">Free-text fields accept a full rewrite (your text supersedes the claim). Structured fields — a role, a commitment, a renewal date, a health band — accept a <em>correction</em> (pick the right value / mark wrong) but not a free rewrite, because their shape is typed.</p>
+    </article>
+    <article class="callout">
+      <h3 class="callout-title">An edit is a correction</h3>
+      <p class="callout-prose">When you edit, the system records it as feedback: the original claim is superseded and your corrected version becomes the active one, with provenance noting you made the change. Nothing is silently overwritten.</p>
+    </article>
+  </div>
+  <p class="plans-footnote"><strong>In plain terms —</strong> if you can edit a thing on the page, it's because there's a real claim behind it and the system knows how to take your correction. Some things you can rewrite freely; some you can only set to the right option. Either way, your edit is a tracked correction, not an overwrite — which is what keeps the page trustworthy.</p>
+</section>
+
+<!-- 4 · POSITIONS TO SET -->
+<section class="plans-section plans-section-callouts" aria-labelledby="positions">
+  <header class="plans-section-header">
+    <p class="plans-section-eyebrow">4 · Positions to set</p>
+    <h2 id="positions" class="plans-section-title">The policy dials — proposed defaults, James to confirm.</h2>
+    <p class="plans-section-lede">These are the genuine product calls. Each has a recommended default so we can move; change any of them and the doc + the v1.5.0 AC follow.</p>
+  </header>
+  <div class="callout-grid">
+    <article class="callout">
+      <h3 class="callout-title">Staleness → on screen</h3>
+      <p class="callout-prose"><strong>Proposed:</strong> at ~1 half-life, a claim de-emphasizes (smaller / trust band drops to "use with caution"); at ~2 half-lives it collapses under a "stale" fold rather than disappearing — nothing is silently hidden. Confirm the fade/hide behavior (W4 renders it).</p>
+    </article>
+    <article class="callout">
+      <h3 class="callout-title">Editing a low-confidence claim</h3>
+      <p class="callout-prose"><strong>Proposed:</strong> yes — editing IS the way to fix low-confidence claims, so allow edits at "use with caution"; block inline edit only on the unknown-block fallback state (needs-verification cap). Confirm.</p>
+    </article>
+    <article class="callout">
+      <h3 class="callout-title">Is "false" forever?</h3>
+      <p class="callout-prose"><strong>Proposed:</strong> keep tombstones permanent (a "no" stays no), but add a visible "undo" window right after the action so a misclick is recoverable. Confirm permanence + the undo window.</p>
+    </article>
+    <article class="callout">
+      <h3 class="callout-title">Who can edit</h3>
+      <p class="callout-prose"><strong>Proposed:</strong> you (the user) can edit any eligible field; agents propose, never silently edit. Single-user app today, so no per-user gates. Confirm.</p>
+    </article>
+  </div>
+  <p class="plans-footnote"><strong>One code tidy this implies:</strong> make "does this claim type allow free-form refinement?" an explicit flag on the claim type registry (it's currently implied across ADR prose + UI). Small, and it makes the editability rule enforceable in one place — a candidate W2 sub-task.</p>
+</section>
+
+<!-- 5 · WHERE THIS LANDS -->
+<section class="plans-section" aria-labelledby="lands">
+  <header class="plans-section-header">
+    <p class="plans-section-eyebrow">5 · Where this lands</p>
+    <h2 id="lands" class="plans-section-title">A living position now; surfaced by v1.5.0.</h2>
+  </header>
+  <p>This doc is the high-level position you asked for — held in one place, revised as the product develops. It's not a build wave on its own; it's the spec two v1.5.0 waves implement against:</p>
+  <ul>
+    <li><strong>W4 (freshness/trust rendering)</strong> implements §2 + the §4 staleness position — claims fade / fold by age, trust band shown per block.</li>
+    <li><strong>W2 (inline-edit eligibility)</strong> implements §3 + the §4 editing positions — which fields show an edit affordance, and what a correction does.</li>
+    <li><strong>Deeper lifecycle UX</strong> (a contradiction review queue, dismissals you can revisit) is v1.4.9 W4 / a later follow-on — out of scope for v1.5.0, noted so it isn't lost.</li>
+  </ul>
+  <p class="plans-footnote">As the renderer makes these visible, expect this doc to gain a real claim-lifecycle diagram and per-type staleness numbers tuned against what actually feels right on screen. That's the "adapted as the product develops" part — this is v0.</p>
+</section>
+
+<!-- ENGINEER REFERENCE -->
+<section class="plans-section plans-section-footer">
+  <header class="plans-section-header">
+    <p class="plans-section-eyebrow">For engineers · sources</p>
+    <h2 class="plans-section-title">Where the mechanics live.</h2>
+  </header>
+  <ul class="plans-related">
+    <li><strong>Claim states / schema</strong> <code>src-tauri/src/migrations/129_*claims*.sql</code> (claim_state, surfacing_state, dedup_key)</li>
+    <li><strong>Feedback actions → transitions + trust deltas</strong> <code>abilities/feedback.rs</code> · <strong>ADR-0123</strong> (typed claim feedback semantics)</li>
+    <li><strong>Freshness decay class + per-type registry</strong> <code>abilities/claims.rs</code> · decay math <code>abilities/trust/freshness_decay.rs</code> + <code>trust/config/trust_compiler.toml</code> · <strong>ADR-0114</strong> (trust compiler), <strong>ADR-0125</strong> (claim anatomy / type registry)</li>
+    <li><strong>Field bindings + edit routes</strong> <code>abilities/composition.rs</code> (BindingRole / FieldBinding) · <code>abilities/fallback_projection.rs</code> (EditRoute + refusal reasons) · <strong>ADR-0130</strong></li>
+    <li><strong>Companion docs</strong> <a href="abilities-intelligence-loop.html">Abilities Explainer</a> · <a href="v1.5.0-waves.html">v1.5.0 Waves</a></li>
+  </ul>
+</section>
+
+<!-- FINIS -->
+<div class="finis">
+  <div class="finis-mark">active · dormant · superseded · withdrawn</div>
+  <div class="finis-date">Claims: Lifecycle, Freshness &amp; Editability · 2026-05-31 · living v0</div>
+  <div class="finis-caption">The mechanics are real; the dials are ours to set. Edits are corrections, never silent overwrites.</div>
+</div>
+
+</div>
+</main>
+</div>
+</body>
+</html>

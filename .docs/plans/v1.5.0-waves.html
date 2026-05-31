@@ -1,0 +1,447 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>v1.5.0 Wave Plan · DailyOS Planning</title>
+  <link rel="stylesheet" href="../design/reference/_shared/fonts.css">
+  <link rel="stylesheet" href="../design/reference/_shared/styles/design-tokens.css">
+  <link rel="stylesheet" href="../design/reference/_shared/styles/AtmosphereLayer.module.css">
+  <link rel="stylesheet" href="../design/reference/_shared/styles/MagazinePageLayout.module.css">
+  <link rel="stylesheet" href="../design/reference/_shared/chrome.css">
+  <link rel="stylesheet" href="plans.css">
+</head>
+<body data-tint="larkspur">
+<div class="MagazinePageLayout_magazinePage">
+<main class="MagazinePageLayout_pageContainer">
+<div class="plans-shell">
+
+<!-- TOPNAV -->
+<nav class="plans-topnav" aria-label="Planning surface">
+  <a class="plans-mark" href="index.html">
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 433 407" width="16" height="16" aria-hidden="true">
+      <path d="M159 407 161 292 57 355 0 259 102 204 0 148 57 52 161 115 159 0H273L271 115L375 52L433 148L331 204L433 259L375 355L271 292L273 407Z" fill="currentColor"/>
+    </svg>
+    DailyOS · Planning
+  </a>
+  <div class="plans-topnav-links">
+    <a href="engineering-ladder.html">Engineering Ladder</a>
+    <a href="v1.5.0-waves.html" data-active="true">v1.5.0 Waves</a>
+    <a href="abilities-intelligence-loop.html">Abilities Explainer</a>
+    <a href="claim-lifecycle-freshness-editability.html">Claims: Lifecycle</a>
+    <a href="AUTHORING.md">Authoring Ruleset</a>
+  </div>
+</nav>
+
+<!-- COVER -->
+<section class="plans-cover">
+  <p class="plans-eyebrow">DailyOS · v1.5.0 · Wave Plan · DRAFT</p>
+  <h1 class="plans-title">I shape the app to me — chapter by chapter.</h1>
+  <p class="plans-kicker">Composable Surfaces. The Tauri app learns to render the block model the substrate already produces — and lets you compose it.</p>
+  <p class="plans-lede">
+    The substrate already describes a page as a list of typed blocks (ADR-0130's <code>Composition</code>) — and that model is already ~55% built. What's missing is the Mac app's ability to <em>render</em> it and let you <em>compose</em> it. v1.5.0 builds the React block renderer, an in-context edit/customize mode, and a thin slice of new block-producing abilities — built <strong>Gutenberg-informed but native</strong>, so the work is ~80% portable back to WordPress when we choose to. We <strong>consume</strong> the existing block substrate; we do not reinvent it, and we do not rebuild WordPress.
+  </p>
+  <div class="plans-meta">
+    <span>Target: 2026 (DRAFT)</span>
+    <span>Waves: W0–W5 + List-Surfaces lane</span>
+    <span>Scope tier: Wave</span>
+    <span>Decisions locked w/ James 2026-05-31</span>
+  </div>
+</section>
+
+<!-- HOW TO READ THIS (non-engineer helpers) -->
+<section class="plans-section plans-section-callouts" aria-labelledby="reading">
+  <header class="plans-section-header">
+    <p class="plans-section-eyebrow">How to read this</p>
+    <h2 id="reading" class="plans-section-title">Plain-language key.</h2>
+    <p class="plans-section-lede">Engineering-heavy plan; here's the jargon in plain terms. Every wave also has an "In plain terms" line. For the full picture of how the backend produces what the app shows, see the <a href="abilities-intelligence-loop.html">Abilities Explainer</a>.</p>
+  </header>
+  <div class="callout-grid">
+    <article class="callout">
+      <h3 class="callout-title">Block / chapter</h3>
+      <p class="callout-prose">A typed piece of a page the AI fills in — a risk callout, a health snapshot, a claim summary. The substrate calls them <em>blocks</em>; on screen they group into the editorial <em>chapters</em> you scroll. A page is a stack of them.</p>
+    </article>
+    <article class="callout">
+      <h3 class="callout-title">Composition</h3>
+      <p class="callout-prose">The substrate's already-built model for "a page = a list of blocks, each with its sources and trust band" (ADR-0130). The AI authors it; the app renders it. v1.5.0 builds the app's renderer for it.</p>
+    </article>
+    <article class="callout">
+      <h3 class="callout-title">Ability</h3>
+      <p class="callout-prose">A specialized backend function — a mini-analyst — that reads your data and produces claims / intelligence / a Composition, always with a record of where it came from. See the explainer.</p>
+    </article>
+    <article class="callout">
+      <h3 class="callout-title">Gutenberg-informed</h3>
+      <p class="callout-prose">We mirror WordPress's block <em>patterns</em> (block metadata, edit-vs-render split, inline text editing) in our own native code — so it ports back to WP later. We do <strong>not</strong> fork WordPress's code or rebuild it.</p>
+    </article>
+    <article class="callout">
+      <h3 class="callout-title">Layout overlay</h3>
+      <p class="callout-prose">Your saved per-type choice of which blocks show, in what order, in which variant. It sits <em>over</em> the AI-authored page; it never changes the data. This is the genuinely new thing v1.5.0 adds.</p>
+    </article>
+    <article class="callout">
+      <h3 class="callout-title">Wave · L0</h3>
+      <p class="callout-prose"><strong>Wave</strong> = a batch that ships together; later waves wait on earlier ones. <strong>L0</strong> = the pre-build plan review this doc went through.</p>
+    </article>
+  </div>
+</section>
+
+<!-- SUBSTRATE REALITY (what's already built) -->
+<section class="plans-section" aria-labelledby="reality">
+  <header class="plans-section-header">
+    <p class="plans-section-eyebrow">What's already built · grounded 2026-05-31</p>
+    <h2 id="reality" class="plans-section-title">We consume the block substrate — it's ~55% done, not net-new.</h2>
+    <p class="plans-section-lede">A code review (not a guess) settled how much of ADR-0130 exists. This is the single most important framing: v1.5.0 builds the <em>two missing parts</em>, not a new composition model. Authoring a "chapter registry ADR" would reinvent shipped substrate — the L0 K-in check flagged exactly this.</p>
+  </header>
+  <div class="callout-grid">
+    <article class="callout">
+      <h3 class="callout-title">Block model — DONE (~95%)</h3>
+      <p class="callout-prose"><code>composition.rs</code> (~1,480 lines): <code>Composition</code>, <code>Section</code>, <code>Block</code>, 18 canonical <code>BlockType</code>s + Wave-1 primitives, <code>Salience</code>, <code>ProvenanceRef</code>, render hints — with tests and a CI lint enforcing substrate-only authorship.</p>
+    </article>
+    <article class="callout">
+      <h3 class="callout-title">Block registry + safe fallback — DONE (100%)</h3>
+      <p class="callout-prose"><code>fallback_projection.rs</code> (~1,716 lines): the unknown-block §3.1 projection — a <em>privacy boundary</em> (drop unknown fields, cap trust at <code>needs_verification</code>, non-dismissible banner), deterministic, tested.</p>
+    </article>
+    <article class="callout">
+      <h3 class="callout-title">React block renderer — ABSENT (0%)</h3>
+      <p class="callout-prose">The Mac app still hand-composes every page in React (<code>renderHealthView</code> etc.). There is no <code>BlockRenderer</code>, no block→component map. <strong>This is the net-new frontend, and the heart of v1.5.0.</strong></p>
+    </article>
+    <article class="callout">
+      <h3 class="callout-title">Composition producers — SPARSE (1 of ~28)</h3>
+      <p class="callout-prose">Only <code>dailyos/account-overview</code> emits a <code>Composition</code> today. Project/Person/briefing/meeting still emit older intelligence JSON. "Full end-to-end" needs a <strong>thin slice</strong> of new producers.</p>
+    </article>
+  </div>
+  <p class="plans-footnote"><strong>In plain terms —</strong> the company already wrote the "a page is a list of smart blocks" engine and a safety net for blocks the screen doesn't recognize. What's missing is the Mac app code that <em>draws</em> those blocks, and teaching a few more analysts to output that block shape. v1.5.0 is those two things plus the layer that lets you rearrange them.</p>
+</section>
+
+<!-- GUTENBERG-INFORMED, BANK WP -->
+<section class="plans-section plans-section-callouts" aria-labelledby="gutenberg">
+  <header class="plans-section-header">
+    <p class="plans-section-eyebrow">Build posture · decided with James</p>
+    <h2 id="gutenberg" class="plans-section-title">Gutenberg-informed native. Bank the WordPress work; don't rebuild it.</h2>
+  </header>
+  <div class="callout-grid">
+    <article class="callout">
+      <h3 class="callout-title">Bank WP, don't revert</h3>
+      <p class="callout-prose">The WP-primary work (the ~50 blocks + their per-block <code>render.php</code>, the <code>get_entity_intelligence</code> envelope) is <strong>preserved intact</strong> for the future where DailyOS is a headless runtime powering a local WordPress install. W0 parks it cleanly — nothing deleted, nothing extended. <em>(Note: there is no built unified <code>GutenbergBlockRenderer</code> — it's per-block <code>render.php</code> today; the unified renderer is ADR-0130 §4's <em>planned</em> WP binding.)</em></p>
+    </article>
+    <article class="callout">
+      <h3 class="callout-title">Informed, not forked</h3>
+      <p class="callout-prose">Mirror Gutenberg's <em>model + UX patterns</em> — <code>block.json</code>-style metadata, edit-vs-render separation, <code>RichText</code> inline editing, block-toolbar / inserter UX — built native on our design system + dnd-kit. Do NOT fork <code>@wordpress/*</code> packages; that drags WP's whole paradigm in and fights the canonical design system.</p>
+    </article>
+    <article class="callout">
+      <h3 class="callout-title">~80% portable, by convention</h3>
+      <p class="callout-prose">Keep the Tauri block contract aligned to ADR-0130 §4's planned WP binding + the existing per-block WP <code>render.php</code> shape. When we return to WP, it's alignment, not a rebuild. The substrate is already block-shaped, so this is natural.</p>
+    </article>
+    <article class="callout">
+      <h3 class="callout-title">Inline edit is the anchor</h3>
+      <p class="callout-prose">The app already has live text edit (<code>EditableText</code>) on some surfaces; WP doesn't yet. Design our block inline-editing now, modeled on Gutenberg <code>RichText</code> — so it's the pattern we port to WP later. We're ahead, in a WP-shaped way.</p>
+    </article>
+  </div>
+</section>
+
+<!-- WAVE OVERVIEW -->
+<section class="plans-section" aria-labelledby="wave-overview">
+  <header class="plans-section-header">
+    <p class="plans-section-eyebrow">Wave shape</p>
+    <h2 id="wave-overview" class="plans-section-title">W0 → W1 (Account reference) → (W2 ∥ W3 ∥ W4) → W5.</h2>
+    <p class="plans-section-lede">W0 banks WP. <strong>W1 proves the whole vertical on one surface — Account Detail — against the new design</strong> (producer + renderer + transport + the redesign), because that's where we figure it out. Then we work forward: W2 (edit mode) and the remaining surfaces (W3 detail, W4 briefing/meeting) fan out, each a producer + its new design — we do not build the renderer into the old templates we're replacing. W5 closes. List-Surfaces runs in parallel. Wave gate L3; L5 drift fold applies; user-facing surfaces → L4.</p>
+  </header>
+  <table class="reviewer-matrix">
+    <thead>
+      <tr><th>Wave</th><th>Theme</th><th>In plain terms</th><th>Carries</th></tr>
+    </thead>
+    <tbody>
+      <tr><td>W0</td><td>Bank WP + substrate audit</td><td>Park the WP work safely; confirm the engine is surface-generic</td><td>cleanup, preserve</td></tr>
+      <tr><td>W1</td><td>Account Detail — end-to-end reference</td><td>Prove producer → renderer → new design on ONE surface; figure it out here</td><td>the reference vertical</td></tr>
+      <tr><td>W2</td><td>In-context edit & customize</td><td>On-page edit mode: toggle / reorder / variant / inline-edit, per type</td><td>HEADLINE</td></tr>
+      <tr><td>W3</td><td>Forward surfaces — detail</td><td>Project / Person / Actions: each a producer + its new variant-D design</td><td>HEADLINE</td></tr>
+      <tr><td>W4</td><td>Forward surfaces — briefing + meeting</td><td>Briefing + meeting before/after: producers + new designs (the biggest)</td><td>HEADLINE · seam</td></tr>
+      <tr><td>W5</td><td>Settings · per-type config · variants</td><td>One place to set a type's lifecycle + default layout</td><td>HEADLINE</td></tr>
+      <tr><td>—</td><td>List Surfaces (parallel)</td><td>The 5 dogfooding fixes (select, bulk-archive, folders, reparent, lifecycle)</td><td>parallel lane</td></tr>
+    </tbody>
+  </table>
+</section>
+
+<!-- CROSS-WAVE DECISIONS -->
+<section class="plans-section plans-section-callouts" aria-labelledby="decisions">
+  <header class="plans-section-header">
+    <p class="plans-section-eyebrow">Cross-wave decisions</p>
+    <h2 id="decisions" class="plans-section-title">Architecture that holds across the version.</h2>
+  </header>
+  <div class="callout-grid">
+    <article class="callout">
+      <h3 class="callout-title">Consume the substrate; don't re-ADR it</h3>
+      <p class="callout-prose">No new chapter-registry ADR. The block model, BlockType taxonomy, and §3.1 fallback exist. The only ADR work: flip ADR-0130 + ADR-0122 from Proposed → Accepted, and one small ADR for the <em>layout overlay</em> (the surface-side presentation layer).</p>
+    </article>
+    <article class="callout">
+      <h3 class="callout-title">React renderer = the ReactBlockRenderer</h3>
+      <p class="callout-prose">v1.5.0's "chapter system" is ADR-0130 §4's <code>ReactBlockRenderer</code> — a block-type → React component map + component library, consuming <code>ProjectedComposition</code> via the existing <code>CompositionRenderOrchestrator</code>.</p>
+    </article>
+    <article class="callout">
+      <h3 class="callout-title">Layout overlay is the net-new piece</h3>
+      <p class="callout-prose">Per-type "which blocks · order · variant" is a presentation layer over the AI-authored Composition (extends ADR-0130 §6.4). It never edits the Composition or the claims. The version's headline.</p>
+    </article>
+    <article class="callout">
+      <h3 class="callout-title">New designs, not old templates</h3>
+      <p class="callout-prose">Don't build the renderer into the project/actions/people/briefing/meeting templates we're replacing — that's throwaway work. Each surface is a <strong>vertical slice</strong> (its Composition producer + its new variant-D design), done one at a time: Account first (its producer exists), then forward. v1.5.0 owns only these producers, not the 28-ability sweep.</p>
+    </article>
+    <article class="callout">
+      <h3 class="callout-title">No tabs — Sections instead</h3>
+      <p class="callout-prose">Composition already has a <code>Section</code> primitive. Drop the hard Health/Context/Work tabs in favor of composed sections; the layout overlay is flat (per type). <em>Design check (W1):</em> confirm the Account content volume reads well as one composed scroll — Account is where we prove it.</p>
+    </article>
+    <article class="callout">
+      <h3 class="callout-title">3 types now; agnosticism is north-star</h3>
+      <p class="callout-prose">Account/Project/Person this version, keyed to the existing <code>EntityType</code> enum (ADR-0045). User-defined types + presets-dissolve are v1.6+. Presets (ADR-0079/0127) stay orthogonal — interpretation, not layout.</p>
+    </article>
+    <article class="callout">
+      <h3 class="callout-title">dnd-kit; own the format</h3>
+      <p class="callout-prose">Pin <code>@dnd-kit/core@6.3.1</code> + <code>@dnd-kit/sortable@10.0.0</code> (the React-18 line — stable, not stale) for reorder in edit mode only. Layout config is ours. DOS-829 reparent shares the dep.</p>
+    </article>
+    <article class="callout">
+      <h3 class="callout-title">Migration slot — SQL namespace</h3>
+      <p class="callout-prose">The layout-overlay table is one <code>NNN_</code> SQL migration; latest registered is <strong>272</strong> (file <code>272_…</code>), so the next free slot is <strong>273</strong> — take it at kickoff. Not the <code>vNNN</code> Rust series.</p>
+    </article>
+  </div>
+</section>
+
+<!-- CUSTOMIZE / EDIT MODE UX -->
+<section class="plans-section" aria-labelledby="customize-ux">
+  <header class="plans-section-header">
+    <p class="plans-section-eyebrow">Edit & customize mode · how it looks and works</p>
+    <h2 id="customize-ux" class="plans-section-title">In-context, Gutenberg-informed, native.</h2>
+    <p class="plans-section-lede">Primary entry is on-page (your choice): a "Customize this page" affordance opens an edit mode over the surface you're looking at. Built from canonical primitives + a few Gutenberg-shaped micro-patterns — no WP fork.</p>
+  </header>
+
+  <h3 class="plans-subhead">The edit-mode surface</h3>
+  <ul>
+    <li><strong>Enter/exit edit mode</strong> on the page itself (in-context primary); a per-type panel in Settings → Surfaces is the secondary home (shared with lifecycle stages, DOS-827).</li>
+    <li><strong>Block toolbar / inserter</strong> — Gutenberg-informed: each block gets a lightweight toolbar (move, hide, variant) on hover/focus; an inserter re-adds hidden blocks. Native components, our design system.</li>
+    <li><strong>Reorder</strong> via dnd-kit sortable, with the accessible keyboard contract: Space to grab, arrows to move, Space/Enter to drop, Escape to cancel.</li>
+    <li><strong>Toggle</strong> = canonical <code>Switch</code>; <strong>variant</strong> = canonical <code>Segmented</code> with a one-line description per option. <strong>Locked/core blocks</strong> (masthead, lead) show a disabled control + lock glyph + <code>aria-description</code>.</li>
+    <li><strong>Inline edit</strong> — Gutenberg <code>RichText</code>-shaped, extending the app's existing <code>EditableText</code>; edits route to claim feedback (ADR-0130 <code>edit_routes</code>), not free-text overwrites.</li>
+  </ul>
+
+  <h3 class="plans-subhead">Behaviour (the states the design review flagged)</h3>
+  <ul>
+    <li><strong>Live update</strong> — changes apply to the open surface immediately (reactive layout-overlay store), not next-navigation-only.</li>
+    <li><strong>Auto-save per type</strong> — applies to every entity of that type, persists across restart. <strong>Reset to default</strong> (confirm step) restores the shipped variant-D layout.</li>
+    <li><strong>Visibility precedence</strong> — four inputs resolved in order: eligibility (structural, e.g. parent-only) → data-present → item-suppression (<code>suppression_tombstones</code>, independent) → user toggle. "Off" is your choice and sticks, but a block still hides when it has no data or doesn't apply.</li>
+    <li><strong>Empty surface</strong> — hide everything non-core and the page renders core blocks + a quiet "You've hidden most sections — Reset to default" link.</li>
+    <li><strong>Recovery</strong> — Reset is the recovery path for W2; per-action undo (Cmd-Z) is out of scope, and the panel makes the auto-save legible.</li>
+  </ul>
+  <p class="plans-footnote"><strong>In plain terms —</strong> on the Account page you hit "Customize," each section grows a little toolbar, you drag one up, hide Files, switch a section to its compact look, fix a label inline — and it saves itself for every Account. Keyboard works. "Reset" puts it back. It feels like editing a page in WordPress, but it's our own code.</p>
+</section>
+
+<!-- WAVE DETAIL -->
+<section class="plans-section" aria-labelledby="wave-detail">
+  <header class="plans-section-header">
+    <p class="plans-section-eyebrow">Wave detail</p>
+    <h2 id="wave-detail" class="plans-section-title">What each wave carries and proves.</h2>
+  </header>
+
+  <h3 class="plans-subhead">W0 — Bank WP + substrate audit · preserve, don't delete</h3>
+  <p>Park the reverted WP-primary work cleanly and confirm the engine it produced is surface-generic before the Tauri renderer consumes it. <strong>Nothing is deleted or reverted.</strong></p>
+  <ul>
+    <li><strong>Park</strong> the v1.4.4 WP-surface-migration plan + the ~50 <code>wp/dailyos/blocks/</code> blocks (out of active CI/build path, preserved on branch); mark the obsolete WP surface-audit ticket (DOS-677). <strong>Carve-out:</strong> do NOT remove the composition orchestrator or the <code>/v1/local/project-composition</code> loopback route — shared substrate the Tauri renderer reuses (W1). <em>(create ticket)</em></li>
+    <li><strong>Audit</strong> the <code>get_entity_intelligence</code> envelope + Composition producers for WordPress-shape assumptions, so the Tauri renderer inherits a generic contract. <em>(create ticket)</em></li>
+    <li><strong>Status ADRs:</strong> ADR-0130 Proposed → Accepted; ADR-0122 Accepted <em>as Option A</em> (all-or-nothing freshness + instrumentation — not per-chapter). The <code>FreshnessIndicator</code> primitive already exists — confirm it covers per-block freshness (the <code>ChapterFreshness</code> rename appears already done; verify, don't chase a ghost). <em>(create ticket)</em></li>
+  </ul>
+  <p class="plans-footnote"><strong>In plain terms —</strong> safely shelve the WordPress work for later (don't throw it away), and make sure the engine isn't secretly WordPress-shaped before the Mac app starts using it.</p>
+  <p><strong>Proof —</strong> WP work intact + out of the active path; envelope confirmed surface-generic; ADRs accepted.</p>
+
+  <h3 class="plans-subhead">W1 — Account Detail, end-to-end reference · the proving ground</h3>
+  <p>The whole vertical on one surface: the existing <code>account-overview</code> producer extended to emit the <strong>new (variant-D)</strong> Account design's blocks, the React BlockRenderer that draws them, the transport that gets them to React, and the new design rendered. We figure the pattern out here, then work forward — we do <strong>not</strong> build into the old Account template we're replacing.</p>
+  <ul>
+    <li><strong>NEW — <code>ReactBlockRenderer</code></strong>: block-type → React component map + the canonical block component library (the 18 block types + Wave-1 primitives) + the §3.1 fallback banner UI. <em>(create ticket)</em></li>
+    <li><strong>NEW — Composition→React transport:</strong> decide a Tauri command vs the <code>/v1/local/project-composition</code> loopback (React uses <code>invoke()</code> today; the orchestrator is WP-facing). <em>(create ticket — decide at L0)</em></li>
+    <li><strong>Extend <code>account-overview</code></strong> to emit the new Account design's block set (the variant-D chapters), translating the design into block types — existing where they fit, net-new (pattern-first) where they don't. <em>(create ticket)</em></li>
+    <li><strong>Render the new Account design</strong> as <code>&lt;BlockRenderer composition={projected} /&gt;</code>; nav derived from the resolved composition; self-contained interactive blocks (Linear issues / relationships) register as a self-contained kind. Retire the old Account template when the new one ships. <em>(create ticket)</em></li>
+    <li><strong>Design check (the open one):</strong> confirm Account content volume reads as one composed scroll with Sections (no tabs); Sections can collapse/expand if not. <em>(AC)</em></li>
+  </ul>
+  <p class="plans-footnote"><strong>In plain terms —</strong> get one page — Account — completely right, new look and all, end to end. That's the template for everything after; we don't spend effort on the pages we're throwing away.</p>
+  <p><strong>Proof —</strong> the new Account Detail renders end-to-end from <code>account-overview</code> through the BlockRenderer, with provenance + trust + safe fallback; matches the variant-D design (not the old page); one-composed-scroll validated.</p>
+
+  <h3 class="plans-subhead">W2 — In-context edit & customize · HEADLINE</h3>
+  <p>The user-facing payoff. Full UX in the "Edit & customize mode" section above.</p>
+  <ul>
+    <li><strong>NEW micro-patterns:</strong> block toolbar, inserter, reorder handle, <code>RichText</code>-shaped inline edit (extending <code>EditableText</code>) — into <code>.docs/design/patterns/</code> first. <em>(create ticket)</em></li>
+    <li><strong>NEW — layout-overlay persistence</strong> (SQL table → service → command → reactive <code>useChapterLayout</code> hook) + the in-context edit-mode surface (toggle/reorder/variant/inline) + Settings → Surfaces secondary panel. <em>(create ticket)</em></li>
+    <li><strong>NEW — visibility-precedence + core-block + empty-surface handling</strong> per the contract. <em>(create ticket)</em></li>
+  </ul>
+  <p class="plans-footnote"><strong>In plain terms —</strong> the on-page editor that lets you rearrange, hide, and re-style sections, remembered per type.</p>
+  <p><strong>Proof —</strong> on an Account page: hide Files, reorder, pick a variant, edit a label inline — by keyboard or mouse; persists; every Account reflects it; the open page updates live.</p>
+
+  <h3 class="plans-subhead">W3 — Forward surfaces: Project / Person / Actions · HEADLINE</h3>
+  <p>With Account proven, work forward. Each surface is the same vertical slice: a Composition producer + its new variant-D design, rendered through the W1 renderer. Fan out once the Account pattern holds.</p>
+  <ul>
+    <li><strong>Per surface (Project, Person, Actions):</strong> a new Composition producer (mirroring <code>account-overview</code>) + the surface's variant-D block set. <em>(create tickets per surface)</em></li>
+    <li><strong>Shared cross-surface blocks</strong> built once on Account, reused here (Masthead, <code>Lead</code>, Vitals Strip, The Room, Activity Ledger). <em>(create ticket)</em></li>
+    <li><strong>NET-NEW block types (pattern-first):</strong> meter cluster · relationship arc <em>(reconcile vs the existing <code>BlockType::RelationshipMap</code> — rename, not a new type, if it's the same concept)</em> · who's-waiting owed-grid — design into <code>.docs/design/patterns/</code> + register the BlockType, then render. <em>(create tickets)</em></li>
+    <li>Old templates retired as each new surface ships; no parity-with-old step. <em>(AC per surface)</em></li>
+  </ul>
+  <p class="plans-footnote"><strong>In plain terms —</strong> repeat the Account pattern for Projects, People, and Actions — each gets its new look, built as blocks, not bolted onto the old page.</p>
+  <p><strong>Proof —</strong> each surface renders its new design from blocks; L4 visual review against the design per surface.</p>
+
+  <h3 class="plans-subhead">W4 — Forward surfaces: briefing + meeting recap · HEADLINE · the seam</h3>
+  <p>The biggest forward surfaces, kept as their own wave. Same vertical slice — briefing + meeting-prep/recap producers + their new designs — and the clearest produce→consume pairing (the recap's analytical blocks are ability outputs).</p>
+  <ul>
+    <li><strong>NEW — briefing + meeting-prep Composition producers</strong> (the abilities emit <code>Composition</code> instead of legacy intelligence JSON). <em>(create tickets)</em></li>
+    <li><strong>Compose existing patterns</strong> already shipped (<code>PostMeetingIntelligence</code>, <code>FindingsTriad</code>, <code>SignalGrid</code>, <code>TalkBalanceBar</code>, <code>CommitmentRow</code>) as block types. <em>(create ticket)</em></li>
+    <li><strong>NET-NEW blocks:</strong> plan-adherence, predictions-vs-reality, role-changes, coaching — pattern-first, and <strong>name the source ability per block before L1</strong>; any requiring net-new analytical reasoning (not just wrapping existing output) move to v1.5.1. <em>(create tickets)</em></li>
+    <li><strong>5-question check HARD per analytical block</strong> — claim-consuming: provenance + trust band + freshness (existing <code>FreshnessIndicator</code> primitive + claim freshness) + feedback. New producers trigger a <strong>runtime-wide trust-recompute audit</strong>, not a per-producer scoring branch.</li>
+  </ul>
+  <p class="plans-footnote"><strong>In plain terms —</strong> the meeting prep + recap pages. Teach those analysts to output blocks, then draw them — each with "where this came from" and a trust indicator.</p>
+  <p><strong>Proof —</strong> an ability emits a Composition for a meeting and the renderer draws it with provenance + trust band — produce→render end-to-end on real meeting data.</p>
+
+  <h3 class="plans-subhead">W5 — Settings · per-type config · variants · HEADLINE</h3>
+  <ul>
+    <li><strong>Settings redesign</strong> — identity + connectors, briefing &amp; AI control surface, system diagnostics, on the canonical Settings pattern. <em>(create ticket)</em></li>
+    <li><strong>Per-entity-type config surface</strong> unifying <strong>lifecycle stages (DOS-827)</strong> + default block layout. <em>(create ticket)</em></li>
+    <li><strong>Variant selection</strong> — the chosen variant is a <strong>string stored in the layout-overlay row</strong> + a <code>Segmented</code> selector. No separate variant-registry substrate (that ships only when multiple consumers need shared declarations — <code>RenderHints</code> carries no variant concept today). <em>(create ticket)</em></li>
+    <li><strong>Per-type config storage</strong> — a settings table keyed on the existing <code>EntityType</code> enum (3 rows: Account/Project/Person) holding lifecycle stages + default layout. No generic type-definition infrastructure (that's v1.6, when user-defined types land). <em>(create ticket)</em></li>
+  </ul>
+  <p class="plans-footnote"><strong>In plain terms —</strong> one place to define what an Account is — its lifecycle stages + default page layout — plus the rebuilt Settings screens.</p>
+  <p><strong>Proof —</strong> configure a type's stages + default layout in one surface; variants selectable; redesigned settings shipped.</p>
+
+  <h3 class="plans-subhead">List Surfaces · parallel lane</h3>
+  <p>The five dogfooding fixes. Low coupling with the block system; runs alongside. <strong>Premise-check first</strong> (prod vs dev) before AC.</p>
+  <ul>
+    <li><strong>DOS-826</strong> multi-select · <strong>DOS-830</strong> bulk archive (blocked by 826) · <strong>DOS-828</strong> orphaned-folder reconciliation (High) · <strong>DOS-829</strong> reparent DnD (shares dnd-kit) · <strong>DOS-827</strong> lifecycle stages (lands via W5's per-type surface).</li>
+  </ul>
+  <p><strong>Proof —</strong> select + bulk-archive + reparent; archived folders reconcile; per-type lifecycle tabs.</p>
+</section>
+
+<!-- REVIEWER MATRIX -->
+<section class="plans-section" aria-labelledby="reviewer-matrix">
+  <header class="plans-section-header">
+    <p class="plans-section-eyebrow">Reviewer matrix</p>
+    <h2 id="reviewer-matrix" class="plans-section-title">Domain reviewer per risk profile.</h2>
+  </header>
+  <table class="reviewer-matrix">
+    <thead><tr><th>Agent profile</th><th>Domain reviewer</th></tr></thead>
+    <tbody>
+      <tr><td>BlockRenderer / consume-don't-reinvent (ADR-0130)</td><td><code>ce-architecture-strategist</code></td></tr>
+      <tr><td>Composition producers (W1 + forward surfaces) — claim-consuming output</td><td><code>ce-agent-native-reviewer</code> (5-question)</td></tr>
+      <tr><td>Layout-overlay write path (DB / service / command)</td><td><code>ce-data-integrity-guardian</code></td></tr>
+      <tr><td>Edit-mode / dnd-kit / inline-edit / live-update timing</td><td><code>ce-julik-frontend-races-reviewer</code></td></tr>
+      <tr><td>Every redesigned block / edit surface</td><td><code>accessibility-tester</code> + design review</td></tr>
+    </tbody>
+  </table>
+</section>
+
+<!-- SUITES -->
+<section class="plans-section" aria-labelledby="suites">
+  <header class="plans-section-header">
+    <p class="plans-section-eyebrow">Test suites</p>
+    <h2 id="suites" class="plans-section-title">S, P, E feed into L3.</h2>
+  </header>
+  <div class="suite-grid">
+    <article class="suite-card" data-suite="s">
+      <span class="suite-letter">S</span><h3 class="suite-name">Security</h3>
+      <p class="suite-prose">Layout-overlay table is local-user preference data (no claim semantics, no PII). <strong>Critical:</strong> the §3.1 unknown-block fallback is a privacy boundary — verify the React renderer never leaks dropped payload to DOM / data-attrs / logs.</p>
+      <p class="suite-owner"><span class="suite-owner-label">Owner</span> <code>ce-security-reviewer</code></p>
+      <p class="suite-pass-rule"><span class="suite-pass-label">Pass</span> zero Critical/High</p>
+    </article>
+    <article class="suite-card" data-suite="p">
+      <span class="suite-letter">P</span><h3 class="suite-name">Performance</h3>
+      <p class="suite-prose">Block render not slower than the hand-composed pages; live-update re-render budget; provenance-ref resolution batched per ADR-0130 §6.3 (~50ms p95 local).</p>
+      <p class="suite-owner"><span class="suite-owner-label">Owner</span> <code>ce-performance-reviewer</code></p>
+      <p class="suite-pass-rule"><span class="suite-pass-label">Pass</span> no regression vs baseline</p>
+    </article>
+    <article class="suite-card" data-suite="e">
+      <span class="suite-letter">E</span><h3 class="suite-name">Edge cases</h3>
+      <p class="suite-prose">Per-surface design-fidelity bundles (vs the new design — Account in W1, then forward), §3.1 unknown-block fallback, every-block-hidden, variant matrix, the four-input visibility precedence, keyboard reorder + inline-edit a11y.</p>
+      <p class="suite-owner"><span class="suite-owner-label">Owner</span> <code>qa-expert</code></p>
+      <p class="suite-pass-rule"><span class="suite-pass-label">Pass</span> bundles + parity diffs green</p>
+    </article>
+  </div>
+</section>
+
+<!-- DEPENDENCIES -->
+<section class="plans-section" aria-labelledby="deps">
+  <header class="plans-section-header">
+    <p class="plans-section-eyebrow">Dependencies</p>
+    <h2 id="deps" class="plans-section-title">Critical path: W0 → W1 (Account) → (W2 ∥ W3 ∥ W4) → W5.</h2>
+  </header>
+  <pre class="plans-flow">W0 (bank WP + audit) ──> W1 (Account: producer + renderer + transport + new design) ──┬──> W2 (edit/customize) ──────┐
+                                                                                      ├──> W3 (Project/Person/Actions) ┼──> W5 (settings · per-type)
+                                                                                      └──> W4 (briefing + meeting) ─────┘
+
+List Surfaces ───────────────────────────────────────────────────────────────────────────  parallel (shares dnd-kit dep)</pre>
+  <p class="plans-footnote">W1 is the fan-out gate — it proves the full vertical (producer → renderer → new design) on Account, so W2/W3/W4 fan out against a working pattern rather than a renderer built on throwaway templates. W4 carries its own producers (briefing/meeting). List Surfaces is independent.</p>
+</section>
+
+<!-- DECIDED + REMAINING -->
+<section class="plans-section plans-section-callouts" aria-labelledby="decided">
+  <header class="plans-section-header">
+    <p class="plans-section-eyebrow">Decided (2026-05-31) + still open</p>
+    <h2 id="decided" class="plans-section-title">The calls James made, and the one design check left.</h2>
+  </header>
+  <div class="callout-grid">
+    <article class="callout">
+      <h3 class="callout-title">Decided</h3>
+      <p class="callout-prose">Full Composition end-to-end (v1.5.0 owns a thin producer slice). <strong>Build into the new designs, not the old templates; Account Detail first as the end-to-end reference, then work forward surface by surface.</strong> Gutenberg-informed native, not a fork. Bank WP, don't revert. Drop tabs → Sections. 3 entity types now; agnosticism north-star. In-context edit mode primary. Abilities runtime keeps its own plan, hard-linked.</p>
+    </article>
+    <article class="callout">
+      <h3 class="callout-title">Still open — design check</h3>
+      <p class="callout-prose">Does the Account page's content volume read well as <strong>one composed scroll</strong> with Sections instead of three tabs? Validated in W1 (Account is the reference) before we work forward. If it doesn't, Sections can collapse/expand — a W1 design decision, not a blocker now.</p>
+    </article>
+    <article class="callout">
+      <h3 class="callout-title">Hard-linked dependency</h3>
+      <p class="callout-prose">The abilities-runtime producer-remediation plan does <em>not</em> currently cover Composition output. v1.5.0's W1 + forward surfaces own that producer slice; if it grows beyond the slice, it moves to the abilities track (which would then need to absorb it).</p>
+    </article>
+    <article class="callout">
+      <h3 class="callout-title">L0 round 2 — carried to per-wave L0</h3>
+      <p class="callout-prose">AC-level items for the per-wave packets: <strong>W1</strong> decide Composition→React transport (a Tauri command vs the <code>/v1/local/project-composition</code> loopback — React uses <code>invoke()</code> today, the orchestrator is WP-facing); <strong>forward surfaces (W3/W4)</strong> generalize <code>resolve_producer_ability_name</code> + composition-id parsing from account-hardcoded to entity-type-keyed, and pre-allocate disjoint block-type-registry + <code>patterns/</code> slots like the SQL slot; <strong>List Surfaces</strong> premise-check is a gate before AC, not advisory.</p>
+    </article>
+  </div>
+</section>
+
+<!-- DEFINITION OF DONE -->
+<section class="plans-section" aria-labelledby="dod">
+  <header class="plans-section-header">
+    <p class="plans-section-eyebrow">Definition of done</p>
+    <h2 id="dod" class="plans-section-title">All true at version close.</h2>
+  </header>
+  <ul>
+    <li>Headline proven: on a detail surface, a user enters edit mode, hides a block, reorders, picks a variant, edits a label inline — per entity type, by keyboard or mouse; it persists and the open page updates live with no broken blocks. Real workspace data.</li>
+    <li>Renderer landed: a React <code>BlockRenderer</code> consuming the existing Composition substrate (not a reinvented model); Account Detail proven end-to-end as the reference, forward surfaces rendering their new designs through it — no parity-with-old, old templates retired as new ones ship; unknown-block §3.1 fallback safe.</li>
+    <li>Producer slice: Project/Person/briefing/meeting abilities emit Compositions with provenance + trust; the meeting recap renders end-to-end from an ability's Composition.</li>
+    <li>Redesigns shipped: variant-D detail surfaces + D-spine briefing + meeting before/after; net-new visuals promoted to design-system block types.</li>
+    <li>WP banked: WP work preserved + parked; envelope confirmed surface-generic; ADR-0130/0122 Accepted.</li>
+    <li>List-Surfaces: DOS-826 / 830 / 828 / 829 / 827 shipped.</li>
+    <li>No stubs/TODOs/deferrals (north-star groundwork excepted + labelled). Gates green: <code>cargo clippy -- -D warnings &amp;&amp; cargo test &amp;&amp; pnpm tsc --noEmit</code>.</li>
+  </ul>
+</section>
+
+<!-- RELATED -->
+<section class="plans-section plans-section-footer">
+  <header class="plans-section-header">
+    <p class="plans-section-eyebrow">Related</p>
+    <h2 class="plans-section-title">Cross-references.</h2>
+  </header>
+  <ul class="plans-related">
+    <li><strong>abilities-intelligence-loop.html</strong> Plain-language explainer — how abilities + the intelligence loop produce what the app shows. Read this for the producer side.</li>
+    <li><strong>claim-lifecycle-freshness-editability.html</strong> Living position on claim lifecycle, staleness, and inline-edit eligibility — the spec W2 (editability) and W4 (freshness/trust rendering) build against.</li>
+    <li><strong>ADR-0130</strong> Surface-Independent Composition Contract — the block model this version renders. Code: <code>composition.rs</code>, <code>fallback_projection.rs</code>, <code>account_overview.rs</code>.</li>
+    <li><strong>ADR-0047 / 0057 / 0077 / 0122</strong> Entity dashboard · unified IntelligenceJson · magazine editorial · chapter-enrichment (freshness).</li>
+    <li><strong>ADR-0045 / 0079 / 0127 / 0129 / 0135</strong> EntityType · role presets · presets-as-interpretation · composable surfaces (WP, banked) · WP-primary revert.</li>
+    <li><strong>abilities-runtime-producer-remediation-waves.html</strong> The abilities track (envelope + MCP); hard-linked, does not yet cover Composition output.</li>
+    <li><strong>v1.4.9-waves.html</strong> The substrate reset this rides on; surface design deferred from there to here.</li>
+    <li><strong>.docs/design/reference/</strong> Canonical system. <code>ChapterHeading</code>, <code>MarginGrid</code>, <code>FloatingNavIsland</code>, <code>Switch</code>, <code>Segmented</code>, <code>FormRow</code>, <code>EditableText</code> are load-bearing.</li>
+    <li><strong>Design direction</strong> <code>~/Downloads/DailyOS Design System (2)</code> — Claude Design export. Direction only; translate, don't lift.</li>
+    <li><strong>Linear</strong> Project <em>v1.5.0 — Surface Designs</em> (4a2a7eeb) — source of truth.</li>
+  </ul>
+</section>
+
+<!-- FINIS -->
+<div class="finis">
+  <div class="finis-mark">W0 · W1 · W2 · W3 · W4 · W5</div>
+  <div class="finis-date">v1.5.0 Wave Plan · 2026-05-31 · DRAFT (decisions locked; L0 hardened)</div>
+  <div class="finis-caption">The engine already makes blocks. v1.5.0 teaches the app to draw them — and lets you arrange them.</div>
+</div>
+
+</div>
+</main>
+</div>
+</body>
+</html>
