@@ -229,9 +229,8 @@ result, not teaching the mechanism.
 **On the slide:**
 - eyebrow — The five pillars
 - headline — The micro-signals every claim carries.
-- lede — For a memory to become trust, it has to carry the proof of its own
-  trustworthiness. Every claim DailyOS holds carries five things. Together they tell the
-  system what to surface and how confidently.
+- lede — For a memory to be trusted, it has to carry the proof. Every claim DailyOS holds
+  carries five things. Together they tell the system what to surface and how confidently.
 - claim card — Subject / Temporal scope / Sensitivity / Lifecycle (Shipped) · Salience (v1.4.6 next)
 
 **Bridge →** Five signals are the inputs. Here's how they compound into a single verdict you can act on.
