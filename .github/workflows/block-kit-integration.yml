@@ -1,270 +1,71 @@
-name: Block Kit Integration
+name: Block Kit Banked
 
 on:
   pull_request:
     branches:
       - dev
-      - main
+      - trunk
     paths:
       - 'wp/dailyos/blocks/**'
-      - 'wp/dailyos/scripts/**'
-      - 'wp/dailyos/theme/**'
-      - 'wp/dailyos/tests/**'
-      - 'src-tauri/abilities-runtime/**'
-      - 'src/styles/design-tokens.css'
-      - '.docs/design/tokens/**'
+      - 'wp/dailyos/tests/blocks/**'
+      - 'src-tauri/abilities-runtime/tests/block_kit_integration_harness.rs'
+      - 'src-tauri/abilities-runtime/tests/fixtures/**'
+      - '.docs/_archive/banked-wordpress-surface-2026-06-01/**'
       - '.github/workflows/block-kit-integration.yml'
 
 concurrency:
-  group: block-kit-integration-${{ github.ref }}
+  group: block-kit-banked-${{ github.ref }}
   cancel-in-progress: true
 
 jobs:
-  block-kit-integration:
-    name: Block kit integration fixtures
+  block-kit-banked:
+    name: Banked block-kit invariant
     runs-on: ubuntu-latest
-    timeout-minutes: 20
+    timeout-minutes: 5
     steps:
       - name: Checkout
         uses: actions/checkout@v4
 
-      - name: Setup Rust
-        uses: dtolnay/rust-toolchain@stable
-
-      - name: Setup PHP 8.4
-        uses: shivammathur/setup-php@v2
-        with:
-          php-version: '8.4'
-          coverage: none
-
-      - name: Setup Node + pnpm
-        uses: actions/setup-node@v4
-        with:
-          node-version: '24'
-
-      - name: Cache Rust dependencies
-        uses: actions/cache@v4
-        with:
-          path: |
-            ~/.cargo/registry
-            ~/.cargo/git
-            src-tauri/target
-          key: block-kit-cargo-${{ runner.os }}-${{ hashFiles('src-tauri/Cargo.lock') }}
-          restore-keys: |
-            block-kit-cargo-${{ runner.os }}-
-
-      # §9 invariant #1 — every wp/dailyos/blocks/<slug>/ MUST have a matching
-      # Rust integration fixture; harness must pass per block.
-      - name: Run block integration fixtures (per-block invariant)
+      - name: Verify block-kit work remains banked
         shell: bash
         run: |
           set -euo pipefail
-          mapfile -t block_files < <(find wp/dailyos/blocks -mindepth 2 -maxdepth 2 -name block.json | sort)
-          if [ "${#block_files[@]}" -eq 0 ]; then
-            echo "No WordPress block metadata files found under wp/dailyos/blocks." >&2
+
+          archive_root=".docs/_archive/banked-wordpress-surface-2026-06-01"
+          active_block_file_count=0
+          if [ -d wp/dailyos/blocks ]; then
+            active_block_file_count="$(find wp/dailyos/blocks -type f | wc -l | tr -d ' ')"
+          fi
+          if [ "$active_block_file_count" -ne 0 ]; then
+            echo "Found ${active_block_file_count} active WordPress block file(s)." >&2
+            echo "Reactivating WordPress blocks must also restore the block-kit CI gates." >&2
             exit 1
           fi
 
-          for block_file in "${block_files[@]}"; do
-            block_slug="$(basename "$(dirname "$block_file")")"
-            fixture_name="${block_slug//-/_}_integration_fixture.rs"
-            fixture_path="src-tauri/abilities-runtime/tests/fixtures/${fixture_name}"
-            if [ ! -f "$fixture_path" ]; then
-              echo "Missing block integration fixture for ${block_file}: expected ${fixture_path}" >&2
-              exit 1
-            fi
-
-            DAILYOS_BLOCK_SLUG="$block_slug" cargo test \
-              --manifest-path src-tauri/Cargo.toml \
-              -p abilities-runtime \
-              --test block_kit_integration_harness \
-              -- --nocapture
-          done
-
-      # §9 invariant #5 — CLI scaffold MUST exit 0 on a valid name + exit 1 on invalid.
-      - name: CLI scaffold exit-code gates
-        shell: bash
-        run: |
-          set -euo pipefail
-          tmp_slug="ci-smoke-$(date +%s)"
-
-          # Valid name → exit 0.
-          node wp/dailyos/scripts/new-block.mjs "$tmp_slug"
-
-          # Invalid name (uppercase) → exit 1.
-          if node wp/dailyos/scripts/new-block.mjs FOO 2>/dev/null; then
-            echo "FAIL: scaffold accepted invalid uppercase name 'FOO'" >&2
+          active_block_test_count=0
+          if [ -d wp/dailyos/tests/blocks ]; then
+            active_block_test_count="$(find wp/dailyos/tests/blocks -type f | wc -l | tr -d ' ')"
+          fi
+          if [ "$active_block_test_count" -ne 0 ]; then
+            echo "Found ${active_block_test_count} active WordPress block PHPUnit fixture(s)." >&2
+            echo "Banked block tests belong under ${archive_root}/wp/dailyos/tests/blocks/." >&2
             exit 1
           fi
 
-          # Existing name → exit 1 (collision check).
-          if node wp/dailyos/scripts/new-block.mjs "$tmp_slug" 2>/dev/null; then
-            echo "FAIL: scaffold accepted colliding name '$tmp_slug'" >&2
-            rm -rf "wp/dailyos/blocks/$tmp_slug"
+          active_rust_fixture_file_count=0
+          if [ -d src-tauri/abilities-runtime/tests/fixtures ]; then
+            active_rust_fixture_file_count="$(find src-tauri/abilities-runtime/tests/fixtures -type f | wc -l | tr -d ' ')"
+          fi
+          if [ "$active_rust_fixture_file_count" -ne 0 ] || [ -f src-tauri/abilities-runtime/tests/block_kit_integration_harness.rs ]; then
+            echo "Active block-kit Rust fixtures remain under src-tauri/abilities-runtime/tests/." >&2
+            echo "Banked block-kit fixtures belong under ${archive_root}/src-tauri/abilities-runtime/tests/." >&2
             exit 1
           fi
 
-          # Cleanup smoke scaffold so the per-block invariant doesn't see it next step.
-          rm -rf "wp/dailyos/blocks/$tmp_slug"
-
-      # §9 invariant #6 — translator MUST produce kit-passing output on Pill + HealthBadge.
-      # Generated fixtures are co-located by W2; W1 ships scaffold only. Run translator,
-      # confirm exit 0 + scaffold dir + render-function name collision-free, then clean up.
-      - name: Translator parity gate (Pill + HealthBadge)
-        shell: bash
-        run: |
-          set -euo pipefail
-          for primitive in Pill HealthBadge; do
-            slug=$(echo "$primitive" | sed -E 's/([a-z0-9])([A-Z])/\1-\2/g' | tr '[:upper:]' '[:lower:]')
-
-            # Don't collide with W2-shipped block dirs once they land.
-            if [ -d "wp/dailyos/blocks/$slug" ]; then
-              echo "Skipping $primitive — wp/dailyos/blocks/$slug already exists (W2 owns)."
-              continue
-            fi
-
-            node wp/dailyos/scripts/translate-tauri.mjs --primitive "$primitive"
-
-            php_fn="dailyos_${slug//-/_}_render"
-            if ! grep -q "function ${php_fn}(" "wp/dailyos/blocks/$slug/render-functions.php"; then
-              echo "FAIL: translator output missing expected render function '${php_fn}' for $primitive" >&2
-              rm -rf "wp/dailyos/blocks/$slug"
-              exit 1
-            fi
-            if ! grep -q "dailyos_.*_render( \$attributes" "wp/dailyos/blocks/$slug/render.php" \
-                && ! grep -q "dailyos_${slug//-/_}_render( \$attributes" "wp/dailyos/blocks/$slug/render.php"; then
-              echo "FAIL: scaffold render.php for $primitive doesn't call any render-fn" >&2
-              rm -rf "wp/dailyos/blocks/$slug"
-              exit 1
-            fi
-
-            rm -rf "wp/dailyos/blocks/$slug"
-          done
-
-          # NotSupported diagnostic must exit 1.
-          if node wp/dailyos/scripts/translate-tauri.mjs --primitive Switch 2>/dev/null; then
-            echo "FAIL: translator accepted NotSupported primitive 'Switch'" >&2
+          banked_block_count="$(find "${archive_root}/wp/dailyos/blocks" -name block.json | wc -l | tr -d ' ')"
+          if [ "$banked_block_count" -ne 89 ]; then
+            echo "Expected 89 banked WordPress block metadata files; found ${banked_block_count}." >&2
             exit 1
           fi
 
-      - name: Detect token-mapping gate inputs
-        id: token_mapping_inputs
-        shell: bash
-        env:
-          GH_TOKEN: ${{ github.token }}
-          REPO: ${{ github.repository }}
-          PR: ${{ github.event.pull_request.number }}
-        run: |
-          set -euo pipefail
-          changed="${RUNNER_TEMP}/block-kit-changed-files.txt"
-          gh api --paginate "repos/${REPO}/pulls/${PR}/files" --jq '.[].filename' | sort -u > "$changed"
-          if grep -Eq '^(wp/dailyos/blocks/[^/]+/(style\.css|\.token-mapping\.json)|wp/dailyos/theme/theme\.json|src/styles/design-tokens\.css|\.docs/design/tokens/|wp/dailyos/tests/token-mapping-manifest-gate\.sh)$' "$changed"; then
-            echo "should_run=true" >> "$GITHUB_OUTPUT"
-          else
-            echo "should_run=false" >> "$GITHUB_OUTPUT"
-            echo "No token-relevant files changed; skipping token-mapping manifest gate."
-          fi
-
-      - name: Token-mapping manifest
-        if: steps.token_mapping_inputs.outputs.should_run == 'true'
-        shell: bash
-        run: |
-          set -euo pipefail
-          bash wp/dailyos/tests/token-mapping-manifest-gate.sh
-
-      # §9 invariant #4 — token-to-theme.json generator MUST run cleanly via --check.
-      # Fails CI on drift between canonical CSS sources and committed wp/dailyos/theme/theme.json.
-      - name: Theme.json idempotency gate
-        shell: bash
-        run: |
-          set -euo pipefail
-          node wp/dailyos/scripts/generate-theme-json.mjs --check
-
-      # §9 invariant #8 / V1.4 AC #15 — chrome service state-branch test coverage.
-      # Runs the Rust + PHPUnit fixtures + grep-gates render-functions.php
-      # files (scoped to existing block dirs only per V1.4 §5.8 — does not
-      # fail PR-D1 for absent dirs).
-      - name: Chrome service coverage
-        shell: bash
-        run: |
-          set -euo pipefail
-          cargo test \
-            --manifest-path src-tauri/Cargo.toml \
-            -p abilities-runtime \
-            --test chrome_service_integration_fixture \
-            -- --nocapture
-
-          if [ -d wp/dailyos/tests/blocks/chrome ]; then
-            # PHPUnit available when WP test runtime is installed; CI image
-            # may need composer install at the wp/dailyos root first.
-            if command -v phpunit >/dev/null 2>&1; then
-              phpunit wp/dailyos/tests/blocks/chrome/
-            else
-              echo "phpunit not available; relying on Rust chrome fixture coverage only on this runner."
-            fi
-          fi
-
-          # Grep gate: every render-functions.php that handles an empty / loading
-          # / error state MUST require_once the shared chrome partial. Scoped to
-          # existing block dirs only (does not fail PR-D1 when zero block dirs
-          # exist; PR-D2/D3/D4 add them).
-          while IFS= read -r -d '' rfp; do
-            for state in empty loading error; do
-              # Heuristic: if the file mentions the state branch (e.g.,
-              # `// chrome:empty` marker or `data-chrome="$state"`), it MUST
-              # require_once the matching partial.
-              if grep -qE "chrome:${state}|data-chrome=\"${state}\"" "$rfp" 2>/dev/null; then
-                if ! grep -qE "require_once.*_shared/chrome/render-${state}\.php" "$rfp"; then
-                  echo "FAIL: ${rfp} references chrome:${state} but does not require_once _shared/chrome/render-${state}.php" >&2
-                  exit 1
-                fi
-              fi
-            done
-          done < <(find wp/dailyos/blocks -name render-functions.php -print0 2>/dev/null)
-
-      # §9 invariants #1, #2, #4, #5, #14 — W3 theme inventory grep-gates.
-      # Per L0 Packet E V1.4 LOCKED.
-      - name: W3 theme invariants
-        shell: bash
-        run: |
-          set -euo pipefail
-
-          # inv #1: theme owns no trust/provenance CSS — scoped to .css/.html files
-          # only (theme.json metadata + style.css description doc strings are exempt).
-          if find wp/dailyos/theme/templates wp/dailyos/theme/parts -name '*.html' -print0 2>/dev/null \
-              | xargs -0 grep -nE 'trust-band|--trust|--provenance' 2>/dev/null; then
-            echo "FAIL: W3 theme template/part files reference trust/provenance (must live in plugin)" >&2
-            exit 1
-          fi
-
-          # inv #2: no inline style="" in templates/parts.
-          if grep -RnE 'style="' wp/dailyos/theme/templates wp/dailyos/theme/parts 2>/dev/null \
-              | grep -vE 'flex-basis|gap|padding|margin'; then
-            : # Allow inline style for layout flex-basis on FSE column blocks (standard FSE output)
-          fi
-
-          # inv #14: customTemplates empty in W3.
-          CUSTOM_TEMPLATES=$(jq -r '.customTemplates | length' wp/dailyos/theme/theme.json 2>/dev/null || echo "missing")
-          if [ "$CUSTOM_TEMPLATES" != "0" ]; then
-            echo "FAIL: theme.json customTemplates must be empty in W3 (found: $CUSTOM_TEMPLATES)" >&2
-            exit 1
-          fi
-
-      # PHPUnit theme test suite (when phpunit available + composer install ran).
-      - name: W3 theme tests
-        shell: bash
-        run: |
-          set -euo pipefail
-          if [ ! -d wp/dailyos/tests/theme ]; then
-            echo "wp/dailyos/tests/theme/ not present; skipping"
-            exit 0
-          fi
-          if [ ! -d wp/dailyos/vendor ]; then
-            echo "wp/dailyos/vendor/ not present (composer install skipped); skipping"
-            exit 0
-          fi
-          if [ ! -x wp/dailyos/vendor/bin/phpunit ]; then
-            echo "phpunit binary not present; skipping"
-            exit 0
-          fi
-          cd wp/dailyos && vendor/bin/phpunit tests/theme/
+          echo "WordPress block-kit work is banked under ${archive_root} and outside the active build path."
