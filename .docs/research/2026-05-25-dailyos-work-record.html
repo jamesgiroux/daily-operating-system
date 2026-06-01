@@ -413,6 +413,57 @@
     .d-fanout .d-fanout-sub     { font-family: var(--font-mono); font-size: 10px; letter-spacing: 0.14em; text-transform: uppercase; fill: rgba(42,43,61,0.55); }
 
     /* ===================================================================
+       DISTRIBUTION DIAGRAM — one source → many destinations (card-based,
+       replaces the schematic hub-and-spoke SVG)
+       =================================================================== */
+
+    .d-node {
+      border: 1px solid rgba(42,43,61,0.16);
+      border-radius: 12px;
+      padding: 20px 24px;
+      background: var(--color-paper-warm-white);
+    }
+    .d-node-kicker {
+      display: block;
+      font-family: var(--font-mono);
+      font-size: 10px;
+      letter-spacing: 0.16em;
+      text-transform: uppercase;
+      color: rgba(42,43,61,0.5);
+      margin-bottom: 9px;
+    }
+    .d-node-name {
+      font-family: var(--font-serif);
+      font-weight: 300;
+      font-size: 24px;
+      letter-spacing: -0.01em;
+      line-height: 1.12;
+      color: var(--color-desk-ink);
+      margin: 0;
+    }
+    .d-node-sub {
+      font-family: var(--font-serif);
+      font-size: 15px;
+      color: rgba(42,43,61,0.58);
+      margin: 5px 0 0;
+    }
+
+    .d-travel {
+      display: grid;
+      grid-template-columns: minmax(200px, 0.85fr) 88px minmax(260px, 1fr);
+      align-items: stretch;
+      max-width: 1000px;
+      width: 100%;
+      margin: 16px 0 0;
+    }
+    .d-travel-source { align-self: center; border-color: rgba(42,43,61,0.32); }
+    .d-travel-link { align-self: stretch; min-height: 280px; }
+    .d-travel-link svg { width: 100%; height: 100%; display: block; }
+    .d-travel-dests { display: flex; flex-direction: column; gap: 18px; }
+    .d-travel-dests .d-node { border-left: 3px solid var(--accent, var(--color-desk-ink)); }
+    .d-travel-dests .d-node-name { font-size: 21px; }
+
+    /* ===================================================================
        STATS — file types and PR list reused from earlier deck
        =================================================================== */
 
@@ -757,6 +808,24 @@
       </div>
     </section>
 
+    <!-- 9. THE TRUST COMPILER ================================ -->
+    <section class="monthly-wrapped_slide monthly-wrapped_bgWarmWhite">
+      <p class="d-eyebrow">The trust compiler</p>
+      <h2 class="d-headline d-headline--med">
+        Five signals aren&rsquo;t a decision.
+      </h2>
+      <p class="d-lede d-lede--wide">
+        The signals describe a claim. They don&rsquo;t tell you what to do with it. Something
+        has to weigh them into a single call &mdash; and weigh them against what isn&rsquo;t on
+        the claim itself. How reliable the source is. Whether anything corroborates it. Whether
+        anything contradicts it. Every time you&rsquo;ve corrected it before.
+      </p>
+      <p class="d-lede d-lede--wide">
+        That&rsquo;s the trust compiler. It turns everything the system knows about a fact
+        into one verdict you can act on.
+      </p>
+    </section>
+
     <!-- 10. HOW TRUST GETS DECIDED =========================== -->
     <section class="monthly-wrapped_slide monthly-wrapped_bgLinen">
       <p class="d-eyebrow">How trust gets decided</p>
@@ -764,7 +833,7 @@
         The five signals compound into a band.
       </h2>
       <p class="d-lede d-lede--wide">
-        The system doesn&rsquo;t hand you a confidence percentage. Nobody&rsquo;s eye for
+        The compiler doesn&rsquo;t hand you a confidence percentage. Nobody&rsquo;s eye for
         trust works that way. It hands you a band, the way you&rsquo;d describe a new
         acquaintance. Someone you trust. Someone you&rsquo;d double-check. Someone
         you&rsquo;d ask a question of first.
@@ -786,12 +855,29 @@
       </div>
 
       <p class="d-meta" style="margin-top: 36px;">
-        Computed from the five pillars plus source quality, corroboration across sources,
-        contradictions on the record, and every correction you&rsquo;ve made.
+        The band is the contract. Every surface &mdash; a briefing, a WordPress page, an MCP
+        tool &mdash; reads the same one and treats the claim the same way.
       </p>
     </section>
 
-    <!-- 10. THE INTELLIGENCE LOOP (DIAGRAM D + runtime, merged) = -->
+    <!-- 11. THE PART THAT LEARNS ============================= -->
+    <section class="monthly-wrapped_slide monthly-wrapped_bgWarmWhite" style="background: linear-gradient(rgba(222,184,65,0.16), rgba(222,184,65,0.16)), var(--color-paper-warm-white);">
+      <p class="d-eyebrow">How it gets sharper</p>
+      <h2 class="d-headline d-headline--med">
+        Every correction makes the next answer better.
+      </h2>
+      <p class="d-lede d-lede--wide">
+        A band isn&rsquo;t a final verdict. Fix a claim, dismiss one, confirm one, and that
+        signal flows back &mdash; re-scoring the claim, and re-scoring the source it came from.
+        The system updates what it believes, and how much it trusts where it heard it.
+      </p>
+      <p class="d-lede d-lede--wide">
+        That&rsquo;s the loop closing. Over time it stops being generic and starts being yours,
+        tuned to what you&rsquo;ve corrected, trusted, and taught it.
+      </p>
+    </section>
+
+    <!-- 12. THE INTELLIGENCE LOOP (DIAGRAM D + runtime, merged) = -->
     <section class="monthly-wrapped_slide monthly-wrapped_bgWarmWhite">
       <p class="d-eyebrow">The Intelligence Loop</p>
       <h2 class="d-headline d-headline--sm" style="margin-bottom: 8px;">
@@ -956,39 +1042,44 @@
         the source, the more it&rsquo;s worth passing on.
       </p>
 
-      <div class="d-fanout">
-        <svg viewBox="0 0 880 380" xmlns="http://www.w3.org/2000/svg" aria-label="Trustworthy intelligence, shared across surfaces">
-          <defs>
-            <marker id="arrow4" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
-              <path d="M0,0 L10,5 L0,10 Z" fill="var(--color-desk-ink)" opacity="0.7"/>
-            </marker>
-          </defs>
+      <div class="d-travel">
+        <div class="d-node d-travel-source">
+          <span class="d-node-kicker">The source</span>
+          <p class="d-node-name">What you know</p>
+          <p class="d-node-sub">trustworthy intelligence</p>
+        </div>
 
-          <!-- Source hub -->
-          <circle cx="440" cy="190" r="108" fill="var(--color-paper-warm-white)" stroke="var(--color-desk-ink)" stroke-width="1.8"/>
-          <text x="440" y="178" text-anchor="middle" class="d-fanout-sub">What you know</text>
-          <text x="440" y="206" text-anchor="middle" class="d-fanout-runtime">trustworthy intelligence</text>
+        <div class="d-travel-link" aria-hidden="true">
+          <svg viewBox="0 0 88 300" preserveAspectRatio="none">
+            <defs>
+              <marker id="tarrow" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="7" markerHeight="7" orient="auto">
+                <path d="M0,0 L10,5 L0,10 Z" fill="rgba(42,43,61,0.5)"/>
+              </marker>
+            </defs>
+            <g fill="none" stroke="rgba(42,43,61,0.42)" stroke-width="1.4" vector-effect="non-scaling-stroke">
+              <path d="M0 150 H44"/>
+              <path d="M44 50 V250"/>
+              <path d="M44 50 H82" marker-end="url(#tarrow)"/>
+              <path d="M44 150 H82" marker-end="url(#tarrow)"/>
+              <path d="M44 250 H82" marker-end="url(#tarrow)"/>
+            </g>
+          </svg>
+        </div>
 
-          <!-- Destination: team -->
-          <rect x="40"  y="40"  width="200" height="68" rx="10" fill="none" stroke="var(--color-desk-ink)" stroke-width="1.4"/>
-          <text x="140" y="68"  text-anchor="middle" class="d-fanout-sub">Your team</text>
-          <text x="140" y="92"  text-anchor="middle" class="d-fanout-surface">a P2</text>
-
-          <!-- Destination: tools -->
-          <rect x="640" y="40"  width="200" height="68" rx="10" fill="none" stroke="var(--color-desk-ink)" stroke-width="1.4"/>
-          <text x="740" y="68"  text-anchor="middle" class="d-fanout-sub">Your tools</text>
-          <text x="740" y="92"  text-anchor="middle" class="d-fanout-surface">Claude &middot; Codex over MCP</text>
-
-          <!-- Destination: network -->
-          <rect x="340" y="312" width="200" height="68" rx="10" fill="none" stroke="var(--color-desk-ink)" stroke-width="1.4"/>
-          <text x="440" y="340" text-anchor="middle" class="d-fanout-sub">Your network</text>
-          <text x="440" y="364" text-anchor="middle" class="d-fanout-surface">your own site</text>
-
-          <!-- Lines — value flows OUT from the hub to each destination -->
-          <line x1="350" y1="148" x2="240" y2="74"  stroke="var(--color-desk-ink)" stroke-width="1.4" opacity="0.7" marker-end="url(#arrow4)"/>
-          <line x1="530" y1="148" x2="640" y2="74"  stroke="var(--color-desk-ink)" stroke-width="1.4" opacity="0.7" marker-end="url(#arrow4)"/>
-          <line x1="440" y1="298" x2="440" y2="312" stroke="var(--color-desk-ink)" stroke-width="1.4" opacity="0.7" marker-end="url(#arrow4)"/>
-        </svg>
+        <div class="d-travel-dests">
+          <div class="d-node" style="--accent: var(--color-garden-eucalyptus);">
+            <span class="d-node-kicker">Your team</span>
+            <p class="d-node-name">a P2</p>
+          </div>
+          <div class="d-node" style="--accent: var(--color-spice-saffron);">
+            <span class="d-node-kicker">Your network</span>
+            <p class="d-node-name">your own site</p>
+          </div>
+          <div class="d-node" style="--accent: var(--color-garden-larkspur);">
+            <span class="d-node-kicker">Your tools</span>
+            <p class="d-node-name">Claude &middot; Codex over MCP</p>
+          </div>
+        </div>
       </div>
     </section>
 
