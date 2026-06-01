@@ -20,8 +20,9 @@ person plus agents shipped in a month) is a headline value, not a footnote.
 
 ## The spine — a body and its "so what"
 
-**The body (S1–S13) does not change: Memory + Judgment = Trust.** This is the RSM work and
-it's already right.
+**The body (S1–S14) does not change in spirit: Memory + Judgment = Trust.** This is the RSM
+work. (Act 3 just got two beats *deeper* — the trust compiler and the feedback loop — so the
+middle stops feeling orphaned; see "What changed.")
 
 > **Memory** knows what happened. **Judgment** decides what matters. **Trust** is what they
 > produce together.
@@ -34,25 +35,25 @@ judgment through the middle is **"what matters"**:
 
 - S6 closer — "How does smart memory know **what matters**?"
 - S7 footer — "No signal for **what matters**."
-- S16 — "Judgment decides **what matters**."
+- S18 — "Judgment decides **what matters**."
 
 **The "so what" (the frame + the ending): Democratizing Personal Intelligence.** The body
 proves we *can* make personal intelligence trustworthy. The frame answers *why that matters*,
 in a chain:
 
-1. **It unlocks everything downstream** (S13). Better decks, docs, analysis all start with
+1. **It unlocks everything downstream** (S15). Better decks, docs, analysis all start with
    great context. Trustworthy personal intelligence *is* that context — the part you don't re-check.
-2. **The value wants to travel** (S14). Trustworthy assets are worth sharing — at work on a
+2. **The value wants to travel** (S16). Trustworthy assets are worth sharing — at work on a
    **P2**, with your network on your **site**. (Show the surfaces; don't lecture the room on
    what publishing is.)
-3. **And it compounds** (S15). The more you trust it, the more you make. A growing body of
+3. **And it compounds** (S17). The more you trust it, the more you make. A growing body of
    trustworthy output that eventually has to be managed. (Stop at the problem; don't pitch
    WordPress to WordPress.)
-4. **The bet** (S16). Personal intelligence is the next opportunity for software that's open,
+4. **The bet** (S18). Personal intelligence is the next opportunity for software that's open,
    private, and yours — the next thing WordPress is for.
 
 The **title** carries the so-what (S1: "Democratizing Personal Intelligence"), the **ending
-delivers it** (S13 → S14 → S15 → S16), and the close bookends the title. The RSM trust spine
+delivers it** (S15 → S16 → S17 → S18), and the close bookends the title. The RSM trust spine
 is the through-line connecting the two ends.
 
 **Two rules this ending learned the hard way:** (a) no throat-clearing connective copy — if a
@@ -68,11 +69,14 @@ Five acts. Each one ends pointing at the next. Nothing repeats.
    Intelligence); S2 is the obstacle in the way: you can't trust AI. It's an architecture problem.
 2. **The insight** (S3–S6) — humans trust by compounding signals → in code that's a claim →
    the field built memory, not judgment. *Ends on the gap.*
-3. **What we built** (S7–S10) — the judgment layer: the demo, the signals, the verdict, the Loop.
-4. **It's real, and here's the so-what** (S11–S15) — shipped (S11), the leverage (S12), then
-   the chain: trust unlocks everything downstream (S13) → the value is worth sharing (S14) →
-   and it compounds into a growing body of content to manage (S15).
-5. **The bet** (S16) — Memory. Judgment. Trust., and personal intelligence as the next thing
+3. **What we built** (S7–S12) — the judgment layer as a four-beat transformation: the demo
+   (S7) → the inputs/five signals (S8) → the trust compiler that weighs them into a verdict
+   (S9) → the band that verdict becomes (S10) → the feedback that re-scores it over time (S11)
+   → the whole thing named as the Intelligence Loop (S12). *raw → judged → actionable → self-improving.*
+4. **It's real, and here's the so-what** (S13–S17) — shipped (S13), the leverage (S14), then
+   the chain: trust unlocks everything downstream (S15) → the value is worth sharing (S16) →
+   and it compounds into a growing body of content to manage (S17).
+5. **The bet** (S18) — Memory. Judgment. Trust., and personal intelligence as the next thing
    WordPress is for. Bookends the S1 title.
 
 ## What changed from the old deck (the redundancy surgery)
@@ -80,23 +84,33 @@ Five acts. Each one ends pointing at the next. Nothing repeats.
 - **Killed the triple "flat facts" beat.** The "systems keep flat facts without judgment"
   point was in old-4b's closer, old-5, AND old-6. It now lives **once**, as the field
   indictment in S6. 4b's closer is retargeted to hand into the gap, not pre-state it.
-- **De-overlapped the machinery.** Old 6/7/8 all circled the claim object. Now S7 *shows*
-  (demo), S8 gives the *inputs* (five signals), S9 gives the *output* (band + the action it
-  implies). Each adds new information; none re-shows.
-- **Merged the architecture.** Old "whole loop" + "abilities runtime" → one S10.
+- **De-overlapped the machinery.** Old 6/7/8 all circled the claim object. Now each beat adds
+  new information: S7 *shows* (demo), S8 the *inputs* (five signals), S9 the *judgment* (trust
+  compiler), S10 the *output* (band), S11 the *learning* (feedback). None re-shows.
+- **Deepened the middle (the orphaned act).** Act 3 was a loose spec dump — S8 handed you five
+  signals, S9 handed you a band, nothing explained how or why. Added two beats: **S9 the trust
+  compiler** (the "how/why" — weigh the signals into one verdict; it was an unexplained node on
+  the loop diagram) and **S11 the feedback loop** (the self-improving, me-shaped part). The act
+  now reads raw → judged → actionable → self-improving, and S12's loop lands because every node
+  is already known.
+- **Merged the architecture.** Old "whole loop" + "abilities runtime" → one S12.
 - **Kept both proof slides.** Audience is internal RSM colleagues, so the leverage result is
-  a headline, not a brag. S11 is the volume shipped; S12 is what the old way would have cost
+  a headline, not a brag. S13 is the volume shipped; S14 is what the old way would have cost
   (40 people / 42mo / $19M). They're a pair: the work, then the leverage.
 - **Reclaimed "substrate" as the Intelligence Loop.** "Substrate" was inert and forgettable,
-  and it doubled with S10's "the whole loop." The deck now names one hero concept — **the
-  Intelligence Loop** — formally at S10, and threads it through S11–S16. "Claim" stays for the
+  and it doubled with the "whole loop." The deck now names one hero concept — **the
+  Intelligence Loop** — formally at S12, and threads it through S13–S18. "Claim" stays for the
   claim layer; the Loop is the whole motion (signals → claims → trust → surfaces → feedback).
 - **Planted the spine at S6** instead of leaving the equation for the close to introduce cold.
 
 ## Open issues
 
-- **S8 + S9 are merge candidates** if the deck still runs long — inputs and output of the
-  same object. Kept separate for now; collapse if Act 3 drags.
+- **Deck is now 18 slides** (was 16). The two new Act 3 beats add depth where the work is, but
+  watch total length — if it drags, the compiler (S9) and bands (S10) are the likeliest
+  candidates to recombine, since they're two halves of one signals→verdict story.
+- **S9 + S11 want diagrams.** The compiler (signals + off-claim evidence → band) and the
+  feedback loop (correction → re-score claim + source) are both mechanism slides that a small
+  diagram would carry better than prose. Noted on each slide; build at port time.
 - **Talk track unwritten** for most slides. Draft after the arc settles.
 
 ---
@@ -233,25 +247,70 @@ result, not teaching the mechanism.
   carries five things. Together they tell the system what to surface and how confidently.
 - claim card — Subject / Temporal scope / Sensitivity / Lifecycle / Salience (all Shipped)
 
-**Bridge →** Five signals are the inputs. Here's how they compound into a single verdict you can act on.
+**Bridge →** But five signals are a description, not a decision. Something has to turn them into one call.
 **Talk track:** _(not yet drafted)_
 **Job:** The inputs. The five signals that make a claim. (Callback to S4's human signals.)
 
-### S9 — How trust gets decided · linen  · `unchanged`
+### S9 — The trust compiler · warm white  · `new`  *(the missing beat — judgment happens here)*
+**On the slide:**
+- eyebrow — The trust compiler
+- headline — Five signals aren't a decision.
+- lede — The signals describe a claim. They don't tell you what to do with it. Something has
+  to weigh them into a single call — and weigh them against what isn't on the claim itself.
+  How reliable the source is. Whether anything corroborates it. Whether anything contradicts
+  it. Every time you've corrected it before.
+- closer — That's the trust compiler. It turns everything the system knows about a fact into
+  one verdict you can act on.
+- optional diagram — five signals + (source quality · corroboration · contradiction · your
+  corrections) → trust compiler → one band
+
+**Port note:** The missing beat. The bridge from S8 (signals) to S10 (band) — and already a
+node in the S12 loop diagram ("Trust compiler") that was never explained. Pulls the buried
+"Computed from…" meta out of the old bands slide and makes it a real beat. This is where
+*judgment decides what matters* literally happens — the heart of the work.
+
+**Bridge →** And the verdict it produces is the thing every surface actually reads.
+**Talk track:** _(not yet drafted)_
+**Job:** The judgment. Weigh five signals + off-claim evidence into one verdict. Answers James's "why a band, and how."
+
+### S10 — How trust gets decided · linen  · `edit`  *(was S9 — now the compiler's output)*
 **On the slide:**
 - eyebrow — How trust gets decided
 - headline — The five signals compound into a band.
-- lede — The system doesn't hand you a confidence percentage. Nobody's eye for trust works
+- lede — The compiler doesn't hand you a confidence percentage. Nobody's eye for trust works
   that way. It hands you a band, the way you'd describe a new acquaintance.
 - three bands — likely_current (use it) / use_with_caution (show the uncertainty) / needs_verification (ask first)
-- meta — Computed from the five pillars plus source quality, corroboration, contradictions,
-  and every correction you've made.
+- supporting line — The band is the contract. Every surface — a briefing, a WordPress page,
+  an MCP tool — reads the same one and treats the claim the same way.
 
-**Bridge →** Signals in, a verdict out. Zoom out and the whole thing is one loop — sources to claims to trust to surfaces, and back.
+**Port note:** Reframed as the *output* of the compiler (S9), not a standalone. Lede now reads
+"the compiler doesn't hand you a percentage." The old "Computed from the five pillars…" meta
+moved up to S9. New supporting line names the band's *purpose* — the portable contract that
+makes trust behave identically on every surface (sets up the back half's "runs everywhere").
+
+**Bridge →** But a verdict isn't frozen. It changes as you do.
 **Talk track:** _(not yet drafted)_
-**Job:** The output. Signals compound into a band + the action it implies. (Callback to S4 "compounded".)
+**Job:** The actionable output. Three bands + the action each implies, and the band as the cross-surface contract.
 
-### S10 — The Intelligence Loop · warm white  · `merge` (old "whole loop" + "abilities runtime")  *(names the hero concept)*
+### S11 — The part that learns · saffron wash  · `new`  *(the self-improving beat — most me-shaped)*
+**On the slide:**
+- eyebrow — How it gets sharper
+- headline — Every correction makes the next answer better.
+- lede — A band isn't a final verdict. Fix a claim, dismiss one, confirm one, and that signal
+  flows back — re-scoring the claim, and re-scoring the source it came from. The system
+  updates what it believes, and how much it trusts where it heard it.
+- closer — That's the loop closing. Over time it stops being generic and starts being yours,
+  tuned to what you've corrected, trusted, and taught it.
+
+**Port note:** The fourth beat — self-improving. Today it's a dashed "Feedback" arrow on the
+S12 loop diagram and one clause in a meta line. Pulled out because "it learns from you" is a
+stronger, more differentiated claim than "it has an architecture." This is the me-shaped part.
+
+**Bridge →** Put it all together and it's one loop.
+**Talk track:** _(not yet drafted)_
+**Job:** The learning. Corrections re-score claims and sources; the system becomes yours over time.
+
+### S12 — The Intelligence Loop · warm white  · `merge` (old "whole loop" + "abilities runtime")  *(names the hero concept)*
 **On the slide:**
 - eyebrow — The Intelligence Loop
 - headline — Signals in. Surfaces out. Feedback closes the loop.
@@ -260,18 +319,19 @@ result, not teaching the mechanism.
   get_entity_context, detect_risk_shift). Every call routes one front door, so provenance,
   versioning, and permissions stay consistent everywhere the answer shows up.
 
-**Port note:** This is where the deck formally names **the Intelligence Loop** — the hero
-concept the whole build has been assembling. Fold the abilities-runtime explanation in as
-the supporting line; the diagram already shows the runtime node. Cuts a slide. (Reclaims
-the word "substrate" used elsewhere — the Loop is the thing, not a passive foundation.)
+**Port note:** Formally names **the Intelligence Loop** — and by now the audience knows every
+node: claims (S8), trust compiler (S9), bands (S10), feedback (S11). The loop is the
+synthesis, not a reveal of unexplained parts — which is exactly what fixes the orphaned middle.
+Fold the abilities-runtime explanation in as the supporting line. (Reclaims "substrate" — the
+Loop is the thing, not a passive foundation.)
 
 **Bridge →** That's the loop. Here's the proof it's real.
 **Talk track:** _(not yet drafted)_
-**Job:** Name the Intelligence Loop. The architecture as one loop, one front door, consistency everywhere.
+**Job:** Name the Intelligence Loop — the architecture as one loop, every node already explained.
 
 ## ACT 4 — WHY IT MATTERS
 
-### S11 — What we shipped · warm white  · `unchanged`
+### S13 — What we shipped · warm white  · `unchanged`
 **On the slide:**
 - eyebrow — The Intelligence Loop, by the numbers
 - headline — One month. A working Intelligence Loop.
@@ -283,7 +343,7 @@ the word "substrate" used elsewhere — the Loop is the thing, not a passive fou
 **Talk track:** _(not yet drafted)_
 **Job:** The work shipped. Volume as evidence the loop is real.
 
-### S12 — What the old way would have cost · linen  · `unchanged`  *(the leverage result)*
+### S14 — What the old way would have cost · linen  · `unchanged`  *(the leverage result)*
 **On the slide:**
 - eyebrow — If a conventional team had built it
 - headline — What the old way would have cost.
@@ -296,7 +356,7 @@ the word "substrate" used elsewhere — the Loop is the thing, not a passive fou
 **Talk track:** _(not yet drafted)_
 **Job:** The headline RSM result. The leverage — one person + agents vs a 40-person team / years.
 
-### S13 — The unlock · cream  · `edit`  *(the "so what" begins here)*
+### S15 — The unlock · cream  · `edit`  *(the "so what" begins here)*
 **On the slide:**
 - eyebrow — So what?
 - headline — Great context is the thing everything else needs.
@@ -314,7 +374,7 @@ This is step 1 of the so-what chain.
 **Talk track:** _(not yet drafted)_
 **Job:** The unlock. Trust → great context → better everything downstream. (Why it matters to the user.)
 
-### S14 — The value travels · warm white  · `new`  *(step 2 of the so-what)*
+### S16 — The value travels · warm white  · `new`  *(step 2 of the so-what)*
 **On the slide:**
 - eyebrow — Where it goes
 - headline — What you know is worth more when it moves.
@@ -333,7 +393,7 @@ site) without stating it — the audience completes it. Do NOT write "publishing
 **Talk track:** _(not yet drafted)_
 **Job:** The pathway. Trustworthy intelligence is inherently shareable, and it flows onto rails we already run.
 
-### S15 — The good problem · linen  · `new`  *(step 3 — the compounding)*
+### S17 — The good problem · linen  · `new`  *(step 3 — the compounding)*
 **On the slide:**
 - eyebrow — What comes next
 - headline — The more you trust it, the more you make.
@@ -355,7 +415,7 @@ useless.
 
 ## ACT 5 — THE BET
 
-### S16 — Close · eucalyptus  · `edit`  *(bookends the S1 title)*
+### S18 — Close · eucalyptus  · `edit`  *(bookends the S1 title)*
 **On the slide:**
 - eyebrow — Why all this earth had to move
 - headline — Memory. Judgment. Trust.
