@@ -35,13 +35,13 @@
   <h1 class="plans-title">I correct it once, and it stays corrected — everywhere.</h1>
   <p class="plans-kicker">Substrate Reset &amp; Judgment Maturation. L0 plan-altitude converged (cycle 4).</p>
   <p class="plans-lede">
-    A claim carries provenance and a trust band. The user dismisses, contradicts, or re-scopes it — in the app or by editing the claim's readable file — and the source's reliability updates, derived claims invalidate, and what surfaces next visibly changes across the macOS app and MCP, surviving re-enrichment and rebuild. Single-writer is the only hard gate for that loop; storage hardening, security, and transcript run parallel.
+    A claim carries provenance and a trust band. The user dismisses, contradicts, or re-scopes it — in the app or by editing the claim's readable file — and the source's reliability updates, derived claims invalidate, and what surfaces next visibly changes across the macOS app and MCP, surviving re-enrichment and rebuild. The app+file single-writer substrate that loop needs already shipped (757 · PR #365 · W0 · 820); storage hardening, security, MCP-surface DB ownership, and transcript run parallel.
   </p>
   <div class="plans-meta">
     <span>2026 (DRAFT, L0 converged)</span>
     <span>Waves: 6</span>
     <span>Linear: 874a7361</span>
-    <span>Critical path: single-writer → W3 → W4 → W5</span>
+    <span>Critical path: W3 → W4 → W5 (app+file single-writer shipped)</span>
   </div>
 </section>
 
@@ -61,13 +61,14 @@
 <section class="plans-section" aria-labelledby="seq">
   <header class="plans-section-header">
     <p class="plans-section-eyebrow">Execution sequencing</p>
-    <h2 id="seq" class="plans-section-title">Single-writer is the only loop gate; storage runs parallel.</h2>
-    <p class="plans-section-lede">Cycle-1 feasibility proved the correction loop has no code dependency on cipher-drop or rebuild — only on single-writer DB ownership. The storage-reset-first spine was an inverted critical path. Corrected below.</p>
+    <h2 id="seq" class="plans-section-title">App+file single-writer already shipped; the W1 residual is MCP-surface ownership.</h2>
+    <p class="plans-section-lede"><strong>Corrected 2026-05-31 (L0 K-in audit).</strong> The original "single-writer is the only loop gate" framing was wrong on two counts. First, the app+file single-writer substrate the correction loop (W3/W4) depends on <em>already merged to dev</em> — typed errors (DOS-757, <code>097d8171</code>), foreground-contention read-purity (PR #365), DB-throughput W0 (<code>81292e62</code>), DB-mode isolation (820-A/B, #418/#419). Second, the residual 647/758 work is <em>MCP-surface</em> DB ownership, which mainly unblocks W5 parity and is NOT a W3/W4 gate. The loop's real critical path runs through W3→W4 on substrate that exists today.</p>
   </header>
-  <pre class="plans-flow">W1a single-writer (647/758) + safety close-out (823)  ── the ONLY hard gate for the loop
-        ├──> W3 claims→files ──> W4 correction loop (HEADLINE) ──> W5 MCP parity   [CRITICAL PATH]
+  <pre class="plans-flow">W3 claims→files ──> W4 correction loop (HEADLINE) ──> W5 MCP parity   [CRITICAL PATH — app+file single-writer already shipped]
+        ├──> W1 DOS-758 MCP handler context (Track B) ── PARALLEL; L0 APPROVED + MERGED (#421); unblocks W5
+        ├──> W1 DOS-823 replica-refresh + guards ── PARALLEL; L0'd, ready
         ├──> W1b storage hardening (cipher-drop 831, rebuild 832) ── PARALLEL (832 lands after W3)
-        ├──> W2 security right-size (833 auth + 510) ── PARALLEL
+        ├──> W2 security right-size (833 auth + 510) ── PARALLEL; owns MCP cross-process single-writer (DOS-759)
         └──> W6 transcript substrate ── PARALLEL; release valve</pre>
 </section>
 
@@ -79,7 +80,7 @@
   <table class="reviewer-matrix">
     <thead><tr><th>Wave</th><th>Theme</th><th>Carries</th><th>Role</th></tr></thead>
     <tbody>
-      <tr><td>W1</td><td>DB ownership + storage hardening</td><td>W1a (gating): 647 · 758 · 823. W1b (parallel): 831 · 832 · 767 · 768 · 770 · 812</td><td>substrate</td></tr>
+      <tr><td>W1</td><td>DB ownership + storage hardening</td><td>W1a (parallel, not gating): 757 ✓shipped · 758 (Track B, L0✓ merged #421) · 823 ready. 759 cross-process → W2. W1b: 831 · 832 · 767 · 768 · 770 · 812</td><td>substrate</td></tr>
       <tr><td>W2</td><td>Security right-size</td><td>833 auth overhaul · 510</td><td>substrate (parallel)</td></tr>
       <tr><td>W3</td><td>Claims → editable readable files</td><td>628 (projection + corrections sidecar + write-back)</td><td>first loop slice</td></tr>
       <tr><td>W4</td><td>Judgment moat / correction loop</td><td>8 · 318 · 443 · 447 · 316 · 811 · 338 · 446 · 278 · 277 · 317 · 834 (keystone)</td><td>HEADLINE</td></tr>
@@ -99,7 +100,7 @@
     <article class="callout"><h3 class="callout-title">2 · Decrypt-then-drop</h3><p class="callout-prose">Split build + one-shot decrypt (mirror of <code>migrate_to_encrypted</code>) + sentinel that exits before old auto-encrypt runs; both <code>core.rs:506,650</code> sites deleted. Fallback: rebuild.</p></article>
     <article class="callout"><h3 class="callout-title">3 · Corrections survive rebuild</h3><p class="callout-prose">Content-identity correction-journal sidecar (<code>compute_dedup_key</code> shape, not raw runtime dedup_key); replay respects <code>claim_state</code> (no tombstone resurrection); tie-break + orphan-when-ambiguous; exact derivation → DOS-832 L0. Amends ADR-0048 P-4.</p></article>
     <article class="callout"><h3 class="callout-title">4 · Files-as-projection</h3><p class="callout-prose">Edit = correction input via <code>services/claims.rs</code> typed <code>FeedbackAction</code> (ADR-0123/0126); Actor::User; workspace-confined; sensitivity re-validated. Never files-as-truth.</p></article>
-    <article class="callout"><h3 class="callout-title">5 · Single-writer ownership</h3><p class="callout-prose">647/758 consume ADR-0133/0134 + the db-lock-storm-class doc verbatim. The only hard prerequisite for the loop.</p></article>
+    <article class="callout"><h3 class="callout-title">5 · Single-writer ownership</h3><p class="callout-prose">Consumes ADR-0133/0134 + the db-lock-storm-class doc verbatim. <strong>Corrected:</strong> app+file single-writer already shipped (757/PR#365/W0/820); no priority lane (ADR-0133 §3 forbids it). DOS-758 (L0✓) gives the MCP sidecar one owned connection; cross-process MCP↔app-writer routing is W2-coupled (DOS-759). Not the loop's gate — W3/W4 run on shipped substrate.</p></article>
     <article class="callout"><h3 class="callout-title">6 · Centralized trust rendering</h3><p class="callout-prose">One provenance + trust-band + sensitivity renderer for app and MCP (ADR-0105/0108). W5 is parity, not a second renderer.</p></article>
     <article class="callout"><h3 class="callout-title">7 · MCP writes via ADR-0128 §D</h3><p class="callout-prose">169/170 reconcile against §D (already authorizes <code>submit.action</code>/<code>submit.action_status</code>) — confirm it survived reconciliation; not a new amendment.</p></article>
     <article class="callout"><h3 class="callout-title">8 · Migration slots</h3><p class="callout-prose">Dev head v273. W1b v274–277 · W2 v278–279 · W3 v280–283 · W4 v284–289 · W6 v290–295. Wave lead writes confirmed numbers before branch-open.</p></article>
@@ -112,8 +113,8 @@
     <h2 id="detail" class="plans-section-title">What each wave carries and proves.</h2>
   </header>
 
-  <h3 class="plans-subhead">W1 — DB ownership + storage hardening · substrate</h3>
-  <p><strong>W1a (gating):</strong> DOS-647 single-writer + priority lane; DOS-758 request-scoped DB/services + nested-writer guard; DOS-823 (820-C) replica-refresh (consumes shipped 820-A DbMode + run_chunked_backup) + destructive-command guards, completes DOS-820.</p>
+  <h3 class="plans-subhead">W1 — DB ownership + storage hardening · substrate (parallel, not gating)</h3>
+  <p><strong>W1a:</strong> DOS-757 typed DB errors — <strong>SHIPPED</strong> (<code>097d8171</code>). DOS-758 request-scoped <code>McpHandlerContext</code> giving the out-of-process MCP sidecar one owned connection (replaces N per-handler/audit self-opens) + bounded CI gate + behavioral test — <strong>L0 APPROVED, packet merged #421</strong>; L1 in progress. DOS-823 (820-C) replica-refresh (consumes shipped 820-A DbMode + run_chunked_backup) + destructive-command guards, completes DOS-820 — L0'd, ready. <em>No priority lane</em> (ADR-0133 §3 forbids it; superseded by the merged foreground-contention read-purity work, PR #365). DOS-759 cross-process MCP↔app-writer single-writer + retry consumer + nested-writer guard is <strong>W2-coupled</strong> (needs the transport/IPC layer W2 owns).</p>
   <p><strong>W1b (parallel):</strong> DOS-831 cipher-drop (ADR-0136 + 820-A DB-mode ADR; decrypt-then-drop); DOS-832 rebuild-from-canonical, corrections-preserving (depends on W3); DOS-767/768/770/812 ingestion-hygiene.</p>
   <p><strong>Proof —</strong> substrate; replica-refresh clones prod→replica read-only, prod-destroyers refuse outside the guard, a rebuild reproduces the working DB <em>including user corrections</em>.</p>
 
@@ -146,7 +147,7 @@
   </header>
   <ul>
     <li>Headline proven + felt: a correction in app, file, and MCP each changes a surfacing the user did not directly touch, survives re-enrichment + rebuild, measured by DOS-338.</li>
-    <li>Substrate reset: plain SQLite (ADR-0136 landed); decrypt-then-drop done; rebuild preserves corrections; single-writer; replica-refresh + guards (DOS-820 closed); auth right-sized + threat-model/0102 supersession.</li>
+    <li>Substrate reset: plain SQLite (ADR-0136 landed); decrypt-then-drop done; rebuild preserves corrections; app+file single-writer (shipped) + MCP sidecar one-owned-connection (DOS-758); replica-refresh + guards (DOS-820 closed); auth right-sized + threat-model/0102 supersession.</li>
     <li>Cross-surface parity modulo the ADR-0125 sensitivity gate (Confidential/UserOnly app-only).</li>
     <li>No stubs in shipped waves: contradiction.rs / render_rules.rs / deviation.rs / recommendations/eval.rs real.</li>
     <li>Gates green: <code>cargo clippy -- -D warnings &amp;&amp; cargo test &amp;&amp; pnpm tsc --noEmit</code> (DOS-824 flake tracked separately).</li>
