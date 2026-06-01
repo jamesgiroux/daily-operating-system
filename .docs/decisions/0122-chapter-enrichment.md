@@ -1,7 +1,8 @@
 # ADR-0122 — Chapter-level Enrichment Strategy
 
-**Status:** Proposed
+**Status:** Accepted — Option A
 **Date:** 2026-04-23
+**Accepted:** 2026-06-01 — v1.5.0 W0 accepts the all-or-nothing freshness model with preparatory instrumentation; no per-chapter freshness contract ships in W0.
 **Issue:** DOS-204
 **Stakeholders:** James Giroux
 **Gates:** DOS-203 (Health & Outlook tab), DOS-15 (Glean leading-signal), DOS-207 (Context tab schema)

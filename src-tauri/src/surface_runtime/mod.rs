@@ -4627,6 +4627,8 @@ mod tests {
     static SURFACE_ROUTE_DISPATCH_COUNT: AtomicUsize = AtomicUsize::new(0);
     static SURFACE_ROUTE_LIMIT_COUNT: AtomicUsize = AtomicUsize::new(0);
     static PROJECT_COMPOSITION_PRODUCER_COUNT: AtomicUsize = AtomicUsize::new(0);
+    static PROJECT_COMPOSITION_LAST_ACTOR: std::sync::Mutex<Option<Actor>> =
+        std::sync::Mutex::new(None);
     static GET_ACCOUNT_CONTEXT_COMPOSES: [ComposesEntry; 1] = [ComposesEntry {
         id: CompositionId::from_static("dailyos/get-account-context"),
         ability: "dailyos/get-account-context",
@@ -4661,10 +4663,13 @@ mod tests {
     }
 
     fn project_composition_erased<'a>(
-        _ctx: &'a AbilityContext<'a>,
+        ctx: &'a AbilityContext<'a>,
         input: serde_json::Value,
     ) -> ErasedFuture<'a> {
         PROJECT_COMPOSITION_PRODUCER_COUNT.fetch_add(1, Ordering::SeqCst);
+        *PROJECT_COMPOSITION_LAST_ACTOR
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner()) = Some(ctx.actor.clone());
         Box::pin(async move {
             let composition_id = input
                 .get("composition_id")
@@ -5060,6 +5065,9 @@ mod tests {
 
     fn project_composition_registry() -> Arc<crate::abilities::AbilityRegistry> {
         PROJECT_COMPOSITION_PRODUCER_COUNT.store(0, Ordering::SeqCst);
+        *PROJECT_COMPOSITION_LAST_ACTOR
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner()) = None;
         Arc::new(
             crate::abilities::AbilityRegistry::from_descriptors_unchecked_for_runtime_validation_tests(
                 vec![project_composition_descriptor()],
@@ -6321,6 +6329,68 @@ mod tests {
         assert!(invoked.wp_user_id.is_none());
         assert!(invoked.wp_user_hash.is_none());
         assert_eq!(invoked.detail["ability_name"], json!("surface_route_test"));
+    }
+
+    #[test]
+    fn w0_local_project_composition_route_resolves_composition_as_user() {
+        let _counter_guard = SURFACE_ROUTE_COUNTER_LOCK
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner());
+        let tokio_runtime = tokio::runtime::Builder::new_current_thread()
+            .enable_all()
+            .build()
+            .unwrap();
+        let composition_id = "dailyos/account-overview:account:acct-w0-local";
+        let runtime = tokio_runtime.block_on(runtime_for_project_composition_tests(
+            project_composition_registry(),
+            SurfaceClientBridgeConfig::default(),
+        ));
+        let app_state = runtime.app_state.as_ref().expect("test app state").clone();
+        tokio_runtime.block_on(seed_composition_version_for_tests(
+            &app_state,
+            composition_id,
+            5,
+        ));
+        let request = request_for_tests(
+            Method::POST,
+            "/v1/local/project-composition",
+            project_composition_body(composition_id, 1),
+        );
+
+        let response = tokio_runtime.block_on(dispatch_surface_request(
+            request,
+            Arc::clone(&runtime),
+            "req_w0_local_project_composition".into(),
+        ));
+
+        let status = response.status();
+        let body = body_json(response);
+        assert_eq!(status, StatusCode::OK, "{body}");
+        assert_eq!(body["ok"], true);
+        assert_eq!(body["request_id"], "req_w0_local_project_composition");
+        assert_eq!(body["served_from_cache"], false);
+        assert_eq!(body["projection"]["composition_id"], composition_id);
+        assert_eq!(body["projection"]["composition_version"], 6);
+        assert_eq!(PROJECT_COMPOSITION_PRODUCER_COUNT.load(Ordering::SeqCst), 1);
+        assert_eq!(
+            PROJECT_COMPOSITION_LAST_ACTOR
+                .lock()
+                .unwrap_or_else(|poisoned| poisoned.into_inner())
+                .clone(),
+            Some(Actor::User)
+        );
+        assert!(app_state
+            .composition_render_orchestrator
+            .cache_lookup(&Actor::User, composition_id, 6)
+            .is_some());
+        assert!(app_state
+            .composition_render_orchestrator
+            .cache_lookup(
+                &validated_surface_session_for_tests().actor,
+                composition_id,
+                6,
+            )
+            .is_none());
     }
 
     #[test]
