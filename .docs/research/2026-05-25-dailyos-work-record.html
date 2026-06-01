@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width,initial-scale=1" />
-  <title>Can you define trust in code? &middot; DailyOS Demo Day</title>
+  <title>Democratizing Personal Intelligence &middot; DailyOS RSM Final Update</title>
 
   <link rel="stylesheet" href="../design/reference/_shared/fonts.css">
   <link rel="stylesheet" href="../design/reference/_shared/styles/design-tokens.css">
@@ -530,15 +530,12 @@
     <section class="monthly-wrapped_slide monthly-wrapped_bgWarmWhite demo-cover">
       <p class="d-eyebrow">DailyOS &middot; RSM Final Update</p>
       <h1 class="d-headline">
-        Can we codify trust?
+        Democratizing Personal Intelligence
       </h1>
-      <p class="d-lede d-lede--wide">
-        AI at work relies on solving this one thing.
-      </p>
     </section>
 
     <!-- 2. THE TRUST GAP (HALLUCINATION) ===================== -->
-    <section class="monthly-wrapped_slide monthly-wrapped_bgTerracotta">
+    <section class="monthly-wrapped_slide monthly-wrapped_bgWarmWhite" style="background: linear-gradient(rgba(196,101,74,0.15), rgba(196,101,74,0.15)), var(--color-paper-warm-white);">
       <p class="d-eyebrow">The pain</p>
       <h2 class="d-headline d-headline--med">
         Is this a fact, or did the AI just make it up?
@@ -621,13 +618,10 @@
         whether anyone still believes it. A fact that travels with its signals is what we
         call a claim.
       </p>
-      <p class="d-meta" style="margin-top: 24px;">
-        Most systems keep the fact and forget everything around it.
-      </p>
     </section>
 
     <!-- 5. THE BLIND SPOT ==================================== -->
-    <section class="monthly-wrapped_slide monthly-wrapped_bgEucalyptus">
+    <section class="monthly-wrapped_slide monthly-wrapped_bgWarmWhite" style="background: linear-gradient(rgba(107,168,164,0.16), rgba(107,168,164,0.16)), var(--color-paper-warm-white);">
       <p class="d-eyebrow">The blind spot</p>
       <h2 class="d-headline d-headline--med">
         Smart isn&rsquo;t the same as trustworthy.
@@ -639,9 +633,9 @@
         The whole field is racing to give AI a better memory.
       </p>
       <p class="d-lede d-lede--wide">
-        But it&rsquo;s all the same move. Remember more, recall it faster. None of it
-        decides what matters, or what to leave out. The memory keeps getting smarter
-        without getting any more trustworthy.
+        But memory is only half of it. The other half is judgment &mdash; knowing what to
+        trust, what to flag, what to leave out. The field is racing on memory, and almost
+        nobody is building judgment.
       </p>
       <p class="d-lede d-lede--narrow">
         How does smart memory know what matters?
@@ -656,7 +650,7 @@
       </h2>
       <p class="d-lede d-lede--wide">
         Today&rsquo;s AI memory is flat. Ask about an account and it returns
-        everything it has, at the same volume, with no internal sense of what to believe
+        everything it has, at the same volume, with no judgment about what to believe
         more, what to flag, or what to leave out.
       </p>
 
@@ -710,15 +704,14 @@
     </section>
 
     <!-- 7. THE FIVE PILLARS (DIAGRAM C) ====================== -->
-    <section class="monthly-wrapped_slide monthly-wrapped_bgSage">
+    <section class="monthly-wrapped_slide monthly-wrapped_bgWarmWhite" style="background: linear-gradient(rgba(126,170,123,0.15), rgba(126,170,123,0.15)), var(--color-paper-warm-white);">
       <p class="d-eyebrow">The five pillars</p>
       <h2 class="d-headline d-headline--med">
         The micro-signals every claim carries.
       </h2>
       <p class="d-lede d-lede--wide" style="margin-bottom: 12px;">
-        For a memory to become trust, it has to carry the proof of its own trustworthiness.
-        Every claim DailyOS holds carries five things. Together they tell the system what
-        to surface and how confidently.
+        For a memory to be trusted, it has to carry the proof. Every claim DailyOS holds
+        carries five things. Together they tell the system what to surface and how confidently.
       </p>
 
       <div class="d-claimcard">
@@ -759,7 +752,7 @@
           <div class="d-pillar-q">Worth surfacing right now?
             <small>useful &middot; quiet &middot; contextual &middot; decay</small>
           </div>
-          <span class="d-pillar-flag d-pillar-flag--next">v1.4.6 &middot; next</span>
+          <span class="d-pillar-flag d-pillar-flag--live">Shipped</span>
         </div>
       </div>
     </section>
@@ -798,9 +791,9 @@
       </p>
     </section>
 
-    <!-- 11. THE WHOLE LOOP (DIAGRAM D) ======================= -->
+    <!-- 10. THE INTELLIGENCE LOOP (DIAGRAM D + runtime, merged) = -->
     <section class="monthly-wrapped_slide monthly-wrapped_bgWarmWhite">
-      <p class="d-eyebrow">The whole loop</p>
+      <p class="d-eyebrow">The Intelligence Loop</p>
       <h2 class="d-headline d-headline--sm" style="margin-bottom: 8px;">
         Signals in. Surfaces out. Feedback closes the loop.
       </h2>
@@ -822,9 +815,9 @@
           <line x1="480" y1="100" x2="480" y2="150" stroke="var(--color-desk-ink)" stroke-width="1.5" opacity="0.7" marker-end="url(#arrow)"/>
           <text x="495" y="130" class="d-loop-edge-label">Signals</text>
 
-          <!-- Claim substrate -->
+          <!-- Claims -->
           <rect x="240" y="160" width="480" height="68" rx="10" fill="var(--color-paper-warm-white)" stroke="var(--color-desk-ink)" stroke-width="1.5"/>
-          <text x="480" y="184" text-anchor="middle" class="d-loop-node-sub">Claim substrate</text>
+          <text x="480" y="184" text-anchor="middle" class="d-loop-node-sub">Claims</text>
           <text x="480" y="208" text-anchor="middle" class="d-loop-node-label">subject &middot; time &middot; sensitivity &middot; lifecycle &middot; salience</text>
 
           <!-- Trust arrow -->
@@ -849,63 +842,19 @@
           <text x="910" y="260" text-anchor="middle" class="d-loop-edge-label" fill="var(--color-spice-terracotta)" transform="rotate(90 910 260)">Feedback</text>
         </svg>
       </div>
-    </section>
 
-    <!-- 12. WHY AN ABILITIES RUNTIME ========================= -->
-    <section class="monthly-wrapped_slide monthly-wrapped_bgLinen">
-      <p class="d-eyebrow">Why an abilities runtime</p>
-      <h2 class="d-headline d-headline--med">
-        One front door for everything the system can do.
-      </h2>
-      <p class="d-lede d-lede--wide">
-        An <em>ability</em> is a single thing DailyOS knows how to do, like
-        <code>prepare_meeting</code>, <code>get_entity_context</code>, or
-        <code>detect_risk_shift</code>. The runtime is the one registry that hosts them.
-        Every call routes through it, which is how provenance, versioning, and permissions
-        stay consistent everywhere they show up.
-      </p>
-
-      <div class="d-fanout">
-        <svg viewBox="0 0 880 400" xmlns="http://www.w3.org/2000/svg" aria-label="Abilities runtime stack">
-          <defs>
-            <marker id="arrow2" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
-              <path d="M0,0 L10,5 L0,10 Z" fill="var(--color-desk-ink)" opacity="0.7"/>
-            </marker>
-          </defs>
-
-          <!-- Abilities (named capabilities) -->
-          <rect x="80" y="20" width="720" height="76" rx="10" fill="none" stroke="var(--color-desk-ink)" stroke-width="1.4" stroke-dasharray="3 4" opacity="0.7"/>
-          <text x="440" y="46" text-anchor="middle" class="d-fanout-sub">Abilities</text>
-          <text x="440" y="74" text-anchor="middle" class="d-fanout-surface">prepare_meeting &middot; get_entity_context &middot; detect_risk_shift &middot; ...</text>
-
-          <line x1="440" y1="100" x2="440" y2="150" stroke="var(--color-desk-ink)" stroke-width="1.5" opacity="0.7" marker-end="url(#arrow2)"/>
-
-          <!-- Runtime -->
-          <rect x="40" y="158" width="800" height="120" rx="12" fill="var(--color-paper-warm-white)" stroke="var(--color-desk-ink)" stroke-width="1.8"/>
-          <text x="440" y="186" text-anchor="middle" class="d-fanout-sub">Abilities runtime</text>
-          <text x="440" y="216" text-anchor="middle" class="d-fanout-runtime">one registry &middot; one entrypoint</text>
-          <text x="440" y="248" text-anchor="middle" class="d-fanout-sub">provenance &middot; versioning &middot; actor filtering &middot; contracts</text>
-
-          <line x1="440" y1="282" x2="440" y2="328" stroke="var(--color-desk-ink)" stroke-width="1.5" opacity="0.7" marker-end="url(#arrow2)"/>
-
-          <!-- Single surface -->
-          <rect x="280" y="333" width="320" height="60" rx="10" fill="none" stroke="var(--color-desk-ink)" stroke-width="1.4"/>
-          <text x="440" y="358" text-anchor="middle" class="d-fanout-sub">Surface</text>
-          <text x="440" y="380" text-anchor="middle" class="d-fanout-surface">where the answer shows up</text>
-        </svg>
-      </div>
-
-      <p class="d-meta" style="margin-top: 28px;">
-        Without this front door, every consumer of the substrate ends up inventing its
-        own context, its own prompts, its own provenance. With it, those things live once.
+      <p class="d-meta" style="margin-top: 24px; max-width: 80ch;">
+        The runtime is the one front door. An <em>ability</em> like <code>prepare_meeting</code>
+        or <code>get_entity_context</code> routes through it, so provenance, versioning, and
+        permissions stay consistent everywhere the answer shows up.
       </p>
     </section>
 
     <!-- 11. WHAT 33 DAYS SHIPPED ============================= -->
     <section class="monthly-wrapped_slide monthly-wrapped_bgWarmWhite">
-      <p class="d-eyebrow">Substrate, by the numbers</p>
+      <p class="d-eyebrow">The Intelligence Loop, by the numbers</p>
       <h2 class="d-headline d-headline--med">
-        One month. A new substrate.
+        One month. A working Intelligence Loop.
       </h2>
 
       <div style="display: grid; grid-template-columns: repeat(3, 1fr); gap: 48px; max-width: 940px; width: 100%; margin-top: 16px;">
@@ -917,7 +866,7 @@
         <div>
           <p class="d-bignum" style="font-size: clamp(64px, 8vw, 104px);">+613k</p>
           <p class="d-bignum-label">net tracked lines</p>
-          <p class="d-bignum-sub">4,042 files &middot; substrate more than doubled</p>
+          <p class="d-bignum-sub">4,042 files &middot; the codebase more than doubled</p>
         </div>
         <div>
           <p class="d-bignum" style="font-size: clamp(64px, 8vw, 104px);">22.4B</p>
@@ -967,7 +916,7 @@
       </div>
 
       <p class="d-lede d-lede--wide" style="margin-top: 56px;">
-        Industry estimators say a substrate this size needs a sustained team and
+        Industry estimators say a system this size needs a sustained team and
         years of runway. RSM did it in one month. Me, plus agents.
       </p>
 
@@ -977,101 +926,101 @@
       </p>
     </section>
 
-    <!-- 12. WHAT WISER PRODUCES ============================= -->
+    <!-- 13. THE UNLOCK ====================================== -->
     <section class="monthly-wrapped_slide monthly-wrapped_bgWarmWhite" style="background: var(--color-paper-cream);">
       <p class="d-eyebrow">So what?</p>
       <h2 class="d-headline d-headline--med">
-        A trustworthy workspace produces output you can act on.
+        Great context is the thing everything else needs.
       </h2>
       <p class="d-lede d-lede--wide">
-        When every claim carries its own evidence, the briefings get sharper, the prep
-        gets shorter, the decisions get easier. The better the output, the better the
-        work it lets you do.
+        Every good deck, doc, and analysis starts with great context. Trustworthy personal
+        intelligence is that context &mdash; the part you don&rsquo;t have to double-check. Get
+        memory and judgment right, and everything downstream gets better: sharper briefings,
+        shorter prep, decisions you can stand behind.
+      </p>
+      <p class="d-lede d-lede--wide">
+        Trust at the core is what makes all the AI work built on top of it actually worth doing.
       </p>
     </section>
 
-    <!-- 13. THE PAIN THE SOLUTION CREATES ==================== -->
+    <!-- 14. THE VALUE TRAVELS =============================== -->
     <section class="monthly-wrapped_slide monthly-wrapped_bgWarmWhite">
-      <p class="d-eyebrow">The pain we just created</p>
+      <p class="d-eyebrow">Where it goes</p>
       <h2 class="d-headline d-headline--med">
-        The more we trust the output, the more we&rsquo;ll generate.
+        What you know is worth more when it moves.
       </h2>
       <p class="d-lede d-lede--wide">
-        Markdown notes, HTML plans, prep docs, transcripts, six versions of an onboarding
-        screen. A trustworthy substrate is also a productive one. All that rich output
-        has to live somewhere.
-      </p>
-
-      <div style="max-width: 760px; width: 100%; margin-top: 32px; padding-top: 28px; border-top: 1px solid rgba(42,43,61,0.18);">
-        <h3 class="d-headline d-headline--sm" style="margin-bottom: 14px;">
-          Sound familiar?
-        </h3>
-        <p class="d-lede d-lede--wide" style="margin-bottom: 0;">
-          At Automattic we&rsquo;ve been solving content management for over twenty years.
-          Now we need to solve it locally. Not just remotely.
-        </p>
-      </div>
-    </section>
-
-    <!-- 15b. ONE MORE THING — SURFACES REVEAL ================ -->
-    <section class="monthly-wrapped_slide monthly-wrapped_bgLinen">
-      <p class="d-eyebrow">One more thing</p>
-      <h2 class="d-headline d-headline--med">
-        What if it wasn&rsquo;t just an app?
-      </h2>
-      <p class="d-lede d-lede--wide">
-        The runtime works inside WordPress, where we already spend our time. It works
-        inside Claude or Codex over MCP, where people are spending more and more of
-        theirs. Same claims, same trust bands, same provenance.
+        Trustworthy intelligence isn&rsquo;t a private vault. It&rsquo;s the raw material of
+        the work you hand to other people. A briefing becomes your team&rsquo;s shared
+        picture. A month of research becomes the post your network actually reads. The better
+        the source, the more it&rsquo;s worth passing on.
       </p>
 
       <div class="d-fanout">
-        <svg viewBox="0 0 880 380" xmlns="http://www.w3.org/2000/svg" aria-label="DailyOS runtime, multiple surfaces">
+        <svg viewBox="0 0 880 380" xmlns="http://www.w3.org/2000/svg" aria-label="Trustworthy intelligence, shared across surfaces">
           <defs>
             <marker id="arrow4" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
               <path d="M0,0 L10,5 L0,10 Z" fill="var(--color-desk-ink)" opacity="0.7"/>
             </marker>
           </defs>
 
-          <!-- Runtime hub -->
+          <!-- Source hub -->
           <circle cx="440" cy="190" r="108" fill="var(--color-paper-warm-white)" stroke="var(--color-desk-ink)" stroke-width="1.8"/>
-          <text x="440" y="178" text-anchor="middle" class="d-fanout-sub">DailyOS runtime</text>
-          <text x="440" y="206" text-anchor="middle" class="d-fanout-runtime">one substrate</text>
+          <text x="440" y="178" text-anchor="middle" class="d-fanout-sub">What you know</text>
+          <text x="440" y="206" text-anchor="middle" class="d-fanout-runtime">trustworthy intelligence</text>
 
-          <!-- Surface: Tauri app -->
+          <!-- Destination: team -->
           <rect x="40"  y="40"  width="200" height="68" rx="10" fill="none" stroke="var(--color-desk-ink)" stroke-width="1.4"/>
-          <text x="140" y="68"  text-anchor="middle" class="d-fanout-sub">Today</text>
-          <text x="140" y="92"  text-anchor="middle" class="d-fanout-surface">Desktop app</text>
+          <text x="140" y="68"  text-anchor="middle" class="d-fanout-sub">Your team</text>
+          <text x="140" y="92"  text-anchor="middle" class="d-fanout-surface">a P2</text>
 
-          <!-- Surface: MCP -->
+          <!-- Destination: tools -->
           <rect x="640" y="40"  width="200" height="68" rx="10" fill="none" stroke="var(--color-desk-ink)" stroke-width="1.4"/>
-          <text x="740" y="68"  text-anchor="middle" class="d-fanout-sub">What if</text>
-          <text x="740" y="92"  text-anchor="middle" class="d-fanout-surface">Claude &middot; Codex via MCP</text>
+          <text x="740" y="68"  text-anchor="middle" class="d-fanout-sub">Your tools</text>
+          <text x="740" y="92"  text-anchor="middle" class="d-fanout-surface">Claude &middot; Codex over MCP</text>
 
-          <!-- Surface: WordPress -->
+          <!-- Destination: network -->
           <rect x="340" y="312" width="200" height="68" rx="10" fill="none" stroke="var(--color-desk-ink)" stroke-width="1.4"/>
-          <text x="440" y="340" text-anchor="middle" class="d-fanout-sub">What if</text>
-          <text x="440" y="364" text-anchor="middle" class="d-fanout-surface">Local WordPress layer</text>
+          <text x="440" y="340" text-anchor="middle" class="d-fanout-sub">Your network</text>
+          <text x="440" y="364" text-anchor="middle" class="d-fanout-surface">your own site</text>
 
-          <!-- Lines -->
-          <line x1="240" y1="74"  x2="350" y2="148" stroke="var(--color-desk-ink)" stroke-width="1.4" opacity="0.7" marker-end="url(#arrow4)"/>
-          <line x1="640" y1="74"  x2="530" y2="148" stroke="var(--color-desk-ink)" stroke-width="1.4" opacity="0.7" marker-end="url(#arrow4)"/>
-          <line x1="440" y1="312" x2="440" y2="300" stroke="var(--color-desk-ink)" stroke-width="1.4" opacity="0.7" marker-end="url(#arrow4)"/>
+          <!-- Lines — value flows OUT from the hub to each destination -->
+          <line x1="350" y1="148" x2="240" y2="74"  stroke="var(--color-desk-ink)" stroke-width="1.4" opacity="0.7" marker-end="url(#arrow4)"/>
+          <line x1="530" y1="148" x2="640" y2="74"  stroke="var(--color-desk-ink)" stroke-width="1.4" opacity="0.7" marker-end="url(#arrow4)"/>
+          <line x1="440" y1="298" x2="440" y2="312" stroke="var(--color-desk-ink)" stroke-width="1.4" opacity="0.7" marker-end="url(#arrow4)"/>
         </svg>
       </div>
-
     </section>
 
-    <!-- 15. CLOSE ============================================ -->
-    <section class="monthly-wrapped_slide monthly-wrapped_bgEucalyptus demo-close">
+    <!-- 15. THE GOOD PROBLEM ================================ -->
+    <section class="monthly-wrapped_slide monthly-wrapped_bgLinen">
+      <p class="d-eyebrow">What comes next</p>
+      <h2 class="d-headline d-headline--med">
+        The more you trust it, the more you make.
+      </h2>
+      <p class="d-lede d-lede--wide">
+        Trust compounds. The more you rely on your personal intelligence, the more you produce
+        with it &mdash; briefings, analyses, decisions, a growing record of work you can stand behind.
+      </p>
+      <p class="d-lede d-lede--wide">
+        All of it has to live somewhere. Stay organized. Stay findable. The better personal
+        intelligence gets, the more managing what it produces becomes the real problem.
+      </p>
+    </section>
+
+    <!-- 16. CLOSE ============================================ -->
+    <section class="monthly-wrapped_slide monthly-wrapped_bgWarmWhite demo-close" style="background: linear-gradient(rgba(107,168,164,0.18), rgba(107,168,164,0.18)), var(--color-paper-warm-white);">
       <p class="d-eyebrow">Why all this earth had to move</p>
       <h2 class="d-headline">
         Memory. Judgment. Trust.
       </h2>
       <p class="d-lede d-lede--wide">
-        Memory knows what happened. Judgment decides what matters.
-        Trust is what they produce together when the substrate is doing its job.
-        That&rsquo;s the bet. That&rsquo;s what RSM was for.
+        Memory is what happened. Judgment is what matters. Trust is the difference between
+        AI you check and AI you rely on.
+      </p>
+      <p class="d-lede d-lede--wide">
+        We&rsquo;re betting personal intelligence is the next opportunity for software
+        that&rsquo;s open, private, and yours. The next thing WordPress is for.
       </p>
 
       <div class="d-pills">
@@ -1081,7 +1030,7 @@
       </div>
 
       <p class="d-meta" style="margin-top: 56px;">
-        Demo Day &middot; May 25, 2026.
+        RSM Final Update &middot; May 2026.
         Stats anchored to <code>public/dev</code> on May 25. Open PRs not included.
       </p>
     </section>
