@@ -30,6 +30,7 @@ use crate::services::context::{
 };
 use crate::services::mcp_v2::actor_policy::{project_actor, ToolGrant, ToolRateLimit};
 use crate::services::mcp_v2::contracts::{McpActor, McpToolHandler, ToolDescription, ToolError};
+use crate::services::mcp_v2::handler_context::McpHandlerContext;
 use crate::services::mcp_v2::runtime_projection::{
     compact_text, evidence_suffix, humanize_token, open_loop_suffix, project_runtime_evidence,
     string_at, RuntimeEvidenceProjection,
@@ -85,7 +86,12 @@ impl McpToolHandler for AccountStatusHandler {
         &self.description
     }
 
-    fn invoke(&self, actor: &McpActor, params: Value) -> Result<Value, ToolError> {
+    fn invoke(
+        &self,
+        ctx: &McpHandlerContext,
+        actor: &McpActor,
+        params: Value,
+    ) -> Result<Value, ToolError> {
         let McpActor::Client {
             client_id,
             conversation_handle,
@@ -110,7 +116,7 @@ impl McpToolHandler for AccountStatusHandler {
             project_actor(client_id, &synthetic_grant, conversation_handle.as_ref());
 
         let subject_input = extract_subject(&params)?;
-        let resolved_subject = match resolve_account_subject(&subject_input)? {
+        let resolved_subject = match resolve_account_subject(ctx, &subject_input)? {
             AccountSubjectResolution::Resolved(subject) => subject,
             AccountSubjectResolution::NotFound { input } => {
                 return Ok(account_subject_not_found_response(&input));
@@ -230,10 +236,33 @@ enum AccountSubjectResolution {
     },
 }
 
-fn resolve_account_subject(subject: &str) -> Result<AccountSubjectResolution, ToolError> {
-    let db = ActionDb::open_readonly(Arc::new(LocalKeychain::new()))
-        .map_err(map_subject_resolution_db_error)?;
+/// Resolve the account subject against the DB.
+///
+/// Prefers the sidecar's one owned connection from `ctx`; falls back to a
+/// read-only self-open only when the context carries no owned connection
+/// (tests / unadopted paths). The owned connection is opened writable, but
+/// these are read-only queries, so borrowing it read-only is correct.
+fn resolve_account_subject(
+    ctx: &McpHandlerContext,
+    subject: &str,
+) -> Result<AccountSubjectResolution, ToolError> {
+    match ctx.with_conn(|db| resolve_account_subject_with_db(db, subject)) {
+        Some(result) => result,
+        None => {
+            // Documented fallback when the context carries no owned connection
+            // (tests / in-app process). The sidecar always installs one, so
+            // this never fires in the sidecar path.
+            let db = ActionDb::open_readonly(Arc::new(LocalKeychain::new())) // mcp-self-open-allowed: ctx-less fallback
+                .map_err(map_subject_resolution_db_error)?;
+            resolve_account_subject_with_db(&db, subject)
+        }
+    }
+}
 
+fn resolve_account_subject_with_db(
+    db: &ActionDb,
+    subject: &str,
+) -> Result<AccountSubjectResolution, ToolError> {
     if let Some(account) = db
         .get_account(subject)
         .map_err(map_subject_resolution_db_error)?

@@ -50,6 +50,21 @@ pub fn write(
     request_id: Option<String>,
     side: Side,
 ) -> Result<(), AuditError> {
+    write_with_conn(actor, event, detail, request_id, side, None)
+}
+
+/// As [`write`], but routes the outbox-fallback insert through `owned_conn`
+/// when present (the sidecar's one owned connection) instead of the
+/// `db_service::try_global()` / `ActionDb::open` self-open chain. `None`
+/// preserves the prior fallback behavior for the in-app process and tests.
+pub fn write_with_conn(
+    actor: &Actor,
+    event: &str,
+    detail: Value,
+    request_id: Option<String>,
+    side: Side,
+    owned_conn: Option<&crate::db::ActionDb>,
+) -> Result<(), AuditError> {
     let detail_with_attribution = detail_with_attribution(actor, detail, side);
 
     let mut fields = AuditFields::new("security", detail_with_attribution.clone());
@@ -67,6 +82,7 @@ pub fn write(
                 &detail_json,
                 actor_kind(actor),
                 request_id.as_deref(),
+                owned_conn,
             )
             .map_err(|outbox_error| AuditError::DoubleFailure {
                 append_error,
@@ -141,14 +157,30 @@ fn insert_outbox(
     detail_json: &str,
     actor_kind: &str,
     request_id: Option<&str>,
+    owned_conn: Option<&crate::db::ActionDb>,
 ) -> Result<(), String> {
-    let event = event.to_string();
-    let detail_json = detail_json.to_string();
-    let actor_kind = actor_kind.to_string();
-    let request_id = request_id.map(str::to_string);
     let created_at = Utc::now().to_rfc3339_opts(SecondsFormat::Millis, true);
 
+    // Prefer the sidecar's one owned connection — no self-open.
+    if let Some(db) = owned_conn {
+        return insert_outbox_row(
+            db.conn_ref(),
+            event,
+            detail_json,
+            actor_kind,
+            request_id,
+            &created_at,
+        )
+        .map_err(|error| error.to_string());
+    }
+
+    // In-app process: route through the single writer when a DbService exists.
     if let Some(service) = crate::db_service::try_global() {
+        let event = event.to_string();
+        let detail_json = detail_json.to_string();
+        let actor_kind = actor_kind.to_string();
+        let request_id = request_id.map(str::to_string);
+        let created_at = created_at.clone();
         let writer = service.writer();
         return writer
             .call_sync(move |conn| {
@@ -164,14 +196,17 @@ fn insert_outbox(
             .map_err(|error| error.to_string());
     }
 
-    let db = crate::db::ActionDb::open(Arc::new(crate::db::LocalKeychain::new()))
+    // Last-resort fallback when there is neither an owned connection nor a
+    // DbService. Retained for behavior parity with the pre-context audit path;
+    // the sidecar installs an owned connection so this does not fire there.
+    let db = crate::db::ActionDb::open(Arc::new(crate::db::LocalKeychain::new())) // mcp-self-open-allowed: ctx-less + no-DbService fallback
         .map_err(|error| error.to_string())?;
     insert_outbox_row(
         db.conn_ref(),
-        &event,
-        &detail_json,
-        &actor_kind,
-        request_id.as_deref(),
+        event,
+        detail_json,
+        actor_kind,
+        request_id,
         &created_at,
     )
     .map_err(|error| error.to_string())

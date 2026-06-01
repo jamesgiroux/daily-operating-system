@@ -23,6 +23,7 @@ use super::contracts::{
     McpActor, McpClientId, McpToolHandler, McpToolRequestEnvelope, McpToolResponseEnvelope,
     McpToolResult, OpaqueConversationHandle, Scope, ScopedName, Side, ToolError,
 };
+use super::handler_context::{McpHandlerContext, OwnedConnection};
 
 // ---------------------------------------------------------------------------
 // Constants
@@ -151,6 +152,11 @@ pub struct Gateway {
     handlers: HashMap<ScopedName, Arc<dyn McpToolHandler>>,
     emitter: Arc<dyn SignalEmitter>,
     taxonomy: Option<Arc<dyn super::taxonomy::TaxonomyCatalog>>,
+    /// The sidecar's single owned DB connection. `None` in tests and any path
+    /// that has not adopted owned-connection threading; handlers then fall back
+    /// to their prior self-open behavior. Built once in the sidecar serve path
+    /// via [`Self::set_connection`].
+    connection: Option<OwnedConnection>,
 }
 
 impl Gateway {
@@ -159,6 +165,7 @@ impl Gateway {
             handlers: HashMap::new(),
             emitter: Arc::new(StderrSignalEmitter),
             taxonomy: None,
+            connection: None,
         }
     }
 
@@ -167,7 +174,15 @@ impl Gateway {
             handlers: HashMap::new(),
             emitter,
             taxonomy: None,
+            connection: None,
         }
+    }
+
+    /// Install the single process-lifetime DB connection the sidecar threads
+    /// into every handler. Called once by `run_v2_server` before serving.
+    /// Replaces the per-handler / per-audit self-opens.
+    pub fn set_connection(&mut self, connection: OwnedConnection) {
+        self.connection = Some(connection);
     }
 
     pub fn register(&mut self, handler: Arc<dyn McpToolHandler>) {
@@ -534,7 +549,14 @@ impl Gateway {
             tool_name: envelope.tool_name.clone(),
             granted_scopes: grant.scopes_granted.clone(),
         };
-        let invocation = handler.invoke(&wire_actor, envelope.params.clone());
+        // Hand the handler the sidecar's one owned connection when installed,
+        // instead of letting it self-open. `None` preserves the prior
+        // self-open fallback for tests / unadopted paths.
+        let ctx = match self.connection.as_ref() {
+            Some(connection) => McpHandlerContext::with_owned_connection(connection.clone()),
+            None => McpHandlerContext::without_connection(),
+        };
+        let invocation = handler.invoke(&ctx, &wire_actor, envelope.params.clone());
         let side = handler.description().side;
 
         let result = match invocation {
@@ -573,9 +595,28 @@ impl Gateway {
                     Some(&value),
                     mutation_cursor.as_ref(),
                 );
-                if let Err(err) =
-                    audit::write(&runtime_actor, "mcp.tool_invoked", audit_detail, None, side)
-                {
+                // Route the audit-outbox fallback through the one owned
+                // connection when the sidecar installed it; otherwise `None`
+                // keeps the in-app try_global / self-open chain.
+                let audit_result = match self.connection.as_ref() {
+                    Some(owned) => {
+                        let guard = owned
+                            .lock()
+                            .unwrap_or_else(std::sync::PoisonError::into_inner);
+                        audit::write_with_conn(
+                            &runtime_actor,
+                            "mcp.tool_invoked",
+                            audit_detail,
+                            None,
+                            side,
+                            Some(&guard),
+                        )
+                    }
+                    None => {
+                        audit::write(&runtime_actor, "mcp.tool_invoked", audit_detail, None, side)
+                    }
+                };
+                if let Err(err) = audit_result {
                     if matches!(err, audit::AuditError::DoubleFailure { .. }) {
                         emit_double_failure_alert();
                         return Dispatched {

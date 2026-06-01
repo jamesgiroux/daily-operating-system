@@ -26,6 +26,7 @@ use crate::services::context::{
 };
 use crate::services::mcp_v2::actor_policy::{project_actor, ToolGrant, ToolRateLimit};
 use crate::services::mcp_v2::contracts::{McpActor, McpToolHandler, ToolDescription, ToolError};
+use crate::services::mcp_v2::handler_context::McpHandlerContext;
 use crate::signals::propagation::PropagationEngine;
 
 const ABILITY_NAME: &str = "workspace_place_document";
@@ -121,7 +122,16 @@ impl McpToolHandler for PlacementHandler {
         &self.description
     }
 
-    fn invoke(&self, actor: &McpActor, params: Value) -> Result<Value, ToolError> {
+    fn invoke(
+        &self,
+        _ctx: &McpHandlerContext,
+        actor: &McpActor,
+        params: Value,
+    ) -> Result<Value, ToolError> {
+        // Placement reaches the DB only through the abilities-runtime workspace
+        // readers (`attach_live_workspace_readers_with_signal_engine`), which
+        // live across the crate boundary and are covered by the bounded CI
+        // gate, not rewired here. No direct self-open to route through `ctx`.
         let clock = SystemClock;
         let rng = SystemRng;
         let external = ExternalClients::default();
