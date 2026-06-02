@@ -8,8 +8,6 @@
 use abilities_runtime::abilities::recommendations::contracts as runtime;
 use abilities_runtime::abilities::registry::Actor;
 use chrono::{DateTime, Utc};
-#[cfg(test)]
-use rusqlite::params;
 
 use crate::abilities::claims::ClaimType;
 use crate::abilities::feedback::FeedbackAction;
@@ -408,6 +406,7 @@ mod tests {
     use abilities_runtime::abilities::registry::{ScopeSet, SurfaceClientId, SurfaceScope};
     use abilities_runtime::sensitivity::RenderSurface;
     use chrono::TimeZone;
+    use rusqlite::params;
     use serde_json::json;
 
     use crate::db::ActionDb;

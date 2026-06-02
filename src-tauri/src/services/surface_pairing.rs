@@ -3861,7 +3861,6 @@ mod tests {
         let outcome =
             complete_test_handshake(&ctx, &db, now, issue_code(&ctx, &db, now).pairing_string);
 
-        let revoke_started = Instant::now();
         let (_event, cleanup_target) = revoke_pairing(
             &ctx,
             &db,
@@ -3873,8 +3872,14 @@ mod tests {
         )
         .unwrap();
         assert!(
-            revoke_started.elapsed() < StdDuration::from_millis(50),
-            "revoke transaction should not wait for slow keychain delete"
+            matches!(
+                load_session_master_key(
+                    &outcome.session.surface_client_id,
+                    &outcome.session.session_id
+                ),
+                SessionKeyLookup::Found(_)
+            ),
+            "revoke transaction should return before deleting the session key"
         );
         assert_eq!(
             session_revoked_reason(&db, &outcome.session.session_id).as_deref(),

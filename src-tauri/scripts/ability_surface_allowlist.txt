@@ -388,6 +388,17 @@ export_all_data
 get_data_summary
 clear_intelligence
 delete_all_data
+# v1.5.0 list surfaces: user-invoked Tauri archive/repair commands for the
+# existing React entity-list and data-management workflows. Not MCP tools and
+# not autonomous abilities.
+preview_bulk_archive_accounts
+bulk_archive_accounts
+preview_bulk_archive_projects
+bulk_archive_projects
+preview_bulk_archive_people
+bulk_archive_people
+plan_entity_archive_folder_reconciliation
+apply_entity_archive_folder_reconciliation
 get_feature_flags
 get_db_growth_report
 bulk_recompute_health
@@ -422,3 +433,12 @@ version_dispatcher_subscribe
 render_claim_receipt
 submit_claim_feedback_command
 assign_inbox_entity
+# v1.5.0 W1 composition projection bridge: the Account route uses Tauri invoke
+# transport into the render orchestrator while the producer remains ability-routed.
+get_projected_composition
+# v1.5.0 W2 composition layout overlay bridge: first-party local preference
+# commands scoped to the Tauri surface. Mutations route through
+# services::composition_layout and do not create MCP/headless ability surface.
+get_composition_layout_overlay
+save_composition_layout_overlay
+reset_composition_layout_overlay

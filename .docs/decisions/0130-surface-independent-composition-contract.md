@@ -1,7 +1,8 @@
 # ADR-0130 — Surface-Independent Composition Contract
 
-**Status:** Proposed
+**Status:** Accepted
 **Date:** 2026-05-10
+**Accepted:** 2026-06-01 — v1.5.0 Composable Surfaces W0 adopts this as the substrate contract for the Tauri renderer.
 **Amended:** 2026-05-10 — added explicit references to existing substrate retrieval primitives (ADR-0074 vector search, ADR-0078 embed model) in §2 (Salience computation) and §3 (Custom block fallback) to prevent composition-producing abilities from reinventing retrieval.
 **Amended:** 2026-05-10 — §2 `Block.provenance` retyped from `ProvenanceEnvelope` (envelope copy) to `ProvenanceRef` (compact reference into the canonical envelope on `AbilityOutput<Composition>`). Preserves the ADR-0105 "lives once" invariant and keeps block-heavy compositions under ADR-0108's 64KB serialized-provenance cap. Source: Phase 0 artifact `06-composition-provenance-ref.md`.
 **Amended:** 2026-05-10 — §3 fallback rewritten from embed-model nearest-known + "rendered as nearest known type" indicator to deterministic schema-bounded projection at JSON-Pointer granularity. Unknown payload fields are dropped, not displayed; `claim_refs` and `provenance_ref` are preserved; rendered block degrades to `needs_verification` and carries a non-dismissible banner. Source: Phase 0 artifact `07-custom-block-fallback-projection.md`.

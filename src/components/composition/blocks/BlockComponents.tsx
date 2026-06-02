@@ -1,0 +1,546 @@
+import clsx from "clsx";
+import type { ReactNode } from "react";
+import { FreshnessIndicator } from "@/components/ui/FreshnessIndicator";
+import { IntelligenceCorrection } from "@/components/ui/IntelligenceCorrection";
+import { ProvenanceTag } from "@/components/ui/ProvenanceTag";
+import { TrustBandBadge } from "@/components/ui/TrustBandBadge";
+import { HealthBadge } from "@/components/shared/HealthBadge";
+import { CompositionInlineEdit } from "@/components/composition/CompositionInlineEdit";
+import { normalizeTrustBand } from "@/services/composition/contracts";
+import type {
+  EditRoute,
+  KnownCompositionBlockType,
+  ProjectedBlock,
+  RenderedProvenance,
+} from "@/services/composition/contracts";
+import pageStyles from "@/pages/AccountDetailPage.module.css";
+
+type Payload = Record<string, unknown>;
+type BlockComponentProps = {
+  block: ProjectedBlock;
+  accountId?: string;
+  payload: Payload;
+  renderedProvenance?: RenderedProvenance | null;
+  editMode?: boolean;
+};
+type BlockComponent = (props: BlockComponentProps) => JSX.Element;
+
+function text(value: unknown): string | null {
+  if (typeof value === "string") return value;
+  if (typeof value === "number" || typeof value === "boolean") return String(value);
+  return null;
+}
+
+function array(value: unknown): Payload[] {
+  return Array.isArray(value) ? value.filter((item): item is Payload => !!item && typeof item === "object" && !Array.isArray(item)) : [];
+}
+
+function object(value: unknown): Payload | null {
+  return value && typeof value === "object" && !Array.isArray(value) ? (value as Payload) : null;
+}
+
+function pointerSegment(segment: string): string {
+  return segment.replace(/~1/g, "/").replace(/~0/g, "~");
+}
+
+function pointerValue(payload: Payload, pointer: string): unknown {
+  if (!pointer || pointer === "/") return payload;
+  return pointer
+    .split("/")
+    .slice(1)
+    .map(pointerSegment)
+    .reduce<unknown>((current, segment) => {
+      if (Array.isArray(current)) {
+        const index = Number(segment);
+        return Number.isInteger(index) ? current[index] : undefined;
+      }
+      if (current && typeof current === "object") {
+        return (current as Record<string, unknown>)[segment];
+      }
+      return undefined;
+    }, payload);
+}
+
+function payloadTrust(payload: Payload, fallback: ProjectedBlock["trust_band"]) {
+  return normalizeTrustBand(text(payload.trust_band) ?? text((payload.trust as Payload | undefined)?.band) ?? fallback);
+}
+
+function sourceLabel(payload: Payload): string | null {
+  return text(payload.source_label) ?? text((payload.trust as Payload | undefined)?.source_label);
+}
+
+function sourceAsof(payload: Payload): string | null {
+  return text(payload.source_asof);
+}
+
+function renderedValue(renderedProvenance?: RenderedProvenance | null): Payload | null {
+  return object(renderedProvenance?.value);
+}
+
+function provenanceFieldAttributions(renderedProvenance?: RenderedProvenance | null): Payload {
+  const value = renderedValue(renderedProvenance);
+  return (
+    object(value?.field_attributions) ??
+    object(object(object(value?.about_this)?.details)?.field_attributions) ??
+    {}
+  );
+}
+
+function provenanceSourceCount(renderedProvenance?: RenderedProvenance | null): number | null {
+  const value = renderedValue(renderedProvenance);
+  const summary = object(object(value?.about_this)?.summary);
+  const count = summary?.source_count;
+  if (typeof count === "number") return count;
+  const sources = value?.sources;
+  if (Array.isArray(sources)) return sources.length;
+  return null;
+}
+
+function provenanceProducedAt(renderedProvenance?: RenderedProvenance | null): string | null {
+  const value = renderedValue(renderedProvenance);
+  return text(value?.produced_at) ?? text(object(value?.about_this)?.produced_at);
+}
+
+function fieldPathCovers(candidate: string, target: string): boolean {
+  return candidate === "" || candidate === target || target.startsWith(`${candidate}/`);
+}
+
+function fieldPathsOverlap(left: string, right: string): boolean {
+  return fieldPathCovers(left, right) || fieldPathCovers(right, left);
+}
+
+function matchingFieldAttribution(block: ProjectedBlock, fieldAttributions: Payload): Payload | null {
+  for (const ref of block.provenance) {
+    const exact = object(fieldAttributions[ref.field_path]);
+    if (exact) return exact;
+
+    for (const [fieldPath, attribution] of Object.entries(fieldAttributions)) {
+      const candidate = object(attribution);
+      if (candidate && fieldPathsOverlap(fieldPath, ref.field_path)) return candidate;
+    }
+  }
+  return null;
+}
+
+function attributionSourceCount(attribution: Payload): number | null {
+  const sourceRefs = attribution.source_refs;
+  return Array.isArray(sourceRefs) ? sourceRefs.length : null;
+}
+
+function provenanceWasTruncated(renderedProvenance?: RenderedProvenance | null): boolean {
+  const value = renderedValue(renderedProvenance);
+  const warnings = array(value?.warnings);
+  return (
+    warnings.some((warning) => text(warning.kind) === "truncated_for_render") ||
+    object(value?.about_this)?.details_available === true
+  );
+}
+
+function provenanceState(block: ProjectedBlock, renderedProvenance?: RenderedProvenance | null) {
+  if (block.provenance.length === 0) return null;
+  const value = renderedValue(renderedProvenance);
+  if (!value) return { state: "missing", label: "Provenance unavailable" };
+  if (value.kind === "provenance_masked" || value.status === "masked") {
+    return { state: "masked", label: "Provenance masked" };
+  }
+
+  const fieldAttributions = provenanceFieldAttributions(renderedProvenance);
+  const attribution = matchingFieldAttribution(block, fieldAttributions);
+  if (!attribution) {
+    if (provenanceWasTruncated(renderedProvenance)) {
+      const sourceCount = provenanceSourceCount(renderedProvenance);
+      return {
+        state: "rendered",
+        label:
+          typeof sourceCount === "number" && sourceCount > 0
+            ? `from ${sourceCount} ${sourceCount === 1 ? "source" : "sources"}`
+            : "Provenance recorded",
+      };
+    }
+    return { state: "unresolved", label: "Source pending" };
+  }
+
+  const sourceCount = attributionSourceCount(attribution);
+  return {
+    state: "rendered",
+    label:
+      typeof sourceCount === "number" && sourceCount > 0
+        ? `from ${sourceCount} ${sourceCount === 1 ? "source" : "sources"}`
+        : "Provenance recorded",
+  };
+}
+
+function feedbackRoute(block: ProjectedBlock): EditRoute | null {
+  return block.edit_routes.find((route) => route.feedback_allowed && route.claim_refs.length > 0) ?? null;
+}
+
+function feedbackRouteForPath(block: ProjectedBlock, fieldPath: string): EditRoute | null {
+  return block.edit_routes.find((route) => route.field_path === fieldPath && route.feedback_allowed && route.claim_refs.length > 0) ?? null;
+}
+
+function feedbackField(route: EditRoute): string {
+  const normalized = route.field_path
+    .split("/")
+    .filter(Boolean)
+    .map(pointerSegment)
+    .join(".");
+  return normalized ? `composition:${normalized}` : "composition:block";
+}
+
+function feedbackCurrentValue(payload: Payload, route: EditRoute): string | null {
+  return text(pointerValue(payload, route.field_path));
+}
+
+function BlockFeedback({
+  accountId,
+  block,
+  payload,
+}: {
+  accountId?: string;
+  block: ProjectedBlock;
+  payload: Payload;
+}) {
+  const route = feedbackRoute(block);
+  const claimRef = route?.claim_refs[0];
+  if (!accountId || !route || !claimRef) return null;
+
+  const currentValue = feedbackCurrentValue(payload, route);
+  return (
+    <div className={pageStyles.compositionFeedbackRow}>
+      <IntelligenceCorrection
+        entityId={accountId}
+        entityType="account"
+        field={feedbackField(route)}
+        itemKey={claimRef.claim_id}
+        currentValue={currentValue}
+        variant={currentValue ? "correct" : "dismiss"}
+      />
+    </div>
+  );
+}
+
+function BlockShell({
+  block,
+  accountId,
+  payload,
+  renderedProvenance,
+  title,
+  children,
+  featured = false,
+  empty = false,
+}: {
+  block: ProjectedBlock;
+  accountId?: string;
+  payload: Payload;
+  renderedProvenance?: RenderedProvenance | null;
+  title?: string | null;
+  children: ReactNode;
+  featured?: boolean;
+  empty?: boolean;
+}) {
+  const source = sourceLabel(payload);
+  const provenance = provenanceState(block, renderedProvenance);
+  const asof = sourceAsof(payload) ?? provenanceProducedAt(renderedProvenance);
+  return (
+    <article
+      className={clsx(
+        pageStyles.compositionBlock,
+        featured && pageStyles.compositionFeaturedBlock,
+        empty && pageStyles.compositionEmptyState,
+        block.banner && pageStyles.compositionFallbackState,
+      )}
+      data-block-type={block.selected_known_type_id}
+      data-trust-band={normalizeTrustBand(block.trust_band)}
+    >
+      {block.banner && (
+        <div className={pageStyles.compositionFallbackState} role="note">
+          <p className={pageStyles.compositionStateLabel}>Fallback</p>
+          <p className={pageStyles.compositionStateText}>{block.banner}</p>
+        </div>
+      )}
+      {(title || source || provenance || asof || block.trust_band) && (
+        <header className={pageStyles.compositionBlockHeader}>
+          {title && <h3 className={pageStyles.compositionBlockTitle}>{title}</h3>}
+          <div className={pageStyles.compositionBlockMeta}>
+            <TrustBandBadge band={payloadTrust(payload, block.trust_band)} compact />
+            {provenance ? (
+              <span
+                className={pageStyles.compositionProvenanceStatus}
+                data-provenance-state={provenance.state}
+              >
+                {provenance.label}
+              </span>
+            ) : (
+              source && <ProvenanceTag itemSource={source} />
+            )}
+            {asof && <FreshnessIndicator at={asof} />}
+          </div>
+        </header>
+      )}
+      {children}
+      <BlockFeedback accountId={accountId} block={block} payload={payload} />
+    </article>
+  );
+}
+
+function EditableBlockText({
+  accountId,
+  block,
+  editMode,
+  fieldPath,
+  value,
+  as,
+  className,
+  multiline = true,
+}: {
+  accountId?: string;
+  block: ProjectedBlock;
+  editMode?: boolean;
+  fieldPath: string;
+  value: string;
+  as: "p" | "span" | "h3" | "div";
+  className: string;
+  multiline?: boolean;
+}) {
+  const fallback = <>{as === "p" ? <p className={className}>{value}</p> : as === "h3" ? <h3 className={className}>{value}</h3> : as === "div" ? <div className={className}>{value}</div> : <span className={className}>{value}</span>}</>;
+  if (!editMode) return fallback;
+  return (
+    <CompositionInlineEdit
+      accountId={accountId}
+      route={feedbackRouteForPath(block, fieldPath)}
+      value={value}
+      as={as}
+      multiline={multiline}
+      className={className}
+      fallback={fallback}
+    />
+  );
+}
+
+function AccountOverviewBlock({ block, accountId, payload, renderedProvenance, editMode }: BlockComponentProps) {
+  const account = object(payload.account) ?? {};
+  const vitals = array(payload.vitals);
+  const contexts = array(payload.context);
+  const snapshotDegraded = Boolean(text(payload.snapshot_degraded));
+  return (
+    <BlockShell block={block} accountId={accountId} payload={payload} renderedProvenance={renderedProvenance} featured title={text(account.display_name) ?? text(payload.title)}>
+      {snapshotDegraded && (
+        <div className={pageStyles.compositionDegradedState} role="status">
+          <p className={pageStyles.compositionStateLabel}>Account details unavailable</p>
+          <p className={pageStyles.compositionStateText}>Some sourced account details could not be loaded for this view.</p>
+        </div>
+      )}
+      {text(payload.summary) && (
+        <EditableBlockText
+          accountId={accountId}
+          block={block}
+          editMode={editMode}
+          fieldPath="/summary"
+          value={text(payload.summary) ?? ""}
+          as="p"
+          className={pageStyles.compositionNarrative}
+        />
+      )}
+      {vitals.length > 0 && (
+        <div className={pageStyles.compositionVitalRail}>
+          {vitals.map((item, index) => (
+            <div className={pageStyles.compositionVitalRow} key={`${text(item.label) ?? "vital"}-${index}`}>
+              <span className={pageStyles.compositionVitalLabel}>{text(item.label)}</span>
+              <span className={pageStyles.compositionVitalValue}>{text(item.value)}</span>
+            </div>
+          ))}
+        </div>
+      )}
+      {contexts.length > 0 && (
+        <ul className={pageStyles.compositionInlineList}>
+          {contexts.slice(0, 4).map((item, index) => (
+            <li key={`${text(item.claim_id) ?? "context"}-${index}`}>{text(item.text)}</li>
+          ))}
+        </ul>
+      )}
+    </BlockShell>
+  );
+}
+
+function ClaimSummaryBlock({ block, accountId, payload, renderedProvenance, editMode }: BlockComponentProps) {
+  const empty = payload.empty_state === true;
+  return (
+    <BlockShell block={block} accountId={accountId} payload={payload} renderedProvenance={renderedProvenance} title={text(payload.title) ?? text(payload.intent)} empty={empty}>
+      {text(payload.text) && (
+        <EditableBlockText accountId={accountId} block={block} editMode={editMode} fieldPath="/text" value={text(payload.text) ?? ""} as="p" className={pageStyles.compositionNarrative} />
+      )}
+      {text(payload.body) && (
+        <EditableBlockText accountId={accountId} block={block} editMode={editMode} fieldPath="/body" value={text(payload.body) ?? ""} as="p" className={pageStyles.compositionBodyText} />
+      )}
+    </BlockShell>
+  );
+}
+
+function HealthSnapshotBlock({ block, accountId, payload, renderedProvenance, editMode }: BlockComponentProps) {
+  const band = text(payload.band) ?? text(payload.trust_band);
+  return (
+    <BlockShell block={block} accountId={accountId} payload={payload} renderedProvenance={renderedProvenance} title="Health">
+      <div className={pageStyles.compositionMetricGrid}>
+        {typeof payload.score === "number" && (
+          <div className={pageStyles.compositionMetric}>
+            <span className={pageStyles.compositionMetricValue}>{payload.score}</span>
+            <span className={pageStyles.compositionMetricLabel}>Score</span>
+          </div>
+        )}
+        {band && (
+          <div className={pageStyles.compositionMetric}>
+            <span className={pageStyles.compositionMetricValue}>{band.replace(/_/g, " ")}</span>
+            <span className={pageStyles.compositionMetricLabel}>Band</span>
+          </div>
+        )}
+      </div>
+      {text(payload.text) && (
+        <EditableBlockText accountId={accountId} block={block} editMode={editMode} fieldPath="/text" value={text(payload.text) ?? ""} as="p" className={pageStyles.compositionNarrative} />
+      )}
+    </BlockShell>
+  );
+}
+
+function RiskCalloutBlock({ block, accountId, payload, renderedProvenance, editMode }: BlockComponentProps) {
+  const primary = text(payload.text) ?? text(payload.body);
+  return (
+    <BlockShell block={block} accountId={accountId} payload={payload} renderedProvenance={renderedProvenance} title={text(payload.title) ?? "Risk"}>
+      {primary && (
+        <EditableBlockText accountId={accountId} block={block} editMode={editMode} fieldPath={text(payload.text) ? "/text" : "/body"} value={primary} as="p" className={pageStyles.compositionNarrative} />
+      )}
+      {text(payload.recommended_action) && (
+        <EditableBlockText accountId={accountId} block={block} editMode={editMode} fieldPath="/recommended_action" value={text(payload.recommended_action) ?? ""} as="p" className={pageStyles.compositionBodyText} />
+      )}
+    </BlockShell>
+  );
+}
+
+function RelationshipMapBlock({ block, accountId, payload, renderedProvenance }: BlockComponentProps) {
+  const nodes = array(payload.nodes);
+  return (
+    <BlockShell block={block} accountId={accountId} payload={payload} renderedProvenance={renderedProvenance} title="Relationships">
+      <div className={pageStyles.compositionRelationshipGrid}>
+        {nodes.map((node, index) => (
+          <div className={pageStyles.compositionPersonNode} key={`${text(node.claim_id) ?? text(node.label) ?? "node"}-${index}`}>
+            <span className={pageStyles.compositionAvatar}>{(text(node.label) ?? text(node.text) ?? "?").slice(0, 1)}</span>
+            <span>{text(node.label) ?? text(node.text)}</span>
+          </div>
+        ))}
+      </div>
+    </BlockShell>
+  );
+}
+
+function ActionListBlock({ block, accountId, payload, renderedProvenance }: BlockComponentProps) {
+  const items = array(payload.items);
+  return (
+    <BlockShell block={block} accountId={accountId} payload={payload} renderedProvenance={renderedProvenance} title={text(payload.title) ?? "Actions"} empty={items.length === 0}>
+      <div className={pageStyles.compositionBlockStack}>
+        {items.map((item, index) => (
+          <div className={pageStyles.compositionActionRow} key={`${text(item.claim_id) ?? text(item.title) ?? "action"}-${index}`}>
+            <span className={pageStyles.compositionActionIndex}>{index + 1}</span>
+            <div>
+              <p className={pageStyles.compositionEvidenceTitle}>{text(item.title) ?? text(item.text)}</p>
+              {text(item.status) && <p className={pageStyles.compositionEvidenceMeta}>{text(item.status)}</p>}
+            </div>
+          </div>
+        ))}
+      </div>
+    </BlockShell>
+  );
+}
+
+function EvidenceListBlock({ block, accountId, payload, renderedProvenance }: BlockComponentProps) {
+  const items = array(payload.items);
+  return (
+    <BlockShell block={block} accountId={accountId} payload={payload} renderedProvenance={renderedProvenance} title={text(payload.title) ?? "Evidence"} empty={items.length === 0}>
+      <div className={pageStyles.compositionEvidenceList}>
+        {items.map((item, index) => (
+          <div className={pageStyles.compositionEvidenceRow} key={`${text(item.label) ?? "evidence"}-${index}`}>
+            <div className={pageStyles.compositionEvidenceMain}>
+              <p className={pageStyles.compositionEvidenceTitle}>{text(item.label)}</p>
+              <p className={pageStyles.compositionEvidenceMeta}>
+                {[text(item.source_label), text(item.source_asof)].filter(Boolean).join(" · ")}
+              </p>
+            </div>
+          </div>
+        ))}
+      </div>
+    </BlockShell>
+  );
+}
+
+function MarkdownDocumentBlock({ block, accountId, payload, renderedProvenance, editMode }: BlockComponentProps) {
+  const sections = array(payload.sections);
+  return (
+    <BlockShell block={block} accountId={accountId} payload={payload} renderedProvenance={renderedProvenance} title={text(payload.title)}>
+      {text(payload.body) && (
+        <EditableBlockText accountId={accountId} block={block} editMode={editMode} fieldPath="/body" value={text(payload.body) ?? ""} as="p" className={pageStyles.compositionBodyText} />
+      )}
+      {sections.map((section, index) => (
+        <section key={`${text(section.heading) ?? "section"}-${index}`}>
+          {text(section.heading) && <h4 className={pageStyles.compositionEvidenceTitle}>{text(section.heading)}</h4>}
+          {text(section.body) && <p className={pageStyles.compositionBodyText}>{text(section.body)}</p>}
+        </section>
+      ))}
+    </BlockShell>
+  );
+}
+
+export function GenericTextBlock({ block, accountId, payload, renderedProvenance, editMode }: BlockComponentProps) {
+  const title = text(payload.title) ?? text(payload.label);
+  const body = text(payload.text) ?? text(payload.body);
+  return (
+    <BlockShell block={block} accountId={accountId} payload={payload} renderedProvenance={renderedProvenance} title={title}>
+      {body && (
+        <EditableBlockText accountId={accountId} block={block} editMode={editMode} fieldPath={text(payload.text) ? "/text" : "/body"} value={body} as="p" className={pageStyles.compositionBodyText} />
+      )}
+    </BlockShell>
+  );
+}
+
+function PrimitiveBlock({ block, accountId, payload, renderedProvenance }: BlockComponentProps) {
+  const label = text(payload.label) ?? text(object(payload.payload)?.text) ?? text(payload.text) ?? block.selected_known_type_id;
+  if (block.selected_known_type_id === "dailyos/health-badge") {
+    const rawBand = text(payload.band);
+    const band = rawBand === "green" || rawBand === "yellow" || rawBand === "red" ? rawBand : "yellow";
+    return (
+      <BlockShell block={block} accountId={accountId} payload={payload} renderedProvenance={renderedProvenance}>
+        <HealthBadge
+          band={band}
+          score={typeof payload.score === "number" ? payload.score : 0}
+          trend={{ direction: "stable" }}
+          sufficientData={typeof payload.score === "number"}
+          size="compact"
+        />
+      </BlockShell>
+    );
+  }
+  return (
+    <BlockShell block={block} accountId={accountId} payload={payload} renderedProvenance={renderedProvenance}>
+      <span className={pageStyles.compositionButton}>{label}</span>
+    </BlockShell>
+  );
+}
+
+export const BLOCK_RENDERERS: Record<KnownCompositionBlockType, BlockComponent> = {
+  account_overview: AccountOverviewBlock,
+  claim_summary: ClaimSummaryBlock,
+  evidence_list: EvidenceListBlock,
+  health_snapshot: HealthSnapshotBlock,
+  relationship_map: RelationshipMapBlock,
+  risk_callout: RiskCalloutBlock,
+  action_list: ActionListBlock,
+  markdown_document: MarkdownDocumentBlock,
+  "dailyos/pill": PrimitiveBlock,
+  "dailyos/status-dot": PrimitiveBlock,
+  "dailyos/provenance-tag": PrimitiveBlock,
+  "dailyos/health-badge": PrimitiveBlock,
+  "dailyos/avatar": PrimitiveBlock,
+  "dailyos/freshness-indicator": PrimitiveBlock,
+  "dailyos/trust-band-badge": PrimitiveBlock,
+  "dailyos/intelligence-quality-badge": PrimitiveBlock,
+  "dailyos/entity-chip": PrimitiveBlock,
+  "dailyos/type-badge": PrimitiveBlock,
+  "dailyos/score-band": PrimitiveBlock,
+};

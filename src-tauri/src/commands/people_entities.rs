@@ -761,6 +761,7 @@ pub struct SubmitIntelligenceCorrectionRequest {
     pub entity_type: String,
     pub field: String,
     pub action: String,
+    pub current_value: Option<String>,
     pub corrected_value: Option<String>,
     pub annotation: Option<String>,
     pub item_key: Option<String>,
@@ -787,6 +788,7 @@ pub async fn submit_intelligence_correction(
                 "daily_briefing",
                 "meeting_detail",
                 "account_detail_work",
+                "composition_inline_edit",
             ],
         )?;
     }
@@ -803,6 +805,7 @@ pub async fn submit_intelligence_correction(
                     entity_type: &request.entity_type,
                     field: &request.field,
                     action: parsed,
+                    current_value: request.current_value.as_deref(),
                     corrected_value: request.corrected_value.as_deref(),
                     annotation: request.annotation.as_deref(),
                     item_key: request.item_key.as_deref(),

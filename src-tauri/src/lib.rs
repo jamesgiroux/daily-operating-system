@@ -870,6 +870,10 @@ pub fn run() {
         .invoke_handler(tauri::generate_handler![
             // Abilities
             commands::invoke_ability,
+            commands::get_projected_composition,
+            commands::get_composition_layout_overlay,
+            commands::save_composition_layout_overlay,
+            commands::reset_composition_layout_overlay,
             operations::invoke_operation,
             // sensitivity reveal audit
             commands::reveal_sensitive_claim_text,
@@ -1163,6 +1167,12 @@ pub fn run() {
             commands::archive_account,
             commands::archive_project,
             commands::archive_person,
+            commands::preview_bulk_archive_accounts,
+            commands::bulk_archive_accounts,
+            commands::preview_bulk_archive_projects,
+            commands::bulk_archive_projects,
+            commands::preview_bulk_archive_people,
+            commands::bulk_archive_people,
             commands::get_archived_accounts,
             commands::get_archived_projects,
             commands::get_archived_people,
@@ -1349,6 +1359,8 @@ pub fn run() {
             commands::get_data_summary,
             commands::clear_intelligence,
             commands::delete_all_data,
+            commands::plan_entity_archive_folder_reconciliation,
+            commands::apply_entity_archive_folder_reconciliation,
             // Feature Flags
             commands::get_feature_flags,
             // DB Growth Monitoring

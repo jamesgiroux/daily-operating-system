@@ -7,6 +7,8 @@ on:
       - trunk
     paths:
       - 'wp/dailyos/**'
+      - '!wp/dailyos/blocks/**'
+      - '!wp/dailyos/tests/blocks/**'
       - '.github/workflows/wp-plugin.yml'
   pull_request:
     branches:
@@ -14,6 +16,8 @@ on:
       - trunk
     paths:
       - 'wp/dailyos/**'
+      - '!wp/dailyos/blocks/**'
+      - '!wp/dailyos/tests/blocks/**'
       - '.github/workflows/wp-plugin.yml'
 
 defaults:

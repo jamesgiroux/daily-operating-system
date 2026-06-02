@@ -1,1032 +1,468 @@
-/**
- * AccountDetailPage — Clean rebuild of the account detail page.
- *
- * Single flat route, state-based view switching, no child routes.
- * Built step by step per plan at ~/.claude/plans/deep-wiggling-hearth.md.
- *
- * Step 5: All 3 views rendered, inactive hidden via display:none.
- * Preserves scroll + form state + pending fetches on tab switch.
- */
-import { useEffect, useState } from "react";
-import { useParams } from "@tanstack/react-router";
-import { invoke } from "@tauri-apps/api/core";
-import { toast } from "sonner";
-import { useAccountDetailPage } from "@/hooks/useAccountDetailPage";
-import { useEntitySuppressions } from "@/hooks/useEntitySuppressions";
+import { useCallback, useMemo, useState } from "react";
+import type { ReactNode } from "react";
+import { useNavigate, useParams } from "@tanstack/react-router";
+import {
+  closestCenter,
+  DndContext,
+  KeyboardSensor,
+  PointerSensor,
+  useSensor,
+  useSensors,
+  type DragEndEvent,
+} from "@dnd-kit/core";
+import {
+  arrayMove,
+  SortableContext,
+  sortableKeyboardCoordinates,
+  useSortable,
+  verticalListSortingStrategy,
+} from "@dnd-kit/sortable";
+import {
+  Activity,
+  AlignLeft,
+  Award,
+  Briefcase,
+  Compass,
+  Eye,
+  FileText,
+  GripVertical,
+  Lock,
+  Plus,
+  RotateCcw,
+  SlidersHorizontal,
+  Telescope,
+  Users,
+} from "lucide-react";
 import { EditorialLoading } from "@/components/editorial/EditorialLoading";
 import { EditorialError } from "@/components/editorial/EditorialError";
 import { EditorialEmpty } from "@/components/editorial/EditorialEmpty";
-import { ChapterHeading } from "@/components/editorial/ChapterHeading";
-import { FreshnessIndicator } from "@/components/ui/FreshnessIndicator";
-import { QuoteWall } from "@/components/editorial/QuoteWall";
-import { AboutThisDossier } from "@/components/context/AboutThisDossier";
 import { FinisMarker } from "@/components/editorial/FinisMarker";
-import { MarginSection } from "@/components/editorial/MarginSection";
-import { IntelligenceCorrection } from "@/components/ui/IntelligenceCorrection";
-import { AccountHero } from "@/components/account/AccountHero";
-import { VitalsStrip } from "@/components/entity/VitalsStrip";
-import { EditableVitalsStrip } from "@/components/entity/EditableVitalsStrip";
-import { AccountRolloverPrompt } from "@/components/account/AccountRolloverPrompt";
-import { AccountDialogs } from "@/components/account/AccountDialogs";
-import { AccountViewSwitcher } from "@/components/account/AccountViewSwitcher";
-// View 1 — Health & Outlook
-// AccountOutlook (legacy 3-section component) is no longer rendered on the
-// Health tab — OutlookPanel is the replacement. The component still lives in
-// the codebase for possible Context-tab reuse, but it is not imported here.
-import { AccountPortfolioSection } from "@/components/account/AccountPortfolioSection";
-import { SentimentHero } from "@/components/health/SentimentHero";
-// Health-tab chapter components.
-import { TriageSection, hasTriageContent } from "@/components/health/TriageSection";
-import { DivergenceSection, hasDivergenceContent } from "@/components/health/DivergenceSection";
-import { OutlookPanel, renewalCallVerdict } from "@/components/health/OutlookPanel";
-import { SupportingTension } from "@/components/health/SupportingTension";
-import { AboutIntelligence } from "@/components/health/AboutIntelligence";
-import { OnTrackChapter } from "@/components/health/OnTrackChapter";
-import { RiskBriefingStatus } from "@/components/health/RiskBriefingStatus";
-// View 2 — Context
-import { AccountPullQuote } from "@/components/account/AccountPullQuote";
-import { AccountTechnicalFootprint } from "@/components/account/AccountTechnicalFootprint";
-import { StrategicLandscape } from "@/components/entity/StrategicLandscape";
-import { StakeholderGrid } from "@/components/entity/StakeholderGrid";
-import { PendingStakeholderQueue } from "@/components/entity/PendingStakeholderQueue";
-import { usePendingStakeholders } from "@/hooks/usePendingStakeholders";
-import { ValueCommitments } from "@/components/entity/ValueCommitments";
-import { UnifiedTimeline } from "@/components/entity/UnifiedTimeline";
-import { AddToRecord } from "@/components/entity/AddToRecord";
-import { FileListSection } from "@/components/entity/FileListSection";
-import { LinearIssuesChapter } from "@/components/entity/LinearIssuesChapter";
-import { CommercialShape } from "@/components/context/CommercialShape";
-import { RelationshipFabric } from "@/components/context/RelationshipFabric";
-// View 3 — The Work (workbench, not todo list)
-import {
-  ProgramPill,
-  ProgramPillRow,
-  CommitmentCard,
-  SuggestionCard,
-  RecentlyLandedList,
-  RecentlyLandedRow,
-  ReportCard,
-  ReportGrid,
-  ReportFooterNote,
-  WorkButton,
-} from "@/components/work/WorkSurface";
-import { getAccountReports } from "@/lib/report-config";
-import { buildAccountVitals } from "@/components/account/account-detail-utils";
-import { formatShortDate } from "@/lib/utils";
-import { workCommitmentOwnerPatch } from "@/lib/workCommitmentPatch";
-
+import { ReactBlockRenderer } from "@/components/composition/ReactBlockRenderer";
+import { FolioRefreshButton } from "@/components/ui/folio-refresh-button";
+import { EditableText } from "@/components/ui/EditableText";
+import { Segmented } from "@/components/ui/Segmented";
+import { Switch } from "@/components/ui/Switch";
+import { useChapterLayout, type RenderableCompositionBlock, type RenderableCompositionSection } from "@/hooks/useChapterLayout";
+import { useProjectedComposition } from "@/hooks/useProjectedComposition";
+import { useRegisterMagazineShell, useUpdateFolioVolatile } from "@/hooks/useMagazineShell";
+import type { ProjectedBlock } from "@/services/composition/contracts";
+import type { CompositionBlockVariant } from "@/services/composition/layoutOverlay";
 import shared from "@/styles/entity-detail.module.css";
 import pageStyles from "./AccountDetailPage.module.css";
 
-export default function AccountDetailPage() {
-  const { accountId } = useParams({ strict: false });
-  const page = useAccountDetailPage(accountId);
-  const suppressions = useEntitySuppressions(page.detail?.id ?? accountId);
+const SECTION_ICONS: Record<string, ReactNode> = {
+  headline: <AlignLeft size={18} strokeWidth={1.5} />,
+  outlook: <Telescope size={18} strokeWidth={1.5} />,
+  "state-of-play": <Activity size={18} strokeWidth={1.5} />,
+  "the-room": <Users size={18} strokeWidth={1.5} />,
+  "whats-next": <Briefcase size={18} strokeWidth={1.5} />,
+  "watch-list": <Eye size={18} strokeWidth={1.5} />,
+  "value-commitments": <Award size={18} strokeWidth={1.5} />,
+  "strategic-landscape": <Compass size={18} strokeWidth={1.5} />,
+  "the-record": <Activity size={18} strokeWidth={1.5} />,
+  "the-work": <Briefcase size={18} strokeWidth={1.5} />,
+  reports: <FileText size={18} strokeWidth={1.5} />,
+};
 
-  // v1.2.1 QA fix: gate the "Push to Linear" button on actual Linear
-  // configuration so users don't land on a dead picker.
-  const [linearConfigured, setLinearConfigured] = useState(false);
-  useEffect(() => {
-    invoke<{ enabled: boolean; apiKeySet: boolean }>("get_linear_status")
-      .then((s) => setLinearConfigured(s.enabled && s.apiKeySet))
-      .catch(() => setLinearConfigured(false));
-  }, []);
+function accountNameFromBlocks(blocks: ProjectedBlock[], accountId: string | undefined): string {
+  const overview = blocks.find((block) => block.selected_known_type_id === "account_overview");
+  const account = overview?.payload.account;
+  if (account && typeof account === "object" && !Array.isArray(account)) {
+    const displayName = (account as Record<string, unknown>).display_name;
+    if (typeof displayName === "string" && displayName.trim()) return displayName;
+  }
+  return accountId ?? "Account";
+}
 
-  // pending stakeholder review queue for the Context tab.
-  const pendingStakeholders = usePendingStakeholders(accountId);
+const VARIANT_OPTIONS = [
+  { value: "default", label: "Default" },
+  { value: "compact", label: "Compact" },
+  { value: "spotlight", label: "Spotlight" },
+] as const;
 
-  // Work tab: progressive disclosure for suggestions. Long lists (some
-  // accounts have 20+) overwhelm the chapter — show 5 by default, paginate
-  // by 5 on "Show more". Resets via key when the user navigates accounts.
-  const SUGGESTIONS_PAGE_SIZE = 5;
-  const [suggestionsVisibleCount, setSuggestionsVisibleCount] = useState(SUGGESTIONS_PAGE_SIZE);
-  useEffect(() => {
-    setSuggestionsVisibleCount(SUGGESTIONS_PAGE_SIZE);
-  }, [accountId]);
+function transformStyle(transform: ReturnType<typeof useSortable>["transform"]): string | undefined {
+  if (!transform) return undefined;
+  return `translate3d(${Math.round(transform.x)}px, ${Math.round(transform.y)}px, 0) scaleX(${transform.scaleX}) scaleY(${transform.scaleY})`;
+}
 
-
-  if (page.loading) return <EditorialLoading />;
-  if (page.error || !page.detail) return <EditorialError message={page.error ?? "Account not found"} onRetry={page.acct.load} />;
-
-  const { detail, intelligence, acct, preset, activeView } = page;
-  const fb = page.feedback;
-
-  // ─── View 1: Health & Outlook ───────────────────────────────────────────
-  // editorial IA matching.docs/mockups/account-health-*.html:
-  //   1. Your Assessment (sentiment hero, id="your-assessment")
-  //   2. Needs attention — triage cards + divergence findings
-  //        (or On Track, id="on-track", in the fine state)
-  //   3. Outlook: renewal — OutlookPanel + IntelligenceCorrection slot
-  //   4. Supporting — computed score vs signal trend + dimension bars
-  //        (id="relationship-health", renders only when intelligence.health)
-  //   5. Portfolio rollup (parents only, id="portfolio")
-  //   6. Products (id="products", only when detail.products.length > 0)
-  //   7. About this intelligence — source manifest + freshness meta card
-  //   8. Finis marker
-  //
-  // Fine state: when triage + divergences are both empty, chapter 2 collapses
-  // into the editorial "On Track" chapter per fine mockup.
-  //
-  // The legacy AccountOutlook 3-section component (renewal confidence / growth
-  // opportunities / contract context) has been removed from this view —
-  // OutlookPanel is the mockup-faithful replacement. AccountOutlook is retained
-  // for potential reuse elsewhere.
-  const renderHealthView = () => {
-    const findings = intelligence?.consistencyFindings ?? [];
-    const glean = acct.gleanSignals;
-    const showTriage = hasTriageContent(intelligence, glean, page.sentiment.current);
-    const showDivergence = hasDivergenceContent(findings, glean);
-    const isFineState = !!intelligence && !showTriage && !showDivergence;
-
-    return (
-      <>
-        {/* pinned risk-briefing status at top of
-            Health tab. Renders nothing when there's no active job; shows
-            running/failed states with a retry affordance on failure. */}
-        <RiskBriefingStatus
-          job={acct.riskBriefingJob}
-          accountId={detail.id}
-          onRetry={acct.retryRiskBriefing}
-        />
-        {/* Chapter 1: Sentiment hero — "Your Assessment" in the mockup.
-            Wrapped in a section so the chapter-nav anchor (id matches
-            buildHealthChapters → "your-assessment") resolves cleanly. */}
-        <section id="your-assessment">
-          <SentimentHero
-            view={page.sentiment}
-            onSetSentiment={acct.setUserHealthSentiment}
-            onAcknowledgeStale={acct.acknowledgeSentimentStale}
-            onUpdateNote={acct.updateSentimentNote}
-          />
-        </section>
-
-        {/* Chapters 2-3 (full state) OR On Track chapter (fine state) */}
-        {isFineState ? (
-          <MarginSection id="on-track" label={<>On<br/>Track</>}>
-            <OnTrackChapter intelligence={intelligence} accountSizeLabel={detail.lifecycle ?? detail.accountType ?? null} />
-            {/* "Is this accurate?" after the AI fine-state summary. */}
-            <IntelligenceCorrection
-              entityId={detail.id}
-              entityType="account"
-              field="on_track_assessment"
-              variant="correct"
-              currentValue={intelligence?.executiveAssessment ?? null}
-              onCorrected={acct.silentRefresh}
-            />
-          </MarginSection>
-        ) : (
-          <MarginSection id="needs-attention" label={<>Needs<br/>attention</>}>
-            {showTriage && (
-              <TriageSection
-                intelligence={intelligence}
-                gleanSignals={glean}
-                sentiment={page.sentiment.current}
-                accountId={detail.id}
-              />
-            )}
-            {showDivergence && (
-              <DivergenceSection
-                findings={findings}
-                gleanSignals={glean}
-                accountId={detail.id}
-              />
-            )}
-          </MarginSection>
-        )}
-
-        {/* Chapter 4: Outlook — the chapter title IS the verdict
-            ("The Call: Renewal" / "Churn risk" / "Expansion"), computed
-            from agreementOutlook.confidence + expansionPotential. The gutter
-            "Outlook" stays as the orientation marker. */}
-        {intelligence && (intelligence.agreementOutlook || intelligence.expansionSignals?.length || intelligence.contractContext) ? (
-          <MarginSection id="outlook" label="Outlook">
-            <ChapterHeading title={`The Call: ${renewalCallVerdict(intelligence.agreementOutlook)}`} />
-            <OutlookPanel intelligence={intelligence} />
-            {/* Ch.4: "Is this accurate?" wraps the renewal
-                narrative pull-quote. Field is renewal_narrative (the dedicated
-                DOS-249 column); falls back to expansionPotential for accounts
-                enriched before the migration. */}
-            <IntelligenceCorrection
-              entityId={detail.id}
-              entityType="account"
-              field="renewal_narrative"
-              variant="correct"
-              currentValue={intelligence.agreementOutlook?.renewalNarrative ?? intelligence.agreementOutlook?.expansionPotential ?? null}
-              onCorrected={acct.silentRefresh}
-            />
-          </MarginSection>
-        ) : null}
-
-        {/* Chapter 5: The Read — the computed-score-vs-signal-trend chapter.
-            Gutter "The Read" (pairs with "The Call" in Outlook as the two
-            verdict chapters). Inline 28px serif h2 "Health Score vs. Signals"
-            is descriptive, not jargon. AccountHealthSection removed — its
-            dimension block is a legacy duplicate of SupportingTension's
-            own dimension grid. FreshnessIndicator strip removed (not in
-            mockup). */}
-        {intelligence?.health && (
-          <MarginSection id="relationship-health" label="The Read">
-            <ChapterHeading title="Health Score vs. Signals" />
-            <SupportingTension intelligence={intelligence} gleanSignals={glean} />
-          </MarginSection>
-        )}
-
-        {/* Portfolio rollup (parent accounts only) — continuity chapter. */}
-        {detail.isParent && detail.children.length > 0 && (
-          <AccountPortfolioSection children={detail.children} intelligence={intelligence} />
-        )}
-
-        {/* Products previously rendered here — moved to the Context tab where
-            it sits alongside Technical shape / Commercial shape. Products are
-            a contractual/technical surface, not a health signal. */}
-
-        {/* Regulatory context lives on the Context tab (Commercial shape
-            chapter) — it's a contractual/structural surface, not a health
-            signal. Gaps still feed financial_proximity scoring via the
-            intelligence pipeline; the score itself is what surfaces here. */}
-
-        {/* Chapter 7: About this intelligence */}
-        <MarginSection id="about-intelligence" label={<>About this<br/>intelligence</>} reveal={false}>
-          <ChapterHeading
-            title="About this intelligence"
-            variant="reference"
-          />
-          <AboutIntelligence intelligence={intelligence} gleanSignals={glean} fine={isFineState} />
-        </MarginSection>
-
-        {/* Chapter 7: Finis */}
-        <div className="editorial-reveal"><FinisMarker enrichedAt={intelligence?.enrichedAt} /></div>
-      </>
-    );
-  };
-
-  // ─── View 2: Context ────────────────────────────────────────────────────
-  // 9-chapter IA — Thesis / The Room / What matters / What we've built
-  // Their voice / Commercial shape / Technical shape / Relationship fabric /
-  // About this dossier. Timeline + Files stay inline to preserve existing
-  // scroll affordances until The Work migration.
-  const renderContextView = () => {
-    // Freshness fragment helpers derived from existing data. No new schema.
-    const manifest = intelligence?.sourceManifest ?? [];
-    const glean = acct.gleanSignals;
-    // prefer the backend COUNT(*) when available; fall
-    // back to the manifest-derived count for older snapshots.
-    const transcriptCount =
-      detail.transcriptTotalCount
-      ?? manifest.filter((m) => (m.format ?? "").toLowerCase().includes("transcript")).length;
-    // About-this-dossier counts previously used `acct.events` (lifecycle
-    // events — churn/renewal records) instead of meetings, producing obviously
-    // wrong figures like "0 meetings on record" on active accounts. The source
-    // of truth for meetings linked to the account is `meeting_entities` joined
-    // with `meetings` (see db/accounts.rs).
-    //
-    // `recentMeetings` is capped at 10 for preview rendering,
-    // so an account with 47 meetings previously stalled at "10 meetings on
-    // record". The backend now exposes `meetingTotalCount` /
-    // `transcriptTotalCount` (unbounded COUNT(*) queries). Fall back to
-    // `recentMeetings.length` only when the total is not yet available.
-    const meetingCount =
-      detail.meetingTotalCount ?? detail.recentMeetings?.length ?? 0;
-    const thesisFragments: string[] = [];
-    if (meetingCount) thesisFragments.push(`Synthesized from ${meetingCount} meeting${meetingCount === 1 ? "" : "s"}`);
-    if (transcriptCount) thesisFragments.push(`${transcriptCount} transcript${transcriptCount === 1 ? "" : "s"}`);
-
-    const stakeholders = detail.stakeholdersFull ?? [];
-    const stakeholdersAssessed = stakeholders.filter((s) => s.assessment && s.assessment.trim().length > 0).length;
-    const stakeholdersNeedingVerification = stakeholders.length - stakeholdersAssessed;
-    const roomFragments: (string | { text: string; stale?: boolean })[] = [];
-    if (stakeholders.length) roomFragments.push(`${stakeholders.length} people`);
-    if (stakeholdersAssessed) roomFragments.push(`${stakeholdersAssessed} with assessments`);
-    if (stakeholdersNeedingVerification > 0) roomFragments.push({ text: `${stakeholdersNeedingVerification} need verification`, stale: true });
-
-    const priorityCount = intelligence?.strategicPriorities?.length ?? 0;
-    const competitorCount = intelligence?.competitiveContext?.length ?? 0;
-    const expansionCount = intelligence?.expansionSignals?.length ?? 0;
-    const whatMattersFragments: string[] = [];
-    if (priorityCount) whatMattersFragments.push(`${priorityCount} strategic priorit${priorityCount === 1 ? "y" : "ies"}`);
-    if (competitorCount) whatMattersFragments.push(`${competitorCount} competitive mention${competitorCount === 1 ? "" : "s"}`);
-    if (expansionCount) whatMattersFragments.push(`${expansionCount} expansion signal${expansionCount === 1 ? "" : "s"}`);
-
-    const valueCount = intelligence?.valueDelivered?.length ?? 0;
-    const metricsCount = intelligence?.successMetrics?.length ?? 0;
-    const builtFragments: string[] = [];
-    if (valueCount) builtFragments.push(`${valueCount} value statement${valueCount === 1 ? "" : "s"}`);
-    if (metricsCount) builtFragments.push(`${metricsCount} success metric${metricsCount === 1 ? "" : "s"}`);
-
-    const featureAdoption = intelligence?.productAdoption?.featureAdoption ?? [];
-    const technicalFragments: string[] = [];
-    if (detail.technicalFootprint?.openTickets != null) technicalFragments.push(`${detail.technicalFootprint.openTickets} open ticket${detail.technicalFootprint.openTickets === 1 ? "" : "s"}`);
-    if (featureAdoption.length) technicalFragments.push(`${featureAdoption.length} features active`);
-
-    const hasWhatMatters = !!(priorityCount || competitorCount || intelligence?.organizationalChanges?.length || intelligence?.blockers?.length);
-    const hasBuilt = !!(valueCount || metricsCount || intelligence?.openCommitments?.length);
-
-    return (
-      <>
-        {/* Chapter 1: Thesis — pull quote + synthesized-from meta */}
-        {intelligence && (
-          <section id="thesis">
-            <AccountPullQuote
-              intelligence={intelligence}
-              variant="thesis"
-              freshnessFragments={thesisFragments}
-            />
-          </section>
-        )}
-
-        {/* Chapter 2: The Room — v1.2.1 rebuild matching the Context mockup:
-            primary/secondary grid, multi-role chip editor wired to atomic
-            add/remove, "+N more associated" tier-2 row, internal team grid. */}
-        <MarginSection id="the-room" label={<>The<br/>Room</>}>
-          <StakeholderGrid
-            stakeholders={detail.stakeholdersFull}
-            accountTeam={detail.accountTeam}
-            accountName={detail.name ?? undefined}
-            chapterTitle="The Room"
-            chapterFreshness={
-              <FreshnessIndicator
-                enrichedAt={intelligence?.enrichedAt}
-                fragments={roomFragments}
-              />
-            }
-            onAddRole={acct.addStakeholderRole}
-            onRemoveRole={acct.removeStakeholderRole}
-            onRemoveTeamMember={acct.handleRemoveTeamMember}
-            onRemoveStakeholder={async (personId, personName) => {
-              // Full delete of the person entity — unlinks from every
-              // account AND removes from the global people list. Use
-              // case: synthetic / bot email addresses that shouldn't
-              // exist anywhere. Permanent; guarded with a native
-              // confirm so an accidental click can't nuke a real
-              // stakeholder.
-              const ok = window.confirm(
-                `Delete ${personName || "this person"} permanently?\n\n` +
-                  `This removes them from this account and from the people list across every account. Use for bot addresses or duplicate entries — not for real stakeholders you just want to hide.`,
-              );
-              if (!ok) return;
-              try {
-                await invoke("delete_person", { personId });
-                // Silent refresh so the card disappears without a full
-                // loading state / scroll jump.
-                acct.silentRefresh();
-              } catch (e) {
-                toast.error(`Failed to delete: ${e}`);
-              }
-            }}
-          />
-          {/* pending_review rows from account_stakeholders.
-              Rendered immediately after the confirmed-stakeholder grid so the
-              user sees "what we know" then "what needs review" in one scan.
-              Hidden when the queue is empty — no placeholder clutter. */}
-          <PendingStakeholderQueue queue={pendingStakeholders} />
-        </MarginSection>
-
-        {/* Chapter 3: What matters to them */}
-        {intelligence && hasWhatMatters && (
-          <MarginSection id="what-matters" label={<>What<br/>matters</>}>
-            <ChapterHeading
-              title="What matters to them"
-              freshness={<FreshnessIndicator enrichedAt={intelligence.enrichedAt} fragments={whatMattersFragments} />}
-            />
-            <StrategicLandscape
-              intelligence={intelligence}
-              onItemFeedback={fb.submit}
-            />
-          </MarginSection>
-        )}
-
-        {/* Chapter 4: What we've built together */}
-        {intelligence && hasBuilt && (
-          <MarginSection id="value-commitments" label={<>What we've<br/>built</>}>
-            <ChapterHeading
-              title="What we've built together"
-              freshness={<FreshnessIndicator enrichedAt={intelligence.enrichedAt} fragments={builtFragments} />}
-            />
-            <ValueCommitments
-              intelligence={intelligence}
-              onItemFeedback={fb.submit}
-            />
-          </MarginSection>
-        )}
-
-        {/* Chapter 5: Their voice — Glean quote wall  */}
-        <MarginSection id="their-voice" label={<>Their<br/>voice</>}>
-          <ChapterHeading
-            title="Their voice"
-            freshness={
-              <FreshnessIndicator
-                enrichedAt={intelligence?.enrichedAt}
-                fragments={
-                  glean?.quoteWall?.length
-                    ? [`${glean.quoteWall.length} quote${glean.quoteWall.length === 1 ? "" : "s"} captured`]
-                    : ["Awaiting captured quotes"]
-                }
-              />
-            }
-          />
-          <QuoteWall quotes={glean?.quoteWall} />
-        </MarginSection>
-
-        {/* Chapter 6: Commercial shape — reference weight, most fields are gaps today */}
-        <MarginSection id="commercial-shape" label={<>Commercial<br/>shape</>}>
-          <ChapterHeading
-            title="Commercial shape"
-            freshness={
-              <FreshnessIndicator
-                enrichedAt={intelligence?.enrichedAt}
-                fragments={[
-                  { text: "Several fields unverified — see gaps below", stale: true },
-                ]}
-              />
-            }
-          />
-          <CommercialShape
-            detail={detail}
-            onUpdateField={page.saveAccountField}
-            onUpdateMetadata={page.handleMetadataChange}
-            metadataValues={page.metadataValues}
-          />
-        </MarginSection>
-
-        {/* Chapter 7: Technical shape — promoted footprint + feature list (reference weight). */}
-        {/* Always renders: when footprint is null, AccountTechnicalFootprint emits gap rows. */}
-        <MarginSection id="technical-shape" label={<>Technical<br/>shape</>}>
-          <ChapterHeading
-            title="Technical shape"
-            freshness={
-              <FreshnessIndicator
-                at={detail.technicalFootprint?.sourcedAt ?? intelligence?.enrichedAt}
-                fragments={technicalFragments}
-              />
-            }
-          />
-          <AccountTechnicalFootprint
-            footprint={detail.technicalFootprint ?? null}
-            variant="chapter"
-            featureAdoption={featureAdoption}
-            products={detail.products ?? []}
-            onUpdateField={page.saveAccountField}
-            onUpdateMetadata={page.handleMetadataChange}
-            metadataValues={page.metadataValues}
-          />
-        </MarginSection>
-
-        {/* Products folded into Technical shape as a dotted list (
-            tracks full edit UX + Services subsection for v1.2.2). */}
-
-        {/* Chapter 8: Relationship fabric — advocacy, beta, NPS history */}
-        <MarginSection id="relationship-fabric" label={<>Relationship<br/>fabric</>}>
-          <ChapterHeading
-            title="Relationship fabric"
-            freshness={
-              <FreshnessIndicator
-                enrichedAt={intelligence?.enrichedAt}
-                fragments={[
-                  { text: "Most fields not captured — known gap", stale: true },
-                ]}
-              />
-            }
-          />
-          <RelationshipFabric
-            detail={detail}
-            accountName={detail.name ?? undefined}
-            onUpdateField={page.saveAccountField}
-            onUpdateMetadata={page.handleMetadataChange}
-            metadataValues={page.metadataValues}
-          />
-        </MarginSection>
-
-        {/* The Record + Files moved to the Work tab where they belong —
-            they're operational/workbench surfaces, not narrative context. */}
-
-        {/* Chapter 9: About this dossier — always renders; our own data-quality story */}
-        <MarginSection id="about-dossier" label={<>About the<br/>dossier</>} reveal={false}>
-          <AboutThisDossier
-            intelligence={intelligence}
-            meetingCount={meetingCount}
-            transcriptCount={transcriptCount}
-            uncharacterizedStakeholders={(detail.stakeholdersFull ?? [])
-              .filter((s) => {
-                const count = s.meetingCount ?? 0;
-                const hasAssessment = Boolean(s.assessment && s.assessment.trim().length > 0);
-                return count > 0 && !hasAssessment;
-              })
-              .map((s) => ({ personName: s.personName, meetingCount: s.meetingCount ?? null }))}
-          />
-        </MarginSection>
-
-        <div className="editorial-reveal"><FinisMarker enrichedAt={intelligence?.enrichedAt} /></div>
-      </>
-    );
-  };
-
-  // ─── View 3: The Work ───────────────────────────────────────────────────
-  // 8-chapter workbench IA matches account-work-globex.html mockup.
-  // Zero-guilt patterns throughout: "Still active?" replaces OVERDUE, Private/Shared
-  // pills are orthogonal to draft/done, Dismiss is equal-valid with Mark done,
-  // Suggestions carry "Dismiss (teaches system)", Nudges always offer "Leave as-is"
-  // and the chapter hides entirely when the list is empty.
-  const renderWorkView = () => {
-    const programs = acct.programs ?? [];
-    const work = acct.work;
-    const visibleSuggestions = work.suggestions.filter(
-      (r) => !suppressions.isSuppressed(`work_suggestion:${r.id}`, r.title),
-    );
-
-    // ── Programs & motions ──────────────────────────────────────────────
-    // Standing states only — no due dates, not todos.
-    const activePrograms = programs.filter((p) => p.name);
-
-    // ── Chapter 1: Commitments ───────────────────────────────────────────
-    // DOS Work-tab Phase 3: sourced from the `actions` table via
-    // `useAccountWorkData` (action_kind='commitment', status in backlog /
-    // unstarted / started). Dispatch by stable action.id — no index-based
-    // handlers.
-    //
-    // Top-4 visual weight: the first four cards carry `.emphasis` (heavier
-    // serif headline). Items 5+ render at the default weight. This gives a
-    // "big three or four" reading order without turning the rest of the
-    // list into second-class citizens.
-    //
-    // Soft "Still active?" rules:
-    //   status='started' + due_date past       → "Due date passed N days ago."
-    //   status='backlog' + age > 45d            → "Carried for N days — still active?"
-    //   status='unstarted' + no due + age > 45d → "Carried for N days without a date — still active?"
-    const AGED_COMMITMENT_THRESHOLD_DAYS = 45;
-    const commitmentCards = work.commitments.map((c, idx) => {
-      const contextLower = (c.context ?? "").toLowerCase();
-      const isInternal = /internal|^program\b|\bteam\b/i.test(c.title) || /internal/.test(contextLower);
-
-      // Linear link on the action row = shared with the team. Only the
-      // linear_identifier + linear_url flavour is wired today; Salesforce
-      // / Slack writeback lands later.
-      const linearHref = c.linearUrl;
-      const visibility: "shared" | "private" = linearHref ? "shared" : "private";
-
-      const provenance: { label: string; href?: string }[] = [];
-      if (c.linearIdentifier && linearHref) {
-        provenance.push({
-          label: `Linear · ${c.linearIdentifier}`,
-          href: linearHref,
-        });
-      } else if (c.sourceLabel) {
-        provenance.push({ label: c.sourceLabel });
-      } else if (c.sourceType) {
-        provenance.push({ label: c.sourceType });
-      }
-
-      // Soft-nudge copy table. At most one rule fires — due-date-past wins
-      // when present; aged fallback only runs for dateless commitments or
-      // backlog items.
-      let stillActiveNote: string | undefined;
-      const now = Date.now();
-      const createdAt = c.createdAt ? new Date(c.createdAt).getTime() : Number.NaN;
-      const ageDays = Number.isFinite(createdAt)
-        ? Math.floor((now - createdAt) / (1000 * 60 * 60 * 24))
-        : null;
-
-      if (c.status === "started" && c.dueDate) {
-        const due = new Date(c.dueDate).getTime();
-        if (!Number.isNaN(due) && due < now) {
-          const diff = Math.round((now - due) / (1000 * 60 * 60 * 24));
-          stillActiveNote = `Due date passed ${diff} day${diff === 1 ? "" : "s"} ago. Worth a glance, not a panic.`;
-        }
-      } else if (c.status === "backlog" && ageDays !== null && ageDays > AGED_COMMITMENT_THRESHOLD_DAYS) {
-        stillActiveNote = `Carried for ${ageDays} days — still active?`;
-      } else if (
-        c.status === "unstarted" &&
-        !c.dueDate &&
-        ageDays !== null &&
-        ageDays > AGED_COMMITMENT_THRESHOLD_DAYS
-      ) {
-        stillActiveNote = `Carried for ${ageDays} days without a date — still active?`;
-      }
-
-      const doneBusy = work.commitmentDoneInFlight.has(c.id);
-      const dismissBusy = work.commitmentDismissInFlight.has(c.id);
-      const isEmphasized = idx < 4;
-      const ownerValue = c.ownerRaw ?? null;
-      const ownerIsAmbiguous = c.ownerSource === "ambiguous" || c.ownerSource === "legacy_context_ambiguous";
-      const sourceCount = c.commitmentSourceCount ?? 0;
-      return (
-        <CommitmentCard
-          key={c.id}
-          emphasis={isEmphasized}
-          headline={c.title}
-          provenance={provenance.length > 0 ? provenance : undefined}
-          owner={ownerValue}
-          ownerAmbiguous={ownerIsAmbiguous}
-          due={c.dueDate ? formatShortDate(c.dueDate) : null}
-          dueDateRaw={c.dueDate ?? null}
-          trustBand={c.trustBand ?? "unscored"}
-          trustScore={c.trustScore ?? null}
-          sourceCount={sourceCount}
-          audience={isInternal ? "internal" : "customer"}
-          visibility={visibility}
-          sharedRef={linearHref && c.linearIdentifier ? { label: c.linearIdentifier, href: linearHref } : undefined}
-          stillActiveNote={stillActiveNote}
-          onEditHeadline={(title) => work.handleUpdateCommitment(c.id, { title })}
-          onEditOwner={(owner) =>
-            work.handleUpdateCommitment(c.id, workCommitmentOwnerPatch(owner))
-          }
-          onEditDueDate={(dueDate) => work.handleUpdateCommitment(c.id, { dueDate })}
-          actions={
-            <>
-              <WorkButton
-                kind="primary"
-                disabled={doneBusy || dismissBusy}
-                onClick={() => work.handleMarkCommitmentDone(c.id)}
-              >
-                {doneBusy ? "Marking done…" : "Mark done"}
-              </WorkButton>
-              <WorkButton
-                kind="muted"
-                disabled={doneBusy || dismissBusy}
-                onClick={() => work.handleDismissCommitment(c.id)}
-              >
-                {dismissBusy ? "Dismissing…" : "Dismiss"}
-              </WorkButton>
-              {!linearHref && linearConfigured && (
-                <WorkButton kind="muted" onClick={() => work.handlePushToLinear(c.id)}>
-                  Push to Linear
-                </WorkButton>
-              )}
-            </>
-          }
-        />
-      );
-    });
-
-    const commitmentFragments: string[] = [];
-    if (work.commitments.length) {
-      commitmentFragments.push(`${work.commitments.length} open · sourced from actions`);
-    }
-
-    // ── Chapter 6: Recently landed ───────────────────────────────────────
-    // DOS Work-tab Phase 3: sourced from actions with status='completed'
-    // AND completed_at >= now - 30d (cap 20). Cross-reference to Context
-    // "Value delivered" anchors so a landed item can be traced back to the
-    // value-commitments record.
-    const contextValueHref = page.accountId
-      ? `/accounts/${page.accountId}?view=context#value-commitments`
-      : null;
-    const recentlyLanded = work.recentlyLanded.map((a) => {
-      const completedAt = a.completedAt;
-      const origin = a.sourceLabel
-        ? `Came from ${a.sourceLabel}`
-        : a.sourceType
-          ? `Came from ${a.sourceType}`
-          : null;
-      const xref = contextValueHref ? (
-        <>
-          {origin && <>{origin} · </>}
-          <a href={contextValueHref}>See Context value →</a>
-        </>
-      ) : origin;
-      return {
-        id: a.id,
-        date: completedAt ? formatShortDate(completedAt).toUpperCase() : "",
-        event: a.title,
-        source: xref as React.ReactNode,
-      };
-    });
-
-    // ── Chapter 7: Outputs ───────────────────────────────────────────────
-    // Generated reports. Links out to the Report Engine. Full-plan export is
-    // deferred to the Report Engine project — keep this a jumping-off point.
-    const reports = getAccountReports(preset?.id);
-    const navigateToReport = (reportType: string) => {
-      if (reportType === "risk_briefing" || reportType === "account_health" || reportType === "ebr_qbr") {
-        page.navigate({
-          to: `/accounts/$accountId/reports/${reportType}`,
-          params: { accountId: page.accountId },
-        });
-      } else {
-        page.navigate({
-          to: "/accounts/$accountId/reports/$reportType",
-          params: { accountId: page.accountId, reportType },
-        });
-      }
-    };
-
-    // Nudges chapter removed — aged-private soft-nudge renders inline on
-    // Commitments cards via stillActiveNote. Integration-status nudges
-    // (writeback stalled, etc.) surface at the folio level, not as a chapter.
-
-    const hasPrograms = activePrograms.length > 0;
-    const hasCommitments = work.commitments.length > 0;
-    const hasSuggestions = visibleSuggestions.length > 0;
-    const hasRecentlyLanded = recentlyLanded.length > 0;
-    const hasReports = reports.length > 0;
-    // Shared chapter: any open commitment with a Linear link present on the
-    // action row surfaces the "Shared with the team" chapter. Salesforce /
-    // Slack writeback sources will extend this check when wired.
-    const hasSharedData = work.commitments.some((c) => !!c.linearUrl);
-
-    return (
-      <>
-        {/* 90-day Focus chapter dropped — its editorial roll-up duplicated
-            Commitments + Suggestions + Programs. Commitments is now the
-            opener; top-N visual weighting lives on that chapter instead.
-            Narrative focus synthesis may return in v1.2.2 if AI writes it
-            well. */}
-
-        {/* Chapter 1: Commitments — what we've said we'll do.
-            Opener chapter: plain section + noRule ChapterHeading so the
-            chapter flows from the hero rather than reading as a mid-page
-            chapter break. Matches Context "Thesis" + Health "Your
-            Assessment" first-chapter treatment. */}
-        {hasCommitments && (
-          <section id="commitments">
-            <ChapterHeading
-              title="Commitments"
-              epigraph="What we've said we'll do"
-              noRule
-              freshness={
-                <FreshnessIndicator
-                  enrichedAt={intelligence?.enrichedAt}
-                  fragments={[...commitmentFragments, "Natural sort by recency"]}
-                />
-              }
-            />
-            <div className={pageStyles.cardStack}>
-              {commitmentCards}
-            </div>
-          </section>
-        )}
-
-        {/* Chapter 2: Suggestions — AI proposals, saffron background.
-            DOS Work-tab Phase 3: backed by actions with status='backlog'.
-            Accepting promotes to 'unstarted' (and surfaces in Commitments
-            when action_kind='commitment'); "No" archives the suggestion
-            and feeds back into the quality loop. */}
-        {hasSuggestions && (
-          <MarginSection id="suggestions" label={<>Sugges-<br/>tions</>} reveal={false}>
-            <ChapterHeading
-              title="Suggestions"
-              epigraph="AI proposals · accept or validate"
-              freshness={
-                <FreshnessIndicator
-                  enrichedAt={intelligence?.enrichedAt}
-                  fragments={[
-                    visibleSuggestions.length > suggestionsVisibleCount
-                      ? `Showing ${suggestionsVisibleCount} of ${visibleSuggestions.length} suggestions`
-                      : `${visibleSuggestions.length} suggestion${visibleSuggestions.length === 1 ? "" : "s"}`,
-                    "Accept → commitment · Dismiss to hide · Yes / No trains quality",
-                  ]}
-                />
-              }
-            />
-            <div className={pageStyles.cardStack}>
-              {visibleSuggestions.slice(0, suggestionsVisibleCount).map((r) => {
-                const provenance: { label: string; href?: string }[] = [];
-                if (r.sourceLabel) provenance.push({ label: r.sourceLabel });
-                else if (r.sourceType) provenance.push({ label: r.sourceType });
-                else provenance.push({ label: "Account intelligence" });
-                return (
-                  <SuggestionCard
-                    key={r.id}
-                    headline={r.title}
-                    rationale={r.context ?? ""}
-                    provenance={provenance}
-                    trustBand={r.trustBand ?? null}
-                    sourceCount={r.commitmentSourceCount ?? null}
-                    accepting={work.suggestionAcceptInFlight.has(r.id)}
-                    onAccept={() => work.handleAcceptSuggestion(r.id)}
-                    dismissing={work.suggestionDismissInFlight.has(r.id)}
-                    onDismiss={() => {
-                      suppressions.markSuppressed(`work_suggestion:${r.id}`, r.title);
-                      return work.handleArchiveSuggestion(r.id);
-                    }}
-                    feedbackSlot={
-                      <IntelligenceCorrection
-                        entityId={detail.id}
-                        entityType="account"
-                        field={`work_suggestion:${r.id}`}
-                        itemKey={r.title}
-                        source="account_detail_work"
-                        onDismissed={() => {
-                          suppressions.markSuppressed(`work_suggestion:${r.id}`, r.title);
-                          return work.handleDismissSuggestion(r.id);
-                        }}
-                      />
-                    }
-                  />
-                );
-              })}
-            </div>
-            {visibleSuggestions.length > suggestionsVisibleCount && (
-              <div className={pageStyles.showMoreRow}>
-                <WorkButton
-                  kind="muted"
-                  onClick={() =>
-                    setSuggestionsVisibleCount((prev) => prev + SUGGESTIONS_PAGE_SIZE)
-                  }
-                >
-                  Show {Math.min(SUGGESTIONS_PAGE_SIZE, visibleSuggestions.length - suggestionsVisibleCount)} more
-                </WorkButton>
-              </div>
-            )}
-          </MarginSection>
-        )}
-
-        {/* Chapter 3: Programs & motions — standing states, not to-dos */}
-        {hasPrograms && (
-          <MarginSection id="programs" label={<>Programs<br/>&amp; motions</>} reveal={false}>
-            <ChapterHeading
-              title="Programs & motions"
-              epigraph="Standing motions · not a todo list"
-              freshness={
-                <FreshnessIndicator
-                  enrichedAt={intelligence?.enrichedAt}
-                  fragments={[`${activePrograms.length} motion${activePrograms.length === 1 ? "" : "s"} active`]}
-                />
-              }
-            />
-            <ProgramPillRow>
-              {activePrograms.map((p, i) => (
-                <ProgramPill
-                  key={i}
-                  state={p.status ? `In ${p.status.toLowerCase()}` : p.name}
-                  description={p.notes || p.name}
-                />
-              ))}
-            </ProgramPillRow>
-          </MarginSection>
-        )}
-
-        {/*
-          Chapter 5: Shared with the team — honest degradation (Wave 0g
-          Finding 2). The chapter (and its nav-island pill) are suppressed
-          entirely until real tracker provenance exists. A commitment is
-          "shared" only when it carries a structured trackerLink payload
-          (system + externalId + href), which lands in v1.2.2 / DOS-75.
-          Rendering an always-empty chapter put a dead pill in the IA.
-        */}
-        {hasSharedData && (
-          <MarginSection id="shared" label={<>Shared<br/>with<br/>team</>} reveal={false}>
-            <ChapterHeading
-              title="Shared with the team"
-              freshness={
-                <FreshnessIndicator
-                  enrichedAt={intelligence?.enrichedAt}
-                  fragments={["Tracker writeback · live status"]}
-                />
-              }
-            />
-            <EditorialEmpty
-              title="Nothing is shared to a tracker yet."
-              message="Commitments with a real external link appear here once a tracker is wired."
-            />
-          </MarginSection>
-        )}
-
-        {/* Chapter 6: Recently landed — 30-day completion tail */}
-        {hasRecentlyLanded && (
-          <MarginSection id="recently-landed" label={<>Recently<br/>landed</>} reveal={false}>
-            <ChapterHeading
-              title="Recently landed"
-              epigraph="30-day completion tail"
-              freshness={
-                <FreshnessIndicator
-                  enrichedAt={intelligence?.enrichedAt}
-                  fragments={[
-                    `${recentlyLanded.length} item${recentlyLanded.length === 1 ? "" : "s"} delivered`,
-                    "30-day tail · promotes to Context \"value delivered\"",
-                  ]}
-                />
-              }
-            />
-            <RecentlyLandedList>
-              {recentlyLanded.map((row) => (
-                <RecentlyLandedRow
-                  key={row.id}
-                  date={row.date}
-                  event={row.event}
-                  source={row.source}
-                />
-              ))}
-            </RecentlyLandedList>
-          </MarginSection>
-        )}
-
-        {/* Chapter 7: Outputs — generated reports, link out to Report Engine */}
-        {hasReports && (
-          <MarginSection id="outputs" label={<>Out-<br/>puts</>} reveal={false}>
-            <ChapterHeading
-              title="Outputs"
-              epigraph="Generated reports · open to regenerate"
-              freshness={
-                <FreshnessIndicator
-                  enrichedAt={intelligence?.enrichedAt}
-                  fragments={[`${reports.length} report${reports.length === 1 ? "" : "s"} available for this account`]}
-                />
-              }
-            />
-            <ReportGrid>
-              {reports.map((r) => (
-                <ReportCard
-                  key={r.reportType}
-                  type={r.label}
-                  title={`${detail.name ?? "Account"} — ${r.label}`}
-                  generatedAt={intelligence?.enrichedAt ? formatShortDate(intelligence.enrichedAt) : undefined}
-                  trigger="on-demand"
-                  onOpen={() => navigateToReport(r.reportType)}
-                  onRefresh={() => navigateToReport(r.reportType)}
-                />
-              ))}
-            </ReportGrid>
-            <ReportFooterNote>
-              Full-plan synthesis and export lives in the Report Engine. Open any report above to generate a fresh copy from current intelligence.
-            </ReportFooterNote>
-          </MarginSection>
-        )}
-
-        {/* Nudges chapter dropped — redundant with soft "Still active?"
-            rendered inline on Commitments cards. Integration-level cross-
-            cutting nudges (writeback stalled, etc.) surface at the folio
-            level, not as a chapter. */}
-
-        {/* The Record — timeline continuity. Migrated from the Context tab.
-            Design refresh tracked separately; here we preserve the live surface. */}
-        <MarginSection id="the-record" label={<>The<br/>Record</>} reveal={false}>
-          <UnifiedTimeline
-            data={{
-              ...detail,
-              accountEvents: acct.events,
-              lifecycleChanges: detail.lifecycleChanges,
-              autoCompletedMilestones: detail.autoCompletedMilestones,
-              contextEntries: page.entityCtx.entries,
-            }}
-            sectionId=""
-            actionSlot={<AddToRecord onAdd={(title, content) => page.entityCtx.createEntry(title, content)} />}
-          />
-        </MarginSection>
-
-        {acct.files.length > 0 && (
-          <MarginSection id="files" label="Files" reveal={false}>
-            <FileListSection files={acct.files} />
-          </MarginSection>
-        )}
-
-        <LinearIssuesChapter
-          entityRef={{ kind: "account", id: detail.id }}
-          actorScope="user"
-        />
-      </>
-    );
-  };
+function SortableBlockFrame({
+  item,
+  accountId,
+  editMode,
+  renderedProvenance,
+  onHiddenChange,
+  onVariantChange,
+}: {
+  item: RenderableCompositionBlock;
+  accountId?: string;
+  editMode: boolean;
+  renderedProvenance: ReturnType<typeof useProjectedComposition>["renderedProvenance"];
+  onHiddenChange: (blockId: string, hidden: boolean) => void;
+  onVariantChange: (blockId: string, variant: CompositionBlockVariant) => void;
+}) {
+  const disabled = !editMode || item.coreLocked;
+  const {
+    attributes,
+    listeners,
+    setActivatorNodeRef,
+    setNodeRef,
+    transform,
+    transition,
+    isDragging,
+  } = useSortable({ id: item.block.block_id, disabled });
+  const instructionsId = `reorder-instructions-${item.block.block_id}`;
+  const lockedId = `locked-${item.block.block_id}`;
 
   return (
-    <>
-      <section id="headline" className={shared.chapterHeadline}>
-        <AccountHero detail={detail} intelligence={intelligence}
-          editName={acct.editName} setEditName={(v) => { acct.setEditName(v); acct.setDirty(true); }}
-          editHealth={acct.editHealth} setEditHealth={(v) => { acct.setEditHealth(v); acct.setDirty(true); }}
-          editLifecycle={acct.editLifecycle} setEditLifecycle={(v) => { acct.setEditLifecycle(v); acct.setDirty(true); }}
-          onSave={acct.handleSave} onSaveField={page.saveAccountField}
-          vitalsSlot={detail.accountType !== "internal" ? (preset
-            ? <EditableVitalsStrip fields={preset.vitals.account} metadataFields={preset.metadata.account}
-                entityData={detail} metadata={page.metadataValues}
-                onFieldChange={(key, col, source, value) => {
-                  if (source === "metadata") page.handleMetadataChange(key, value);
-                  else if (source === "column") void page.saveAccountField(col ?? key, value);
-                }} conflicts={page.conflictsForStrip} sourceRefs={detail.sourceRefs} />
-            : <VitalsStrip vitals={buildAccountVitals(detail)} sourceRefs={detail.sourceRefs} />
-          ) : undefined}
-          provenanceSlot={undefined} />
-        {detail.renewalDate && !page.rolloverDismissed && (
-          <AccountRolloverPrompt renewalDate={detail.renewalDate}
-            onRenewed={() => { acct.setNewEventType("renewal"); acct.setNewEventDate(detail.renewalDate!); acct.handleRecordEvent(); page.setRolloverDismissed(true); }}
-            onChurned={() => { acct.setNewEventType("churn"); acct.setNewEventDate(detail.renewalDate!); acct.handleRecordEvent(); page.setRolloverDismissed(true); }}
-            onDismiss={() => page.setRolloverDismissed(true)} />
-        )}
-      </section>
+    <div
+      ref={setNodeRef}
+      className={pageStyles.compositionEditableBlock}
+      data-edit-mode={editMode}
+      data-dragging={isDragging}
+      data-layout-variant={item.variant}
+      style={{ transform: transformStyle(transform), transition }}
+    >
+      {editMode && (
+        <div className={pageStyles.compositionBlockToolbar} data-ds-name="CompositionBlockToolbar" data-ds-tier="pattern" data-ds-spec="patterns/CompositionBlockToolbar.md">
+          <button
+            type="button"
+            ref={setActivatorNodeRef}
+            className={pageStyles.compositionReorderHandle}
+            disabled={disabled}
+            {...(!disabled ? attributes : {})}
+            {...(!disabled ? listeners : {})}
+            aria-label={item.coreLocked ? `${item.label} is locked` : `Move ${item.label}`}
+            aria-describedby={item.coreLocked ? lockedId : instructionsId}
+          >
+            {item.coreLocked ? <Lock size={14} strokeWidth={1.6} /> : <GripVertical size={14} strokeWidth={1.6} />}
+          </button>
+          <span id={instructionsId} className={pageStyles.compositionAssistiveText}>
+            Space to grab, arrows to move, Space or Enter to drop, Escape to cancel.
+          </span>
+          {item.coreLocked && (
+            <span id={lockedId} className={pageStyles.compositionLockedReason}>
+              Core lead content stays fixed.
+            </span>
+          )}
+          <label className={pageStyles.compositionToolbarControl}>
+            <span>Shown</span>
+            <Switch
+              checked
+              disabled={item.coreLocked}
+              onCheckedChange={(checked) => onHiddenChange(item.block.block_id, !checked)}
+              aria-label={`${item.coreLocked ? "Locked visibility for" : "Toggle visibility for"} ${item.label}`}
+            />
+          </label>
+          <Segmented<CompositionBlockVariant>
+            aria-label={`Variant for ${item.label}`}
+            value={item.variant}
+            options={VARIANT_OPTIONS}
+            disabled={item.coreLocked}
+            onChange={(variant) => onVariantChange(item.block.block_id, variant)}
+          />
+        </div>
+      )}
+      <ReactBlockRenderer
+        block={item.block}
+        accountId={accountId}
+        renderedProvenance={renderedProvenance}
+        editMode={editMode}
+      />
+    </div>
+  );
+}
 
-      {/* All 3 views rendered, inactive hidden with display:none */}
-      {/* Display is state-driven so inactive tabs remain mounted across switches. */}
-      <div className={pageStyles.view} style={{ display: activeView === "health" ? "block" : "none" }}>
-        {renderHealthView()}
+function CompositionInserter({
+  hiddenItems,
+  onRestoreSection,
+  onRestoreBlock,
+}: {
+  hiddenItems: ReturnType<typeof useChapterLayout>["view"]["hiddenItems"];
+  onRestoreSection: (sectionId: string) => void;
+  onRestoreBlock: (blockId: string) => void;
+}) {
+  if (hiddenItems.length === 0) return null;
+  return (
+    <div className={pageStyles.compositionInserter} data-ds-name="CompositionInserter" data-ds-tier="pattern" data-ds-spec="patterns/CompositionInserter.md">
+      <p className={pageStyles.compositionInserterLabel}>Hidden</p>
+      <div className={pageStyles.compositionInserterList}>
+        {hiddenItems.map((item) => (
+          <button
+            key={`${item.kind}-${item.id}`}
+            type="button"
+            className={pageStyles.compositionInserterButton}
+            onClick={() => {
+              if (item.kind === "section") onRestoreSection(item.id);
+              else onRestoreBlock(item.id);
+            }}
+          >
+            <Plus size={13} strokeWidth={1.7} />
+            {item.label}
+          </button>
+        ))}
       </div>
-      {/* Display is state-driven so inactive tabs remain mounted across switches. */}
-      <div className={pageStyles.view} style={{ display: activeView === "context" ? "block" : "none" }}>
-        {renderContextView()}
-      </div>
-      {/* Display is state-driven so inactive tabs remain mounted across switches. */}
-      <div className={pageStyles.view} style={{ display: activeView === "work" ? "block" : "none" }}>
-        {renderWorkView()}
-      </div>
+    </div>
+  );
+}
 
-      <AccountViewSwitcher activeView={page.activeView} onViewChange={page.setActiveView} />
+export default function AccountDetailPage() {
+  const { accountId } = useParams({ strict: false });
+  const navigate = useNavigate();
+  const [editMode, setEditMode] = useState(false);
+  const composition = useProjectedComposition(accountId);
+  const projection = composition.data?.projection ?? null;
+  const layout = useChapterLayout({ projection, entityType: "account" });
+  const visibleSections = layout.view.sections;
+  const accountName = accountNameFromBlocks(projection?.blocks ?? [], accountId);
+  const sensors = useSensors(
+    useSensor(PointerSensor),
+    useSensor(KeyboardSensor, { coordinateGetter: sortableKeyboardCoordinates }),
+  );
 
-      <AccountDialogs accountId={page.accountId} accountName={detail.name} accountType={detail.accountType}
-        archiveDialogOpen={page.archiveDialogOpen} onArchiveDialogChange={page.setArchiveDialogOpen} onArchive={acct.handleArchive}
-        createChildOpen={acct.createChildOpen} onCreateChildOpenChange={acct.setCreateChildOpen}
-        childName={acct.childName} onChildNameChange={acct.setChildName}
-        childDescription={acct.childDescription} onChildDescriptionChange={acct.setChildDescription}
-        creatingChild={acct.creatingChild} onCreateChild={acct.handleCreateChild}
-        mergeDialogOpen={page.mergeDialogOpen} onMergeDialogChange={page.setMergeDialogOpen}
-        onMerged={() => page.navigate({ to: "/accounts" })} />
-    </>
+  const blockLabels = useMemo(() => {
+    const labels = new Map<string, string>();
+    for (const section of visibleSections) {
+      for (const item of section.blocks) labels.set(item.block.block_id, item.label);
+    }
+    return labels;
+  }, [visibleSections]);
+
+  const chapters = useMemo(
+    () =>
+      visibleSections.map(({ section, label }) => ({
+        id: section.section_id,
+        label,
+        icon: SECTION_ICONS[section.section_id] ?? <FileText size={18} strokeWidth={1.5} />,
+      })),
+    [visibleSections],
+  );
+
+  const shellConfig = useMemo(
+    () => ({
+      folioLabel: "Account",
+      atmosphereColor: "turmeric" as const,
+      activePage: "accounts" as const,
+      breadcrumbs: [
+        { label: "Accounts", onClick: () => navigate({ to: "/accounts" }) },
+        { label: accountName },
+      ],
+      chapters,
+    }),
+    [accountName, chapters, navigate],
+  );
+  useRegisterMagazineShell(shellConfig);
+
+  useUpdateFolioVolatile(
+    {
+      folioStatusText: composition.loading
+        ? "Composing..."
+        : layout.saving
+          ? "Saving layout..."
+        : composition.data?.served_from_cache
+          ? "Projected from cache"
+          : undefined,
+      folioActions: (
+        <div className={shared.folioActions}>
+          <button
+            type="button"
+            className={pageStyles.compositionCustomizeButton}
+            aria-pressed={editMode}
+            onClick={() => setEditMode((current) => !current)}
+          >
+            <SlidersHorizontal size={14} strokeWidth={1.7} />
+            {editMode ? "Done" : "Customize"}
+          </button>
+          <FolioRefreshButton onClick={composition.refetch} loading={composition.loading} />
+        </div>
+      ),
+    },
+    `${accountId ?? "account"}-${editMode}-${layout.saving}`,
+  );
+
+  const handleDragEnd = useCallback(
+    (event: DragEndEvent) => {
+      const { active, over } = event;
+      if (!over || active.id === over.id) return;
+      const section = visibleSections.find((candidate) =>
+        candidate.blocks.some((item) => item.block.block_id === active.id || item.block.block_id === over.id),
+      );
+      if (!section) return;
+      const ids = section.blocks.map((item) => item.block.block_id);
+      const oldIndex = ids.indexOf(String(active.id));
+      const newIndex = ids.indexOf(String(over.id));
+      if (oldIndex < 0 || newIndex < 0) return;
+      layout.reorderBlocks(section.section.section_id, arrayMove(ids, oldIndex, newIndex));
+    },
+    [layout, visibleSections],
+  );
+
+  const announcements = useMemo(
+    () => ({
+      onDragStart({ active }: { active: { id: string | number } }) {
+        return `Started moving ${blockLabels.get(String(active.id)) ?? "block"}.`;
+      },
+      onDragOver({ active, over }: { active: { id: string | number }; over?: { id: string | number } | null }) {
+        if (!over) return undefined;
+        return `${blockLabels.get(String(active.id)) ?? "Block"} is over ${blockLabels.get(String(over.id)) ?? "another block"}.`;
+      },
+      onDragEnd({ active, over }: { active: { id: string | number }; over?: { id: string | number } | null }) {
+        if (!over) return `${blockLabels.get(String(active.id)) ?? "Block"} was dropped.`;
+        return `${blockLabels.get(String(active.id)) ?? "Block"} moved near ${blockLabels.get(String(over.id)) ?? "another block"}.`;
+      },
+      onDragCancel({ active }: { active: { id: string | number } }) {
+        return `Canceled moving ${blockLabels.get(String(active.id)) ?? "block"}.`;
+      },
+    }),
+    [blockLabels],
+  );
+
+  if (composition.loading && !projection) return <EditorialLoading />;
+  if (composition.error) {
+    return <EditorialError message={composition.error} onRetry={composition.refetch} />;
+  }
+  if (!projection || projection.sections.length === 0 || projection.blocks.length === 0) {
+    return <EditorialEmpty title="No account composition" message="DailyOS has not produced an account surface yet." />;
+  }
+
+  function renderBlock(item: RenderableCompositionBlock) {
+    return (
+      <SortableBlockFrame
+        key={item.block.block_id}
+        item={item}
+        accountId={accountId}
+        editMode={editMode}
+        renderedProvenance={composition.renderedProvenance}
+        onHiddenChange={layout.setBlockHidden}
+        onVariantChange={layout.setBlockVariant}
+      />
+    );
+  }
+
+  function sectionTitle(section: RenderableCompositionSection) {
+    if (!editMode || section.coreLocked) {
+      return <h2 className={pageStyles.compositionSectionTitle}>{section.label}</h2>;
+    }
+    return (
+      <EditableText
+        value={section.label}
+        as="h2"
+        multiline={false}
+        className={pageStyles.compositionSectionTitle}
+        onChange={(value) => layout.setSectionLabel(section.section.section_id, value)}
+      />
+    );
+  }
+
+  return (
+    <main
+      className={pageStyles.compositionSurface}
+      data-composition-id={projection.composition_id}
+      data-composition-version={projection.composition_version ?? 0}
+      data-fallback-policy-version={projection.fallback_policy_version}
+      data-edit-mode={editMode}
+      data-ds-name={editMode ? "CompositionEditMode" : undefined}
+      data-ds-tier={editMode ? "pattern" : undefined}
+      data-ds-spec={editMode ? "patterns/CompositionEditMode.md" : undefined}
+    >
+      {editMode && (
+        <div className={pageStyles.compositionEditStatus} role="status">
+          <span>{layout.saving ? "Saving layout" : layout.error ? `Layout issue: ${layout.error}` : "Editing account layout"}</span>
+          <button type="button" className={pageStyles.compositionResetButton} onClick={() => void layout.resetLayout()}>
+            <RotateCcw size={13} strokeWidth={1.7} />
+            Reset
+          </button>
+        </div>
+      )}
+      {editMode && !layout.view.hasVisibleNonCore && (
+        <div className={pageStyles.compositionEmptyLayoutNotice}>
+          <p className={pageStyles.compositionStateLabel}>Default available</p>
+          <p className={pageStyles.compositionStateText}>Only core lead content is visible. Reset restores the shipped Account layout.</p>
+          <button type="button" className={pageStyles.compositionInserterButton} onClick={() => void layout.resetLayout()}>
+            <RotateCcw size={13} strokeWidth={1.7} />
+            Reset layout
+          </button>
+        </div>
+      )}
+      <DndContext
+        sensors={sensors}
+        collisionDetection={closestCenter}
+        onDragEnd={handleDragEnd}
+        accessibility={{ announcements }}
+      >
+      {visibleSections.map((renderableSection) => {
+        const section = renderableSection.section;
+        const blocks = renderableSection.blocks;
+        if (section.section_id === "headline") {
+          return (
+            <section
+              key={section.section_id}
+              id={section.section_id}
+              className={pageStyles.compositionMasthead}
+              data-section-id={section.section_id}
+              data-section-layout={section.layout}
+            >
+              <div className={pageStyles.compositionMastheadGrid}>
+                <SortableContext items={blocks.map((item) => item.block.block_id)} strategy={verticalListSortingStrategy}>
+                  {blocks.map(renderBlock)}
+                </SortableContext>
+              </div>
+            </section>
+          );
+        }
+
+        return (
+          <section
+            key={section.section_id}
+            id={section.section_id}
+            className={pageStyles.compositionSection}
+            data-section-id={section.section_id}
+            data-section-layout={section.layout}
+            data-section-salience={section.salience.band}
+          >
+            <div className={pageStyles.compositionSectionLabel}>{renderableSection.label}</div>
+            <div className={pageStyles.compositionSectionBody}>
+              <header className={pageStyles.compositionSectionHeader}>
+                <div>
+                  {sectionTitle(renderableSection)}
+                  {editMode && (
+                    <label className={pageStyles.compositionSectionVisibility}>
+                      <Switch
+                        checked
+                        disabled={renderableSection.coreLocked}
+                        onCheckedChange={(checked) => layout.setSectionHidden(section.section_id, !checked)}
+                        aria-label={`Toggle section ${renderableSection.label}`}
+                      />
+                      <span>{renderableSection.coreLocked ? "Locked" : "Shown"}</span>
+                    </label>
+                  )}
+                </div>
+                <p className={pageStyles.compositionSectionMeta}>{section.salience.reason}</p>
+              </header>
+              <div className={pageStyles.compositionBlockStack}>
+                {blocks.length > 0 ? (
+                  <SortableContext items={blocks.map((item) => item.block.block_id)} strategy={verticalListSortingStrategy}>
+                    {blocks.map(renderBlock)}
+                  </SortableContext>
+                ) : (
+                  <div className={pageStyles.compositionDegradedState}>
+                    <p className={pageStyles.compositionStateLabel}>Empty section</p>
+                    <p className={pageStyles.compositionStateText}>No renderable blocks are available for this section.</p>
+                  </div>
+                )}
+              </div>
+            </div>
+          </section>
+        );
+      })}
+      </DndContext>
+      {editMode && (
+        <CompositionInserter
+          hiddenItems={layout.view.hiddenItems}
+          onRestoreSection={(sectionId) => layout.setSectionHidden(sectionId, false)}
+          onRestoreBlock={(blockId) => layout.setBlockHidden(blockId, false)}
+        />
+      )}
+      <FinisMarker />
+    </main>
   );
 }

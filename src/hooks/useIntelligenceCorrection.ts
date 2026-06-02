@@ -25,6 +25,8 @@ export interface SubmitCorrectionArgs {
   action: CorrectionAction;
   /** Stable claim key for suppression tombstones on dismiss. */
   itemKey?: string | null;
+  /** Snapshot of the currently rendered value when the backend cannot infer it from stored fields. */
+  currentValue?: string | null;
   /** Required for `corrected`; ignored for `confirmed` / `rejected` / `annotated`. */
   correctedValue?: string | null;
   /** User-authored note. Required for `annotated`; optional on others. */
@@ -74,6 +76,7 @@ export function useIntelligenceCorrection(): UseIntelligenceCorrectionResult {
         field,
         action,
         itemKey,
+        currentValue,
         correctedValue,
         annotation,
         source,
@@ -114,6 +117,7 @@ export function useIntelligenceCorrection(): UseIntelligenceCorrectionResult {
             field,
             action,
             itemKey: itemKey ?? null,
+            currentValue: currentValue ?? null,
             correctedValue: correctedValue ?? null,
             annotation: annotation ?? null,
             source: source ?? null,

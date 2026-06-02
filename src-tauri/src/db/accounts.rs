@@ -2549,7 +2549,7 @@ impl ActionDb {
     }
 
     /// The column list shared by all account SELECT queries.
-    const ACCOUNT_COLUMNS: &'static str =
+    pub(crate) const ACCOUNT_COLUMNS: &'static str =
         "id, name, lifecycle, arr, health, contract_start, contract_end, \
          nps, tracker_path, parent_id, account_type, updated_at, archived, \
          keywords, keywords_extracted_at, metadata, commercial_stage, \

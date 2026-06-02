@@ -3,18 +3,18 @@ use std::sync::{OnceLock, RwLock};
 
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
-use serde_json::{json, Map, Value};
+use serde_json::{Map, Value, json};
 use thiserror::Error;
 
 use crate::abilities::composition::{
     BindingRole, Block, BlockId, BlockType, ClaimRef, ClaimRefIndex, Composition, CompositionDocId,
-    CompositionVersion, FieldBinding, ProvenanceRef,
+    CompositionVersion, FieldBinding, ProvenanceRef, Salience, SectionId, SectionLayout,
 };
 use crate::abilities::provenance::{CompositionId, FieldPath};
 use crate::abilities::registry::{Actor, ActorKind, SurfaceScope};
 use crate::abilities::trust::TrustBand;
 use crate::sensitivity::{
-    render_policy_for_surface, ClaimVerificationState, RenderActor, RenderDecision, RenderSurface,
+    ClaimVerificationState, RenderActor, RenderDecision, RenderSurface, render_policy_for_surface,
 };
 use crate::types::{
     ClaimSensitivity, ClaimState, IntelligenceClaim, SurfacingState, TemporalScope,
@@ -30,11 +30,25 @@ pub struct ProjectedComposition {
     pub composition_id: CompositionDocId,
     pub composition_version: Option<u64>,
     pub fallback_policy_version: u32,
+    #[serde(default)]
+    pub sections: Vec<ProjectedSection>,
     pub blocks: Vec<ProjectedBlock>,
     pub diagnostics: Vec<ProjectionDiagnostic>,
     pub unknown_block_count: u32,
     pub unknown_block_cap: u32,
     pub dropped_unknown_block_count: u32,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
+pub struct ProjectedSection {
+    pub section_id: SectionId,
+    pub section_index: u32,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub label: Option<String>,
+    pub layout: SectionLayout,
+    pub salience: Salience,
+    pub block_ids: Vec<BlockId>,
+    pub block_indexes: Vec<u32>,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
@@ -246,7 +260,6 @@ struct FieldPolicy {
 enum ValueKind {
     Text,
     Number,
-    Object,
     Bool,
     Array,
 }
@@ -318,26 +331,49 @@ pub fn project_composition_for_surface(
     let mut diagnostics = Vec::new();
     let mut audits = Vec::new();
 
-    for (block_index, block) in composition.blocks().enumerate() {
-        if let BlockType::Custom { type_id } = &block.block_type {
-            if applied_unknown_blocks >= ctx.unknown_block_cap {
-                dropped_unknown_block_count = dropped_unknown_block_count.saturating_add(1);
-                dropped_block_ids.push(block.id.as_str().to_string());
-                continue;
-            }
-            applied_unknown_blocks = applied_unknown_blocks.saturating_add(1);
-            let (projected, mut block_audits) =
-                project_custom_block(composition, block, block_index as u32, type_id, ctx)?;
+    let mut block_index = 0_u32;
+    let mut sections = Vec::new();
+    for (section_index, section) in composition.sections.iter().enumerate() {
+        let mut section_block_ids = Vec::new();
+        let mut section_block_indexes = Vec::new();
+        for block in &section.blocks {
+            let projected_block_index = block_index;
+            block_index = block_index.saturating_add(1);
+
+            let projected = if let BlockType::Custom { type_id } = &block.block_type {
+                if applied_unknown_blocks >= ctx.unknown_block_cap {
+                    dropped_unknown_block_count = dropped_unknown_block_count.saturating_add(1);
+                    dropped_block_ids.push(block.id.as_str().to_string());
+                    continue;
+                }
+                applied_unknown_blocks = applied_unknown_blocks.saturating_add(1);
+                let (projected, mut block_audits) =
+                    project_custom_block(composition, block, projected_block_index, type_id, ctx)?;
+                audits.append(&mut block_audits);
+                projected
+            } else {
+                let (projected, mut block_audits) =
+                    project_known_block(composition, block, projected_block_index, ctx)?;
+                audits.append(&mut block_audits);
+                projected
+            };
+
+            let rendered_block_index = u32::try_from(blocks.len()).unwrap_or(u32::MAX);
             diagnostics.extend(projected.diagnostics.iter().cloned());
-            audits.append(&mut block_audits);
-            blocks.push(projected);
-        } else {
-            let (projected, mut block_audits) =
-                project_known_block(composition, block, block_index as u32, ctx)?;
-            diagnostics.extend(projected.diagnostics.iter().cloned());
-            audits.append(&mut block_audits);
+            section_block_ids.push(projected.block_id.clone());
+            section_block_indexes.push(rendered_block_index);
             blocks.push(projected);
         }
+
+        sections.push(ProjectedSection {
+            section_id: section.id.clone(),
+            section_index: u32::try_from(section_index).unwrap_or(u32::MAX),
+            label: section.label.clone(),
+            layout: section.layout,
+            salience: section.salience.clone(),
+            block_ids: section_block_ids,
+            block_indexes: section_block_indexes,
+        });
     }
 
     if dropped_unknown_block_count > 0 {
@@ -372,6 +408,7 @@ pub fn project_composition_for_surface(
             composition_id: composition.id.clone(),
             composition_version: Some(version.0),
             fallback_policy_version: ctx.fallback_policy_version,
+            sections,
             blocks,
             diagnostics,
             unknown_block_count,
@@ -897,7 +934,6 @@ fn value_for_kind(value: &Value, kind: ValueKind) -> Option<Value> {
     match (kind, value) {
         (ValueKind::Text, Value::String(_)) => Some(value.clone()),
         (ValueKind::Number, Value::Number(_)) => Some(value.clone()),
-        (ValueKind::Object, Value::Object(_)) => Some(value.clone()),
         (ValueKind::Bool, Value::Bool(_)) => Some(value.clone()),
         (ValueKind::Array, Value::Array(_)) => Some(value.clone()),
         _ => None,
@@ -1326,15 +1362,6 @@ const fn number_field(pointer: &'static str, sensitivity: ClaimSensitivity) -> F
     }
 }
 
-const fn object_field(pointer: &'static str, sensitivity: ClaimSensitivity) -> FieldPolicy {
-    FieldPolicy {
-        pointer,
-        sensitivity,
-        allowed_surfaces: ALL_SURFACES,
-        value_kind: ValueKind::Object,
-    }
-}
-
 const fn bool_field(pointer: &'static str, sensitivity: ClaimSensitivity) -> FieldPolicy {
     FieldPolicy {
         pointer,
@@ -1354,7 +1381,9 @@ const fn array_field(pointer: &'static str, sensitivity: ClaimSensitivity) -> Fi
 }
 
 const ACCOUNT_OVERVIEW_FIELDS: &[FieldPolicy] = &[
+    text_field("/account/id", ClaimSensitivity::Internal),
     text_field("/account/display_name", ClaimSensitivity::Internal),
+    text_field("/account/type", ClaimSensitivity::Internal),
     text_field("/summary", ClaimSensitivity::Internal),
     text_field("/health/band", ClaimSensitivity::Internal),
     number_field("/health/score", ClaimSensitivity::Internal),
@@ -1364,9 +1393,29 @@ const ACCOUNT_OVERVIEW_FIELDS: &[FieldPolicy] = &[
     text_field("/relationships/*/label", ClaimSensitivity::Internal),
     text_field("/title", ClaimSensitivity::Internal),
     number_field("/claim_count", ClaimSensitivity::Internal),
-    object_field("/counts_by_trust_band", ClaimSensitivity::Internal),
-    array_field("/context", ClaimSensitivity::Internal),
+    number_field(
+        "/counts_by_trust_band/likely_current",
+        ClaimSensitivity::Internal,
+    ),
+    number_field(
+        "/counts_by_trust_band/use_with_caution",
+        ClaimSensitivity::Internal,
+    ),
+    number_field(
+        "/counts_by_trust_band/needs_verification",
+        ClaimSensitivity::Internal,
+    ),
+    text_field("/context/*/claim_id", ClaimSensitivity::Internal),
+    text_field("/context/*/text", ClaimSensitivity::Internal),
+    text_field("/context/*/trust_band", ClaimSensitivity::Internal),
+    text_field("/context/*/source_asof", ClaimSensitivity::Internal),
     text_field("/account_id", ClaimSensitivity::Internal),
+    text_field("/vitals/*/label", ClaimSensitivity::Internal),
+    text_field("/vitals/*/value", ClaimSensitivity::Internal),
+    text_field("/vitals/*/source_label", ClaimSensitivity::Internal),
+    text_field("/vitals/*/source_asof", ClaimSensitivity::Internal),
+    text_field("/vitals/*/trust_band", ClaimSensitivity::Internal),
+    text_field("/snapshot_degraded", ClaimSensitivity::Internal),
 ];
 const CLAIM_SUMMARY_FIELDS: &[FieldPolicy] = &[
     text_field("/title", ClaimSensitivity::Internal),
@@ -1430,6 +1479,8 @@ const ACTION_LIST_FIELDS: &[FieldPolicy] = &[
     text_field("/items/*/claim_id", ClaimSensitivity::Internal),
     text_field("/items/*/source_asof", ClaimSensitivity::Internal),
     text_field("/claim_type", ClaimSensitivity::Internal),
+    text_field("/trust_band", ClaimSensitivity::Internal),
+    text_field("/source_asof", ClaimSensitivity::Internal),
 ];
 const MARKDOWN_DOCUMENT_FIELDS: &[FieldPolicy] = &[
     text_field("/title", ClaimSensitivity::Internal),

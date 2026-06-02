@@ -15,6 +15,10 @@
                  class) that the W1 kit invokes from outside PHPUnit. failOnWarning
                  + class-name mismatch surfaces this on every run. -->
             <exclude>tests/blocks/StarterKitIntegrationTest.php</exclude>
+            <!-- v1.5.0 W0 banks the WordPress block surface out of the active
+                 plugin build. Historical block tests are preserved under
+                 .docs/_archive/ and must not run while wp/dailyos/blocks is absent. -->
+            <exclude>tests/blocks</exclude>
         </testsuite>
     </testsuites>
 </phpunit>

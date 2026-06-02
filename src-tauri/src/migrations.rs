@@ -1101,6 +1101,16 @@ const MIGRATIONS: &[Migration] = &[
         version: 273,
         apply: migrate_v273_recommendation_w2_shape_repair,
     },
+    // v1.5.0 List-Surfaces PR B — durable entity folder archive/restore metadata.
+    Migration::Sql {
+        version: 274,
+        sql: include_str!("migrations/274_entity_archive_folders.sql"),
+    },
+    // v1.5.0 W2 — local per-entity surface layout overlay preferences.
+    Migration::Sql {
+        version: 275,
+        sql: include_str!("migrations/275_composition_layout_overlays.sql"),
+    },
 ];
 
 const V155_SHADOW_TRUST_VERSION: i64 = 1_401_003;

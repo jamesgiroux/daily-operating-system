@@ -16,7 +16,7 @@ fi
 allowed_regex='services/workspace_ingestion/|tests/workspace_ingestion_|tests/workspace_mutation_allowlist_test\.rs|tests/watcher_fixture_|src/accounts\.rs|src/processor/|src/projects\.rs|src/commands/app_support\.rs|src/commands/workspace\.rs|src/db_backup\.rs|src/services/accounts\.rs'
 table_pattern='(INSERT([[:space:]]+OR[[:space:]]+(IGNORE|REPLACE))?[[:space:]]+INTO|REPLACE[[:space:]]+INTO|UPDATE|DELETE[[:space:]]+FROM)[[:space:]]+(workspace_file_lifecycle|document_ingestion_runs|document_entity_links)\b'
 fs_pattern='(std::fs::(write|rename|copy|remove_file|remove_dir|remove_dir_all|create_dir|create_dir_all)|tokio::fs::(write|rename|copy|remove_file|remove_dir|remove_dir_all|create_dir|create_dir_all))'
-comment_allowlist_pattern='dos7-allowed: (drive-staging-v146|inbox-bootstrap|entity-markdown-regen|content-index-cache|transcript-direct-write-v146|devtools-w5-backfill-fixture|v146-validation-fixture)'
+comment_allowlist_pattern='dos7-allowed: (drive-staging-v146|inbox-bootstrap|entity-markdown-regen|content-index-cache|transcript-direct-write-v146|devtools-w5-backfill-fixture|v146-validation-fixture|entity-archive-folder-v150)'
 
 filter_comment_allowlist() {
   local matches="$1"

@@ -23,6 +23,7 @@ import type {
 } from "@/types";
 import type { RolePreset } from "@/types/preset";
 import { mergeEntityDetailIntelligence } from "@/services/entity-intelligence/entity-detail-mapper";
+import { warnOnPartialArchiveResult, type ArchiveEntityCommandResult } from "@/lib/archive-command-result";
 import { useAccountFields } from "./useAccountFields";
 import { useAccountWorkData } from "./useAccountWorkData";
 import { useEnrichmentProgress } from "./useEnrichmentProgress";
@@ -448,7 +449,8 @@ export function useAccountDetail(accountId: string | undefined) {
   async function handleArchive() {
     if (!detail) return;
     try {
-      await invoke("archive_account", { id: detail.id, archived: true });
+      const result = await invoke<ArchiveEntityCommandResult>("archive_account", { id: detail.id, archived: true });
+      warnOnPartialArchiveResult(result, "archived");
       navigate({ to: "/accounts" });
     } catch (e) {
       setError(String(e));
@@ -458,7 +460,8 @@ export function useAccountDetail(accountId: string | undefined) {
   async function handleUnarchive() {
     if (!detail) return;
     try {
-      await invoke("archive_account", { id: detail.id, archived: false });
+      const result = await invoke<ArchiveEntityCommandResult>("archive_account", { id: detail.id, archived: false });
+      warnOnPartialArchiveResult(result, "restored");
       await load();
     } catch (e) {
       setError(String(e));

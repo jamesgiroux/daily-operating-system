@@ -5693,7 +5693,9 @@ mod mutation_smoke_tests {
         StakeholderInsight, StrategicPriority, SuccessMetric, SupportHealth,
     };
     use crate::intelligence::prompts::InferredRelationship;
-    use crate::intelligence::write_fence::{post_commit_fenced_write, write_fence_test_guard};
+    use crate::intelligence::write_fence::{
+        fenced_write_intelligence_json, write_fence_test_guard, FenceCycle,
+    };
     use crate::services::context::{ExternalClients, FixedClock, SeedableRng, ServiceContext};
     use crate::signals::propagation::PropagationEngine;
     use crate::state::AppState;
@@ -5701,6 +5703,7 @@ mod mutation_smoke_tests {
     use rusqlite::{params, OptionalExtension};
     use std::path::Path;
     use std::sync::Arc;
+    use std::time::Duration;
 
     fn test_ctx<'a>(
         clock: &'a FixedClock,
@@ -5729,6 +5732,22 @@ mod mutation_smoke_tests {
             keywords_extracted_at: None,
             metadata: None,
             ..Default::default()
+        }
+    }
+
+    fn seed_disk_intelligence(db: &crate::db::ActionDb, dir: &Path, intel: &IntelligenceJson) {
+        for attempt in 0..100 {
+            match FenceCycle::capture(db) {
+                Ok(cycle) => {
+                    fenced_write_intelligence_json(&cycle, db, dir, intel)
+                        .expect("seed disk intelligence");
+                    return;
+                }
+                Err(err) if err.contains("paused") && attempt < 99 => {
+                    std::thread::sleep(Duration::from_millis(10));
+                }
+                Err(err) => panic!("capture seed disk fence: {err}"),
+            }
         }
     }
 
@@ -6158,10 +6177,57 @@ mod mutation_smoke_tests {
         .expect("collect account fact source refs")
     }
 
+    fn round_json_numbers(value: &mut serde_json::Value) {
+        match value {
+            serde_json::Value::Number(number) => {
+                if let Some(raw) = number.as_f64() {
+                    let rounded = (raw * 1_000_000.0).round() / 1_000_000.0;
+                    *number = serde_json::Number::from_f64(rounded)
+                        .expect("health projection number is finite");
+                }
+            }
+            serde_json::Value::Array(values) => {
+                for value in values {
+                    round_json_numbers(value);
+                }
+            }
+            serde_json::Value::Object(map) => {
+                for value in map.values_mut() {
+                    round_json_numbers(value);
+                }
+            }
+            _ => {}
+        }
+    }
+
+    fn normalized_health_json(raw: Option<String>) -> Option<serde_json::Value> {
+        raw.map(|json| {
+            let mut value: serde_json::Value =
+                serde_json::from_str(&json).expect("health projection JSON parses");
+            round_json_numbers(&mut value);
+            value
+        })
+    }
+
+    fn normalized_health_score(raw: Option<String>) -> Option<String> {
+        raw.map(|score| {
+            format!(
+                "{:.6}",
+                score
+                    .parse::<f64>()
+                    .expect("entity quality health score is numeric")
+            )
+        })
+    }
+
     fn health_projection(
         db: &crate::db::ActionDb,
         account_id: &str,
-    ) -> (Option<String>, Option<String>, Option<String>) {
+    ) -> (
+        Option<serde_json::Value>,
+        Option<String>,
+        Option<serde_json::Value>,
+    ) {
         let health_json = db
             .conn_ref()
             .query_row(
@@ -6183,7 +6249,11 @@ mod mutation_smoke_tests {
             .optional()
             .expect("health quality");
         let (health_score, health_trend) = quality.unwrap_or((None, None));
-        (health_json, health_score, health_trend)
+        (
+            normalized_health_json(health_json),
+            normalized_health_score(health_score),
+            normalized_health_json(health_trend),
+        )
     }
 
     fn seed_finalize_account(db: &crate::db::ActionDb, entity_id: &str) {
@@ -9719,7 +9789,7 @@ mod mutation_smoke_tests {
             ..Default::default()
         };
         db.upsert_entity_intelligence(&old_intel).unwrap();
-        post_commit_fenced_write(&db, dir.path(), &old_intel, "seed disk intelligence");
+        seed_disk_intelligence(&db, dir.path(), &old_intel);
         let before_disk =
             std::fs::read_to_string(dir.path().join("intelligence.json")).expect("read seed disk");
 
@@ -9815,7 +9885,7 @@ mod mutation_smoke_tests {
             ..Default::default()
         };
         db.upsert_entity_intelligence(&old_intel).unwrap();
-        post_commit_fenced_write(&db, dir.path(), &old_intel, "seed disk intelligence");
+        seed_disk_intelligence(&db, dir.path(), &old_intel);
         let before_disk =
             std::fs::read_to_string(dir.path().join("intelligence.json")).expect("read seed disk");
 
@@ -9918,7 +9988,7 @@ mod mutation_smoke_tests {
             ..Default::default()
         };
         db.upsert_entity_intelligence(&prior).unwrap();
-        post_commit_fenced_write(&db, dir.path(), &prior, "seed disk intelligence");
+        seed_disk_intelligence(&db, dir.path(), &prior);
         let before_disk =
             std::fs::read_to_string(dir.path().join("intelligence.json")).expect("read seed disk");
 

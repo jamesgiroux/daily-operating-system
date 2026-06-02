@@ -592,6 +592,118 @@
     width: 100%;
   }
 
+  .composition-edit-demo {
+    display: grid;
+    gap: var(--space-md);
+  }
+
+  .composition-edit-frame {
+    display: grid;
+    gap: var(--space-sm);
+    padding: var(--space-md);
+    border: 1px solid var(--color-rule-light);
+    border-radius: var(--radius-editorial-sm);
+    background: var(--color-paper-warm-white);
+  }
+
+  .composition-edit-toolbar {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: var(--space-sm);
+    padding-bottom: var(--space-xs);
+    border-bottom: 1px solid var(--color-rule-light);
+    font-family: var(--font-mono);
+    font-size: 10px;
+    letter-spacing: 0.06em;
+    text-transform: uppercase;
+    color: var(--color-text-tertiary);
+  }
+
+  .composition-edit-row {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: var(--space-sm);
+    padding: var(--space-sm) 0;
+    border-bottom: 1px solid var(--color-rule-light);
+  }
+
+  .composition-edit-row:last-child {
+    border-bottom: 0;
+  }
+
+  .composition-edit-title {
+    margin: 0;
+    font-family: var(--font-serif);
+    font-size: 18px;
+    font-weight: 400;
+    color: var(--color-text-primary);
+  }
+
+  .composition-edit-copy {
+    margin: 2px 0 0;
+    font-family: var(--font-sans);
+    font-size: 12px;
+    color: var(--color-text-secondary);
+  }
+
+  .composition-edit-controls {
+    display: flex;
+    align-items: center;
+    gap: var(--space-xs);
+    flex-shrink: 0;
+  }
+
+  .composition-edit-button,
+  .composition-edit-handle {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    min-width: 28px;
+    height: 28px;
+    padding: 0 8px;
+    border: 1px solid var(--color-rule-light);
+    border-radius: 4px;
+    background: var(--color-paper-cream);
+    color: var(--color-text-secondary);
+    font-family: var(--font-mono);
+    font-size: 11px;
+  }
+
+  .composition-edit-pill {
+    display: inline-flex;
+    padding: 3px 7px;
+    border-radius: 3px;
+    background: var(--color-garden-olive-8);
+    color: var(--color-text-tertiary);
+    font-family: var(--font-mono);
+    font-size: 9px;
+    letter-spacing: 0.05em;
+    text-transform: uppercase;
+  }
+
+  .composition-edit-inserter {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: var(--space-sm);
+    padding: var(--space-sm);
+    border: 1px dashed var(--color-rule-heavy);
+    border-radius: var(--radius-editorial-sm);
+    background: var(--color-paper-cream);
+  }
+
+  .composition-edit-inline {
+    display: inline-flex;
+    align-items: baseline;
+    gap: var(--space-xs);
+    border-bottom: 1px dashed var(--color-garden-olive);
+    color: var(--color-text-primary);
+    font-family: var(--font-serif);
+    font-size: 17px;
+  }
+
   .settings-section-title {
     margin: 0;
     color: var(--color-text-primary);
@@ -677,8 +789,8 @@
     <h1 class="ds-title">Patterns</h1>
     <p class="ds-lede">Composed, opinionated UI contracts, classified as proposed, integrated, or production.</p>
     <div class="ds-meta">
-      <span>48 patterns</span>
-      <span>38 integrated</span>
+      <span>53 patterns</span>
+      <span>43 integrated</span>
       <span>10 proposed</span>
       <span>0 production until a release tag includes them</span>
       <span>render mode shown per card</span>
@@ -1466,10 +1578,91 @@
   <section id="app-patterns" class="ds-section">
     <div class="ds-section-header">
       <h2 class="ds-section-title">App Patterns</h2>
-      <span class="ds-section-count">9 integrated</span>
+      <span class="ds-section-count">14 integrated</span>
     </div>
     <p class="ds-section-lede">Patterns lifted from the current app surfaces the user actually works in: entity lists, AccountDetail, Settings, and Onboarding.</p>
     <div class="ds-grid">
+
+      <article id="CompositionEditMode" class="ds-card" data-status="integrated">
+        <div class="ds-card-header">
+          <div class="ds-name-wrap"><span class="ds-tier">pattern</span><h3 class="ds-card-title">CompositionEditMode</h3></div>
+          <a class="ds-spec-link" href="../../patterns/CompositionEditMode.md">Spec</a>
+        </div>
+        <p class="ds-composition"><strong>Composes:</strong> Customize/Done state, locked core content, visible overlays, reset, and live layout preference updates.</p>
+        <div class="ds-variants"><span>view</span><span>edit</span><span>locked core</span><span>reset</span></div>
+        <div class="ds-demo composition-edit-demo" data-ds-name="CompositionEditMode" data-ds-tier="pattern" data-ds-spec="patterns/CompositionEditMode.md">
+          <div class="composition-edit-toolbar"><span>Account page layout</span><button class="composition-edit-button" type="button">Done</button></div>
+          <div class="composition-edit-frame">
+            <div class="composition-edit-row">
+              <div><p class="composition-edit-title">Lead</p><p class="composition-edit-copy">Core section · always visible</p></div>
+              <span class="composition-edit-pill">Locked</span>
+            </div>
+            <div class="composition-edit-row">
+              <div><p class="composition-edit-title">Watch list</p><p class="composition-edit-copy">Movable non-core section</p></div>
+              <div class="composition-edit-controls"><button class="composition-edit-handle" type="button" aria-label="Move Watch list">::</button><button class="composition-edit-button" type="button">Hide</button></div>
+            </div>
+          </div>
+        </div>
+      </article>
+
+      <article id="CompositionBlockToolbar" class="ds-card" data-status="integrated">
+        <div class="ds-card-header">
+          <div class="ds-name-wrap"><span class="ds-tier">pattern</span><h3 class="ds-card-title">CompositionBlockToolbar</h3></div>
+          <a class="ds-spec-link" href="../../patterns/CompositionBlockToolbar.md">Spec</a>
+        </div>
+        <p class="ds-composition"><strong>Composes:</strong> reorder handle, visibility switch, variant segmented control, locked explanation, and inline edit slot.</p>
+        <div class="ds-variants"><span>movable</span><span>locked</span><span>variant</span><span>hidden</span></div>
+        <div class="ds-demo composition-edit-demo" data-ds-name="CompositionBlockToolbar" data-ds-tier="pattern" data-ds-spec="patterns/CompositionBlockToolbar.md">
+          <div class="composition-edit-toolbar"><span>Block controls</span><span class="composition-edit-pill">Spotlight</span></div>
+          <div class="composition-edit-row">
+            <div><p class="composition-edit-title">Renewal risk</p><p class="composition-edit-copy">Trust and provenance stay with the projected block.</p></div>
+            <div class="composition-edit-controls"><button class="composition-edit-handle" type="button" aria-label="Move Renewal risk">::</button><button class="composition-edit-button" type="button">On</button><button class="composition-edit-button" type="button">Compact</button></div>
+          </div>
+        </div>
+      </article>
+
+      <article id="CompositionInserter" class="ds-card" data-status="integrated">
+        <div class="ds-card-header">
+          <div class="ds-name-wrap"><span class="ds-tier">pattern</span><h3 class="ds-card-title">CompositionInserter</h3></div>
+          <a class="ds-spec-link" href="../../patterns/CompositionInserter.md">Spec</a>
+        </div>
+        <p class="ds-composition"><strong>Composes:</strong> hidden projected items, restore actions, empty non-core state, and reset affordance.</p>
+        <div class="ds-variants"><span>hidden block</span><span>hidden section</span><span>empty non-core</span></div>
+        <div class="ds-demo composition-edit-demo" data-ds-name="CompositionInserter" data-ds-tier="pattern" data-ds-spec="patterns/CompositionInserter.md">
+          <div class="composition-edit-inserter">
+            <div><p class="composition-edit-title">Hidden blocks</p><p class="composition-edit-copy">Watch list and open commitments can be restored without creating content.</p></div>
+            <button class="composition-edit-button" type="button">Re-add</button>
+          </div>
+        </div>
+      </article>
+
+      <article id="CompositionReorderHandle" class="ds-card" data-status="integrated">
+        <div class="ds-card-header">
+          <div class="ds-name-wrap"><span class="ds-tier">pattern</span><h3 class="ds-card-title">CompositionReorderHandle</h3></div>
+          <a class="ds-spec-link" href="../../patterns/CompositionReorderHandle.md">Spec</a>
+        </div>
+        <p class="ds-composition"><strong>Composes:</strong> drag handle, keyboard grab/drop contract, move announcements, and focus restoration.</p>
+        <div class="ds-variants"><span>mouse</span><span>keyboard</span><span>disabled locked</span></div>
+        <div class="ds-demo composition-edit-demo" data-ds-name="CompositionReorderHandle" data-ds-tier="pattern" data-ds-spec="patterns/CompositionReorderHandle.md">
+          <div class="composition-edit-row">
+            <button class="composition-edit-handle" type="button" aria-label="Move Strategic landscape" aria-describedby="composition-reorder-help">::</button>
+            <div><p class="composition-edit-title">Strategic landscape</p><p id="composition-reorder-help" class="composition-edit-copy">Space to grab, arrow keys to move, Space or Enter to drop.</p></div>
+          </div>
+        </div>
+      </article>
+
+      <article id="CompositionInlineEdit" class="ds-card" data-status="integrated">
+        <div class="ds-card-header">
+          <div class="ds-name-wrap"><span class="ds-tier">pattern</span><h3 class="ds-card-title">CompositionInlineEdit</h3></div>
+          <a class="ds-spec-link" href="../../patterns/CompositionInlineEdit.md">Spec</a>
+        </div>
+        <p class="ds-composition"><strong>Composes:</strong> EditableText affordance, claim ref, field binding, current value, corrected value, and feedback submission.</p>
+        <div class="ds-variants"><span>claim-backed</span><span>display-only fallback</span><span>failed correction</span></div>
+        <div class="ds-demo composition-edit-demo" data-ds-name="CompositionInlineEdit" data-ds-tier="pattern" data-ds-spec="patterns/CompositionInlineEdit.md">
+          <p class="composition-edit-inline">Procurement pressure is rising <button class="composition-edit-button" type="button" aria-label="Edit claim text">Edit</button></p>
+          <p class="composition-edit-copy">Only feedback-allowed claim-backed routes expose the edit affordance.</p>
+        </div>
+      </article>
 
       <article id="EntityListShell" class="ds-card" data-status="integrated">
         <div class="ds-card-header">

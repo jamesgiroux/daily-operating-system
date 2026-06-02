@@ -15,8 +15,15 @@ import {
   EntityListHeader,
   EntityListEndMark,
   FilterTabs,
+  EntitySelectionBar,
 } from "@/components/entity/EntityListShell";
 import { EntityRow } from "@/components/entity/EntityRow";
+import {
+  flattenEntityTreeIds,
+  useEntityListSelection,
+  type EntityListSelectionApi,
+} from "@/components/entity/useEntityListSelection";
+import { BulkArchiveSelectionAction } from "@/components/entity/BulkArchiveSelectionAction";
 import { ChapterHeading } from "@/components/editorial/ChapterHeading";
 import { EmptyState } from "@/components/editorial/EmptyState";
 import { EphemeralBriefing } from "@/components/editorial/EphemeralBriefing";
@@ -421,6 +428,34 @@ export default function AccountsPage() {
   const isArchived = archiveTab === "archived";
   const displayList = isArchived ? filteredArchived : filtered;
   const activeCount = accounts.filter((a) => !a.archived).length;
+  const activeAccountIds = useMemo(
+    () => flattenEntityTreeIds(accounts.filter((a) => !a.archived), childrenCache),
+    [accounts, childrenCache],
+  );
+  const visibleAccountIds = useMemo(() => {
+    if (isArchived) return [];
+    const ids: string[] = [];
+    for (const { type } of ACCOUNT_SECTIONS) {
+      ids.push(...flattenEntityTreeIds(groupedAccounts[type] ?? [], childrenCache, {
+        expandedOnly: true,
+        expandedParents,
+      }));
+    }
+    return ids;
+  }, [childrenCache, expandedParents, groupedAccounts, isArchived]);
+  const accountSelection = useEntityListSelection({
+    visibleIds: visibleAccountIds,
+    activeIds: activeAccountIds,
+  });
+  const { clear: clearAccountSelection } = accountSelection;
+
+  useEffect(() => {
+    if (isArchived) clearAccountSelection();
+  }, [clearAccountSelection, isArchived]);
+
+  const refreshAccountArchiveLists = useCallback(async () => {
+    await Promise.all([loadAccounts(), loadArchivedAccounts()]);
+  }, [loadAccounts, loadArchivedAccounts]);
 
   const formattedDate = new Date().toLocaleDateString("en-US", {
     weekday: "long",
@@ -552,6 +587,25 @@ export default function AccountsPage() {
           />
         )}
       </EntityListHeader>
+
+      {!isArchived && (
+        <EntitySelectionBar
+          selectedCount={accountSelection.selectedCount}
+          visibleCount={visibleAccountIds.length}
+          onSelectVisible={accountSelection.selectVisible}
+          onClear={accountSelection.clear}
+        >
+          <BulkArchiveSelectionAction
+            selectedIds={accountSelection.selectedIds}
+            entityLabel="account"
+            entityPluralLabel="accounts"
+            previewCommand="preview_bulk_archive_accounts"
+            executeCommand="bulk_archive_accounts"
+            onArchived={refreshAccountArchiveLists}
+            onClearSelection={accountSelection.clear}
+          />
+        </EntitySelectionBar>
+      )}
 
       {/* Discovery panel */}
       {discoveryOpen && !isArchived && (
@@ -801,6 +855,7 @@ export default function AccountsPage() {
                     childrenCache={childrenCache}
                     toggleExpand={toggleExpand}
                     isLastSibling={i === sectionAccounts.length - 1}
+                    selection={accountSelection}
                   />
                 ))}
               </div>
@@ -823,6 +878,7 @@ function AccountTreeNode({
   childrenCache,
   toggleExpand,
   isLastSibling,
+  selection,
 }: {
   account: AccountListItem;
   depth: number;
@@ -830,6 +886,7 @@ function AccountTreeNode({
   childrenCache: Record<string, AccountListItem[]>;
   toggleExpand: (id: string) => void;
   isLastSibling: boolean;
+  selection: EntityListSelectionApi;
 }) {
   const isExpanded = expandedParents.has(account.id);
   const children = childrenCache[account.id] ?? [];
@@ -844,6 +901,7 @@ function AccountTreeNode({
         isExpanded={isExpanded}
         onToggleExpand={account.isParent ? () => toggleExpand(account.id) : undefined}
         showBorder={!isLastSibling || hasExpandedChildren}
+        selection={selection}
       />
       {hasExpandedChildren &&
         children.map((child, ci) => (
@@ -855,6 +913,7 @@ function AccountTreeNode({
             childrenCache={childrenCache}
             toggleExpand={toggleExpand}
             isLastSibling={ci === children.length - 1 && isLastSibling}
+            selection={selection}
           />
         ))}
     </div>
@@ -869,6 +928,7 @@ function AccountRow({
   onToggleExpand,
   depth = 0,
   showBorder,
+  selection,
 }: {
   account: AccountListItem;
   isExpanded?: boolean;
@@ -876,6 +936,7 @@ function AccountRow({
   isChild?: boolean; // kept for call-site compat
   depth?: number;
   showBorder: boolean;
+  selection: EntityListSelectionApi;
 }) {
   const nameSuffix = (
     <>
@@ -884,20 +945,17 @@ function AccountRow({
           {account.accountType === "partner" ? "Partner" : "Internal"}
         </span>
       )}
-      {onToggleExpand && (
-        <button
-          onClick={(e) => {
-            e.preventDefault();
-            e.stopPropagation();
-            onToggleExpand();
-          }}
-          className={styles.expandToggle}
-        >
-          {isExpanded ? "\u25BE" : "\u25B8"} {account.childCount} BU{account.childCount !== 1 ? "s" : ""}
-        </button>
-      )}
     </>
   );
+  const controls = onToggleExpand ? (
+    <button
+      onClick={onToggleExpand}
+      className={styles.expandToggle}
+      type="button"
+    >
+      {isExpanded ? "\u25BE" : "\u25B8"} {account.childCount} BU{account.childCount !== 1 ? "s" : ""}
+    </button>
+  ) : undefined;
 
   const ih = account.intelligenceHealth;
   const healthAvatar = ih ? (
@@ -915,6 +973,12 @@ function AccountRow({
       nameSuffix={nameSuffix}
       subtitle={undefined}
       avatar={healthAvatar}
+      controls={controls}
+      selection={{
+        selected: selection.isSelected(account.id),
+        label: `Select ${account.name}`,
+        onChange: ({ shiftKey }) => selection.toggle(account.id, { shiftKey }),
+      }}
     >
       {account.arr != null && (
         <span className={styles.archivedArrLabel}>

@@ -40,6 +40,7 @@ use schemars::{gen::SchemaGenerator, JsonSchema};
 use serde::de::DeserializeOwned;
 use serde::de::Error as _;
 use serde::{Deserialize, Deserializer, Serialize, Serializer};
+use serde_json::Value;
 
 use crate::abilities::composition::{Composition, CompositionDocId};
 pub use crate::abilities::markdown_preview::contracts::{
@@ -61,6 +62,7 @@ use crate::abilities::temporal::{
     RefreshEngagementCurveResult, TemporalMaintenanceHandle, TrajectoryBundle,
     TrajectoryQueryDepth, TrajectoryReadHandle,
 };
+use crate::abilities::trust::TrustBand;
 pub use crate::abilities::workspace_graph::contracts::{
     WorkspaceGraphReadRequest, WorkspaceGraphResponse,
 };
@@ -865,6 +867,7 @@ pub struct ServiceContext<'a> {
     entity_neighborhood_reader: Option<Arc<dyn EntityNeighborhoodReadHandle>>,
     meeting_prep_status_reader: Option<Arc<dyn MeetingPrepStatusReadHandle>>,
     claim_receipt_reader: Option<Arc<dyn ClaimReceiptReadHandle>>,
+    account_composition_snapshot_reader: Option<Arc<dyn AccountCompositionSnapshotReadHandle>>,
     account_list_reader: Option<Arc<dyn AccountListReadHandle>>,
     person_list_reader: Option<Arc<dyn PersonListReadHandle>>,
     project_list_reader: Option<Arc<dyn ProjectListReadHandle>>,
@@ -949,6 +952,91 @@ pub trait EntityContextClaimReadHandle: Send + Sync {
             Ok(claims)
         })
     }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[serde(rename_all = "snake_case")]
+pub enum AccountCompositionSnapshotSensitivity {
+    NonSensitiveIdentity,
+    Public,
+    Internal,
+    Confidential,
+    UserOnly,
+}
+
+impl AccountCompositionSnapshotSensitivity {
+    pub fn is_render_safe(&self) -> bool {
+        matches!(
+            self,
+            Self::NonSensitiveIdentity | Self::Public | Self::Internal
+        )
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[serde(rename_all = "snake_case")]
+pub enum AccountCompositionProvenanceKind {
+    NonSensitiveIdentity,
+    ManualUser,
+    SourceField,
+    SystemConfig,
+    Derived,
+    Unavailable,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
+pub struct AccountCompositionSnapshotField {
+    pub field_path: String,
+    pub label: String,
+    pub value: Value,
+    pub sensitivity: AccountCompositionSnapshotSensitivity,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub source_label: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub source_ref: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub source_asof: Option<String>,
+    pub trust_band: TrustBand,
+    pub trust_status: String,
+    pub provenance_kind: AccountCompositionProvenanceKind,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
+pub struct AccountCompositionSnapshot {
+    pub account_id: String,
+    pub display_name: AccountCompositionSnapshotField,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub account_type: Option<AccountCompositionSnapshotField>,
+    #[serde(default)]
+    pub fields: Vec<AccountCompositionSnapshotField>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
+pub enum AccountCompositionSnapshotReadError {
+    #[error("account not found: {0}")]
+    AccountNotFound(String),
+    #[error("account composition snapshot read failed: {0}")]
+    ReadFailed(String),
+}
+
+pub type AccountCompositionSnapshotReadFuture<'a> = Pin<
+    Box<
+        dyn Future<Output = Result<AccountCompositionSnapshot, AccountCompositionSnapshotReadError>>
+            + Send
+            + 'a,
+    >,
+>;
+
+/// Service-owned Account page input bundle for non-claim display facts.
+/// Implementations must wrap every non-identity field with sensitivity,
+/// source/freshness, trust, and provenance metadata before ability code may
+/// render it.
+pub trait AccountCompositionSnapshotReadHandle: Send + Sync {
+    fn read_account_composition_snapshot<'a>(
+        &'a self,
+        account_id: String,
+        surface: ClaimDismissalSurface,
+    ) -> AccountCompositionSnapshotReadFuture<'a>;
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -2037,6 +2125,7 @@ impl<'a> ServiceContext<'a> {
             entity_neighborhood_reader: None,
             meeting_prep_status_reader: None,
             claim_receipt_reader: None,
+            account_composition_snapshot_reader: None,
             account_list_reader: None,
             person_list_reader: None,
             project_list_reader: None,
@@ -2078,6 +2167,7 @@ impl<'a> ServiceContext<'a> {
             entity_neighborhood_reader: None,
             meeting_prep_status_reader: None,
             claim_receipt_reader: None,
+            account_composition_snapshot_reader: None,
             account_list_reader: None,
             person_list_reader: None,
             project_list_reader: None,
@@ -2130,6 +2220,7 @@ impl<'a> ServiceContext<'a> {
             entity_neighborhood_reader: None,
             meeting_prep_status_reader: None,
             claim_receipt_reader: None,
+            account_composition_snapshot_reader: None,
             account_list_reader: None,
             person_list_reader: None,
             project_list_reader: None,
@@ -2245,6 +2336,14 @@ impl<'a> ServiceContext<'a> {
 
     pub fn with_claim_receipt_reader(mut self, reader: Arc<dyn ClaimReceiptReadHandle>) -> Self {
         self.claim_receipt_reader = Some(reader);
+        self
+    }
+
+    pub fn with_account_composition_snapshot_reader(
+        mut self,
+        reader: Arc<dyn AccountCompositionSnapshotReadHandle>,
+    ) -> Self {
+        self.account_composition_snapshot_reader = Some(reader);
         self
     }
 
@@ -2391,6 +2490,21 @@ impl<'a> ServiceContext<'a> {
             ));
         };
         reader.read_claim_receipt(target, surface).await
+    }
+
+    pub async fn read_account_composition_snapshot(
+        &self,
+        account_id: String,
+        surface: ClaimDismissalSurface,
+    ) -> Result<AccountCompositionSnapshot, AccountCompositionSnapshotReadError> {
+        let Some(reader) = &self.account_composition_snapshot_reader else {
+            return Err(AccountCompositionSnapshotReadError::ReadFailed(
+                self.missing_reader_error("account_composition_snapshot_reader"),
+            ));
+        };
+        reader
+            .read_account_composition_snapshot(account_id, surface)
+            .await
     }
 
     pub async fn commit_composition(

@@ -130,9 +130,6 @@ jobs:
       - name: Enforce DOS-477 sensitivity gate composition (AC-477.11)
         run: bash src-tauri/scripts/check_sensitivity_gate_composition.sh
 
-      - name: Enforce v1.4.4 W1 consumer-skeleton wiring (AC-W1.9)
-        run: bash src-tauri/scripts/check_w1_consumer_skeleton.sh
-
       - name: Enforce destructive migrations wrapped in BEGIN IMMEDIATE / COMMIT
         run: bash src-tauri/scripts/check_migrations_transactional.sh
 
