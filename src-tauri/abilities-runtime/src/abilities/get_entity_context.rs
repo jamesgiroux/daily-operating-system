@@ -505,12 +505,13 @@ fn claim_subject_identity(claim: &IntelligenceClaim) -> Result<(String, String),
         ClaimSubjectRef::Meeting { id } => Ok(("meeting".to_string(), id)),
         ClaimSubjectRef::Person { id } => Ok(("person".to_string(), id)),
         ClaimSubjectRef::Project { id } => Ok(("project".to_string(), id)),
-        ClaimSubjectRef::Email { .. } | ClaimSubjectRef::Multi(_) | ClaimSubjectRef::Global => {
-            Err(validation_error(format!(
-                "claim `{}` has unsupported entity context subject",
-                claim.id
-            )))
-        }
+        ClaimSubjectRef::Action { .. }
+        | ClaimSubjectRef::Email { .. }
+        | ClaimSubjectRef::Multi(_)
+        | ClaimSubjectRef::Global => Err(validation_error(format!(
+            "claim `{}` has unsupported entity context subject",
+            claim.id
+        ))),
     }
 }
 

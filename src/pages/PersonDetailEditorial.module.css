@@ -2,6 +2,65 @@
    PERSON DETAIL — Page-specific styles
    ============================================================================= */
 
-/* (Person page has minimal page-specific styles — most patterns are in the
-   shared entity-detail module. This file exists for future person-specific
-   additions and to maintain the consistent import pattern.) */
+.personControlPanel {
+  display: grid;
+  gap: var(--space-md);
+  padding: var(--space-lg) 0;
+  border-top: 1px solid var(--color-rule-heavy);
+  border-bottom: 1px solid var(--color-rule-light);
+}
+
+.personControlForm {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+  gap: var(--space-md);
+  align-items: end;
+}
+
+.personControlField {
+  display: grid;
+  gap: 6px;
+}
+
+.personControlField span,
+.personPanelLabel {
+  color: var(--color-text-tertiary);
+  font-family: var(--font-mono);
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.personControlActions,
+.personActionComposer {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-xs);
+  align-items: center;
+}
+
+.personControlActions {
+  grid-column: 1 / -1;
+}
+
+.personActionComposer {
+  padding-top: var(--space-sm);
+}
+
+.personActionComposer > input {
+  max-width: 360px;
+}
+
+.personRelationshipControls {
+  display: grid;
+  gap: var(--space-lg);
+  padding: var(--space-lg) 0;
+  border-bottom: 1px solid var(--color-rule-light);
+}
+
+@media (max-width: 860px) {
+  .personControlForm {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}

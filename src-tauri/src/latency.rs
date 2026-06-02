@@ -224,9 +224,7 @@ pub fn snapshot_for_persistence() -> LatencyPersistentSnapshot {
 pub fn apply_persistent_snapshot(snapshot: LatencyPersistentSnapshot) {
     static HYDRATED: std::sync::OnceLock<()> = std::sync::OnceLock::new();
     if HYDRATED.set(()).is_err() {
-        log::debug!(
-            "latency hydrate skipped: already applied in this process (snapshot dropped)"
-        );
+        log::debug!("latency hydrate skipped: already applied in this process (snapshot dropped)");
         return;
     }
     let mut windows = LatencyRecorder::global().windows.lock();

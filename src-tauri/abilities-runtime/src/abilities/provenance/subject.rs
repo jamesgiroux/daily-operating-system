@@ -9,6 +9,7 @@ pub enum SubjectRef {
     Account(String),
     Project(String),
     Person(String),
+    Action(String),
     Meeting(String),
     User(String),
     Global,

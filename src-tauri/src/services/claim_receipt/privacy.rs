@@ -500,6 +500,7 @@ fn scrub_subject_to_type(subject: &SubjectRef) -> SubjectRef {
         SubjectRef::Account(_) => SubjectRef::Account(String::new()),
         SubjectRef::Project(_) => SubjectRef::Project(String::new()),
         SubjectRef::Person(_) => SubjectRef::Person(String::new()),
+        SubjectRef::Action(_) => SubjectRef::Action(String::new()),
         SubjectRef::Meeting(_) => SubjectRef::Meeting(String::new()),
         SubjectRef::User(_) => SubjectRef::User(String::new()),
         SubjectRef::Global => SubjectRef::Global,

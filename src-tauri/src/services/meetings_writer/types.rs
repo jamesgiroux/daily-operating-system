@@ -84,10 +84,7 @@ pub enum WriteError {
         field: &'static str,
     },
     #[error("invalid value for {field}: {reason}")]
-    InvalidValue {
-        field: &'static str,
-        reason: String,
-    },
+    InvalidValue { field: &'static str, reason: String },
     #[error("database write failed: {0}")]
     Database(String),
 }

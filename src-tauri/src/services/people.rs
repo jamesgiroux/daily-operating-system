@@ -615,6 +615,8 @@ pub fn update_person_field(
     db.update_person_field(person_id, field, value)
         .map_err(|e| e.to_string())?;
 
+    let field_signal_payload = person_field_signal_payload(field, value);
+
     // Emit field update signal + self-healing evaluation. Best-effort:
     // failure should NOT roll back the field update but must warn so ops
     // can detect lost self-healing triggers.
@@ -626,11 +628,7 @@ pub fn update_person_field(
         person_id,
         "field_updated",
         "user_edit",
-        Some(&format!(
-            "{{\"field\":\"{}\",\"value\":\"{}\"}}",
-            field,
-            value.replace('"', "\\\"")
-        )),
+        Some(&field_signal_payload),
         0.8,
         &state.intel_queue,
     ) {
@@ -638,6 +636,7 @@ pub fn update_person_field(
             "people: emit_propagate_and_evaluate dropped on person={person_id} field={field}: {e}"
         );
     }
+    emit_person_composition_field_changed_signal(ctx, db, person_id, &field_signal_payload);
 
     // Self-healing: record user correction for Clay-enrichable fields
     if matches!(field, "linkedin_url" | "role" | "organization" | "name") {
@@ -687,6 +686,32 @@ pub fn update_person_field(
     }
 
     Ok(())
+}
+
+fn person_field_signal_payload(field: &str, value: &str) -> String {
+    serde_json::json!({
+        "field": field,
+        "value": value,
+    })
+    .to_string()
+}
+
+fn emit_person_composition_field_changed_signal(
+    ctx: &ServiceContext<'_>,
+    db: &ActionDb,
+    person_id: &str,
+    payload: &str,
+) {
+    crate::services::signals::emit_or_log(
+        ctx,
+        db,
+        "person",
+        person_id,
+        "person.field_changed",
+        "user_edit",
+        Some(payload),
+        0.8,
+    );
 }
 
 /// Link a person to an entity and regenerate workspace files.
@@ -884,6 +909,9 @@ pub fn create_person(
 mod tests {
     use super::*;
     use crate::db::test_utils::test_db;
+    use crate::services::context::{ExternalClients, FixedClock, SeedableRng, ServiceContext};
+    use chrono::TimeZone;
+    use rusqlite::params;
 
     #[test]
     fn stakeholder_entity_type_for_id_rejects_unknown_entity_id() {
@@ -893,6 +921,34 @@ mod tests {
             .expect_err("unknown entity_id should be rejected");
 
         assert!(err.contains("unknown stakeholder entity_id"));
+    }
+
+    #[test]
+    fn person_field_change_signal_records_composition_invalidation_payload() {
+        let db = test_db();
+        let clock = FixedClock::new(chrono::Utc.with_ymd_and_hms(2026, 5, 15, 12, 0, 0).unwrap());
+        let rng = SeedableRng::new(42);
+        let external = ExternalClients::default();
+        let ctx = ServiceContext::test_live(&clock, &rng, &external);
+        let payload = person_field_signal_payload("role", "VP \"Customer\"");
+
+        emit_person_composition_field_changed_signal(&ctx, &db, "person-signal-1", &payload);
+
+        let value: String = db
+            .conn_ref()
+            .query_row(
+                "SELECT value
+                 FROM signal_events
+                 WHERE entity_type = 'person'
+                   AND entity_id = 'person-signal-1'
+                   AND signal_type = 'person.field_changed'",
+                params![],
+                |row| row.get(0),
+            )
+            .expect("read person field signal payload");
+        let json: serde_json::Value = serde_json::from_str(&value).expect("payload is valid json");
+        assert_eq!(json["field"], "role");
+        assert_eq!(json["value"], "VP \"Customer\"");
     }
 }
 

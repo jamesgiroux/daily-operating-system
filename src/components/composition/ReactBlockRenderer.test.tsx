@@ -2,8 +2,8 @@
 
 import fs from "node:fs";
 import path from "node:path";
-import { render, screen } from "@testing-library/react";
-import { describe, expect, it, vi } from "vitest";
+import { fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { beforeEach, describe, expect, it, vi } from "vitest";
 import { ReactBlockRenderer } from "@/components/composition/ReactBlockRenderer";
 import { BLOCK_RENDERERS } from "@/components/composition/blocks/BlockComponents";
 import {
@@ -11,12 +11,16 @@ import {
   type ProjectedBlock,
 } from "@/services/composition/contracts";
 
+const { submitMock } = vi.hoisted(() => ({
+  submitMock: vi.fn(async () => true),
+}));
+
 vi.mock("@/hooks/useIntelligenceCorrection", () => ({
   useIntelligenceCorrection: () => ({
     submitting: false,
     success: false,
     error: null,
-    submit: async () => true,
+    submit: submitMock,
     reset: () => {},
   }),
 }));
@@ -44,6 +48,10 @@ function block(overrides: Partial<ProjectedBlock> = {}): ProjectedBlock {
 }
 
 describe("ReactBlockRenderer", () => {
+  beforeEach(() => {
+    submitMock.mockClear();
+  });
+
   it("keeps frontend renderer coverage exhaustive with Rust BlockType", () => {
     const rustSource = fs.readFileSync(
       path.resolve(process.cwd(), "src-tauri/abilities-runtime/src/abilities/composition.rs"),
@@ -120,6 +128,45 @@ describe("ReactBlockRenderer", () => {
     expect(screen.getByRole("button", { name: "Partially" })).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "No" })).toBeInTheDocument();
     expect(screen.queryByText("/text")).not.toBeInTheDocument();
+  });
+
+  it("routes claim feedback to the provided composition entity", async () => {
+    render(
+      <ReactBlockRenderer
+        entityId="project-feedback"
+        entityType="project"
+        block={block({
+          selected_known_type_id: "claim_summary",
+          payload: {
+            title: "Current signal",
+            text: "The project risk is rising.",
+            trust_band: "use_with_caution",
+          },
+          claim_refs: [{ claim_id: "claim-feedback", claim_version: 3, field_path: "/text" }],
+          edit_routes: [
+            {
+              field_path: "/text",
+              role: "feedback_target",
+              claim_refs: [{ claim_id: "claim-feedback", claim_version: 3, field_path: "/text" }],
+              feedback_allowed: true,
+              refusal_reason: null,
+            },
+          ],
+        })}
+      />,
+    );
+
+    fireEvent.click(screen.getByRole("button", { name: "Yes" }));
+
+    await waitFor(() =>
+      expect(submitMock).toHaveBeenCalledWith({
+        entityId: "project-feedback",
+        entityType: "project",
+        field: "composition:text",
+        action: "confirmed",
+        source: undefined,
+      }),
+    );
   });
 
   it("surfaces account snapshot degradation without exposing the internal reason", () => {

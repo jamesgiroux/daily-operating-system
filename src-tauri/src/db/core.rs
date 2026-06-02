@@ -471,11 +471,7 @@ impl ActionDb {
         // budget_violations counter surfaces routine contention. The 250 ms
         // AC threshold is captured by the separate `_over_250ms` rollup below.
         let gate_wait_ms = gate_started.elapsed().as_millis();
-        crate::latency::record_latency(
-            "action_db.write_transaction_gate_wait",
-            gate_wait_ms,
-            100,
-        );
+        crate::latency::record_latency("action_db.write_transaction_gate_wait", gate_wait_ms, 100);
         // Dedicated rollup for the AC4 threshold (zero gate-waits > 250 ms at
         // user-active times). Records only when above the threshold so the
         // rollup's sample count IS the violation count.

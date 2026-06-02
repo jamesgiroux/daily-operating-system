@@ -79,3 +79,116 @@
   border-radius: 50%;
   background: var(--color-garden-larkspur);
 }
+
+/* ── Service-backed project controls ── */
+
+.projectControlPanel {
+  display: grid;
+  gap: var(--space-md);
+  padding: var(--space-lg) 0;
+  border-top: 1px solid var(--color-rule-heavy);
+  border-bottom: 1px solid var(--color-rule-light);
+}
+
+.projectControlForm {
+  display: grid;
+  grid-template-columns: repeat(5, minmax(0, 1fr));
+  gap: var(--space-md);
+  align-items: end;
+}
+
+.projectControlField {
+  display: grid;
+  gap: 6px;
+}
+
+.projectControlField span,
+.projectPanelLabel {
+  color: var(--color-text-tertiary);
+  font-family: var(--font-mono);
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.projectControlActions,
+.projectActionComposer {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-xs);
+  align-items: center;
+}
+
+.projectControlActions {
+  grid-column: 1 / -1;
+}
+
+.projectActionComposer {
+  padding-top: var(--space-sm);
+}
+
+.projectActionComposer > input {
+  max-width: 360px;
+}
+
+.projectHierarchyPanel {
+  display: grid;
+  gap: var(--space-sm);
+  padding: var(--space-md) 0;
+  border-bottom: 1px solid var(--color-rule-light);
+}
+
+.projectPanelLabel {
+  display: inline-flex;
+  gap: 6px;
+  align-items: center;
+}
+
+.projectHierarchyLink,
+.projectHierarchyChild {
+  appearance: none;
+  border: none;
+  background: transparent;
+  color: var(--color-text-primary);
+  cursor: pointer;
+  font: inherit;
+  padding: 0;
+  text-align: left;
+}
+
+.projectHierarchyLink {
+  width: fit-content;
+  color: var(--color-garden-olive);
+}
+
+.projectHierarchyChildren {
+  display: grid;
+  gap: var(--space-xs);
+}
+
+.projectHierarchyChild {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: var(--space-md);
+  padding: var(--space-xs) 0;
+  border-top: 1px solid var(--color-rule-light);
+}
+
+.projectHierarchyChild span:last-child {
+  color: var(--color-text-tertiary);
+  font-family: var(--font-mono);
+  font-size: 10px;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+
+@media (max-width: 860px) {
+  .projectControlForm {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .projectHierarchyChild {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}

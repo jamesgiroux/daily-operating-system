@@ -26,36 +26,23 @@ use crate::abilities::{
     AbilityCategory, AbilityContext, AbilityError, AbilityErrorKind, AbilityResult, Actor,
 };
 use crate::services::context::{
-    AccountCompositionProvenanceKind, AccountCompositionSnapshot, AccountCompositionSnapshotField,
-    AccountCompositionSnapshotReadError, CompositionCommitError, CompositionProposal,
+    CompositionCommitError, CompositionProposal, ProjectCompositionProvenanceKind,
+    ProjectCompositionSnapshot, ProjectCompositionSnapshotField,
+    ProjectCompositionSnapshotReadError,
 };
 use crate::types::{
     prompt_input_sensitivity_allowed, subject_ref_from_json, ClaimState, ClaimSubjectRef,
     IntelligenceClaim, SurfacingState,
 };
 
-const ABILITY_NAME: &str = "dailyos/account-overview";
+const ABILITY_NAME: &str = "dailyos/project-overview";
 const ABILITY_SCHEMA_VERSION: u32 = 1;
-const ACCOUNT_CLAIM_DEPTH: usize = 3;
-
-const VARIANT_D_SECTIONS: [(&str, &str); 11] = [
-    ("headline", "Headline"),
-    ("outlook", "Outlook"),
-    ("state-of-play", "State of play"),
-    ("the-room", "The room"),
-    ("whats-next", "What's next"),
-    ("watch-list", "Watch list"),
-    ("value-commitments", "Value commitments"),
-    ("strategic-landscape", "Strategic landscape"),
-    ("the-record", "The record"),
-    ("the-work", "The work"),
-    ("reports", "Reports"),
-];
+const PROJECT_CLAIM_DEPTH: usize = 3;
 
 #[derive(Debug, Clone, Deserialize, Serialize, JsonSchema)]
-pub struct AccountOverviewInput {
+pub struct ProjectOverviewInput {
     pub schema_version: u32,
-    pub account_id: String,
+    pub project_id: String,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub entity_type: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -68,12 +55,12 @@ pub struct AccountOverviewInput {
 
 #[derive(Debug, Clone)]
 struct NormalizedInput {
-    account_id: String,
+    project_id: String,
     expected_composition_version: u64,
     composition_id: CompositionDocId,
 }
 
-struct PreparedAccountOverview {
+struct PreparedProjectOverview {
     proposal: CompositionProposal,
     provenance_builder: ProvenanceBuilder,
 }
@@ -91,24 +78,22 @@ struct ClaimProjection {
 
 #[derive(Debug, Clone)]
 struct SnapshotReadOutcome {
-    snapshot: Option<AccountCompositionSnapshot>,
+    snapshot: Option<ProjectCompositionSnapshot>,
     degraded_reason: Option<String>,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum ClaimPlacement {
-    Overview,
+    Momentum,
     Risk,
-    Win,
-    Value,
     Commitment,
     Relationship,
-    Health,
+    Context,
     Ignored,
 }
 
 #[ability(
-    name = "dailyos/account-overview",
+    name = "dailyos/project-overview",
     category = Read,
     version = "1.0.0",
     schema_version = 1,
@@ -116,26 +101,27 @@ enum ClaimPlacement {
     allowed_modes = [Live],
     requires_confirmation = false,
     may_publish = false,
-    required_scopes = ["read.account_overview"],
+    required_scopes = ["read.project_overview"],
     mcp_exposure = Invocable,
     client_side_executable = false,
     composes = [],
     experimental = false,
     signal_policy = { emits_on_output_change = [
         "claim.version",
-        "account_subject.claim_changed",
+        "project_subject.claim_changed",
         "claim.lifecycle",
         "claim.dismissal",
         "source.freshness",
-        "source.revocation"
+        "source.revocation",
+        "project.field_changed"
     ], coalesce = true }
 )]
-pub async fn account_overview(
+pub async fn project_overview(
     ctx: &AbilityContext<'_>,
-    input: AccountOverviewInput,
+    input: ProjectOverviewInput,
 ) -> AbilityResult<Composition> {
     let input = normalize_input(input)?;
-    let prepared = prepare_account_overview(ctx, &input).await?;
+    let prepared = prepare_project_overview(ctx, &input).await?;
     let committed = ctx
         .services()
         .commit_composition(prepared.proposal)
@@ -149,20 +135,20 @@ pub async fn account_overview(
     Ok(output)
 }
 
-fn normalize_input(input: AccountOverviewInput) -> Result<NormalizedInput, AbilityError> {
+fn normalize_input(input: ProjectOverviewInput) -> Result<NormalizedInput, AbilityError> {
     if input.schema_version != ABILITY_SCHEMA_VERSION {
         return Err(validation_error(format!(
             "unsupported schema_version `{}` for `{ABILITY_NAME}`",
             input.schema_version
         )));
     }
-    let account_id = input.account_id.trim();
-    if account_id.is_empty() {
-        return Err(validation_error("account_id must be non-empty"));
+    let project_id = input.project_id.trim();
+    if project_id.is_empty() {
+        return Err(validation_error("project_id must be non-empty"));
     }
     validate_entity_envelope(
-        "account",
-        account_id,
+        "project",
+        project_id,
         input.entity_type.as_deref(),
         input.entity_id.as_deref(),
     )?;
@@ -172,10 +158,10 @@ fn normalize_input(input: AccountOverviewInput) -> Result<NormalizedInput, Abili
         .map(str::trim)
         .filter(|value| !value.is_empty())
         .map(ToString::to_string)
-        .unwrap_or_else(|| format!("dailyos/account-overview:account:{account_id}"));
+        .unwrap_or_else(|| format!("dailyos/project-overview:project:{project_id}"));
 
     Ok(NormalizedInput {
-        account_id: account_id.to_string(),
+        project_id: project_id.to_string(),
         expected_composition_version: input.expected_composition_version,
         composition_id: CompositionDocId::new(composition_id),
     })
@@ -206,30 +192,22 @@ fn validate_entity_envelope(
     Ok(())
 }
 
-async fn prepare_account_overview(
+async fn prepare_project_overview(
     ctx: &AbilityContext<'_>,
     input: &NormalizedInput,
-) -> Result<PreparedAccountOverview, AbilityError> {
-    // The reader currently takes (entity_type, entity_id, surface, depth)
-    // without an actor/scope discriminator. The substrate-side SurfaceClient
-    // scope contract (W4-B §16) calls for SQL-layer projection keyed on
-    // Actor::SurfaceClient { scopes }; until that lands, scope filtering is
-    // enforced one layer up by prompt_input_sensitivity_allowed, which gates
-    // Confidential+ before any block, ClaimRef, or count flows into the
-    // composition. Behavior is preserved; the longer-term tightening is
-    // tracked in the maintenance project.
+) -> Result<PreparedProjectOverview, AbilityError> {
     let claims = ctx
         .services()
         .read_entity_context_claims(
-            "account".to_string(),
-            input.account_id.clone(),
+            "project".to_string(),
+            input.project_id.clone(),
             ctx.entity_context_claim_surface(),
-            ACCOUNT_CLAIM_DEPTH,
+            PROJECT_CLAIM_DEPTH,
         )
         .await
-        .map_err(|error| hard_error("account_overview_claim_read", error))?;
+        .map_err(|error| hard_error("project_overview_claim_read", error))?;
 
-    let subject_ref = SubjectRef::Account(input.account_id.clone());
+    let subject_ref = SubjectRef::Project(input.project_id.clone());
     let subject = SubjectAttribution::direct_confident(subject_ref);
     let provenance_config = provenance_config(ctx);
     let invocation_id = provenance_config.invocation_id;
@@ -239,7 +217,7 @@ async fn prepare_account_overview(
     let mut projections = Vec::new();
     for claim in claims {
         let Some(projection) =
-            project_claim(ctx, &input.account_id, claim, &mut provenance_builder)?
+            project_claim(ctx, &input.project_id, claim, &mut provenance_builder)?
         else {
             continue;
         };
@@ -247,7 +225,7 @@ async fn prepare_account_overview(
     }
     projections.sort_by(compare_claim_projection);
 
-    let snapshot = read_account_snapshot(ctx, input).await?;
+    let snapshot = read_project_snapshot(ctx, input).await?;
     let composition = build_composition(
         ctx,
         input,
@@ -258,7 +236,7 @@ async fn prepare_account_overview(
         &mut provenance_builder,
     )?;
 
-    Ok(PreparedAccountOverview {
+    Ok(PreparedProjectOverview {
         proposal: CompositionProposal {
             composition_id: input.composition_id.clone(),
             expected_composition_version: input.expected_composition_version,
@@ -268,14 +246,14 @@ async fn prepare_account_overview(
     })
 }
 
-async fn read_account_snapshot(
+async fn read_project_snapshot(
     ctx: &AbilityContext<'_>,
     input: &NormalizedInput,
 ) -> Result<SnapshotReadOutcome, AbilityError> {
     match ctx
         .services()
-        .read_account_composition_snapshot(
-            input.account_id.clone(),
+        .read_project_composition_snapshot(
+            input.project_id.clone(),
             ctx.entity_context_claim_surface(),
         )
         .await
@@ -284,28 +262,28 @@ async fn read_account_snapshot(
             snapshot: Some(snapshot),
             degraded_reason: None,
         }),
-        Err(AccountCompositionSnapshotReadError::AccountNotFound(account_id)) => Err(
-            validation_error(format!("account `{account_id}` was not found")),
+        Err(ProjectCompositionSnapshotReadError::ProjectNotFound(project_id)) => Err(
+            validation_error(format!("project `{project_id}` was not found")),
         ),
-        Err(AccountCompositionSnapshotReadError::ReadFailed(_)) => Ok(SnapshotReadOutcome {
+        Err(ProjectCompositionSnapshotReadError::ReadFailed(_)) => Ok(SnapshotReadOutcome {
             snapshot: None,
-            degraded_reason: Some("account_snapshot_unavailable".to_string()),
+            degraded_reason: Some("project_snapshot_unavailable".to_string()),
         }),
     }
 }
 
 fn project_claim(
     ctx: &AbilityContext<'_>,
-    account_id: &str,
+    project_id: &str,
     claim: IntelligenceClaim,
     provenance_builder: &mut ProvenanceBuilder,
 ) -> Result<Option<ClaimProjection>, AbilityError> {
-    if !claim_is_eligible_for_account_overview(&claim, account_id)? {
+    if !claim_is_eligible_for_project_overview(&claim, project_id)? {
         return Ok(None);
     }
     let Some(metadata) = metadata_for_name(&claim.claim_type) else {
         return Err(validation_error(format!(
-            "unknown claim_type `{}` in account overview input",
+            "unknown claim_type `{}` in project overview input",
             claim.claim_type
         )));
     };
@@ -318,7 +296,7 @@ fn project_claim(
         return Ok(None);
     }
 
-    let source = source_for_claim(ctx, account_id, &claim)?;
+    let source = source_for_claim(ctx, project_id, &claim)?;
     let parsed_source_asof = source.source_asof;
     let source_index = provenance_builder.add_source(source);
     let trust_band = resolved_claim_trust_band(&claim, metadata.kind, ctx.services().clock.now());
@@ -335,9 +313,9 @@ fn project_claim(
     }))
 }
 
-fn claim_is_eligible_for_account_overview(
+fn claim_is_eligible_for_project_overview(
     claim: &IntelligenceClaim,
-    account_id: &str,
+    project_id: &str,
 ) -> Result<bool, AbilityError> {
     if claim.claim_state != ClaimState::Active || claim.surfacing_state != SurfacingState::Active {
         return Ok(false);
@@ -360,10 +338,10 @@ fn claim_is_eligible_for_account_overview(
     match subject_ref_from_json(&value)
         .map_err(|error| validation_error(format!("invalid claim subject_ref: {error}")))?
     {
-        ClaimSubjectRef::Account { id } => Ok(id == account_id),
-        ClaimSubjectRef::Action { .. }
+        ClaimSubjectRef::Project { id } => Ok(id == project_id),
+        ClaimSubjectRef::Account { .. }
+        | ClaimSubjectRef::Action { .. }
         | ClaimSubjectRef::Person { .. }
-        | ClaimSubjectRef::Project { .. }
         | ClaimSubjectRef::Meeting { .. }
         | ClaimSubjectRef::Email { .. }
         | ClaimSubjectRef::Multi(_)
@@ -374,20 +352,21 @@ fn claim_is_eligible_for_account_overview(
 fn placement_for_claim_type(kind: ClaimType) -> ClaimPlacement {
     match kind {
         ClaimType::Risk | ClaimType::EntityRisk => ClaimPlacement::Risk,
-        ClaimType::Win | ClaimType::EntityWin => ClaimPlacement::Win,
-        ClaimType::ValueDelivered => ClaimPlacement::Value,
+        ClaimType::Win
+        | ClaimType::EntityWin
+        | ClaimType::ValueDelivered
+        | ClaimType::EntityCurrentState
+        | ClaimType::EntitySummary => ClaimPlacement::Momentum,
         ClaimType::Commitment | ClaimType::OpenLoop | ClaimType::Recommendation => {
             ClaimPlacement::Commitment
         }
         ClaimType::StakeholderEngagement
         | ClaimType::StakeholderAssessment
         | ClaimType::StakeholderRole => ClaimPlacement::Relationship,
-        ClaimType::EntityCurrentState => ClaimPlacement::Health,
         ClaimType::CompanyContext
         | ClaimType::AccountFact
         | ClaimType::EntityIdentity
-        | ClaimType::EntitySummary
-        | ClaimType::UserNote => ClaimPlacement::Overview,
+        | ClaimType::UserNote => ClaimPlacement::Context,
         ClaimType::LinkingDismissed
         | ClaimType::EmailDismissed
         | ClaimType::IntelligenceFieldDismissed
@@ -417,82 +396,70 @@ fn build_composition(
     provenance_builder: &mut ProvenanceBuilder,
 ) -> Result<Composition, AbilityError> {
     let snapshot = snapshot_outcome.snapshot.as_ref();
-    let mut sections = Vec::with_capacity(VARIANT_D_SECTIONS.len());
-    let block_context = AccountBlockBuildContext {
-        ctx,
-        input,
-        subject,
-        invocation_id,
-    };
+    let mut sections = Vec::new();
 
-    let headline_block = build_overview_block(
-        &block_context,
-        projections,
-        snapshot_outcome,
-        "/sections/0/blocks/0",
-        provenance_builder,
-    )?;
     sections.push(variant_section(
         "headline",
         "Headline",
-        vec![headline_block],
-        SectionLayout::Stacked,
-        salience(0.95, SalienceBand::Critical, "account masthead"),
-    ));
-
-    let outlook_claims = projections
-        .iter()
-        .filter(|projection| projection.placement == ClaimPlacement::Health)
-        .collect::<Vec<_>>();
-    sections.push(variant_section(
-        "outlook",
-        "Outlook",
-        build_claim_or_snapshot_section_blocks(
+        vec![build_overview_block(
             ctx,
             input,
-            "outlook",
-            1,
-            outlook_claims,
-            snapshot_fields_for_section(snapshot, "outlook"),
-            EmptySectionCopy {
-                title: "No current outlook signals",
-                body: "DailyOS has not found current account-health signals with renderable provenance.",
-                status: "source_gap",
-            },
+            projections,
+            snapshot_outcome,
+            "/sections/0/blocks/0",
             subject,
             invocation_id,
             provenance_builder,
-        )?,
+        )?],
         SectionLayout::Stacked,
-        salience(0.86, SalienceBand::Important, "account outlook"),
+        salience(0.95, SalienceBand::Critical, "project masthead"),
     ));
 
-    let state_claims = projections
+    let mut next_section_index = 1;
+    let portfolio_fields = snapshot_fields_for_section(snapshot, "portfolio");
+    if snapshot.is_some_and(|snapshot| snapshot.is_parent) || !portfolio_fields.is_empty() {
+        sections.push(variant_section(
+            "portfolio",
+            "Portfolio",
+            build_claim_or_snapshot_section_blocks(
+                ctx,
+                input,
+                "portfolio",
+                next_section_index,
+                Vec::new(),
+                portfolio_fields,
+                EmptySectionCopy {
+                    title: "No portfolio signals",
+                    body: "This project has no source-backed portfolio detail yet.",
+                    status: "empty",
+                },
+                subject,
+                invocation_id,
+                provenance_builder,
+            )?,
+            SectionLayout::Grid,
+            salience(0.74, SalienceBand::Contextual, "project portfolio"),
+        ));
+        next_section_index += 1;
+    }
+
+    let trajectory_claims = projections
         .iter()
-        .filter(|projection| {
-            matches!(
-                projection.placement,
-                ClaimPlacement::Health
-                    | ClaimPlacement::Risk
-                    | ClaimPlacement::Win
-                    | ClaimPlacement::Value
-                    | ClaimPlacement::Overview
-            )
-        })
+        .filter(|projection| projection.placement == ClaimPlacement::Momentum)
         .collect::<Vec<_>>();
     sections.push(variant_section(
-        "state-of-play",
-        "State of play",
+        "trajectory",
+        "Trajectory",
         build_claim_or_snapshot_section_blocks(
             ctx,
             input,
-            "state-of-play",
-            2,
-            state_claims,
-            snapshot_fields_for_section(snapshot, "state-of-play"),
+            "trajectory",
+            next_section_index,
+            trajectory_claims,
+            snapshot_fields_for_section(snapshot, "trajectory"),
             EmptySectionCopy {
-                title: "No active state-of-play signals",
-                body: "No active account claims are currently eligible for this surface.",
+                title: "No trajectory signals",
+                body: "No active project trajectory claims are eligible for this surface.",
                 status: "empty",
             },
             subject,
@@ -500,8 +467,66 @@ fn build_composition(
             provenance_builder,
         )?,
         SectionLayout::Stacked,
-        salience(0.82, SalienceBand::Important, "current account state"),
+        salience(0.86, SalienceBand::Important, "project trajectory"),
     ));
+    next_section_index += 1;
+
+    sections.push(variant_section(
+        "the-horizon",
+        "The horizon",
+        build_claim_or_snapshot_section_blocks(
+            ctx,
+            input,
+            "the-horizon",
+            next_section_index,
+            Vec::new(),
+            snapshot_fields_for_section(snapshot, "the-horizon"),
+            EmptySectionCopy {
+                title: "No horizon signals",
+                body: "Target-date and activity signals are not yet grounded for this project.",
+                status: "source_gap",
+            },
+            subject,
+            invocation_id,
+            provenance_builder,
+        )?,
+        SectionLayout::Stacked,
+        salience(0.8, SalienceBand::Important, "project horizon"),
+    ));
+    next_section_index += 1;
+
+    let landscape_claims = projections
+        .iter()
+        .filter(|projection| {
+            matches!(
+                projection.placement,
+                ClaimPlacement::Risk | ClaimPlacement::Context
+            )
+        })
+        .collect::<Vec<_>>();
+    sections.push(variant_section(
+        "the-landscape",
+        "The landscape",
+        build_claim_or_snapshot_section_blocks(
+            ctx,
+            input,
+            "the-landscape",
+            next_section_index,
+            landscape_claims,
+            snapshot_fields_for_section(snapshot, "the-landscape"),
+            EmptySectionCopy {
+                title: "Landscape not yet grounded",
+                body: "No renderable project context or risk claims are available.",
+                status: "needs_grounding",
+            },
+            subject,
+            invocation_id,
+            provenance_builder,
+        )?,
+        SectionLayout::Stacked,
+        salience(0.76, SalienceBand::Important, "project landscape"),
+    ));
+    next_section_index += 1;
 
     let room_claims = projections
         .iter()
@@ -514,12 +539,12 @@ fn build_composition(
             ctx,
             input,
             "the-room",
-            3,
+            next_section_index,
             room_claims,
             snapshot_fields_for_section(snapshot, "the-room"),
             EmptySectionCopy {
-                title: "No room signals",
-                body: "Stakeholder and relationship inputs are not yet grounded for this account.",
+                title: "No team signals",
+                body: "People and relationship inputs are not yet grounded for this project.",
                 status: "empty",
             },
             subject,
@@ -527,8 +552,9 @@ fn build_composition(
             provenance_builder,
         )?,
         SectionLayout::Grid,
-        salience(0.72, SalienceBand::Contextual, "account relationships"),
+        salience(0.7, SalienceBand::Contextual, "project people"),
     ));
+    next_section_index += 1;
 
     let next_claims = projections
         .iter()
@@ -541,12 +567,12 @@ fn build_composition(
             ctx,
             input,
             "whats-next",
-            4,
-            next_claims,
-            snapshot_fields_for_section(snapshot, "whats-next"),
+            next_section_index,
+            next_claims.clone(),
+            Vec::new(),
             EmptySectionCopy {
                 title: "No open next steps",
-                body: "There are no renderable commitments or next-step records for this account.",
+                body: "There are no renderable commitments or next-step records for this project.",
                 status: "empty",
             },
             subject,
@@ -554,103 +580,9 @@ fn build_composition(
             provenance_builder,
         )?,
         SectionLayout::Stacked,
-        salience(0.8, SalienceBand::Important, "next account work"),
+        salience(0.78, SalienceBand::Important, "project next steps"),
     ));
-
-    let watch_claims = projections
-        .iter()
-        .filter(|projection| projection.placement == ClaimPlacement::Risk)
-        .collect::<Vec<_>>();
-    sections.push(variant_section(
-        "watch-list",
-        "Watch list",
-        build_claim_or_snapshot_section_blocks(
-            ctx,
-            input,
-            "watch-list",
-            5,
-            watch_claims,
-            snapshot_fields_for_section(snapshot, "watch-list"),
-            EmptySectionCopy {
-                title: "No active watch-list signals",
-                body: "No active risk or watch-list claims are eligible for this account.",
-                status: "empty",
-            },
-            subject,
-            invocation_id,
-            provenance_builder,
-        )?,
-        SectionLayout::Stacked,
-        salience(0.76, SalienceBand::Important, "watch-list signals"),
-    ));
-
-    let value_claims = projections
-        .iter()
-        .filter(|projection| {
-            matches!(
-                projection.placement,
-                ClaimPlacement::Value | ClaimPlacement::Win | ClaimPlacement::Commitment
-            )
-        })
-        .collect::<Vec<_>>();
-    sections.push(variant_section(
-        "value-commitments",
-        "Value commitments",
-        build_claim_or_snapshot_section_blocks(
-            ctx,
-            input,
-            "value-commitments",
-            6,
-            value_claims,
-            snapshot_fields_for_section(snapshot, "value-commitments"),
-            EmptySectionCopy {
-                title: "No commitments with current evidence",
-                body: "DailyOS has not found value or commitment claims with current evidence.",
-                status: "source_gap",
-            },
-            subject,
-            invocation_id,
-            provenance_builder,
-        )?,
-        SectionLayout::Stacked,
-        salience(0.72, SalienceBand::Important, "value and commitments"),
-    ));
-
-    let strategic_claims = projections
-        .iter()
-        .filter(|projection| {
-            matches!(
-                projection.claim_type,
-                ClaimType::CompanyContext
-                    | ClaimType::AccountFact
-                    | ClaimType::EntityIdentity
-                    | ClaimType::EntitySummary
-                    | ClaimType::UserNote
-            )
-        })
-        .collect::<Vec<_>>();
-    sections.push(variant_section(
-        "strategic-landscape",
-        "Strategic landscape",
-        build_claim_or_snapshot_section_blocks(
-            ctx,
-            input,
-            "strategic-landscape",
-            7,
-            strategic_claims,
-            snapshot_fields_for_section(snapshot, "strategic-landscape"),
-            EmptySectionCopy {
-                title: "Strategic context not yet grounded",
-                body: "No source-backed strategic context is available for this account.",
-                status: "needs_grounding",
-            },
-            subject,
-            invocation_id,
-            provenance_builder,
-        )?,
-        SectionLayout::Stacked,
-        salience(0.62, SalienceBand::Contextual, "strategic account context"),
-    ));
+    next_section_index += 1;
 
     sections.push(variant_section(
         "the-record",
@@ -660,19 +592,16 @@ fn build_composition(
             input,
             projections,
             snapshot_fields_for_section(snapshot, "the-record"),
-            8,
+            next_section_index,
             subject,
             invocation_id,
             provenance_builder,
         )?,
         SectionLayout::Stacked,
-        salience(0.58, SalienceBand::Contextual, "account evidence record"),
+        salience(0.58, SalienceBand::Contextual, "project evidence record"),
     ));
+    next_section_index += 1;
 
-    let work_claims = projections
-        .iter()
-        .filter(|projection| projection.placement == ClaimPlacement::Commitment)
-        .collect::<Vec<_>>();
     sections.push(variant_section(
         "the-work",
         "The work",
@@ -680,12 +609,12 @@ fn build_composition(
             ctx,
             input,
             "the-work",
-            9,
-            work_claims,
+            next_section_index,
+            next_claims,
             snapshot_fields_for_section(snapshot, "the-work"),
             EmptySectionCopy {
                 title: "No active work items",
-                body: "No active work records are currently grounded for this account.",
+                body: "No active project work records are currently grounded.",
                 status: "empty",
             },
             subject,
@@ -693,23 +622,7 @@ fn build_composition(
             provenance_builder,
         )?,
         SectionLayout::Stacked,
-        salience(0.46, SalienceBand::Background, "account work"),
-    ));
-
-    sections.push(variant_section(
-        "reports",
-        "Reports",
-        build_reports_section_blocks(
-            ctx,
-            input,
-            snapshot_fields_for_section(snapshot, "reports"),
-            10,
-            subject,
-            invocation_id,
-            provenance_builder,
-        )?,
-        SectionLayout::Grid,
-        salience(0.38, SalienceBand::Background, "account reports"),
+        salience(0.5, SalienceBand::Background, "project work"),
     ));
 
     let section_count = sections.len();
@@ -717,9 +630,9 @@ fn build_composition(
     let composition = Composition::new(
         input.composition_id.clone(),
         CompositionKind::EntityPage,
-        Some(EntityRef::new(format!("account:{}", input.account_id))),
+        Some(EntityRef::new(format!("project:{}", input.project_id))),
         sections,
-        salience(0.9, SalienceBand::Important, "account overview"),
+        salience(0.9, SalienceBand::Important, "project overview"),
         generated_at,
         AbilityRef::new(ABILITY_NAME),
         CompositionMetadata {
@@ -739,14 +652,6 @@ struct EmptySectionCopy {
     title: &'static str,
     body: &'static str,
     status: &'static str,
-}
-
-#[derive(Clone, Copy)]
-struct AccountBlockBuildContext<'a, 'ctx> {
-    ctx: &'a AbilityContext<'ctx>,
-    input: &'a NormalizedInput,
-    subject: &'a SubjectAttribution,
-    invocation_id: InvocationId,
 }
 
 fn variant_section(
@@ -770,7 +675,7 @@ fn build_claim_or_snapshot_section_blocks(
     section_id: &str,
     section_index: usize,
     projections: Vec<&ClaimProjection>,
-    snapshot_fields: Vec<&AccountCompositionSnapshotField>,
+    snapshot_fields: Vec<&ProjectCompositionSnapshotField>,
     empty_copy: EmptySectionCopy,
     subject: &SubjectAttribution,
     invocation_id: InvocationId,
@@ -862,7 +767,7 @@ fn build_record_section_blocks(
     ctx: &AbilityContext<'_>,
     input: &NormalizedInput,
     projections: &[ClaimProjection],
-    snapshot_fields: Vec<&AccountCompositionSnapshotField>,
+    snapshot_fields: Vec<&ProjectCompositionSnapshotField>,
     section_index: usize,
     subject: &SubjectAttribution,
     invocation_id: InvocationId,
@@ -873,8 +778,8 @@ fn build_record_section_blocks(
             input,
             "the-record",
             EmptySectionCopy {
-                title: "No account record yet",
-                body: "No source-backed account events are available for this record.",
+                title: "No project record yet",
+                body: "No source-backed project events are available for this record.",
                 status: "empty",
             },
             section_index,
@@ -904,14 +809,15 @@ fn build_record_section_blocks(
         provenance_builder,
     )?);
     for field in snapshot_fields {
-        items.push(snapshot_field_evidence_item(field));
+        items.extend(snapshot_field_evidence_items(field));
     }
 
     let composition_block_path = format!("/sections/{section_index}/blocks/0");
+    let item_count = items.len();
     let mut block = Block::new(
         BlockId::new(block_id(input, "the-record", "evidence_list", "sources")),
         BlockType::EvidenceList,
-        json!({ "items": items }),
+        json!({ "title": "Evidence", "items": items }),
         claim_refs,
         ProvenanceRef::new(
             invocation_id,
@@ -920,7 +826,7 @@ fn build_record_section_blocks(
         None,
     )
     .map_err(block_error)?;
-    block.field_bindings = evidence_list_display_bindings(items.len())?;
+    block.field_bindings = evidence_list_display_bindings(item_count)?;
     block.salience = salience(0.58, SalienceBand::Contextual, "source record");
     attribute_block(
         provenance_builder,
@@ -932,68 +838,13 @@ fn build_record_section_blocks(
 }
 
 #[allow(clippy::too_many_arguments)]
-fn build_reports_section_blocks(
-    ctx: &AbilityContext<'_>,
-    input: &NormalizedInput,
-    snapshot_fields: Vec<&AccountCompositionSnapshotField>,
-    section_index: usize,
-    subject: &SubjectAttribution,
-    invocation_id: InvocationId,
-    provenance_builder: &mut ProvenanceBuilder,
-) -> Result<Vec<Block>, AbilityError> {
-    if snapshot_fields.is_empty() {
-        let composition_block_path = format!("/sections/{section_index}/blocks/0");
-        let mut block = Block::new(
-            BlockId::new(block_id(input, "reports", "action_list", "system_config")),
-            BlockType::ActionList,
-            json!({
-                "claim_type": "system_config",
-                "items": [{
-                    "title": "Account report",
-                    "status": "unavailable",
-                    "text": "No generated account report is currently available."
-                }]
-            }),
-            Vec::new(),
-            ProvenanceRef::new(
-                invocation_id,
-                FieldPath::new(&composition_block_path).map_err(field_error)?,
-            ),
-            None,
-        )
-        .map_err(block_error)?;
-        block.field_bindings = action_list_display_bindings(1)?;
-        block.salience = salience(0.32, SalienceBand::Background, "report availability");
-        attribute_block(
-            provenance_builder,
-            &composition_block_path,
-            subject,
-            Vec::new(),
-        )?;
-        return Ok(vec![block]);
-    }
-
-    Ok(vec![build_snapshot_fields_block(
-        ctx,
-        input,
-        "reports",
-        section_index,
-        0,
-        snapshot_fields,
-        subject,
-        invocation_id,
-        provenance_builder,
-    )?])
-}
-
-#[allow(clippy::too_many_arguments)]
 fn build_snapshot_fields_block(
     ctx: &AbilityContext<'_>,
     input: &NormalizedInput,
     section_id: &str,
     section_index: usize,
     block_index: usize,
-    fields: Vec<&AccountCompositionSnapshotField>,
+    fields: Vec<&ProjectCompositionSnapshotField>,
     subject: &SubjectAttribution,
     invocation_id: InvocationId,
     provenance_builder: &mut ProvenanceBuilder,
@@ -1001,13 +852,14 @@ fn build_snapshot_fields_block(
     let source_indexes = snapshot_source_indexes(ctx, input, &fields, provenance_builder)?;
     let items = fields
         .iter()
-        .map(|field| snapshot_field_evidence_item(field))
+        .flat_map(|field| snapshot_field_evidence_items(field))
         .collect::<Vec<_>>();
     let composition_block_path = format!("/sections/{section_index}/blocks/{block_index}");
+    let item_count = items.len();
     let mut block = Block::new(
         BlockId::new(block_id(input, section_id, "evidence_list", "snapshot")),
         BlockType::EvidenceList,
-        json!({ "items": items }),
+        json!({ "title": section_title(section_id), "items": items }),
         Vec::new(),
         ProvenanceRef::new(
             invocation_id,
@@ -1016,7 +868,7 @@ fn build_snapshot_fields_block(
         None,
     )
     .map_err(block_error)?;
-    block.field_bindings = evidence_list_display_bindings(items.len())?;
+    block.field_bindings = evidence_list_display_bindings(item_count)?;
     block.salience = salience(0.54, SalienceBand::Contextual, "snapshot fields");
     attribute_block(
         provenance_builder,
@@ -1027,19 +879,63 @@ fn build_snapshot_fields_block(
     Ok(block)
 }
 
-fn snapshot_field_evidence_item(field: &AccountCompositionSnapshotField) -> Value {
-    json!({
-        "label": format!("{}: {}", field.label, snapshot_value_text(&field.value)),
-        "source_label": field.source_label.as_deref().unwrap_or(match field.provenance_kind {
-            AccountCompositionProvenanceKind::NonSensitiveIdentity => "identity",
-            AccountCompositionProvenanceKind::ManualUser => "user",
-            AccountCompositionProvenanceKind::SourceField => "source",
-            AccountCompositionProvenanceKind::SystemConfig => "system_config",
-            AccountCompositionProvenanceKind::Derived => "derived",
-            AccountCompositionProvenanceKind::Unavailable => "unavailable",
-        }),
-        "source_asof": field.source_asof,
-    })
+fn section_title(section_id: &str) -> &'static str {
+    match section_id {
+        "portfolio" => "Portfolio",
+        "trajectory" => "Trajectory",
+        "the-horizon" => "Horizon",
+        "the-landscape" => "Landscape",
+        "the-room" => "Team",
+        "the-record" => "Record",
+        "the-work" => "Work",
+        _ => "Evidence",
+    }
+}
+
+fn snapshot_field_evidence_items(field: &ProjectCompositionSnapshotField) -> Vec<Value> {
+    let source_label = field
+        .source_label
+        .as_deref()
+        .unwrap_or(match field.provenance_kind {
+            ProjectCompositionProvenanceKind::NonSensitiveIdentity => "identity",
+            ProjectCompositionProvenanceKind::ManualUser => "user",
+            ProjectCompositionProvenanceKind::SourceField => "source",
+            ProjectCompositionProvenanceKind::SystemConfig => "system_config",
+            ProjectCompositionProvenanceKind::Derived => "derived",
+            ProjectCompositionProvenanceKind::Unavailable => "unavailable",
+        });
+    match &field.value {
+        Value::Array(items) => items
+            .iter()
+            .take(12)
+            .map(|item| {
+                json!({
+                    "label": format!("{}: {}", field.label, compact_item_label(item)),
+                    "source_label": source_label,
+                    "source_asof": field.source_asof,
+                })
+            })
+            .collect(),
+        _ => vec![json!({
+            "label": format!("{}: {}", field.label, snapshot_value_text(&field.value)),
+            "source_label": source_label,
+            "source_asof": field.source_asof,
+        })],
+    }
+}
+
+fn compact_item_label(value: &Value) -> String {
+    let Some(object) = value.as_object() else {
+        return snapshot_value_text(value);
+    };
+    for key in ["title", "name", "signal_text", "content"] {
+        if let Some(label) = object.get(key).and_then(Value::as_str) {
+            if !label.trim().is_empty() {
+                return label.to_string();
+            }
+        }
+    }
+    snapshot_value_text(value)
 }
 
 #[allow(clippy::too_many_arguments)]
@@ -1088,11 +984,15 @@ fn build_section_state_block(
     Ok(block)
 }
 
+#[allow(clippy::too_many_arguments)]
 fn build_overview_block(
-    build_context: &AccountBlockBuildContext<'_, '_>,
+    ctx: &AbilityContext<'_>,
+    input: &NormalizedInput,
     projections: &[ClaimProjection],
     snapshot_outcome: &SnapshotReadOutcome,
     composition_block_path: &str,
+    subject: &SubjectAttribution,
+    invocation_id: InvocationId,
     provenance_builder: &mut ProvenanceBuilder,
 ) -> Result<Block, AbilityError> {
     let snapshot = snapshot_outcome.snapshot.as_ref();
@@ -1102,15 +1002,20 @@ fn build_overview_block(
         .map(|projection| projection.source_index)
         .collect::<Vec<_>>();
     source_indexes.extend(snapshot_source_indexes(
-        build_context.ctx,
-        build_context.input,
+        ctx,
+        input,
         &headline_fields,
         provenance_builder,
     )?);
     let overview_claims = projections
         .iter()
         .enumerate()
-        .filter(|(_, projection)| projection.placement == ClaimPlacement::Overview)
+        .filter(|(_, projection)| {
+            matches!(
+                projection.placement,
+                ClaimPlacement::Momentum | ClaimPlacement::Context
+            )
+        })
         .collect::<Vec<_>>();
     let all_refs = projections
         .iter()
@@ -1133,12 +1038,12 @@ fn build_overview_block(
         .collect::<Vec<_>>();
     let trust_band = block_trust_band(projections.iter().map(|projection| projection.trust_band));
     let counts_by_band = trust_band_counts(projections);
-    let account_display_name = snapshot
+    let project_display_name = snapshot
         .map(|snapshot| snapshot_value_text(&snapshot.display_name.value))
         .filter(|value| !value.is_empty())
-        .unwrap_or_else(|| build_context.input.account_id.clone());
-    let account_type = snapshot
-        .and_then(|snapshot| snapshot.account_type.as_ref())
+        .unwrap_or_else(|| input.project_id.clone());
+    let status = snapshot
+        .and_then(|snapshot| snapshot.status.as_ref())
         .filter(|field| field.sensitivity.is_render_safe())
         .map(|field| snapshot_value_text(&field.value));
     let vitals = headline_fields
@@ -1155,17 +1060,23 @@ fn build_overview_block(
         .collect::<Vec<_>>();
     let vitals_len = vitals.len();
     let attributes = json!({
-        "account_id": build_context.input.account_id,
+        "entity_type": "project",
+        "project_id": input.project_id,
         "account": {
-            "id": build_context.input.account_id,
-            "display_name": account_display_name,
-            "type": account_type,
+            "id": input.project_id,
+            "display_name": project_display_name,
+            "type": "Project",
         },
-        "title": "Account overview",
+        "project": {
+            "id": input.project_id,
+            "display_name": project_display_name,
+            "status": status,
+        },
+        "title": "Project overview",
         "summary": overview_claims
             .first()
             .map(|(_, projection)| projection.rendered_text.as_str())
-            .unwrap_or("Account composition is grounded in current renderable claims and source-backed account fields."),
+            .unwrap_or("Project composition is grounded in current renderable claims and source-backed project fields."),
         "claim_count": projections.len(),
         "trust_band": trust_band_label(trust_band),
         "counts_by_trust_band": counts_by_band,
@@ -1174,17 +1085,12 @@ fn build_overview_block(
         "snapshot_degraded": snapshot_outcome.degraded_reason.as_deref().unwrap_or(""),
     });
     let mut block = Block::new(
-        BlockId::new(block_id(
-            build_context.input,
-            "headline",
-            "account_overview",
-            "summary",
-        )),
+        BlockId::new(block_id(input, "headline", "account_overview", "summary")),
         BlockType::AccountOverview,
         attributes,
         all_refs,
         ProvenanceRef::new(
-            build_context.invocation_id,
+            invocation_id,
             FieldPath::new(composition_block_path).map_err(field_error)?,
         ),
         None,
@@ -1197,31 +1103,28 @@ fn build_overview_block(
         display_only_binding("/account/id")?,
         display_only_binding("/account/display_name")?,
         display_only_binding("/account/type")?,
+        display_only_binding("/project/id")?,
+        display_only_binding("/project/display_name")?,
+        display_only_binding("/project/status")?,
         display_only_binding("/snapshot_degraded")?,
     ];
     display_bindings.extend(vitals_display_bindings(vitals_len)?);
 
     if projections.is_empty() {
         block.field_bindings = display_bindings;
-        attribute_block(
-            provenance_builder,
-            composition_block_path,
-            build_context.subject,
-            source_indexes,
-        )?;
     } else {
         let mut bindings = vec![computed_binding("/claim_count", 0..projections.len())?];
         bindings.extend(trust_band_count_computed_bindings(projections.len())?);
         bindings.extend(context_computed_bindings(&overview_claim_indexes)?);
         bindings.extend(display_bindings);
         block.field_bindings = bindings;
-        attribute_block(
-            provenance_builder,
-            composition_block_path,
-            build_context.subject,
-            source_indexes,
-        )?;
     }
+    attribute_block(
+        provenance_builder,
+        composition_block_path,
+        subject,
+        source_indexes,
+    )?;
     Ok(block)
 }
 
@@ -1252,39 +1155,10 @@ fn build_claim_block(
                 SalienceBand::Critical,
                 "risk claim",
             ),
-            ClaimPlacement::Win => (
-                BlockType::ClaimSummary,
-                json!({
-                    "intent": "win",
-                    "claim_id": projection.claim.id,
-                    "text": projection.rendered_text,
-                    "claim_type": projection.claim.claim_type,
-                    "trust_band": trust_band,
-                    "source_asof": projection.claim.source_asof,
-                }),
-                source_feedback_computed_bindings("/text", "/trust_band")?,
-                0.72,
-                SalienceBand::Important,
-                "win claim",
-            ),
-            ClaimPlacement::Value => (
-                BlockType::ClaimSummary,
-                json!({
-                    "intent": "value",
-                    "claim_id": projection.claim.id,
-                    "text": projection.rendered_text,
-                    "claim_type": projection.claim.claim_type,
-                    "trust_band": trust_band,
-                    "source_asof": projection.claim.source_asof,
-                }),
-                source_feedback_computed_bindings("/text", "/trust_band")?,
-                0.72,
-                SalienceBand::Important,
-                "value claim",
-            ),
             ClaimPlacement::Commitment => (
                 BlockType::ActionList,
                 json!({
+                    "title": "Actions",
                     "items": [{
                         "claim_id": projection.claim.id,
                         "text": projection.rendered_text,
@@ -1316,24 +1190,10 @@ fn build_claim_block(
                 SalienceBand::Contextual,
                 "relationship claim",
             ),
-            ClaimPlacement::Health => (
-                BlockType::HealthSnapshot,
-                json!({
-                    "claim_id": projection.claim.id,
-                    "text": projection.rendered_text,
-                    "claim_type": projection.claim.claim_type,
-                    "trust_band": trust_band,
-                    "source_asof": projection.claim.source_asof,
-                }),
-                source_feedback_computed_bindings("/text", "/trust_band")?,
-                0.82,
-                SalienceBand::Important,
-                "health claim",
-            ),
-            ClaimPlacement::Overview => (
+            ClaimPlacement::Momentum | ClaimPlacement::Context => (
                 BlockType::ClaimSummary,
                 json!({
-                    "intent": "context",
+                    "intent": if projection.placement == ClaimPlacement::Momentum { "trajectory" } else { "context" },
                     "claim_id": projection.claim.id,
                     "text": projection.rendered_text,
                     "claim_type": projection.claim.claim_type,
@@ -1341,13 +1201,13 @@ fn build_claim_block(
                     "source_asof": projection.claim.source_asof,
                 }),
                 source_feedback_computed_bindings("/text", "/trust_band")?,
-                0.58,
-                SalienceBand::Contextual,
-                "account context claim",
+                0.66,
+                SalienceBand::Important,
+                "project claim",
             ),
             ClaimPlacement::Ignored => {
                 return Err(validation_error(
-                    "unexpected account overview block placement",
+                    "unexpected project overview block placement",
                 ));
             }
         };
@@ -1381,9 +1241,9 @@ fn build_claim_block(
 }
 
 fn snapshot_fields_for_section<'a>(
-    snapshot: Option<&'a AccountCompositionSnapshot>,
+    snapshot: Option<&'a ProjectCompositionSnapshot>,
     section_id: &str,
-) -> Vec<&'a AccountCompositionSnapshotField> {
+) -> Vec<&'a ProjectCompositionSnapshotField> {
     let Some(snapshot) = snapshot else {
         return Vec::new();
     };
@@ -1397,34 +1257,14 @@ fn snapshot_fields_for_section<'a>(
 
 fn snapshot_field_belongs_to_section(field_path: &str, section_id: &str) -> bool {
     match section_id {
-        "headline" => {
-            field_path.starts_with("/vitals/")
-                || field_path.starts_with("/identity/")
-                || field_path == "/health/band"
-        }
-        "outlook" => {
-            field_path.starts_with("/outlook/")
-                || field_path.starts_with("/renewal/")
-                || field_path == "/vitals/contract_end"
-                || field_path == "/health/band"
-        }
-        "state-of-play" => field_path.starts_with("/state/"),
-        "the-room" => field_path.starts_with("/stakeholders/"),
-        "whats-next" => field_path.starts_with("/work/next_steps/"),
-        "watch-list" => field_path.starts_with("/watch_list/"),
-        "value-commitments" => {
-            field_path.starts_with("/value/")
-                || field_path.starts_with("/work/commitments/")
-                || field_path == "/vitals/arr"
-        }
-        "strategic-landscape" => {
-            field_path.starts_with("/strategy/")
-                || field_path.starts_with("/technical/")
-                || field_path.starts_with("/company/")
-        }
-        "the-record" => field_path.starts_with("/record/") || field_path.starts_with("/sources/"),
-        "the-work" => field_path.starts_with("/work/"),
-        "reports" => field_path.starts_with("/reports/"),
+        "headline" => field_path.starts_with("/vitals/") || field_path.starts_with("/identity/"),
+        "portfolio" => field_path.starts_with("/portfolio/"),
+        "trajectory" => field_path.starts_with("/trajectory/"),
+        "the-horizon" => field_path.starts_with("/the-horizon/"),
+        "the-landscape" => field_path.starts_with("/state/"),
+        "the-room" => field_path.starts_with("/the-room/"),
+        "the-record" => field_path.starts_with("/the-record/"),
+        "the-work" => field_path.starts_with("/the-work/"),
         _ => false,
     }
 }
@@ -1432,7 +1272,7 @@ fn snapshot_field_belongs_to_section(field_path: &str, section_id: &str) -> bool
 fn snapshot_source_indexes(
     ctx: &AbilityContext<'_>,
     input: &NormalizedInput,
-    fields: &[&AccountCompositionSnapshotField],
+    fields: &[&ProjectCompositionSnapshotField],
     provenance_builder: &mut ProvenanceBuilder,
 ) -> Result<Vec<crate::abilities::provenance::SourceIndex>, AbilityError> {
     let mut indexes = Vec::new();
@@ -1450,12 +1290,12 @@ fn snapshot_source_indexes(
 fn source_for_snapshot_field(
     ctx: &AbilityContext<'_>,
     input: &NormalizedInput,
-    field: &AccountCompositionSnapshotField,
+    field: &ProjectCompositionSnapshotField,
 ) -> Result<Option<SourceAttribution>, AbilityError> {
     if matches!(
         field.provenance_kind,
-        AccountCompositionProvenanceKind::NonSensitiveIdentity
-            | AccountCompositionProvenanceKind::Unavailable
+        ProjectCompositionProvenanceKind::NonSensitiveIdentity
+            | ProjectCompositionProvenanceKind::Unavailable
     ) && field.source_label.is_none()
         && field.source_ref.is_none()
         && field.source_asof.is_none()
@@ -1477,7 +1317,7 @@ fn source_for_snapshot_field(
     SourceAttribution::new(
         data_source_for_snapshot_field(field),
         vec![SourceIdentifier::Entity {
-            entity_id: EntityId::new(input.account_id.clone()),
+            entity_id: EntityId::new(input.project_id.clone()),
             field: Some(field.field_path.clone()),
         }],
         observed_at,
@@ -1489,15 +1329,15 @@ fn source_for_snapshot_field(
     .map_err(|error| validation_error(format!("invalid snapshot source attribution: {error}")))
 }
 
-fn data_source_for_snapshot_field(field: &AccountCompositionSnapshotField) -> DataSource {
+fn data_source_for_snapshot_field(field: &ProjectCompositionSnapshotField) -> DataSource {
     match field.provenance_kind {
-        AccountCompositionProvenanceKind::ManualUser => DataSource::User,
-        AccountCompositionProvenanceKind::SystemConfig => DataSource::LocalEnrichment,
+        ProjectCompositionProvenanceKind::ManualUser => DataSource::User,
+        ProjectCompositionProvenanceKind::SystemConfig => DataSource::LocalEnrichment,
         _ => field
             .source_label
             .as_deref()
             .map(data_source_for_claim)
-            .unwrap_or_else(|| DataSource::Other(SourceName::new("account_snapshot"))),
+            .unwrap_or_else(|| DataSource::Other(SourceName::new("project_snapshot"))),
     }
 }
 
@@ -1573,7 +1413,7 @@ fn attribute_block(
     } else {
         FieldAttribution::computed(
             subject.clone(),
-            "dailyos.account_overview.v1",
+            "dailyos.project_overview.v1",
             source_indexes
                 .into_iter()
                 .map(|source_index| SourceRef::Source { source_index })
@@ -1583,7 +1423,7 @@ fn attribute_block(
         .map_err(field_error)?
     };
     builder
-        .attribute(path.clone(), attribution.clone())
+        .attribute(path, attribution)
         .map_err(provenance_error)?;
     Ok(())
 }
@@ -1664,7 +1504,8 @@ fn vitals_display_bindings(item_count: usize) -> Result<Vec<FieldBinding>, Abili
 }
 
 fn evidence_list_display_bindings(item_count: usize) -> Result<Vec<FieldBinding>, AbilityError> {
-    let mut bindings = Vec::with_capacity(item_count * 3);
+    let mut bindings = Vec::with_capacity(item_count * 3 + 1);
+    bindings.push(display_only_binding("/title")?);
     for index in 0..item_count {
         bindings.push(display_only_binding(&format!("/items/{index}/label"))?);
         bindings.push(display_only_binding(&format!(
@@ -1673,16 +1514,6 @@ fn evidence_list_display_bindings(item_count: usize) -> Result<Vec<FieldBinding>
         bindings.push(display_only_binding(&format!(
             "/items/{index}/source_asof"
         ))?);
-    }
-    Ok(bindings)
-}
-
-fn action_list_display_bindings(item_count: usize) -> Result<Vec<FieldBinding>, AbilityError> {
-    let mut bindings = Vec::with_capacity(item_count * 3);
-    for index in 0..item_count {
-        bindings.push(display_only_binding(&format!("/items/{index}/title"))?);
-        bindings.push(display_only_binding(&format!("/items/{index}/status"))?);
-        bindings.push(display_only_binding(&format!("/items/{index}/text"))?);
     }
     Ok(bindings)
 }
@@ -1819,13 +1650,11 @@ fn compare_claim_projection(left: &ClaimProjection, right: &ClaimProjection) -> 
 fn placement_rank(placement: ClaimPlacement) -> u8 {
     match placement {
         ClaimPlacement::Risk => 0,
-        ClaimPlacement::Health => 1,
+        ClaimPlacement::Momentum => 1,
         ClaimPlacement::Commitment => 2,
-        ClaimPlacement::Value => 3,
-        ClaimPlacement::Win => 4,
-        ClaimPlacement::Relationship => 5,
-        ClaimPlacement::Overview => 6,
-        ClaimPlacement::Ignored => 7,
+        ClaimPlacement::Relationship => 3,
+        ClaimPlacement::Context => 4,
+        ClaimPlacement::Ignored => 5,
     }
 }
 
@@ -1839,7 +1668,7 @@ fn trust_rank(band: TrustBand) -> u8 {
 
 fn source_for_claim(
     ctx: &AbilityContext<'_>,
-    account_id: &str,
+    project_id: &str,
     claim: &IntelligenceClaim,
 ) -> Result<SourceAttribution, AbilityError> {
     let now = ctx.services().clock.now();
@@ -1848,7 +1677,7 @@ fn source_for_claim(
     SourceAttribution::new(
         data_source_for_claim(&claim.data_source),
         vec![SourceIdentifier::Entity {
-            entity_id: EntityId::new(account_id.to_string()),
+            entity_id: EntityId::new(project_id.to_string()),
             field: Some(
                 claim
                     .field_path
@@ -2050,22 +1879,18 @@ mod tests {
     use chrono::TimeZone;
 
     use super::*;
-    use crate::abilities::provenance::ProvenanceWarning;
     use crate::abilities::registry::{AbilityRegistry, ActorKind, McpExposure, ScopeSet};
-    use crate::abilities::{
-        project_composition_for_surface, Actor, FallbackProjectionContext, SurfaceKind,
-        NOOP_ABILITY_TRACER,
-    };
+    use crate::abilities::NOOP_ABILITY_TRACER;
     use crate::intelligence::provider::{
         Completion, FingerprintMetadata, IntelligenceProvider, ModelName, ModelTier, PromptInput,
         ProviderError, ProviderKind,
     };
     use crate::sensitivity::{ClaimDismissalSurface, ClaimVerificationState};
     use crate::services::context::{
-        AccountCompositionSnapshotReadFuture, AccountCompositionSnapshotReadHandle,
-        AccountCompositionSnapshotSensitivity, CompositionCommitFuture, CompositionCommitHandle,
-        CompositionCommitRequest, EntityContextClaimReadFuture, EntityContextClaimReadHandle,
-        ExternalClients, FixedClock, SeedableRng, ServiceContext,
+        CompositionCommitFuture, CompositionCommitHandle, CompositionCommitRequest,
+        EntityContextClaimReadFuture, EntityContextClaimReadHandle, ExternalClients, FixedClock,
+        ProjectCompositionSnapshotReadFuture, ProjectCompositionSnapshotReadHandle,
+        ProjectCompositionSnapshotSensitivity, SeedableRng, ServiceContext,
     };
     use crate::types::{ClaimSensitivity, TemporalScope};
 
@@ -2096,9 +1921,9 @@ mod tests {
         ) -> EntityContextClaimReadFuture<'a> {
             Box::pin(async move {
                 self.calls.fetch_add(1, Ordering::SeqCst);
-                *self.last_surface.lock().expect("surface lock") = Some(surface);
-                assert_eq!(entity_type, "account");
-                assert_eq!(entity_id, "acct-fixture-1");
+                *self.last_surface.lock().expect("claim surface lock") = Some(surface);
+                assert_eq!(entity_type, "project");
+                assert_eq!(entity_id, "project-fixture-1");
                 Ok(self.claims.lock().expect("claim lock").clone())
             })
         }
@@ -2139,14 +1964,14 @@ mod tests {
     }
 
     struct SpySnapshotReader {
-        result: Mutex<Result<AccountCompositionSnapshot, AccountCompositionSnapshotReadError>>,
+        result: Mutex<Result<ProjectCompositionSnapshot, ProjectCompositionSnapshotReadError>>,
         calls: AtomicUsize,
         last_surface: Mutex<Option<ClaimDismissalSurface>>,
     }
 
     impl SpySnapshotReader {
         fn new(
-            result: Result<AccountCompositionSnapshot, AccountCompositionSnapshotReadError>,
+            result: Result<ProjectCompositionSnapshot, ProjectCompositionSnapshotReadError>,
         ) -> Self {
             Self {
                 result: Mutex::new(result),
@@ -2156,16 +1981,16 @@ mod tests {
         }
     }
 
-    impl AccountCompositionSnapshotReadHandle for SpySnapshotReader {
-        fn read_account_composition_snapshot<'a>(
+    impl ProjectCompositionSnapshotReadHandle for SpySnapshotReader {
+        fn read_project_composition_snapshot<'a>(
             &'a self,
-            account_id: String,
+            project_id: String,
             surface: ClaimDismissalSurface,
-        ) -> AccountCompositionSnapshotReadFuture<'a> {
+        ) -> ProjectCompositionSnapshotReadFuture<'a> {
             Box::pin(async move {
                 self.calls.fetch_add(1, Ordering::SeqCst);
                 *self.last_surface.lock().expect("snapshot surface lock") = Some(surface);
-                assert_eq!(account_id, "acct-fixture-1");
+                assert_eq!(project_id, "project-fixture-1");
                 self.result.lock().expect("snapshot result lock").clone()
             })
         }
@@ -2230,24 +2055,14 @@ mod tests {
         external: &'a ExternalClients,
         reader: Arc<SpyClaimReader>,
         committer: Arc<RecordingCommitter>,
+        snapshot_reader: Arc<SpySnapshotReader>,
     ) -> ServiceContext<'a> {
         ServiceContext::test_live(clock, rng, external)
             .with_actor("surface_client")
             .with_ability_id(ABILITY_NAME)
             .with_entity_context_claim_reader(reader)
+            .with_project_composition_snapshot_reader(snapshot_reader)
             .with_composition_commit_handle(committer)
-    }
-
-    fn services_with_snapshot<'a>(
-        clock: &'a FixedClock,
-        rng: &'a SeedableRng,
-        external: &'a ExternalClients,
-        reader: Arc<SpyClaimReader>,
-        committer: Arc<RecordingCommitter>,
-        snapshot_reader: Arc<SpySnapshotReader>,
-    ) -> ServiceContext<'a> {
-        services(clock, rng, external, reader, committer)
-            .with_account_composition_snapshot_reader(snapshot_reader)
     }
 
     fn ability_ctx<'a>(
@@ -2259,9 +2074,9 @@ mod tests {
             provider,
             &NOOP_ABILITY_TRACER,
             Actor::SurfaceClient {
-                instance: crate::abilities::registry::SurfaceClientId::new("sc_fixture"),
+                instance: crate::abilities::registry::SurfaceClientId::new("sc_project_fixture"),
                 scopes: ScopeSet::new([crate::abilities::registry::SurfaceScope::new(
-                    "read.account_overview",
+                    "read.project_overview",
                 )])
                 .expect("scope set"),
             },
@@ -2270,19 +2085,20 @@ mod tests {
         )
     }
 
-    fn input() -> AccountOverviewInput {
-        AccountOverviewInput {
+    fn input() -> ProjectOverviewInput {
+        ProjectOverviewInput {
             schema_version: ABILITY_SCHEMA_VERSION,
-            account_id: "acct-fixture-1".to_string(),
+            project_id: "project-fixture-1".to_string(),
             entity_type: None,
             entity_id: None,
             expected_composition_version: 0,
-            composition_id: Some("acct-overview-fixture".to_string()),
+            composition_id: Some("project-overview-fixture".to_string()),
         }
     }
 
     fn claim(
         id: &str,
+        subject_ref: Value,
         claim_type: &str,
         field_path: &str,
         text: &str,
@@ -2293,7 +2109,7 @@ mod tests {
         IntelligenceClaim {
             id: id.to_string(),
             claim_version: 2,
-            subject_ref: json!({"kind": "account", "id": "acct-fixture-1"}).to_string(),
+            subject_ref: subject_ref.to_string(),
             claim_type: claim_type.to_string(),
             field_path: Some(field_path.to_string()),
             topic_key: None,
@@ -2327,15 +2143,36 @@ mod tests {
         }
     }
 
+    fn project_claim(
+        id: &str,
+        claim_type: &str,
+        field_path: &str,
+        text: &str,
+        trust_score: Option<f64>,
+        source_asof: Option<&str>,
+        sensitivity: ClaimSensitivity,
+    ) -> IntelligenceClaim {
+        claim(
+            id,
+            json!({"kind": "project", "id": "project-fixture-1"}),
+            claim_type,
+            field_path,
+            text,
+            trust_score,
+            source_asof,
+            sensitivity,
+        )
+    }
+
     fn snapshot_field(
         field_path: &str,
         label: &str,
         value: Value,
-        sensitivity: AccountCompositionSnapshotSensitivity,
+        sensitivity: ProjectCompositionSnapshotSensitivity,
         source_label: Option<&str>,
         source_asof: Option<&str>,
-    ) -> AccountCompositionSnapshotField {
-        AccountCompositionSnapshotField {
+    ) -> ProjectCompositionSnapshotField {
+        ProjectCompositionSnapshotField {
             field_path: field_path.to_string(),
             label: label.to_string(),
             value,
@@ -2345,7 +2182,7 @@ mod tests {
             source_asof: source_asof.map(ToString::to_string),
             trust_band: TrustBand::UseWithCaution,
             trust_status: "use_with_caution".to_string(),
-            provenance_kind: AccountCompositionProvenanceKind::SourceField,
+            provenance_kind: ProjectCompositionProvenanceKind::SourceField,
         }
     }
 
@@ -2353,36 +2190,38 @@ mod tests {
         field_path: &str,
         label: &str,
         value: &str,
-    ) -> AccountCompositionSnapshotField {
-        AccountCompositionSnapshotField {
+    ) -> ProjectCompositionSnapshotField {
+        ProjectCompositionSnapshotField {
             field_path: field_path.to_string(),
             label: label.to_string(),
             value: Value::String(value.to_string()),
-            sensitivity: AccountCompositionSnapshotSensitivity::NonSensitiveIdentity,
+            sensitivity: ProjectCompositionSnapshotSensitivity::NonSensitiveIdentity,
             source_label: None,
             source_ref: None,
             source_asof: None,
             trust_band: TrustBand::LikelyCurrent,
             trust_status: "likely_current".to_string(),
-            provenance_kind: AccountCompositionProvenanceKind::NonSensitiveIdentity,
+            provenance_kind: ProjectCompositionProvenanceKind::NonSensitiveIdentity,
         }
     }
 
     fn snapshot_fixture(
-        fields: Vec<AccountCompositionSnapshotField>,
-    ) -> AccountCompositionSnapshot {
-        AccountCompositionSnapshot {
-            account_id: "acct-fixture-1".to_string(),
+        is_parent: bool,
+        fields: Vec<ProjectCompositionSnapshotField>,
+    ) -> ProjectCompositionSnapshot {
+        ProjectCompositionSnapshot {
+            project_id: "project-fixture-1".to_string(),
             display_name: identity_snapshot_field(
                 "/identity/display_name",
-                "Account",
-                "Example Account",
+                "Project",
+                "Example Project",
             ),
-            account_type: Some(identity_snapshot_field(
-                "/identity/account_type",
-                "Account type",
-                "customer",
+            status: Some(identity_snapshot_field(
+                "/identity/status",
+                "Status",
+                "active",
             )),
+            is_parent,
             fields,
         }
     }
@@ -2392,41 +2231,17 @@ mod tests {
     }
 
     #[test]
-    fn registry_declaration_pins_policy() {
-        let registry = AbilityRegistry::global_checked().expect("registry builds");
-        let descriptor = registry
-            .iter_all()
-            .find(|descriptor| descriptor.name == ABILITY_NAME)
-            .expect("account overview ability registered");
-
-        assert_eq!(descriptor.name, ABILITY_NAME);
-        assert_eq!(descriptor.category, AbilityCategory::Read);
-        assert_eq!(
-            descriptor.policy.allowed_actors,
-            &[ActorKind::User, ActorKind::SurfaceClient]
-        );
-        assert_eq!(
-            descriptor.policy.required_scopes,
-            &["read.account_overview"]
-        );
-        assert_eq!(descriptor.policy.mcp_exposure, McpExposure::Invocable);
-        assert!(!descriptor.policy.client_side_executable);
-        assert!(descriptor.mutates.is_empty());
-        assert!(descriptor.composes.is_empty());
-    }
-
-    #[test]
-    fn entity_envelope_accepts_matching_account_and_rejects_mismatch() {
-        let ok = AccountOverviewInput {
-            entity_type: Some("account".to_string()),
-            entity_id: Some("acct-fixture-1".to_string()),
+    fn entity_envelope_accepts_matching_project_and_rejects_mismatch() {
+        let ok = ProjectOverviewInput {
+            entity_type: Some("project".to_string()),
+            entity_id: Some("project-fixture-1".to_string()),
             ..input()
         };
         normalize_input(ok).expect("matching envelope is accepted");
 
-        let wrong_type = AccountOverviewInput {
-            entity_type: Some("project".to_string()),
-            entity_id: Some("acct-fixture-1".to_string()),
+        let wrong_type = ProjectOverviewInput {
+            entity_type: Some("person".to_string()),
+            entity_id: Some("project-fixture-1".to_string()),
             ..input()
         };
         assert_eq!(
@@ -2436,9 +2251,9 @@ mod tests {
             AbilityErrorKind::Validation
         );
 
-        let wrong_id = AccountOverviewInput {
-            entity_type: Some("account".to_string()),
-            entity_id: Some("other-account".to_string()),
+        let wrong_id = ProjectOverviewInput {
+            entity_type: Some("project".to_string()),
+            entity_id: Some("other-project".to_string()),
             ..input()
         };
         assert_eq!(
@@ -2449,37 +2264,55 @@ mod tests {
         );
     }
 
-    #[tokio::test]
-    async fn missing_account_id_rejects_before_claim_read_or_commit() {
-        let (clock, rng, external, reader, committer, provider) = fixture_parts(Vec::new());
-        let services = services(&clock, &rng, &external, reader.clone(), committer.clone());
-        let ctx = ability_ctx(&services, &provider);
+    #[test]
+    fn registry_declaration_pins_project_policy_and_invalidation_signals() {
+        let registry = AbilityRegistry::global_checked().expect("registry builds");
+        let descriptor = registry
+            .iter_all()
+            .find(|descriptor| descriptor.name == ABILITY_NAME)
+            .expect("project overview ability registered");
 
-        let err = match account_overview(
-            &ctx,
-            AccountOverviewInput {
-                account_id: " ".to_string(),
-                ..input()
-            },
-        )
-        .await
-        {
-            Ok(_) => panic!("missing account id rejects"),
-            Err(error) => error,
-        };
-
-        assert_eq!(err.kind, AbilityErrorKind::Validation);
-        assert_eq!(reader.calls.load(Ordering::SeqCst), 0);
-        assert_eq!(committer.calls.load(Ordering::SeqCst), 0);
+        assert_eq!(descriptor.name, ABILITY_NAME);
+        assert_eq!(descriptor.category, AbilityCategory::Read);
+        assert_eq!(
+            descriptor.policy.allowed_actors,
+            &[ActorKind::User, ActorKind::SurfaceClient]
+        );
+        assert_eq!(
+            descriptor.policy.required_scopes,
+            &["read.project_overview"]
+        );
+        assert_eq!(descriptor.policy.mcp_exposure, McpExposure::Invocable);
+        assert!(!descriptor.policy.client_side_executable);
+        assert!(descriptor.mutates.is_empty());
+        assert!(descriptor.composes.is_empty());
+        assert!(descriptor.signal_policy.coalesce);
+        for signal in [
+            "claim.version",
+            "project_subject.claim_changed",
+            "claim.lifecycle",
+            "claim.dismissal",
+            "source.freshness",
+            "source.revocation",
+            "project.field_changed",
+        ] {
+            assert!(
+                descriptor
+                    .signal_policy
+                    .emits_on_output_change
+                    .contains(&signal),
+                "project overview declares invalidation signal {signal}"
+            );
+        }
     }
 
     #[tokio::test]
-    async fn missing_account_snapshot_rejects_before_composition_commit() {
+    async fn missing_project_rejects_before_composition_commit() {
         let snapshot_reader = Arc::new(SpySnapshotReader::new(Err(
-            AccountCompositionSnapshotReadError::AccountNotFound("acct-fixture-1".to_string()),
+            ProjectCompositionSnapshotReadError::ProjectNotFound("project-fixture-1".to_string()),
         )));
         let (clock, rng, external, reader, committer, provider) = fixture_parts(Vec::new());
-        let services = services_with_snapshot(
+        let services = services(
             &clock,
             &rng,
             &external,
@@ -2489,104 +2322,168 @@ mod tests {
         );
         let ctx = ability_ctx(&services, &provider);
 
-        let err = match account_overview(&ctx, input()).await {
-            Ok(_) => panic!("missing account rejects"),
+        let err = match project_overview(&ctx, input()).await {
+            Ok(_) => panic!("missing project rejects"),
             Err(error) => error,
         };
 
         assert_eq!(err.kind, AbilityErrorKind::Validation);
-        assert!(err.message.contains("acct-fixture-1"));
+        assert!(err.message.contains("project-fixture-1"));
         assert_eq!(reader.calls.load(Ordering::SeqCst), 1);
         assert_eq!(snapshot_reader.calls.load(Ordering::SeqCst), 1);
         assert_eq!(committer.calls.load(Ordering::SeqCst), 0);
     }
 
     #[tokio::test]
-    async fn committed_output_has_field_bindings_provenance_and_degraded_trust() {
-        let mut hidden = claim(
-            "claim-hidden",
+    async fn committed_output_filters_project_claims_and_wraps_snapshot_fields() {
+        let mut dismissed = project_claim(
+            "claim-dismissed",
             "entity_risk",
             "/risk/hidden",
-            "Hidden risk",
+            "Dismissed risk should not render",
             Some(0.99),
             Some("2026-05-15T09:00:00Z"),
-            ClaimSensitivity::Confidential,
+            ClaimSensitivity::Internal,
         );
-        hidden.surfacing_state = SurfacingState::Active;
+        dismissed.demotion_reason = Some("dismissed".to_string());
         let claims = vec![
-            claim(
+            project_claim(
                 "claim-risk",
                 "entity_risk",
                 "/risk/current",
                 "Implementation risk is rising",
                 Some(0.97),
-                None,
+                Some("2026-05-15T09:00:00Z"),
                 ClaimSensitivity::Internal,
             ),
-            claim(
+            project_claim(
                 "claim-win",
                 "entity_win",
                 "/wins/latest",
-                "Renewal path is clearer",
+                "Launch path is clearer",
                 Some(0.92),
                 Some("2026-05-14T09:00:00Z"),
                 ClaimSensitivity::Internal,
             ),
-            claim(
-                "claim-value",
-                "value_delivered",
-                "/value/latest",
-                "Team shipped adoption milestone",
-                None,
-                Some("2026-05-14T09:00:00Z"),
-                ClaimSensitivity::Internal,
-            ),
-            claim(
+            project_claim(
                 "claim-commitment",
                 "commitment",
                 "/commitments/next",
-                "Follow up on launch checklist",
-                Some(0.85),
-                Some("2026-05-01T09:00:00Z"),
+                "Review the rollout plan",
+                Some(0.86),
+                Some("2026-04-01T09:00:00Z"),
                 ClaimSensitivity::Internal,
             ),
             claim(
-                "claim-context",
-                "company_context",
-                "/company/industry",
-                "Fixture Account operates in software",
-                Some(0.96),
-                Some("2026-03-01T09:00:00Z"),
+                "claim-account-scope",
+                json!({"kind": "account", "id": "acct-fixture"}),
+                "entity_win",
+                "/wins/account",
+                "Account-scoped claim should not render",
+                Some(0.92),
+                Some("2026-05-14T09:00:00Z"),
                 ClaimSensitivity::Internal,
             ),
-            hidden,
+            project_claim(
+                "claim-confidential",
+                "company_context",
+                "/context/confidential",
+                "Confidential project detail should not render",
+                Some(0.9),
+                Some("2026-05-14T09:00:00Z"),
+                ClaimSensitivity::Confidential,
+            ),
+            dismissed,
         ];
+        let snapshot_reader = Arc::new(SpySnapshotReader::new(Ok(snapshot_fixture(
+            true,
+            vec![
+                snapshot_field(
+                    "/vitals/status",
+                    "Status",
+                    Value::String("active".to_string()),
+                    ProjectCompositionSnapshotSensitivity::Internal,
+                    Some("project"),
+                    Some("2026-05-14T09:00:00Z"),
+                ),
+                snapshot_field(
+                    "/the-horizon/signals",
+                    "Project signals",
+                    json!({"open_action_count": 3, "trend": "improving"}),
+                    ProjectCompositionSnapshotSensitivity::Internal,
+                    Some("project_signals"),
+                    Some("2026-05-14T09:00:00Z"),
+                ),
+                snapshot_field(
+                    "/portfolio/children",
+                    "Sub-projects",
+                    json!([{"id": "child-1", "name": "Child Project"}]),
+                    ProjectCompositionSnapshotSensitivity::Internal,
+                    Some("project"),
+                    Some("2026-05-14T09:00:00Z"),
+                ),
+                snapshot_field(
+                    "/the-record/private",
+                    "Private field",
+                    Value::String("private snapshot value".to_string()),
+                    ProjectCompositionSnapshotSensitivity::Confidential,
+                    Some("project"),
+                    Some("2026-05-14T09:00:00Z"),
+                ),
+            ],
+        ))));
         let (clock, rng, external, reader, committer, provider) = fixture_parts(claims);
-        let services = services(&clock, &rng, &external, reader.clone(), committer.clone());
+        let services = services(
+            &clock,
+            &rng,
+            &external,
+            reader.clone(),
+            committer.clone(),
+            snapshot_reader.clone(),
+        );
         let ctx = ability_ctx(&services, &provider);
 
-        let output = account_overview(&ctx, input())
+        let output = project_overview(&ctx, input())
             .await
-            .expect("account overview succeeds");
+            .expect("project overview succeeds");
         let composition = output.data();
+        let serialized = output_json(&output);
+        let serialized_text = serialized.to_string();
 
         assert_eq!(reader.calls.load(Ordering::SeqCst), 1);
         assert_eq!(
-            *reader.last_surface.lock().expect("surface lock"),
+            *reader.last_surface.lock().expect("claim surface lock"),
             Some(ClaimDismissalSurface::LogStructured)
         );
+        assert_eq!(snapshot_reader.calls.load(Ordering::SeqCst), 1);
         assert_eq!(committer.calls.load(Ordering::SeqCst), 1);
         assert_eq!(composition.metadata.composition_version.0, 1);
         assert_eq!(composition.generated_by.as_str(), ABILITY_NAME);
         assert_eq!(composition.metadata.generated_by, ABILITY_NAME);
+        assert_eq!(
+            composition.subject.as_ref().map(|subject| subject.as_str()),
+            Some("project:project-fixture-1")
+        );
 
-        let serialized = output_json(&output);
-        assert!(serialized.to_string().contains("claim-risk"));
-        assert!(!serialized.to_string().contains("claim-hidden"));
-        assert!(serialized.to_string().contains("needs_verification"));
-        assert!(output.provenance().warnings.iter().any(|warning| {
-            matches!(warning, ProvenanceWarning::SourceTimestampUnknown { .. })
-        }));
+        let section_ids = composition
+            .sections
+            .iter()
+            .map(|section| section.id.as_str())
+            .collect::<Vec<_>>();
+        assert_eq!(section_ids[0], "headline");
+        assert!(section_ids.contains(&"portfolio"));
+        assert!(section_ids.contains(&"the-horizon"));
+        assert!(section_ids.contains(&"the-work"));
+
+        assert!(serialized_text.contains("claim-risk"));
+        assert!(serialized_text.contains("claim-win"));
+        assert!(serialized_text.contains("claim-commitment"));
+        assert!(!serialized_text.contains("claim-account-scope"));
+        assert!(!serialized_text.contains("claim-confidential"));
+        assert!(!serialized_text.contains("claim-dismissed"));
+        assert!(!serialized_text.contains("private snapshot value"));
+        assert!(serialized_text.contains("Project signals"));
+        assert!(serialized_text.contains("needs_verification"));
 
         let blocks = composition.blocks().collect::<Vec<_>>();
         assert!(blocks
@@ -2595,6 +2492,9 @@ mod tests {
         assert!(blocks
             .iter()
             .any(|block| block.block_type == BlockType::ActionList));
+        assert!(blocks
+            .iter()
+            .any(|block| block.block_type == BlockType::EvidenceList));
         for block in blocks {
             block
                 .validate_against(output.provenance())
@@ -2618,70 +2518,40 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn high_cardinality_overview_claims_keep_provenance_under_hard_budget() {
-        let claims = (0..160)
-            .map(|index| {
-                claim(
-                    &format!("claim-context-{index:03}"),
-                    "company_context",
-                    &format!("/company/context/{index}"),
-                    &format!(
-                        "Context signal {index} remains relevant for the account composition proof."
-                    ),
-                    Some(0.94),
-                    Some("2026-05-14T09:00:00Z"),
-                    ClaimSensitivity::Internal,
-                )
-            })
-            .collect::<Vec<_>>();
-        let (clock, rng, external, reader, committer, provider) = fixture_parts(claims);
-        let services = services(&clock, &rng, &external, reader, committer);
-        let ctx = ability_ctx(&services, &provider);
-
-        let output = account_overview(&ctx, input())
-            .await
-            .expect("large overview composition stays within provenance budget");
-        let provenance_bytes = serde_json::to_vec(output.provenance())
-            .expect("provenance serializes")
-            .len();
-
-        assert!(
-            provenance_bytes < crate::abilities::provenance::builder::HARD_PROVENANCE_BUDGET_BYTES,
-            "provenance envelope should stay under hard budget, got {provenance_bytes}"
-        );
-        for block in output.data().blocks() {
-            block
-                .validate_against(output.provenance())
-                .expect("block provenance resolves");
-        }
-    }
-
-    #[tokio::test]
-    async fn empty_claim_set_returns_display_only_empty_state() {
+    async fn empty_claim_set_returns_project_sections_without_frontend_fallback() {
+        let snapshot_reader = Arc::new(SpySnapshotReader::new(Ok(snapshot_fixture(
+            false,
+            Vec::new(),
+        ))));
         let (clock, rng, external, reader, committer, provider) = fixture_parts(Vec::new());
-        let services = services(&clock, &rng, &external, reader, committer);
+        let services = services(&clock, &rng, &external, reader, committer, snapshot_reader);
         let ctx = ability_ctx(&services, &provider);
 
-        let output = account_overview(&ctx, input())
+        let output = project_overview(&ctx, input())
             .await
-            .expect("empty state succeeds");
+            .expect("empty project overview succeeds");
         let composition = output.data();
         let section_ids = composition
             .sections
             .iter()
             .map(|section| section.id.as_str())
             .collect::<Vec<_>>();
+
         assert_eq!(
             section_ids,
-            VARIANT_D_SECTIONS
-                .iter()
-                .map(|(id, _)| *id)
-                .collect::<Vec<_>>()
+            vec![
+                "headline",
+                "trajectory",
+                "the-horizon",
+                "the-landscape",
+                "the-room",
+                "whats-next",
+                "the-record",
+                "the-work",
+            ]
         );
-        assert!(!section_ids.contains(&"empty"));
-        assert!(!section_ids.contains(&"signals"));
-
-        let degraded_blocks = composition
+        assert!(!section_ids.contains(&"portfolio"));
+        let empty_blocks = composition
             .sections
             .iter()
             .flat_map(|section| section.blocks.iter())
@@ -2694,402 +2564,58 @@ mod tests {
             })
             .collect::<Vec<_>>();
         assert!(
-            degraded_blocks.len() >= 9,
-            "most non-headline sections render degraded empty blocks"
+            empty_blocks.len() >= 7,
+            "non-headline project sections render producer-authored empty blocks"
         );
-        for block in degraded_blocks {
+        for block in empty_blocks {
             assert!(block.claim_refs.is_empty());
             assert!(block.field_bindings.iter().all(|binding| {
                 binding.role == BindingRole::DisplayOnly && binding.claim_refs.is_empty()
             }));
+            block
+                .validate_against(output.provenance())
+                .expect("empty block provenance resolves");
         }
     }
 
     #[tokio::test]
-    async fn snapshot_fields_are_wrapped_sourced_and_sensitivity_filtered() {
-        let snapshot_reader = Arc::new(SpySnapshotReader::new(Ok(snapshot_fixture(vec![
-            snapshot_field(
-                "/vitals/lifecycle",
-                "Lifecycle",
-                Value::String("active".to_string()),
-                AccountCompositionSnapshotSensitivity::Internal,
-                Some("user"),
-                Some("2026-05-14T09:00:00Z"),
-            ),
-            snapshot_field(
-                "/vitals/arr",
-                "ARR",
-                Value::String("sensitive-commercial-value".to_string()),
-                AccountCompositionSnapshotSensitivity::Confidential,
-                Some("salesforce"),
-                Some("2026-05-14T09:00:00Z"),
-            ),
-            snapshot_field(
-                "/reports/account_report",
-                "Account report",
-                Value::String("unavailable".to_string()),
-                AccountCompositionSnapshotSensitivity::Internal,
-                Some("system_config"),
-                Some("2026-05-15T10:00:00Z"),
-            ),
-        ]))));
-        let (clock, rng, external, reader, committer, provider) = fixture_parts(Vec::new());
-        let services = services_with_snapshot(
-            &clock,
-            &rng,
-            &external,
-            reader,
-            committer,
-            snapshot_reader.clone(),
-        );
-        let ctx = ability_ctx(&services, &provider);
-
-        let output = account_overview(&ctx, input())
-            .await
-            .expect("snapshot-backed account overview succeeds");
-        let serialized = output_json(&output);
-
-        assert_eq!(snapshot_reader.calls.load(Ordering::SeqCst), 1);
-        assert_eq!(
-            *snapshot_reader
-                .last_surface
-                .lock()
-                .expect("snapshot surface lock"),
-            Some(ClaimDismissalSurface::LogStructured)
-        );
-        assert!(serialized.to_string().contains("Example Account"));
-        let headline_vitals = output.data().sections[0].blocks[0]
-            .attributes
-            .pointer("/vitals")
-            .and_then(Value::as_array)
-            .expect("headline vitals array");
-        assert!(headline_vitals.iter().any(|value| {
-            value.pointer("/label").and_then(Value::as_str) == Some("Lifecycle")
-                && value.pointer("/value").and_then(Value::as_str) == Some("active")
-        }));
-        assert!(!serialized
-            .to_string()
-            .contains("sensitive-commercial-value"));
-        assert!(output.provenance().sources.iter().any(|source| {
-            source.identifiers.iter().any(|identifier| {
-                matches!(
-                    identifier,
-                    SourceIdentifier::Entity { field: Some(field), .. }
-                        if field == "/vitals/lifecycle"
-                )
-            })
-        }));
-    }
-
-    #[tokio::test]
-    async fn mixed_claim_and_snapshot_sections_keep_both_evidence_paths() {
-        let snapshot_reader = Arc::new(SpySnapshotReader::new(Ok(snapshot_fixture(vec![
-            snapshot_field(
-                "/value/growth_potential",
-                "Growth potential",
-                Value::String("expansion motion active".to_string()),
-                AccountCompositionSnapshotSensitivity::Internal,
-                Some("salesforce"),
-                Some("2026-05-14T09:00:00Z"),
-            ),
-        ]))));
-        let claims = vec![claim(
-            "claim-value",
-            "value_delivered",
-            "/value/latest",
-            "Adoption milestone shipped",
+    async fn snapshot_read_failure_degrades_in_headline_without_blocking_claim_render() {
+        let snapshot_reader = Arc::new(SpySnapshotReader::new(Err(
+            ProjectCompositionSnapshotReadError::ReadFailed("fixture failure".to_string()),
+        )));
+        let claims = vec![project_claim(
+            "claim-win",
+            "entity_win",
+            "/wins/latest",
+            "Launch path is clearer",
             Some(0.92),
             Some("2026-05-14T09:00:00Z"),
             ClaimSensitivity::Internal,
         )];
         let (clock, rng, external, reader, committer, provider) = fixture_parts(claims);
-        let services =
-            services_with_snapshot(&clock, &rng, &external, reader, committer, snapshot_reader);
+        let services = services(
+            &clock,
+            &rng,
+            &external,
+            reader,
+            committer.clone(),
+            snapshot_reader,
+        );
         let ctx = ability_ctx(&services, &provider);
 
-        let output = account_overview(&ctx, input())
+        let output = project_overview(&ctx, input())
             .await
-            .expect("mixed claim and snapshot account overview succeeds");
-        let composition = output.data();
-        let value_section = composition
-            .sections
-            .iter()
-            .find(|section| section.id.as_str() == "value-commitments")
-            .expect("value commitments section");
+            .expect("snapshot degradation still renders claims");
+        let headline = &output.data().sections[0].blocks[0];
 
-        assert!(
-            value_section
-                .blocks
-                .iter()
-                .any(|block| block.block_type == BlockType::ClaimSummary
-                    && block.attributes.pointer("/text").and_then(Value::as_str)
-                        == Some("Adoption milestone shipped")),
-            "claim evidence remains renderable"
+        assert_eq!(committer.calls.load(Ordering::SeqCst), 1);
+        assert_eq!(
+            headline
+                .attributes
+                .pointer("/snapshot_degraded")
+                .and_then(Value::as_str),
+            Some("project_snapshot_unavailable")
         );
-        assert!(
-            value_section
-                .blocks
-                .iter()
-                .any(|block| block.block_type == BlockType::EvidenceList
-                    && block.attributes.to_string().contains("Growth potential")),
-            "snapshot evidence remains renderable beside claims"
-        );
-    }
-
-    #[tokio::test]
-    async fn recommendation_claims_render_as_work_actions() {
-        let claims = vec![claim(
-            "claim-recommendation",
-            "recommendation",
-            "/recommendations/review",
-            "Review the launch plan with the account owner",
-            Some(0.88),
-            Some("2026-05-14T09:00:00Z"),
-            ClaimSensitivity::Internal,
-        )];
-        let (clock, rng, external, reader, committer, provider) = fixture_parts(claims);
-        let services = services(&clock, &rng, &external, reader, committer);
-        let ctx = ability_ctx(&services, &provider);
-
-        let output = account_overview(&ctx, input())
-            .await
-            .expect("recommendation-backed account overview succeeds");
-        let composition = output.data();
-
-        for section_id in ["whats-next", "the-work"] {
-            let section = composition
-                .sections
-                .iter()
-                .find(|section| section.id.as_str() == section_id)
-                .expect("work section exists");
-            let block = section
-                .blocks
-                .iter()
-                .find(|block| {
-                    block.block_type == BlockType::ActionList
-                        && block
-                            .attributes
-                            .pointer("/claim_type")
-                            .and_then(Value::as_str)
-                            == Some("recommendation")
-                        && block
-                            .attributes
-                            .pointer("/items/0/text")
-                            .and_then(Value::as_str)
-                            == Some("Review the launch plan with the account owner")
-                })
-                .expect("recommendation is rendered as a work action");
-
-            assert!(block
-                .claim_refs
-                .iter()
-                .any(|claim_ref| claim_ref.claim_id == "claim-recommendation"));
-            assert!(block.field_bindings.iter().any(|binding| {
-                binding.role == BindingRole::FeedbackTarget
-                    && binding.field_path.as_str() == "/items/0/text"
-                    && !binding.claim_refs.is_empty()
-            }));
-            assert_eq!(
-                block
-                    .attributes
-                    .pointer("/trust_band")
-                    .and_then(Value::as_str),
-                Some("likely_current"),
-                "work action blocks expose block-level trust for the shell badge"
-            );
-            assert_eq!(
-                block
-                    .attributes
-                    .pointer("/source_asof")
-                    .and_then(Value::as_str),
-                Some("2026-05-14T09:00:00Z"),
-                "work action blocks expose block-level freshness for the shell"
-            );
-        }
-
-        let proj_ctx = FallbackProjectionContext::new(
-            Actor::SurfaceClient {
-                instance: crate::abilities::registry::SurfaceClientId::new("sc_fixture"),
-                scopes: ScopeSet::new([crate::abilities::registry::SurfaceScope::new(
-                    "read.account_overview",
-                )])
-                .expect("scope set"),
-            },
-            SurfaceKind::SurfaceClient,
-            3,
-        );
-        let (projected, _audits) = project_composition_for_surface(composition, &proj_ctx)
-            .expect("projected recommendation action preserves shell metadata");
-
-        for section_id in ["whats-next", "the-work"] {
-            let section = projected
-                .sections
-                .iter()
-                .find(|section| section.section_id.as_str() == section_id)
-                .expect("projected work section exists");
-            let projected_block = section
-                .block_indexes
-                .iter()
-                .filter_map(|index| projected.blocks.get(*index as usize))
-                .find(|block| {
-                    block.payload.pointer("/claim_type").and_then(Value::as_str)
-                        == Some("recommendation")
-                })
-                .expect("projected recommendation work action exists");
-
-            assert_eq!(
-                projected_block
-                    .payload
-                    .pointer("/trust_band")
-                    .and_then(Value::as_str),
-                Some("likely_current"),
-                "projection must preserve block-level trust for the renderer shell"
-            );
-            assert_eq!(
-                projected_block
-                    .payload
-                    .pointer("/source_asof")
-                    .and_then(Value::as_str),
-                Some("2026-05-14T09:00:00Z"),
-                "projection must preserve block-level freshness for the renderer shell"
-            );
-        }
-    }
-
-    #[tokio::test]
-    async fn pure_builder_output_is_deterministic_without_commit() {
-        let claims = vec![
-            claim(
-                "claim-b",
-                "entity_win",
-                "/wins/latest",
-                "Stable win",
-                Some(0.91),
-                Some("2026-05-14T09:00:00Z"),
-                ClaimSensitivity::Internal,
-            ),
-            claim(
-                "claim-a",
-                "entity_risk",
-                "/risk/current",
-                "Stable risk",
-                Some(0.91),
-                Some("2026-05-14T09:00:00Z"),
-                ClaimSensitivity::Internal,
-            ),
-        ];
-        let first = prepared_json(claims.clone()).await;
-        let second = prepared_json(claims).await;
-
-        assert_eq!(first, second);
-        assert!(!first.to_string().contains("Acme"));
-    }
-
-    async fn prepared_json(claims: Vec<IntelligenceClaim>) -> Value {
-        let (clock, rng, external, reader, committer, provider) = fixture_parts(claims);
-        let services = services(&clock, &rng, &external, reader, committer);
-        let ctx = ability_ctx(&services, &provider);
-        let normalized = normalize_input(input()).expect("input normalizes");
-        let prepared = prepare_account_overview(&ctx, &normalized)
-            .await
-            .expect("proposal builds");
-        let output = prepared
-            .provenance_builder
-            .finalize(prepared.proposal.composition)
-            .expect("provenance finalizes");
-        output_json(&output)
-    }
-
-    // Asserts producer output passes fallback_projection's binding validator
-    // without BindingTargetsUnknownField. Covers the producer→projection
-    // contract that wasn't exercised by either side's isolated test suite.
-    #[tokio::test]
-    async fn dos670_producer_output_passes_w4d_projection() {
-        let claims = vec![
-            claim(
-                "claim-risk",
-                "entity_risk",
-                "/risk/current",
-                "Implementation risk is rising",
-                Some(0.97),
-                Some("2026-05-14T09:00:00Z"),
-                ClaimSensitivity::Internal,
-            ),
-            claim(
-                "claim-win",
-                "entity_win",
-                "/wins/latest",
-                "Renewal path is clearer",
-                Some(0.92),
-                Some("2026-05-14T09:00:00Z"),
-                ClaimSensitivity::Internal,
-            ),
-            claim(
-                "claim-commitment",
-                "commitment",
-                "/commitments/next",
-                "Follow up on launch checklist",
-                Some(0.85),
-                Some("2026-05-01T09:00:00Z"),
-                ClaimSensitivity::Internal,
-            ),
-            claim(
-                "claim-context",
-                "company_context",
-                "/company/industry",
-                "Fixture Account operates in software",
-                Some(0.96),
-                Some("2026-03-01T09:00:00Z"),
-                ClaimSensitivity::Internal,
-            ),
-        ];
-        let (clock, rng, external, reader, committer, provider) = fixture_parts(claims);
-        let services = services(&clock, &rng, &external, reader, committer);
-        let ctx = ability_ctx(&services, &provider);
-
-        let output = account_overview(&ctx, input())
-            .await
-            .expect("account overview succeeds");
-        let composition = output.data();
-
-        let proj_ctx = FallbackProjectionContext::new(
-            Actor::SurfaceClient {
-                instance: crate::abilities::registry::SurfaceClientId::new("sc_fixture"),
-                scopes: ScopeSet::new([crate::abilities::registry::SurfaceScope::new(
-                    "read.account_overview",
-                )])
-                .expect("scope set"),
-            },
-            SurfaceKind::SurfaceClient,
-            3,
-        );
-
-        let (projected, _audits) = project_composition_for_surface(composition, &proj_ctx)
-            .expect("projection must accept producer output (DOS-670 contract)");
-
-        assert!(
-            !projected.blocks.is_empty(),
-            "projected composition must contain at least one block"
-        );
-
-        let claim_text_rendered = projected.blocks.iter().any(|block| {
-            block.payload.pointer("/text").is_some()
-                || block.payload.pointer("/items/0/text").is_some()
-                || block.payload.pointer("/nodes/0/text").is_some()
-        });
-        assert!(
-            claim_text_rendered,
-            "projected payload must surface claim text from producer attributes"
-        );
-
-        let trust_band_rendered = projected.blocks.iter().any(|block| {
-            block.payload.pointer("/trust_band").is_some()
-                || block.payload.pointer("/items/0/trust_band").is_some()
-                || block.payload.pointer("/nodes/0/trust_band").is_some()
-        });
-        assert!(
-            trust_band_rendered,
-            "projected payload must surface trust_band from producer attributes"
-        );
+        assert!(output_json(&output).to_string().contains("claim-win"));
     }
 }

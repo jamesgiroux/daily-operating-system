@@ -68,6 +68,9 @@ pub struct LiveSourceManagementActionHandler {
 }
 pub struct LiveEntityContextClaimReader;
 pub struct LiveAccountCompositionSnapshotReader;
+pub struct LiveProjectCompositionSnapshotReader;
+pub struct LivePersonCompositionSnapshotReader;
+pub struct LiveActionCompositionSnapshotReader;
 pub struct LivePrepareMeetingContextReader;
 pub struct LiveDailyReadinessContextReader;
 pub struct LiveTemporalWorkspaceReader;
@@ -107,6 +110,15 @@ pub fn attach_live_workspace_readers_with_signal_engine(
         .with_entity_context_claim_reader(Arc::new(LiveEntityContextClaimReader))
         .with_account_composition_snapshot_reader(Arc::new(
             LiveAccountCompositionSnapshotReader,
+        ))
+        .with_project_composition_snapshot_reader(Arc::new(
+            LiveProjectCompositionSnapshotReader,
+        ))
+        .with_person_composition_snapshot_reader(Arc::new(
+            LivePersonCompositionSnapshotReader,
+        ))
+        .with_action_composition_snapshot_reader(Arc::new(
+            LiveActionCompositionSnapshotReader,
         ))
         .with_prepare_meeting_context_reader(Arc::new(LivePrepareMeetingContextReader))
         .with_daily_readiness_context_reader(Arc::new(LiveDailyReadinessContextReader))
@@ -1049,6 +1061,90 @@ impl AccountCompositionSnapshotReadHandle for LiveAccountCompositionSnapshotRead
     }
 }
 
+impl ProjectCompositionSnapshotReadHandle for LiveProjectCompositionSnapshotReader {
+    fn read_project_composition_snapshot<'a>(
+        &'a self,
+        project_id: String,
+        surface: ClaimDismissalSurface,
+    ) -> ProjectCompositionSnapshotReadFuture<'a> {
+        Box::pin(async move {
+            tokio::task::spawn_blocking(move || {
+                let db = crate::db::ActionDb::open_readonly(std::sync::Arc::new(
+                    crate::db::LocalKeychain::new(),
+                ))
+                .map_err(|error| {
+                    ProjectCompositionSnapshotReadError::ReadFailed(format!(
+                        "Database unavailable: {error}"
+                    ))
+                })?;
+                read_project_composition_snapshot_from_db(&db, &project_id, surface)
+            })
+            .await
+            .map_err(|error| {
+                ProjectCompositionSnapshotReadError::ReadFailed(format!(
+                    "project composition snapshot task failed: {error}"
+                ))
+            })?
+        })
+    }
+}
+
+impl PersonCompositionSnapshotReadHandle for LivePersonCompositionSnapshotReader {
+    fn read_person_composition_snapshot<'a>(
+        &'a self,
+        person_id: String,
+        surface: ClaimDismissalSurface,
+    ) -> PersonCompositionSnapshotReadFuture<'a> {
+        Box::pin(async move {
+            tokio::task::spawn_blocking(move || {
+                let db = crate::db::ActionDb::open_readonly(std::sync::Arc::new(
+                    crate::db::LocalKeychain::new(),
+                ))
+                .map_err(|error| {
+                    PersonCompositionSnapshotReadError::ReadFailed(format!(
+                        "Database unavailable: {error}"
+                    ))
+                })?;
+                read_person_composition_snapshot_from_db(&db, &person_id, surface)
+            })
+            .await
+            .map_err(|error| {
+                PersonCompositionSnapshotReadError::ReadFailed(format!(
+                    "person composition snapshot task failed: {error}"
+                ))
+            })?
+        })
+    }
+}
+
+impl ActionCompositionSnapshotReadHandle for LiveActionCompositionSnapshotReader {
+    fn read_action_composition_snapshot<'a>(
+        &'a self,
+        action_id: String,
+        surface: ClaimDismissalSurface,
+    ) -> ActionCompositionSnapshotReadFuture<'a> {
+        Box::pin(async move {
+            tokio::task::spawn_blocking(move || {
+                let db = crate::db::ActionDb::open_readonly(std::sync::Arc::new(
+                    crate::db::LocalKeychain::new(),
+                ))
+                .map_err(|error| {
+                    ActionCompositionSnapshotReadError::ReadFailed(format!(
+                        "Database unavailable: {error}"
+                    ))
+                })?;
+                read_action_composition_snapshot_from_db(&db, &action_id, surface)
+            })
+            .await
+            .map_err(|error| {
+                ActionCompositionSnapshotReadError::ReadFailed(format!(
+                    "action composition snapshot task failed: {error}"
+                ))
+            })?
+        })
+    }
+}
+
 fn read_account_composition_snapshot_from_db(
     db: &crate::db::ActionDb,
     account_id: &str,
@@ -1251,6 +1347,1105 @@ fn read_account_composition_snapshot_from_db(
         )),
         fields,
     })
+}
+
+fn read_project_composition_snapshot_from_db(
+    db: &crate::db::ActionDb,
+    project_id: &str,
+    _surface: ClaimDismissalSurface,
+) -> Result<ProjectCompositionSnapshot, ProjectCompositionSnapshotReadError> {
+    let project = db
+        .get_project(project_id)
+        .map_err(|error| {
+            ProjectCompositionSnapshotReadError::ReadFailed(format!("project read failed: {error}"))
+        })?
+        .ok_or_else(|| {
+            ProjectCompositionSnapshotReadError::ProjectNotFound(project_id.to_string())
+        })?;
+
+    let child_projects = db.get_child_projects(&project.id).map_err(|error| {
+        ProjectCompositionSnapshotReadError::ReadFailed(format!(
+            "project children read failed: {error}"
+        ))
+    })?;
+    let open_actions = db.get_project_actions(&project.id).map_err(|error| {
+        ProjectCompositionSnapshotReadError::ReadFailed(format!(
+            "project actions read failed: {error}"
+        ))
+    })?;
+    let recent_meetings = db
+        .get_meetings_for_project(&project.id, 10)
+        .map_err(|error| {
+            ProjectCompositionSnapshotReadError::ReadFailed(format!(
+                "project meetings read failed: {error}"
+            ))
+        })?;
+    let linked_people = db.get_people_for_entity(&project.id).map_err(|error| {
+        ProjectCompositionSnapshotReadError::ReadFailed(format!(
+            "project people read failed: {error}"
+        ))
+    })?;
+    let recent_captures = db
+        .get_captures_for_project(&project.id, 90)
+        .map_err(|error| {
+            ProjectCompositionSnapshotReadError::ReadFailed(format!(
+                "project captures read failed: {error}"
+            ))
+        })?;
+    let recent_email_signals = db
+        .list_recent_email_signals_for_entity(&project.id, 12)
+        .map_err(|error| {
+            ProjectCompositionSnapshotReadError::ReadFailed(format!(
+                "project email signal read failed: {error}"
+            ))
+        })?;
+
+    let signals = db.get_project_signals(&project.id).ok();
+    let parent_name = project.parent_id.as_ref().and_then(|parent_id| {
+        db.get_project(parent_id)
+            .ok()
+            .flatten()
+            .map(|parent| parent.name)
+    });
+    let parent_aggregate = if child_projects.is_empty() {
+        None
+    } else {
+        db.get_project_parent_aggregate(&project.id).ok()
+    };
+
+    let mut fields = Vec::new();
+    let source_asof = Some(project.updated_at.as_str());
+    push_project_field(
+        &mut fields,
+        "/vitals/status",
+        "Status",
+        Some(serde_json::Value::from(project.status.clone())),
+        "project",
+        source_asof,
+        AccountCompositionProvenanceKind::SourceField,
+    );
+    push_project_field(
+        &mut fields,
+        "/vitals/milestone",
+        "Milestone",
+        project.milestone.as_deref().map(serde_json::Value::from),
+        "project",
+        source_asof,
+        AccountCompositionProvenanceKind::SourceField,
+    );
+    push_project_field(
+        &mut fields,
+        "/vitals/owner",
+        "Owner",
+        project.owner.as_deref().map(serde_json::Value::from),
+        "project",
+        source_asof,
+        AccountCompositionProvenanceKind::SourceField,
+    );
+    push_project_field(
+        &mut fields,
+        "/vitals/target_date",
+        "Target date",
+        project.target_date.as_deref().map(serde_json::Value::from),
+        "project",
+        source_asof,
+        AccountCompositionProvenanceKind::SourceField,
+    );
+    push_project_field(
+        &mut fields,
+        "/trajectory/description",
+        "Description",
+        project.description.as_deref().map(serde_json::Value::from),
+        "project",
+        source_asof,
+        AccountCompositionProvenanceKind::ManualUser,
+    );
+    push_project_field(
+        &mut fields,
+        "/the-record/notes",
+        "Notes",
+        project.notes.as_deref().map(serde_json::Value::from),
+        "project",
+        source_asof,
+        AccountCompositionProvenanceKind::ManualUser,
+    );
+    push_project_field(
+        &mut fields,
+        "/trajectory/milestones",
+        "Milestones",
+        project
+            .milestones
+            .as_deref()
+            .and_then(|raw| serde_json::from_str::<serde_json::Value>(raw).ok()),
+        "project",
+        source_asof,
+        AccountCompositionProvenanceKind::SourceField,
+    );
+    push_project_field(
+        &mut fields,
+        "/portfolio/parent",
+        "Parent project",
+        parent_name.map(serde_json::Value::from),
+        "project",
+        source_asof,
+        AccountCompositionProvenanceKind::SourceField,
+    );
+    push_project_field(
+        &mut fields,
+        "/portfolio/children",
+        "Sub-projects",
+        (!child_projects.is_empty()).then(|| {
+            serde_json::Value::from(
+                child_projects
+                    .iter()
+                    .map(|child| {
+                        serde_json::json!({
+                            "id": child.id.as_str(),
+                            "name": child.name.as_str(),
+                            "status": child.status.as_str(),
+                            "milestone": child.milestone.as_deref(),
+                        })
+                    })
+                    .collect::<Vec<_>>(),
+            )
+        }),
+        "project",
+        source_asof,
+        AccountCompositionProvenanceKind::SourceField,
+    );
+    push_project_field(
+        &mut fields,
+        "/portfolio/aggregate",
+        "Portfolio aggregate",
+        parent_aggregate.map(|aggregate| {
+            serde_json::json!({
+                "child_count": aggregate.child_count,
+                "active_count": aggregate.active_count,
+                "on_hold_count": aggregate.on_hold_count,
+                "completed_count": aggregate.completed_count,
+                "nearest_target_date": aggregate.nearest_target_date,
+            })
+        }),
+        "project",
+        source_asof,
+        AccountCompositionProvenanceKind::Derived,
+    );
+    push_project_field(
+        &mut fields,
+        "/the-horizon/signals",
+        "Project signals",
+        signals.map(|signals| {
+            serde_json::json!({
+                "meeting_frequency_30d": signals.meeting_frequency_30d,
+                "meeting_frequency_90d": signals.meeting_frequency_90d,
+                "last_meeting": signals.last_meeting,
+                "days_until_target": signals.days_until_target,
+                "open_action_count": signals.open_action_count,
+                "temperature": signals.temperature,
+                "trend": signals.trend,
+            })
+        }),
+        "project_signals",
+        source_asof,
+        AccountCompositionProvenanceKind::Derived,
+    );
+    push_project_field(
+        &mut fields,
+        "/the-room/linked_people",
+        "Project people",
+        (!linked_people.is_empty()).then(|| {
+            serde_json::Value::from(
+                linked_people
+                    .iter()
+                    .map(|person| {
+                        serde_json::json!({
+                            "id": person.id.as_str(),
+                            "name": person.name.as_str(),
+                            "role": person.role.as_deref(),
+                            "relationship": person.relationship.as_str(),
+                            "last_seen": person.last_seen.as_deref(),
+                        })
+                    })
+                    .collect::<Vec<_>>(),
+            )
+        }),
+        "project_people",
+        source_asof,
+        AccountCompositionProvenanceKind::SourceField,
+    );
+    push_project_field(
+        &mut fields,
+        "/the-work/open_actions",
+        "Open actions",
+        (!open_actions.is_empty()).then(|| {
+            serde_json::Value::from(
+                open_actions
+                    .iter()
+                    .take(10)
+                    .map(|action| {
+                        serde_json::json!({
+                            "id": action.id.as_str(),
+                            "title": action.title.as_str(),
+                            "status": action.status.as_str(),
+                            "priority": action.priority,
+                            "due_date": action.due_date.as_deref(),
+                            "trust_band": action.trust_band.as_deref(),
+                        })
+                    })
+                    .collect::<Vec<_>>(),
+            )
+        }),
+        "project_actions",
+        source_asof,
+        AccountCompositionProvenanceKind::SourceField,
+    );
+    push_project_field(
+        &mut fields,
+        "/the-record/recent_meetings",
+        "Recent meetings",
+        (!recent_meetings.is_empty()).then(|| {
+            serde_json::Value::from(
+                recent_meetings
+                    .iter()
+                    .map(|meeting| {
+                        serde_json::json!({
+                            "id": meeting.id.as_str(),
+                            "title": meeting.title.as_str(),
+                            "start_time": meeting.start_time.as_str(),
+                            "meeting_type": meeting.meeting_type.as_str(),
+                        })
+                    })
+                    .collect::<Vec<_>>(),
+            )
+        }),
+        "project_meetings",
+        source_asof,
+        AccountCompositionProvenanceKind::SourceField,
+    );
+    push_project_field(
+        &mut fields,
+        "/the-record/captures",
+        "Recent captures",
+        (!recent_captures.is_empty()).then(|| {
+            serde_json::Value::from(
+                recent_captures
+                    .iter()
+                    .take(12)
+                    .map(|capture| {
+                        serde_json::json!({
+                            "id": capture.id.as_str(),
+                            "meeting_id": capture.meeting_id.as_str(),
+                            "meeting_title": capture.meeting_title.as_str(),
+                            "capture_type": capture.capture_type.as_str(),
+                            "content": capture.content.as_str(),
+                            "captured_at": capture.captured_at.as_str(),
+                        })
+                    })
+                    .collect::<Vec<_>>(),
+            )
+        }),
+        "project_captures",
+        source_asof,
+        AccountCompositionProvenanceKind::SourceField,
+    );
+    push_project_field(
+        &mut fields,
+        "/the-record/email_signals",
+        "Email signals",
+        (!recent_email_signals.is_empty()).then(|| {
+            serde_json::Value::from(
+                recent_email_signals
+                    .iter()
+                    .take(12)
+                    .map(|signal| {
+                        serde_json::json!({
+                            "id": signal.id,
+                            "signal_type": signal.signal_type.as_str(),
+                            "signal_text": signal.signal_text.as_str(),
+                            "confidence": signal.confidence,
+                            "sentiment": signal.sentiment.as_deref(),
+                            "urgency": signal.urgency.as_deref(),
+                            "detected_at": signal.detected_at.as_str(),
+                            "source": signal.source.as_str(),
+                        })
+                    })
+                    .collect::<Vec<_>>(),
+            )
+        }),
+        "project_email_signals",
+        source_asof,
+        AccountCompositionProvenanceKind::SourceField,
+    );
+
+    Ok(ProjectCompositionSnapshot {
+        project_id: project.id.clone(),
+        display_name: project_identity_field(
+            "/identity/display_name",
+            "Project",
+            serde_json::Value::from(project.name),
+        ),
+        status: Some(project_identity_field(
+            "/identity/status",
+            "Status",
+            serde_json::Value::from(project.status),
+        )),
+        is_parent: !child_projects.is_empty(),
+        fields,
+    })
+}
+
+fn read_person_composition_snapshot_from_db(
+    db: &crate::db::ActionDb,
+    person_id: &str,
+    _surface: ClaimDismissalSurface,
+) -> Result<PersonCompositionSnapshot, PersonCompositionSnapshotReadError> {
+    let person = db
+        .get_person(person_id)
+        .map_err(|error| {
+            PersonCompositionSnapshotReadError::ReadFailed(format!("person read failed: {error}"))
+        })?
+        .ok_or_else(|| PersonCompositionSnapshotReadError::PersonNotFound(person_id.to_string()))?;
+
+    let signals = db.get_person_signals(&person.id).ok();
+    let linked_entities = db.get_entities_for_person(&person.id).map_err(|error| {
+        PersonCompositionSnapshotReadError::ReadFailed(format!(
+            "person entities read failed: {error}"
+        ))
+    })?;
+    let relationships = db
+        .get_relationships_for_person(&person.id)
+        .map_err(|error| {
+            PersonCompositionSnapshotReadError::ReadFailed(format!(
+                "person relationships read failed: {error}"
+            ))
+        })?;
+    let recent_meetings = db.get_person_meetings(&person.id, 10).map_err(|error| {
+        PersonCompositionSnapshotReadError::ReadFailed(format!(
+            "person meetings read failed: {error}"
+        ))
+    })?;
+    let upcoming_meetings =
+        db.get_upcoming_meetings_for_person(&person.id, 5)
+            .map_err(|error| {
+                PersonCompositionSnapshotReadError::ReadFailed(format!(
+                    "person upcoming meetings read failed: {error}"
+                ))
+            })?;
+    let open_actions = db.get_person_actions(&person.id).map_err(|error| {
+        PersonCompositionSnapshotReadError::ReadFailed(format!(
+            "person actions read failed: {error}"
+        ))
+    })?;
+    let recent_captures = db
+        .get_captures_for_person(&person.id, 90)
+        .map_err(|error| {
+            PersonCompositionSnapshotReadError::ReadFailed(format!(
+                "person captures read failed: {error}"
+            ))
+        })?;
+    let recent_email_signals = db
+        .list_recent_email_signals_for_entity(&person.id, 12)
+        .map_err(|error| {
+            PersonCompositionSnapshotReadError::ReadFailed(format!(
+                "person email signal read failed: {error}"
+            ))
+        })?;
+
+    let mut fields = Vec::new();
+    let source_asof = Some(person.updated_at.as_str());
+    push_person_field(
+        &mut fields,
+        "/vitals/relationship",
+        "Relationship",
+        Some(serde_json::Value::from(person.relationship.clone())),
+        "person",
+        source_asof,
+        PersonCompositionProvenanceKind::SourceField,
+    );
+    push_person_field(
+        &mut fields,
+        "/vitals/organization",
+        "Organization",
+        person.organization.as_deref().map(serde_json::Value::from),
+        "person",
+        source_asof,
+        PersonCompositionProvenanceKind::SourceField,
+    );
+    push_person_field(
+        &mut fields,
+        "/vitals/role",
+        "Role",
+        person.role.as_deref().map(serde_json::Value::from),
+        "person",
+        source_asof,
+        PersonCompositionProvenanceKind::SourceField,
+    );
+    push_person_field(
+        &mut fields,
+        "/vitals/meeting_count",
+        "Meeting count",
+        Some(serde_json::Value::from(person.meeting_count)),
+        "person",
+        source_asof,
+        PersonCompositionProvenanceKind::Derived,
+    );
+    push_person_field(
+        &mut fields,
+        "/vitals/last_seen",
+        "Last seen",
+        person.last_seen.as_deref().map(serde_json::Value::from),
+        "person",
+        source_asof,
+        PersonCompositionProvenanceKind::SourceField,
+    );
+    push_person_field(
+        &mut fields,
+        "/relationship/signals",
+        "Relationship signals",
+        signals.map(|signals| {
+            serde_json::json!({
+                "meeting_frequency_30d": signals.meeting_frequency_30d,
+                "meeting_frequency_90d": signals.meeting_frequency_90d,
+                "last_meeting": signals.last_meeting,
+                "temperature": signals.temperature,
+                "trend": signals.trend,
+            })
+        }),
+        "person_signals",
+        source_asof,
+        PersonCompositionProvenanceKind::Derived,
+    );
+    push_person_field(
+        &mut fields,
+        "/their-orbit/linked_entities",
+        "Linked entities",
+        (!linked_entities.is_empty()).then(|| {
+            serde_json::Value::from(
+                linked_entities
+                    .iter()
+                    .map(|entity| {
+                        serde_json::json!({
+                            "id": entity.id.as_str(),
+                            "name": entity.name.as_str(),
+                            "entity_type": entity.entity_type.as_str(),
+                        })
+                    })
+                    .collect::<Vec<_>>(),
+            )
+        }),
+        "person_entities",
+        source_asof,
+        PersonCompositionProvenanceKind::SourceField,
+    );
+    push_person_field(
+        &mut fields,
+        "/their-network/relationships",
+        "Relationships",
+        (!relationships.is_empty()).then(|| {
+            serde_json::Value::from(
+                relationships
+                    .iter()
+                    .take(12)
+                    .map(|relationship| {
+                        serde_json::json!({
+                            "id": relationship.id.as_str(),
+                            "from_person_id": relationship.from_person_id.as_str(),
+                            "to_person_id": relationship.to_person_id.as_str(),
+                            "from_person_name": relationship.from_person_name.as_deref(),
+                            "to_person_name": relationship.to_person_name.as_deref(),
+                            "relationship_type": relationship.relationship_type.to_string(),
+                            "direction": relationship.direction.as_str(),
+                            "effective_confidence": relationship.effective_confidence,
+                            "source": relationship.source.as_str(),
+                            "updated_at": relationship.updated_at.as_str(),
+                        })
+                    })
+                    .collect::<Vec<_>>(),
+            )
+        }),
+        "person_relationships",
+        source_asof,
+        PersonCompositionProvenanceKind::SourceField,
+    );
+    push_person_field(
+        &mut fields,
+        "/state/bio",
+        "Bio",
+        person.bio.as_deref().map(serde_json::Value::from),
+        "person",
+        source_asof,
+        PersonCompositionProvenanceKind::SourceField,
+    );
+    push_person_field(
+        &mut fields,
+        "/state/company_context",
+        "Company context",
+        (person.company_industry.is_some()
+            || person.company_size.is_some()
+            || person.company_hq.is_some())
+        .then(|| {
+            serde_json::json!({
+                "industry": person.company_industry.as_deref(),
+                "size": person.company_size.as_deref(),
+                "hq": person.company_hq.as_deref(),
+            })
+        }),
+        "person",
+        source_asof,
+        PersonCompositionProvenanceKind::SourceField,
+    );
+    push_person_field(
+        &mut fields,
+        "/the-record/notes",
+        "Notes",
+        person.notes.as_deref().map(serde_json::Value::from),
+        "person",
+        source_asof,
+        PersonCompositionProvenanceKind::ManualUser,
+    );
+    push_person_field(
+        &mut fields,
+        "/open-threads/upcoming_meetings",
+        "Upcoming meetings",
+        (!upcoming_meetings.is_empty()).then(|| {
+            serde_json::Value::from(
+                upcoming_meetings
+                    .iter()
+                    .map(|meeting| {
+                        serde_json::json!({
+                            "id": meeting.id.as_str(),
+                            "title": meeting.title.as_str(),
+                            "start_time": meeting.start_time.as_str(),
+                            "meeting_type": meeting.meeting_type.as_str(),
+                        })
+                    })
+                    .collect::<Vec<_>>(),
+            )
+        }),
+        "person_meetings",
+        source_asof,
+        PersonCompositionProvenanceKind::SourceField,
+    );
+    push_person_field(
+        &mut fields,
+        "/the-work/open_actions",
+        "Open actions",
+        (!open_actions.is_empty()).then(|| {
+            serde_json::Value::from(
+                open_actions
+                    .iter()
+                    .take(10)
+                    .map(|action| {
+                        serde_json::json!({
+                            "id": action.id.as_str(),
+                            "title": action.title.as_str(),
+                            "status": action.status.as_str(),
+                            "priority": action.priority,
+                            "due_date": action.due_date.as_deref(),
+                            "trust_band": action.trust_band.as_deref(),
+                        })
+                    })
+                    .collect::<Vec<_>>(),
+            )
+        }),
+        "person_actions",
+        source_asof,
+        PersonCompositionProvenanceKind::SourceField,
+    );
+    push_person_field(
+        &mut fields,
+        "/the-record/recent_meetings",
+        "Recent meetings",
+        (!recent_meetings.is_empty()).then(|| {
+            serde_json::Value::from(
+                recent_meetings
+                    .iter()
+                    .map(|meeting| {
+                        serde_json::json!({
+                            "id": meeting.id.as_str(),
+                            "title": meeting.title.as_str(),
+                            "start_time": meeting.start_time.as_str(),
+                            "meeting_type": meeting.meeting_type.as_str(),
+                        })
+                    })
+                    .collect::<Vec<_>>(),
+            )
+        }),
+        "person_meetings",
+        source_asof,
+        PersonCompositionProvenanceKind::SourceField,
+    );
+    push_person_field(
+        &mut fields,
+        "/the-record/captures",
+        "Recent captures",
+        (!recent_captures.is_empty()).then(|| {
+            serde_json::Value::from(
+                recent_captures
+                    .iter()
+                    .take(12)
+                    .map(|capture| {
+                        serde_json::json!({
+                            "id": capture.id.as_str(),
+                            "meeting_id": capture.meeting_id.as_str(),
+                            "meeting_title": capture.meeting_title.as_str(),
+                            "capture_type": capture.capture_type.as_str(),
+                            "content": capture.content.as_str(),
+                            "captured_at": capture.captured_at.as_str(),
+                        })
+                    })
+                    .collect::<Vec<_>>(),
+            )
+        }),
+        "person_captures",
+        source_asof,
+        PersonCompositionProvenanceKind::SourceField,
+    );
+    push_person_field(
+        &mut fields,
+        "/the-record/email_signals",
+        "Email signals",
+        (!recent_email_signals.is_empty()).then(|| {
+            serde_json::Value::from(
+                recent_email_signals
+                    .iter()
+                    .take(12)
+                    .map(|signal| {
+                        serde_json::json!({
+                            "id": signal.id,
+                            "signal_type": signal.signal_type.as_str(),
+                            "signal_text": signal.signal_text.as_str(),
+                            "confidence": signal.confidence,
+                            "sentiment": signal.sentiment.as_deref(),
+                            "urgency": signal.urgency.as_deref(),
+                            "detected_at": signal.detected_at.as_str(),
+                            "source": signal.source.as_str(),
+                        })
+                    })
+                    .collect::<Vec<_>>(),
+            )
+        }),
+        "person_email_signals",
+        source_asof,
+        PersonCompositionProvenanceKind::SourceField,
+    );
+
+    Ok(PersonCompositionSnapshot {
+        person_id: person.id.clone(),
+        display_name: person_identity_field(
+            "/identity/display_name",
+            "Person",
+            serde_json::Value::from(person.name),
+        ),
+        relationship: Some(person_identity_field(
+            "/identity/relationship",
+            "Relationship",
+            serde_json::Value::from(person.relationship),
+        )),
+        organization: person.organization.as_deref().map(|organization| {
+            person_identity_field(
+                "/identity/organization",
+                "Organization",
+                serde_json::Value::from(organization),
+            )
+        }),
+        role: person.role.as_deref().map(|role| {
+            person_identity_field("/identity/role", "Role", serde_json::Value::from(role))
+        }),
+        fields,
+    })
+}
+
+fn read_action_composition_snapshot_from_db(
+    db: &crate::db::ActionDb,
+    action_id: &str,
+    _surface: ClaimDismissalSurface,
+) -> Result<ActionCompositionSnapshot, ActionCompositionSnapshotReadError> {
+    let action = db
+        .get_action_by_id(action_id)
+        .map_err(|error| {
+            ActionCompositionSnapshotReadError::ReadFailed(format!("action read failed: {error}"))
+        })?
+        .ok_or_else(|| ActionCompositionSnapshotReadError::ActionNotFound(action_id.to_string()))?;
+
+    let account_name = action
+        .account_id
+        .as_deref()
+        .and_then(|account_id| db.get_account(account_id).ok().flatten())
+        .map(|account| account.name);
+    let source_meeting_title = action
+        .source_id
+        .as_deref()
+        .and_then(|source_id| db.get_meeting_by_id(source_id).ok().flatten())
+        .map(|meeting| meeting.title);
+    let trust_band = action_snapshot_trust_band(action.trust_band.as_deref());
+    let source_asof = Some(action.updated_at.as_str());
+
+    let title = action_snapshot_field(
+        "/headline/title",
+        "Title",
+        serde_json::Value::from(action.title.clone()),
+        "action",
+        source_asof,
+        trust_band,
+        ActionCompositionProvenanceKind::SourceField,
+    );
+    let status = action_snapshot_field(
+        "/headline/status",
+        "Status",
+        serde_json::Value::from(action.status.clone()),
+        "action",
+        source_asof,
+        trust_band,
+        ActionCompositionProvenanceKind::SourceField,
+    );
+    let priority = action_snapshot_field(
+        "/headline/priority",
+        "Priority",
+        serde_json::json!({
+            "value": action.priority,
+            "label": action_priority_label(action.priority),
+        }),
+        "action",
+        source_asof,
+        trust_band,
+        ActionCompositionProvenanceKind::SourceField,
+    );
+
+    let mut fields = vec![title.clone(), status.clone(), priority.clone()];
+    push_action_field(
+        &mut fields,
+        "/status/current",
+        "Current state",
+        Some(serde_json::Value::from(action.status.clone())),
+        "action",
+        source_asof,
+        trust_band,
+        ActionCompositionProvenanceKind::SourceField,
+    );
+    push_action_field(
+        &mut fields,
+        "/status/completed_at",
+        "Completed",
+        action.completed_at.as_deref().map(serde_json::Value::from),
+        "action",
+        source_asof,
+        trust_band,
+        ActionCompositionProvenanceKind::SourceField,
+    );
+    push_action_field(
+        &mut fields,
+        "/status/waiting_on",
+        "Waiting on",
+        action.waiting_on.as_deref().map(serde_json::Value::from),
+        "action",
+        source_asof,
+        trust_band,
+        ActionCompositionProvenanceKind::SourceField,
+    );
+    push_action_field(
+        &mut fields,
+        "/priority/value",
+        "Priority",
+        Some(serde_json::json!({
+            "value": action.priority,
+            "label": action_priority_label(action.priority),
+        })),
+        "action",
+        source_asof,
+        trust_band,
+        ActionCompositionProvenanceKind::SourceField,
+    );
+    push_action_field(
+        &mut fields,
+        "/context/body",
+        "Context",
+        action.context.as_deref().map(serde_json::Value::from),
+        "action",
+        source_asof,
+        trust_band,
+        ActionCompositionProvenanceKind::ManualUser,
+    );
+    push_action_field(
+        &mut fields,
+        "/reference/account",
+        "Account",
+        action.account_id.as_deref().map(|account_id| {
+            serde_json::json!({
+                "id": account_id,
+                "name": account_name.as_deref(),
+            })
+        }),
+        "action",
+        source_asof,
+        trust_band,
+        ActionCompositionProvenanceKind::SourceField,
+    );
+    push_action_field(
+        &mut fields,
+        "/reference/project",
+        "Project",
+        action.project_id.as_deref().map(|project_id| {
+            serde_json::json!({
+                "id": project_id,
+            })
+        }),
+        "action",
+        source_asof,
+        trust_band,
+        ActionCompositionProvenanceKind::SourceField,
+    );
+    push_action_field(
+        &mut fields,
+        "/reference/person",
+        "Person",
+        action.person_id.as_deref().map(|person_id| {
+            serde_json::json!({
+                "id": person_id,
+            })
+        }),
+        "action",
+        source_asof,
+        trust_band,
+        ActionCompositionProvenanceKind::SourceField,
+    );
+    push_action_field(
+        &mut fields,
+        "/reference/due_date",
+        "Due",
+        action.due_date.as_deref().map(serde_json::Value::from),
+        "action",
+        source_asof,
+        trust_band,
+        ActionCompositionProvenanceKind::SourceField,
+    );
+    push_action_field(
+        &mut fields,
+        "/reference/created_at",
+        "Created",
+        Some(serde_json::Value::from(action.created_at.clone())),
+        "action",
+        source_asof,
+        trust_band,
+        ActionCompositionProvenanceKind::SourceField,
+    );
+    push_action_field(
+        &mut fields,
+        "/reference/source",
+        "Source",
+        (action.source_type.is_some()
+            || action.source_id.is_some()
+            || action.source_label.is_some())
+        .then(|| {
+            serde_json::json!({
+                "type": action.source_type.as_deref(),
+                "id": action.source_id.as_deref(),
+                "label": action.source_label.as_deref(),
+                "meeting_title": source_meeting_title.as_deref(),
+            })
+        }),
+        action.source_type.as_deref().unwrap_or("action"),
+        source_asof,
+        trust_band,
+        ActionCompositionProvenanceKind::SourceField,
+    );
+    push_action_field(
+        &mut fields,
+        "/linear/issue",
+        "Linear issue",
+        action.linear_identifier.as_deref().map(|identifier| {
+            serde_json::json!({
+                "identifier": identifier,
+                "url": action.linear_url.as_deref(),
+            })
+        }),
+        "linear",
+        source_asof,
+        trust_band,
+        ActionCompositionProvenanceKind::SourceField,
+    );
+    push_action_field(
+        &mut fields,
+        "/action-bar/status_toggle",
+        "Action bar",
+        Some(serde_json::json!({
+            "can_complete": action.status != "completed",
+            "can_reopen": action.status == "completed",
+            "status": action.status.as_str(),
+        })),
+        "action",
+        source_asof,
+        trust_band,
+        ActionCompositionProvenanceKind::SystemConfig,
+    );
+
+    Ok(ActionCompositionSnapshot {
+        action_id: action.id.clone(),
+        title,
+        status: Some(status),
+        priority: Some(priority),
+        fields,
+    })
+}
+
+fn action_snapshot_trust_band(value: Option<&str>) -> TrustBand {
+    match value {
+        Some("likely_current") => TrustBand::LikelyCurrent,
+        Some("use_with_caution") => TrustBand::UseWithCaution,
+        Some("needs_verification") => TrustBand::NeedsVerification,
+        _ => TrustBand::UseWithCaution,
+    }
+}
+
+fn action_priority_label(priority: i32) -> &'static str {
+    if priority <= 1 {
+        "Urgent"
+    } else if priority <= 2 {
+        "High"
+    } else if priority >= 4 {
+        "Low"
+    } else {
+        "Medium"
+    }
+}
+
+#[allow(clippy::too_many_arguments)]
+fn action_snapshot_field(
+    field_path: &str,
+    label: &str,
+    value: serde_json::Value,
+    source_label: &str,
+    source_asof: Option<&str>,
+    trust_band: TrustBand,
+    provenance_kind: ActionCompositionProvenanceKind,
+) -> ActionCompositionSnapshotField {
+    AccountCompositionSnapshotField {
+        field_path: field_path.to_string(),
+        label: label.to_string(),
+        value,
+        sensitivity: AccountCompositionSnapshotSensitivity::Internal,
+        source_label: Some(source_label.to_string()),
+        source_ref: None,
+        source_asof: source_asof.map(ToString::to_string),
+        trust_band,
+        trust_status: trust_status(trust_band).to_string(),
+        provenance_kind,
+    }
+}
+
+#[allow(clippy::too_many_arguments)]
+fn push_action_field(
+    fields: &mut Vec<ActionCompositionSnapshotField>,
+    field_path: &str,
+    label: &str,
+    value: Option<serde_json::Value>,
+    source_label: &str,
+    source_asof: Option<&str>,
+    trust_band: TrustBand,
+    provenance_kind: ActionCompositionProvenanceKind,
+) {
+    let Some(value) = value else {
+        return;
+    };
+    fields.push(action_snapshot_field(
+        field_path,
+        label,
+        value,
+        source_label,
+        source_asof,
+        trust_band,
+        provenance_kind,
+    ));
+}
+
+fn push_person_field(
+    fields: &mut Vec<PersonCompositionSnapshotField>,
+    field_path: &str,
+    label: &str,
+    value: Option<serde_json::Value>,
+    source_label: &str,
+    source_asof: Option<&str>,
+    provenance_kind: PersonCompositionProvenanceKind,
+) {
+    let Some(value) = value else {
+        return;
+    };
+    fields.push(AccountCompositionSnapshotField {
+        field_path: field_path.to_string(),
+        label: label.to_string(),
+        value,
+        sensitivity: AccountCompositionSnapshotSensitivity::Internal,
+        source_label: Some(source_label.to_string()),
+        source_ref: None,
+        source_asof: source_asof.map(ToString::to_string),
+        trust_band: TrustBand::UseWithCaution,
+        trust_status: trust_status(TrustBand::UseWithCaution).to_string(),
+        provenance_kind,
+    });
+}
+
+fn person_identity_field(
+    field_path: &str,
+    label: &str,
+    value: serde_json::Value,
+) -> PersonCompositionSnapshotField {
+    AccountCompositionSnapshotField {
+        field_path: field_path.to_string(),
+        label: label.to_string(),
+        value,
+        sensitivity: AccountCompositionSnapshotSensitivity::NonSensitiveIdentity,
+        source_label: None,
+        source_ref: None,
+        source_asof: None,
+        trust_band: TrustBand::LikelyCurrent,
+        trust_status: trust_status(TrustBand::LikelyCurrent).to_string(),
+        provenance_kind: AccountCompositionProvenanceKind::NonSensitiveIdentity,
+    }
+}
+
+fn push_project_field(
+    fields: &mut Vec<ProjectCompositionSnapshotField>,
+    field_path: &str,
+    label: &str,
+    value: Option<serde_json::Value>,
+    source_label: &str,
+    source_asof: Option<&str>,
+    provenance_kind: AccountCompositionProvenanceKind,
+) {
+    let Some(value) = value else {
+        return;
+    };
+    fields.push(AccountCompositionSnapshotField {
+        field_path: field_path.to_string(),
+        label: label.to_string(),
+        value,
+        sensitivity: AccountCompositionSnapshotSensitivity::Internal,
+        source_label: Some(source_label.to_string()),
+        source_ref: None,
+        source_asof: source_asof.map(ToString::to_string),
+        trust_band: TrustBand::UseWithCaution,
+        trust_status: trust_status(TrustBand::UseWithCaution).to_string(),
+        provenance_kind,
+    });
+}
+
+fn project_identity_field(
+    field_path: &str,
+    label: &str,
+    value: serde_json::Value,
+) -> ProjectCompositionSnapshotField {
+    AccountCompositionSnapshotField {
+        field_path: field_path.to_string(),
+        label: label.to_string(),
+        value,
+        sensitivity: AccountCompositionSnapshotSensitivity::NonSensitiveIdentity,
+        source_label: None,
+        source_ref: None,
+        source_asof: None,
+        trust_band: TrustBand::LikelyCurrent,
+        trust_status: trust_status(TrustBand::LikelyCurrent).to_string(),
+        provenance_kind: AccountCompositionProvenanceKind::NonSensitiveIdentity,
+    }
 }
 
 fn push_account_vital_field(

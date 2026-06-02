@@ -238,6 +238,16 @@ pub async fn push_action_to_linear(
         ) {
             log::warn!("emit Linear push signal failed for {entity_type}:{entity_id}: {e}");
         }
+        crate::services::signals::emit_or_log(
+            ctx,
+            db,
+            "action",
+            action_id,
+            "action.field_changed",
+            "user_action",
+            Some(&signal_value),
+            0.9,
+        );
 
         // Positive Bayesian feedback when an AI-suggested action is
         // pushed to Linear — validates the suggestion quality.

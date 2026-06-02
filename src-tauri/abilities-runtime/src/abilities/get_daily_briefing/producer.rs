@@ -1529,11 +1529,10 @@ mod state_matrix_fixtures {
             meeting_brief_unlinked("m-internal-1"),
             meeting_brief_unlinked("m-internal-2"),
         ];
-        let non_customer: std::collections::HashSet<String> =
-            ["m-internal-1", "m-internal-2"]
-                .iter()
-                .map(|s| s.to_string())
-                .collect();
+        let non_customer: std::collections::HashSet<String> = ["m-internal-1", "m-internal-2"]
+            .iter()
+            .map(|s| s.to_string())
+            .collect();
 
         let advisories = derive_advisories(&readiness, &meetings, &non_customer, &[], &[]);
 

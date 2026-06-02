@@ -31,14 +31,15 @@
  */
 import { useCallback, useRef, useState } from "react";
 import { useIntelligenceCorrection } from "@/hooks/useIntelligenceCorrection";
+import type { CompositionFeedbackEntityType } from "@/services/composition/contracts";
 import { AccuracyPrompt, type AccuracyPromptOutcome } from "./AccuracyPrompt";
 import styles from "./IntelligenceCorrection.module.css";
 
 export interface IntelligenceCorrectionProps {
   /** Entity the AI assessment belongs to. */
   entityId: string;
-  /** Always "account" today — the component is account-only per the current implementation. */
-  entityType: "account";
+  /** Entity kind the AI assessment belongs to. */
+  entityType: CompositionFeedbackEntityType;
   /** Field key the correction targets (e.g. "state_of_play", "health"). */
   field: string;
   /**

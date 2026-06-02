@@ -379,6 +379,7 @@ impl ActionDb {
             "person" => Some(("people", "id")),
             "meeting" => Some(("meetings", "id")),
             "email" => Some(("emails", "email_id")),
+            "action" => Some(("actions", "id")),
             "global" => {
                 return self
                     .conn_ref()

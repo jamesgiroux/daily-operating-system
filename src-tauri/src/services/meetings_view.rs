@@ -86,7 +86,6 @@ pub fn read_surface_meetings(
     Ok(out)
 }
 
-
 fn intent_includes(intent: MeetingsViewIntent, meeting_type: &str) -> bool {
     match intent {
         MeetingsViewIntent::Briefing | MeetingsViewIntent::Schedule => meeting_type != "personal",

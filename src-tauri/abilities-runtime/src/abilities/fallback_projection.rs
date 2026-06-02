@@ -3,7 +3,7 @@ use std::sync::{OnceLock, RwLock};
 
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
-use serde_json::{Map, Value, json};
+use serde_json::{json, Map, Value};
 use thiserror::Error;
 
 use crate::abilities::composition::{
@@ -14,7 +14,7 @@ use crate::abilities::provenance::{CompositionId, FieldPath};
 use crate::abilities::registry::{Actor, ActorKind, SurfaceScope};
 use crate::abilities::trust::TrustBand;
 use crate::sensitivity::{
-    ClaimVerificationState, RenderActor, RenderDecision, RenderSurface, render_policy_for_surface,
+    render_policy_for_surface, ClaimVerificationState, RenderActor, RenderDecision, RenderSurface,
 };
 use crate::types::{
     ClaimSensitivity, ClaimState, IntelligenceClaim, SurfacingState, TemporalScope,
@@ -1384,6 +1384,18 @@ const ACCOUNT_OVERVIEW_FIELDS: &[FieldPolicy] = &[
     text_field("/account/id", ClaimSensitivity::Internal),
     text_field("/account/display_name", ClaimSensitivity::Internal),
     text_field("/account/type", ClaimSensitivity::Internal),
+    text_field("/project/id", ClaimSensitivity::Internal),
+    text_field("/project/display_name", ClaimSensitivity::Internal),
+    text_field("/project/status", ClaimSensitivity::Internal),
+    text_field("/person/id", ClaimSensitivity::Internal),
+    text_field("/person/display_name", ClaimSensitivity::Internal),
+    text_field("/person/relationship", ClaimSensitivity::Internal),
+    text_field("/person/organization", ClaimSensitivity::Internal),
+    text_field("/person/role", ClaimSensitivity::Internal),
+    text_field("/action/id", ClaimSensitivity::Internal),
+    text_field("/action/title", ClaimSensitivity::Internal),
+    text_field("/action/status", ClaimSensitivity::Internal),
+    text_field("/action/priority", ClaimSensitivity::Internal),
     text_field("/summary", ClaimSensitivity::Internal),
     text_field("/health/band", ClaimSensitivity::Internal),
     number_field("/health/score", ClaimSensitivity::Internal),
@@ -1432,6 +1444,7 @@ const CLAIM_SUMMARY_FIELDS: &[FieldPolicy] = &[
     bool_field("/empty_state", ClaimSensitivity::Internal),
 ];
 const EVIDENCE_LIST_FIELDS: &[FieldPolicy] = &[
+    text_field("/title", ClaimSensitivity::Internal),
     text_field("/items/*/label", ClaimSensitivity::Internal),
     text_field("/items/*/source_label", ClaimSensitivity::Internal),
     text_field("/items/*/source_asof", ClaimSensitivity::Internal),

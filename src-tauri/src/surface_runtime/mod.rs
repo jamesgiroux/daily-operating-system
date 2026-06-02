@@ -4612,6 +4612,8 @@ mod tests {
             "properties": {
                 "account_id": { "type": "string" },
                 "composition_id": { "type": "string" },
+                "entity_id": { "type": "string" },
+                "entity_type": { "type": "string" },
                 "expected_composition_version": { "type": "number" },
                 "schema_version": { "type": "number" }
             },

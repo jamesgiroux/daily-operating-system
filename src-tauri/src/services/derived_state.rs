@@ -909,9 +909,10 @@ fn entity_identity_from_subject_ref(
         SubjectRef::Meeting { id } => Ok((id, "meeting")),
         SubjectRef::Person { id } => Ok((id, "person")),
         SubjectRef::Project { id } => Ok((id, "project")),
-        SubjectRef::Email { .. } | SubjectRef::Multi(_) | SubjectRef::Global => {
-            Err(ProjectionErrorClass::ValidationError)
-        }
+        SubjectRef::Action { .. }
+        | SubjectRef::Email { .. }
+        | SubjectRef::Multi(_)
+        | SubjectRef::Global => Err(ProjectionErrorClass::ValidationError),
     }
 }
 

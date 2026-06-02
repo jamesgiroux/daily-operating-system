@@ -76,6 +76,10 @@ vs `src/pages/ProjectDetailEditorial.tsx`
 
 **Invented classes** (41): `ProjectDetailEditorial_actionAccent`, `ProjectDetailEditorial_actionAccentTerracotta`, `ProjectDetailEditorial_actionAccentTurmeric`, `ProjectDetailEditorial_actionDate`, `ProjectDetailEditorial_actionDateTerracotta`, `ProjectDetailEditorial_actionLink`, `ProjectDetailEditorial_actionMeta`, `ProjectDetailEditorial_actionSource`, `ProjectDetailEditorial_actionTitle`, `ProjectDetailEditorial_actionTitleBold`, `ProjectDetailEditorial_appendixDate`, `ProjectDetailEditorial_appendixDescription`, `ProjectDetailEditorial_appendixFrame`, `ProjectDetailEditorial_appendixMilestoneGrid`, `ProjectDetailEditorial_appendixName` … +26 more
 
+**Text deltas** (2 strings in TSX absent from HTML):
+- “Empty section”
+- “Project controls unavailable”
+
 ---
 
 ## Major (3)
@@ -84,6 +88,11 @@ vs `src/pages/ProjectDetailEditorial.tsx`
 vs `src/pages/PersonDetailEditorial.tsx`
 
 **Invented classes** (14): `PersonDetailEditorial_appendixFrame`, `PersonDetailEditorial_appendixGrid`, `PersonDetailEditorial_appendixLabel`, `PersonDetailEditorial_appendixRule`, `PersonDetailEditorial_appendixSection`, `PersonDetailEditorial_cadenceSeparator`, `PersonDetailEditorial_cadenceStrip`, `PersonDetailEditorial_cadenceTrendIncreasing`, `PersonDetailEditorial_fieldLabel`, `PersonDetailEditorial_fieldValue`, `PersonDetailEditorial_fieldValueCapitalize`, `PersonDetailEditorial_finisDate`, `PersonDetailEditorial_insightSection`, `PersonDetailEditorial_refreshButton`
+
+**Text deltas** (3 strings in TSX absent from HTML):
+- “Archive Person”
+- “Empty section”
+- “Person controls unavailable”
 
 ---
 

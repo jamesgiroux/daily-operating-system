@@ -549,6 +549,7 @@ fn subject_ref_from_claim(claim: &IntelligenceClaim) -> SubjectRef {
         Ok(crate::types::ClaimSubjectRef::Project { id }) => SubjectRef::Project(id),
         Ok(crate::types::ClaimSubjectRef::Person { id }) => SubjectRef::Person(id),
         Ok(crate::types::ClaimSubjectRef::Meeting { id }) => SubjectRef::Meeting(id),
+        Ok(crate::types::ClaimSubjectRef::Action { id }) => SubjectRef::Action(id),
         _ => SubjectRef::Unknown,
     }
 }

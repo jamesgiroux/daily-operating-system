@@ -38,7 +38,7 @@ export interface RenderableCompositionView {
 
 export interface UseChapterLayoutArgs {
   projection: ProjectedComposition | null;
-  entityType: CompositionEntityType;
+  entityType: CompositionLayoutSubjectType;
   surfaceKey?: CompositionSurfaceKey;
 }
 
@@ -59,6 +59,14 @@ export interface UseChapterLayoutResult {
 
 const CORE_SECTION_IDS = new Set(["headline", "masthead", "lead"]);
 const CORE_BLOCK_TYPES = new Set(["account_overview"]);
+
+type CompositionLayoutSubjectType = CompositionEntityType | "action";
+
+function supportsPersistedLayoutOverlay(
+  entityType: CompositionLayoutSubjectType,
+): entityType is CompositionEntityType {
+  return entityType === "account" || entityType === "project" || entityType === "person";
+}
 
 function defaultOverlay(): CompositionLayoutOverlay {
   return {
@@ -230,6 +238,19 @@ export function useChapterLayout({
     loadSequenceRef.current = sequence;
     setLoading(true);
     setError(null);
+
+    if (!supportsPersistedLayoutOverlay(entityType)) {
+      const next = defaultOverlay();
+      overlayRef.current = next;
+      persistedOverlayRef.current = next;
+      persistedLayoutRevisionRef.current = 0;
+      lastPersistedMutationSequenceRef.current = mutationSequenceAtStart;
+      setOverlay(next);
+      setLayoutRevision(0);
+      setLoading(false);
+      return;
+    }
+
     getCompositionLayoutOverlay({ entityType, surfaceKey })
       .then((response) => {
         if (loadSequenceRef.current !== sequence) return;
@@ -265,6 +286,15 @@ export function useChapterLayout({
       setOverlay(next);
       setSaving(true);
       setError(null);
+
+      if (!supportsPersistedLayoutOverlay(entityType)) {
+        persistedOverlayRef.current = next;
+        persistedLayoutRevisionRef.current = 0;
+        lastPersistedMutationSequenceRef.current = sequence;
+        setLayoutRevision(0);
+        setSaving(false);
+        return;
+      }
 
       void saveCompositionLayoutOverlay({ entityType, surfaceKey, overlay: next })
         .then((response: LayoutOverlayResponse) => {
@@ -359,6 +389,14 @@ export function useChapterLayout({
     setOverlay(next);
     setSaving(true);
     setError(null);
+    if (!supportsPersistedLayoutOverlay(entityType)) {
+      persistedOverlayRef.current = next;
+      persistedLayoutRevisionRef.current = 0;
+      lastPersistedMutationSequenceRef.current = sequence;
+      setLayoutRevision(0);
+      setSaving(false);
+      return;
+    }
     try {
       const response = await resetCompositionLayoutOverlay({ entityType, surfaceKey });
       const reset = normalizeCompositionLayoutOverlay(response.overlay);
