@@ -12,6 +12,7 @@ pub mod claims;
 pub mod claims_backfill;
 pub mod commitment_bridge;
 pub mod comparator_thresholds;
+pub mod composition_layout;
 pub mod composition_projection;
 pub mod composition_render_orchestrator;
 pub mod compositions;

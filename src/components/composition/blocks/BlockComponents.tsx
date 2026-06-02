@@ -5,6 +5,7 @@ import { IntelligenceCorrection } from "@/components/ui/IntelligenceCorrection";
 import { ProvenanceTag } from "@/components/ui/ProvenanceTag";
 import { TrustBandBadge } from "@/components/ui/TrustBandBadge";
 import { HealthBadge } from "@/components/shared/HealthBadge";
+import { CompositionInlineEdit } from "@/components/composition/CompositionInlineEdit";
 import { normalizeTrustBand } from "@/services/composition/contracts";
 import type {
   EditRoute,
@@ -20,6 +21,7 @@ type BlockComponentProps = {
   accountId?: string;
   payload: Payload;
   renderedProvenance?: RenderedProvenance | null;
+  editMode?: boolean;
 };
 type BlockComponent = (props: BlockComponentProps) => JSX.Element;
 
@@ -172,6 +174,10 @@ function feedbackRoute(block: ProjectedBlock): EditRoute | null {
   return block.edit_routes.find((route) => route.feedback_allowed && route.claim_refs.length > 0) ?? null;
 }
 
+function feedbackRouteForPath(block: ProjectedBlock, fieldPath: string): EditRoute | null {
+  return block.edit_routes.find((route) => route.field_path === fieldPath && route.feedback_allowed && route.claim_refs.length > 0) ?? null;
+}
+
 function feedbackField(route: EditRoute): string {
   const normalized = route.field_path
     .split("/")
@@ -277,7 +283,41 @@ function BlockShell({
   );
 }
 
-function AccountOverviewBlock({ block, accountId, payload, renderedProvenance }: BlockComponentProps) {
+function EditableBlockText({
+  accountId,
+  block,
+  editMode,
+  fieldPath,
+  value,
+  as,
+  className,
+  multiline = true,
+}: {
+  accountId?: string;
+  block: ProjectedBlock;
+  editMode?: boolean;
+  fieldPath: string;
+  value: string;
+  as: "p" | "span" | "h3" | "div";
+  className: string;
+  multiline?: boolean;
+}) {
+  const fallback = <>{as === "p" ? <p className={className}>{value}</p> : as === "h3" ? <h3 className={className}>{value}</h3> : as === "div" ? <div className={className}>{value}</div> : <span className={className}>{value}</span>}</>;
+  if (!editMode) return fallback;
+  return (
+    <CompositionInlineEdit
+      accountId={accountId}
+      route={feedbackRouteForPath(block, fieldPath)}
+      value={value}
+      as={as}
+      multiline={multiline}
+      className={className}
+      fallback={fallback}
+    />
+  );
+}
+
+function AccountOverviewBlock({ block, accountId, payload, renderedProvenance, editMode }: BlockComponentProps) {
   const account = object(payload.account) ?? {};
   const vitals = array(payload.vitals);
   const contexts = array(payload.context);
@@ -290,7 +330,17 @@ function AccountOverviewBlock({ block, accountId, payload, renderedProvenance }:
           <p className={pageStyles.compositionStateText}>Some sourced account details could not be loaded for this view.</p>
         </div>
       )}
-      {text(payload.summary) && <p className={pageStyles.compositionNarrative}>{text(payload.summary)}</p>}
+      {text(payload.summary) && (
+        <EditableBlockText
+          accountId={accountId}
+          block={block}
+          editMode={editMode}
+          fieldPath="/summary"
+          value={text(payload.summary) ?? ""}
+          as="p"
+          className={pageStyles.compositionNarrative}
+        />
+      )}
       {vitals.length > 0 && (
         <div className={pageStyles.compositionVitalRail}>
           {vitals.map((item, index) => (
@@ -312,17 +362,21 @@ function AccountOverviewBlock({ block, accountId, payload, renderedProvenance }:
   );
 }
 
-function ClaimSummaryBlock({ block, accountId, payload, renderedProvenance }: BlockComponentProps) {
+function ClaimSummaryBlock({ block, accountId, payload, renderedProvenance, editMode }: BlockComponentProps) {
   const empty = payload.empty_state === true;
   return (
     <BlockShell block={block} accountId={accountId} payload={payload} renderedProvenance={renderedProvenance} title={text(payload.title) ?? text(payload.intent)} empty={empty}>
-      {text(payload.text) && <p className={pageStyles.compositionNarrative}>{text(payload.text)}</p>}
-      {text(payload.body) && <p className={pageStyles.compositionBodyText}>{text(payload.body)}</p>}
+      {text(payload.text) && (
+        <EditableBlockText accountId={accountId} block={block} editMode={editMode} fieldPath="/text" value={text(payload.text) ?? ""} as="p" className={pageStyles.compositionNarrative} />
+      )}
+      {text(payload.body) && (
+        <EditableBlockText accountId={accountId} block={block} editMode={editMode} fieldPath="/body" value={text(payload.body) ?? ""} as="p" className={pageStyles.compositionBodyText} />
+      )}
     </BlockShell>
   );
 }
 
-function HealthSnapshotBlock({ block, accountId, payload, renderedProvenance }: BlockComponentProps) {
+function HealthSnapshotBlock({ block, accountId, payload, renderedProvenance, editMode }: BlockComponentProps) {
   const band = text(payload.band) ?? text(payload.trust_band);
   return (
     <BlockShell block={block} accountId={accountId} payload={payload} renderedProvenance={renderedProvenance} title="Health">
@@ -340,16 +394,23 @@ function HealthSnapshotBlock({ block, accountId, payload, renderedProvenance }: 
           </div>
         )}
       </div>
-      {text(payload.text) && <p className={pageStyles.compositionNarrative}>{text(payload.text)}</p>}
+      {text(payload.text) && (
+        <EditableBlockText accountId={accountId} block={block} editMode={editMode} fieldPath="/text" value={text(payload.text) ?? ""} as="p" className={pageStyles.compositionNarrative} />
+      )}
     </BlockShell>
   );
 }
 
-function RiskCalloutBlock({ block, accountId, payload, renderedProvenance }: BlockComponentProps) {
+function RiskCalloutBlock({ block, accountId, payload, renderedProvenance, editMode }: BlockComponentProps) {
+  const primary = text(payload.text) ?? text(payload.body);
   return (
     <BlockShell block={block} accountId={accountId} payload={payload} renderedProvenance={renderedProvenance} title={text(payload.title) ?? "Risk"}>
-      <p className={pageStyles.compositionNarrative}>{text(payload.text) ?? text(payload.body)}</p>
-      {text(payload.recommended_action) && <p className={pageStyles.compositionBodyText}>{text(payload.recommended_action)}</p>}
+      {primary && (
+        <EditableBlockText accountId={accountId} block={block} editMode={editMode} fieldPath={text(payload.text) ? "/text" : "/body"} value={primary} as="p" className={pageStyles.compositionNarrative} />
+      )}
+      {text(payload.recommended_action) && (
+        <EditableBlockText accountId={accountId} block={block} editMode={editMode} fieldPath="/recommended_action" value={text(payload.recommended_action) ?? ""} as="p" className={pageStyles.compositionBodyText} />
+      )}
     </BlockShell>
   );
 }
@@ -409,11 +470,13 @@ function EvidenceListBlock({ block, accountId, payload, renderedProvenance }: Bl
   );
 }
 
-function MarkdownDocumentBlock({ block, accountId, payload, renderedProvenance }: BlockComponentProps) {
+function MarkdownDocumentBlock({ block, accountId, payload, renderedProvenance, editMode }: BlockComponentProps) {
   const sections = array(payload.sections);
   return (
     <BlockShell block={block} accountId={accountId} payload={payload} renderedProvenance={renderedProvenance} title={text(payload.title)}>
-      {text(payload.body) && <p className={pageStyles.compositionBodyText}>{text(payload.body)}</p>}
+      {text(payload.body) && (
+        <EditableBlockText accountId={accountId} block={block} editMode={editMode} fieldPath="/body" value={text(payload.body) ?? ""} as="p" className={pageStyles.compositionBodyText} />
+      )}
       {sections.map((section, index) => (
         <section key={`${text(section.heading) ?? "section"}-${index}`}>
           {text(section.heading) && <h4 className={pageStyles.compositionEvidenceTitle}>{text(section.heading)}</h4>}
@@ -424,12 +487,14 @@ function MarkdownDocumentBlock({ block, accountId, payload, renderedProvenance }
   );
 }
 
-export function GenericTextBlock({ block, accountId, payload, renderedProvenance }: BlockComponentProps) {
+export function GenericTextBlock({ block, accountId, payload, renderedProvenance, editMode }: BlockComponentProps) {
   const title = text(payload.title) ?? text(payload.label);
   const body = text(payload.text) ?? text(payload.body);
   return (
     <BlockShell block={block} accountId={accountId} payload={payload} renderedProvenance={renderedProvenance} title={title}>
-      {body && <p className={pageStyles.compositionBodyText}>{body}</p>}
+      {body && (
+        <EditableBlockText accountId={accountId} block={block} editMode={editMode} fieldPath={text(payload.text) ? "/text" : "/body"} value={body} as="p" className={pageStyles.compositionBodyText} />
+      )}
     </BlockShell>
   );
 }

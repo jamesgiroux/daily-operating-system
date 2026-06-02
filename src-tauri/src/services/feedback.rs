@@ -48,6 +48,7 @@ pub fn submit_intelligence_feedback(
             entity_type,
             field,
             action,
+            current_value: None,
             corrected_value: None,
             annotation: context,
             item_key: None,
@@ -181,6 +182,7 @@ pub struct SubmitIntelligenceCorrectionInput<'a> {
     pub entity_type: &'a str,
     pub field: &'a str,
     pub action: CorrectionAction,
+    pub current_value: Option<&'a str>,
     pub corrected_value: Option<&'a str>,
     pub annotation: Option<&'a str>,
     pub item_key: Option<&'a str>,
@@ -222,6 +224,7 @@ pub fn submit_intelligence_correction(
         entity_type,
         field,
         action,
+        current_value,
         corrected_value,
         annotation,
         item_key,
@@ -251,6 +254,7 @@ pub fn submit_intelligence_correction(
                 "daily_briefing",
                 "meeting_detail",
                 "account_detail_work",
+                "composition_inline_edit",
             ],
         )?;
     }
@@ -283,11 +287,17 @@ pub fn submit_intelligence_correction(
     // successive corrections chain: v1 → v2 captures v1, v2 → v3 captures v2.
     let previous_value = if action == CorrectionAction::Corrected {
         latest_corrected_value(db, entity_id, field).or_else(|| {
-            // No prior correction — on accounts, fall back to the stored
-            // column value if the field is a known account column. This is
-            // best-effort; None is acceptable when the field lives inside
-            // an intelligence JSON blob.
-            read_account_field_snapshot(db, entity_id, entity_type, field)
+            current_value
+                .map(str::trim)
+                .filter(|value| !value.is_empty())
+                .map(str::to_string)
+                .or_else(|| {
+                    // No prior correction — on accounts, fall back to the
+                    // stored column value if the field is a known account
+                    // column. This is best-effort; None is acceptable when
+                    // the field lives inside an intelligence JSON blob.
+                    read_account_field_snapshot(db, entity_id, entity_type, field)
+                })
         })
     } else {
         None
@@ -656,6 +666,7 @@ mod correction_tests {
                 entity_type,
                 field,
                 action,
+                current_value: None,
                 corrected_value,
                 annotation,
                 item_key,
@@ -766,6 +777,7 @@ mod correction_tests {
                 entity_type: "account",
                 field: "work_suggestion:act-1",
                 action: CorrectionAction::Dismissed,
+                current_value: None,
                 corrected_value: None,
                 annotation: None,
                 item_key: Some("Review renewal risk"),
@@ -783,6 +795,47 @@ mod correction_tests {
             )
             .unwrap();
         assert_eq!(source_system.as_deref(), Some("account_detail_work"));
+    }
+
+    #[test]
+    fn composition_inline_correction_uses_current_value_snapshot() {
+        let db = test_db();
+        seed_account(&db, "acct-inline");
+        let clock = FixedClock::new(chrono::Utc.with_ymd_and_hms(2026, 4, 30, 0, 0, 0).unwrap());
+        let rng = SeedableRng::new(42);
+        let ext = ExternalClients::default();
+        let ctx = test_ctx(&clock, &rng, &ext);
+
+        super::submit_intelligence_correction(
+            &ctx,
+            &db,
+            SubmitIntelligenceCorrectionInput {
+                entity_id: "acct-inline",
+                entity_type: "account",
+                field: "composition:sections.0.blocks.0.payload.text",
+                action: CorrectionAction::Corrected,
+                current_value: Some("Original claim-backed summary"),
+                corrected_value: Some("Corrected claim-backed summary"),
+                annotation: None,
+                item_key: Some("claim-inline"),
+                source_system: Some("composition_inline_edit"),
+            },
+        )
+        .expect("inline correction submission");
+
+        let row: (Option<String>, Option<String>, Option<String>) = db
+            .conn_ref()
+            .query_row(
+                "SELECT previous_value, corrected_value, source_system \
+                 FROM entity_feedback_events WHERE entity_id = 'acct-inline'",
+                [],
+                |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?)),
+            )
+            .unwrap();
+
+        assert_eq!(row.0.as_deref(), Some("Original claim-backed summary"));
+        assert_eq!(row.1.as_deref(), Some("Corrected claim-backed summary"));
+        assert_eq!(row.2.as_deref(), Some("composition_inline_edit"));
     }
 
     #[test]

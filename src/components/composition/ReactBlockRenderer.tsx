@@ -6,9 +6,10 @@ export interface ReactBlockRendererProps {
   block: ProjectedBlock;
   accountId?: string;
   renderedProvenance?: RenderedProvenance | null;
+  editMode?: boolean;
 }
 
-export function ReactBlockRenderer({ block, accountId, renderedProvenance }: ReactBlockRendererProps) {
+export function ReactBlockRenderer({ block, accountId, renderedProvenance, editMode = false }: ReactBlockRendererProps) {
   const Renderer = BLOCK_RENDERERS[block.selected_known_type_id as keyof typeof BLOCK_RENDERERS];
   if (Renderer) {
     return (
@@ -17,6 +18,7 @@ export function ReactBlockRenderer({ block, accountId, renderedProvenance }: Rea
         accountId={accountId}
         payload={block.payload}
         renderedProvenance={renderedProvenance}
+        editMode={editMode}
       />
     );
   }
@@ -27,6 +29,7 @@ export function ReactBlockRenderer({ block, accountId, renderedProvenance }: Rea
         accountId={accountId}
         payload={block.payload}
         renderedProvenance={renderedProvenance}
+        editMode={editMode}
       />
     );
   }
