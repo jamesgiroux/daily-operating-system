@@ -1,7 +1,7 @@
 use abilities_runtime::abilities::composition::{
     AbilityRef, BindingRole, Block, BlockId, BlockType, ClaimRef, ClaimRefIndex, Composition,
     CompositionDocId, CompositionKind, CompositionMetadata, CompositionVersion, FieldBinding,
-    ProvenanceRef, RenderHints, Salience, Section, SectionId,
+    ProvenanceRef, RenderHints, Salience, Section, SectionId, SectionLayout,
 };
 use abilities_runtime::abilities::provenance::{FieldPath, InvocationId, SchemaVersion};
 use abilities_runtime::abilities::registry::{Actor, ScopeSet, SurfaceClientId, SurfaceScope};
@@ -55,6 +55,13 @@ fn block(
 }
 
 fn composition(blocks: Vec<Block>) -> Composition {
+    composition_with_sections(vec![Section::new(
+        SectionId::new("section-fixture"),
+        blocks,
+    )])
+}
+
+fn composition_with_sections(sections: Vec<Section>) -> Composition {
     let generated_at = Utc.with_ymd_and_hms(2026, 5, 15, 0, 0, 0).unwrap();
     let mut composition = Composition::empty(
         CompositionDocId::new("composition-fixture"),
@@ -62,7 +69,7 @@ fn composition(blocks: Vec<Block>) -> Composition {
         generated_at,
     );
     composition.kind = CompositionKind::EntityPage;
-    composition.sections = vec![Section::new(SectionId::new("section-fixture"), blocks)];
+    composition.sections = sections;
     composition.generated_by = AbilityRef::new("fixture.ability");
     composition.metadata = CompositionMetadata {
         schema_version: SchemaVersion(1),
@@ -180,6 +187,120 @@ fn no_catch_all_admitted_field_gate() {
     let (projection, _) = project(&composition(vec![custom]), &ctx());
     let serialized = serde_json::to_string(&projection).unwrap();
     assert!(!serialized.contains("sentinel-private"));
+}
+
+#[test]
+fn account_overview_does_not_admit_unvetted_account_object_fields() {
+    let sentinel = "sentinel-private-account-field";
+    let known = block(
+        "block-account-overview",
+        BlockType::AccountOverview,
+        json!({
+            "account": {
+                "id": "acct-fixture",
+                "display_name": "Fixture Account",
+                "type": "customer",
+                "private_note": sentinel,
+                "nested": { "token": sentinel }
+            },
+            "summary": "Visible account summary"
+        }),
+        vec![claim("claim-account", "/account/display_name")],
+        vec![binding("/account/display_name", BindingRole::Source, &[0])],
+    );
+
+    let (projection, _) = project(&composition(vec![known]), &ctx());
+    assert_eq!(
+        projection.blocks[0].payload.pointer("/account/id"),
+        Some(&json!("acct-fixture"))
+    );
+    assert_eq!(
+        projection.blocks[0]
+            .payload
+            .pointer("/account/display_name"),
+        Some(&json!("Fixture Account"))
+    );
+    assert!(projection.blocks[0]
+        .payload
+        .pointer("/account/private_note")
+        .is_none());
+    assert!(projection.blocks[0]
+        .payload
+        .pointer("/account/nested/token")
+        .is_none());
+    assert!(!serde_json::to_string(&projection)
+        .unwrap()
+        .contains(sentinel));
+}
+
+#[test]
+fn account_overview_does_not_admit_unvetted_composite_account_fields() {
+    let sentinel = "sentinel-private-composite-field";
+    let known = block(
+        "block-account-overview-composites",
+        BlockType::AccountOverview,
+        json!({
+            "counts_by_trust_band": {
+                "likely_current": 1,
+                "use_with_caution": 2,
+                "needs_verification": 3,
+                "raw_private_count": sentinel
+            },
+            "context": [{
+                "claim_id": "claim-visible",
+                "text": "Visible context",
+                "trust_band": "likely_current",
+                "source_asof": "2026-05-14T09:00:00Z",
+                "raw_evidence": sentinel
+            }],
+            "vitals": [{
+                "label": "Lifecycle",
+                "value": "active",
+                "source_label": "source",
+                "source_asof": "2026-05-14T09:00:00Z",
+                "trust_band": "likely_current",
+                "source_ref": sentinel
+            }]
+        }),
+        vec![claim("claim-account", "/context/0/text")],
+        vec![binding("/context/0/text", BindingRole::Source, &[0])],
+    );
+
+    let (projection, _) = project(&composition(vec![known]), &ctx());
+    let payload = &projection.blocks[0].payload;
+    assert_eq!(
+        payload.pointer("/counts_by_trust_band/likely_current"),
+        Some(&json!(1))
+    );
+    assert_eq!(
+        payload.pointer("/context/0/text"),
+        Some(&json!("Visible context"))
+    );
+    assert_eq!(payload.pointer("/vitals/0/value"), Some(&json!("active")));
+    assert!(payload
+        .pointer("/counts_by_trust_band/raw_private_count")
+        .is_none());
+    assert!(payload.pointer("/context/0/raw_evidence").is_none());
+    assert!(payload.pointer("/vitals/0/source_ref").is_none());
+    assert!(!serde_json::to_string(&projection)
+        .unwrap()
+        .contains(sentinel));
+}
+
+#[test]
+fn account_overview_policy_has_no_composite_root_admissions() {
+    let source = include_str!("../src/abilities/fallback_projection.rs");
+    for forbidden in [
+        "object_field(\"/account\"",
+        "object_field(\"/counts_by_trust_band\"",
+        "array_field(\"/context\"",
+        "array_field(\"/vitals\"",
+    ] {
+        assert!(
+            !source.contains(forbidden),
+            "account overview projection must allowlist leaves, not composite roots: {forbidden}"
+        );
+    }
 }
 
 #[test]
@@ -542,6 +663,95 @@ fn dos570_fixture_14_policy_version_cache_key() {
     let (b, _) = project(&comp, &second);
     assert_ne!(a.fallback_policy_version, b.fallback_policy_version);
     assert_eq!(a.blocks[0].payload, b.blocks[0].payload);
+}
+
+#[test]
+fn projected_sections_preserve_safe_outline_and_skip_dropped_blocks() {
+    let mut section_a = Section::new(
+        SectionId::new("section-a"),
+        vec![
+            block(
+                "custom-a-0",
+                BlockType::Custom {
+                    type_id: "dailyos/section-outline-a0".to_string(),
+                },
+                json!({"title": "Hidden"}),
+                vec![],
+                vec![],
+            ),
+            block(
+                "custom-a-1",
+                BlockType::Custom {
+                    type_id: "dailyos/section-outline-a1".to_string(),
+                },
+                json!({"title": "Hidden"}),
+                vec![],
+                vec![],
+            ),
+        ],
+    );
+    section_a.label = Some("First section".to_string());
+    section_a.layout = SectionLayout::Grid;
+    section_a.salience = Salience {
+        weight: 0.8,
+        band: abilities_runtime::abilities::composition::SalienceBand::Important,
+        reason: "fixture salience".to_string(),
+    };
+
+    let mut section_b = Section::new(
+        SectionId::new("section-b"),
+        vec![block(
+            "known-b",
+            BlockType::MarkdownDocument,
+            json!({"title": "Visible"}),
+            vec![],
+            vec![],
+        )],
+    );
+    section_b.label = Some("Second section".to_string());
+    section_b.layout = SectionLayout::Stacked;
+
+    let mut context = ctx();
+    context.unknown_block_cap = 1;
+    let (projection, _) = project(
+        &composition_with_sections(vec![section_a, section_b]),
+        &context,
+    );
+
+    assert_eq!(projection.blocks.len(), 2);
+    assert_eq!(projection.dropped_unknown_block_count, 1);
+    assert_eq!(projection.sections.len(), 2);
+    assert_eq!(
+        projection.sections[0].section_id,
+        SectionId::new("section-a")
+    );
+    assert_eq!(
+        projection.sections[0].label.as_deref(),
+        Some("First section")
+    );
+    assert_eq!(projection.sections[0].layout, SectionLayout::Grid);
+    assert_eq!(
+        projection.sections[0].salience.band,
+        abilities_runtime::abilities::composition::SalienceBand::Important
+    );
+    assert_eq!(
+        projection.sections[0].block_ids,
+        vec![BlockId::new("custom-a-0")]
+    );
+    assert_eq!(projection.sections[0].block_indexes, vec![0]);
+    assert_eq!(
+        projection.sections[1].section_id,
+        SectionId::new("section-b")
+    );
+    assert_eq!(
+        projection.sections[1].block_ids,
+        vec![BlockId::new("known-b")]
+    );
+    assert_eq!(projection.sections[1].block_indexes, vec![1]);
+    assert_eq!(
+        projection.blocks[1].block_index, 2,
+        "block audit index keeps the original composition position"
+    );
 }
 
 #[test]

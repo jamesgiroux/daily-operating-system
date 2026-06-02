@@ -5,15 +5,15 @@ use chrono::{DateTime, Utc};
 use dailyos_abilities_macro::ability;
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
-use serde_json::{json, Value};
+use serde_json::{Value, json};
 
-use crate::abilities::claims::{metadata_for_name, ClaimType, FreshnessDecayClass};
+use crate::abilities::claims::{ClaimType, FreshnessDecayClass, metadata_for_name};
 use crate::abilities::composition::{
     AbilityRef, BindingRole, Block, BlockId, BlockType, ClaimRef, Composition, CompositionDocId,
     CompositionKind, CompositionMetadata, CompositionVersion, EntityRef, FieldBinding,
     ProvenanceRef, Salience, SalienceBand, Section, SectionId, SectionLayout,
 };
-use crate::abilities::provenance::source_time::{parse_source_timestamp, SourceTimestampStatus};
+use crate::abilities::provenance::source_time::{SourceTimestampStatus, parse_source_timestamp};
 use crate::abilities::provenance::trust::{claim_trust_band_from_score, most_cautious_trust_band};
 use crate::abilities::provenance::{
     AbilityExecutionMode, AbilityVersion, Confidence, DataSource, EntityId, FieldAttribution,
@@ -25,15 +25,32 @@ use crate::abilities::trust::TrustBand;
 use crate::abilities::{
     AbilityCategory, AbilityContext, AbilityError, AbilityErrorKind, AbilityResult, Actor,
 };
-use crate::services::context::{CompositionCommitError, CompositionProposal};
+use crate::services::context::{
+    AccountCompositionProvenanceKind, AccountCompositionSnapshot, AccountCompositionSnapshotField,
+    AccountCompositionSnapshotReadError, CompositionCommitError, CompositionProposal,
+};
 use crate::types::{
-    prompt_input_sensitivity_allowed, subject_ref_from_json, ClaimState, ClaimSubjectRef,
-    IntelligenceClaim, SurfacingState,
+    ClaimState, ClaimSubjectRef, IntelligenceClaim, SurfacingState,
+    prompt_input_sensitivity_allowed, subject_ref_from_json,
 };
 
 const ABILITY_NAME: &str = "dailyos/account-overview";
 const ABILITY_SCHEMA_VERSION: u32 = 1;
 const ACCOUNT_CLAIM_DEPTH: usize = 3;
+
+const VARIANT_D_SECTIONS: [(&str, &str); 11] = [
+    ("headline", "Headline"),
+    ("outlook", "Outlook"),
+    ("state-of-play", "State of play"),
+    ("the-room", "The room"),
+    ("whats-next", "What's next"),
+    ("watch-list", "Watch list"),
+    ("value-commitments", "Value commitments"),
+    ("strategic-landscape", "Strategic landscape"),
+    ("the-record", "The record"),
+    ("the-work", "The work"),
+    ("reports", "Reports"),
+];
 
 #[derive(Debug, Clone, Deserialize, Serialize, JsonSchema)]
 pub struct AccountOverviewInput {
@@ -66,6 +83,12 @@ struct ClaimProjection {
     trust_band: TrustBand,
     rendered_text: String,
     parsed_source_asof: Option<DateTime<Utc>>,
+}
+
+#[derive(Debug, Clone)]
+struct SnapshotReadOutcome {
+    snapshot: Option<AccountCompositionSnapshot>,
+    degraded_reason: Option<String>,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -189,10 +212,12 @@ async fn prepare_account_overview(
     }
     projections.sort_by(compare_claim_projection);
 
+    let snapshot = read_account_snapshot(ctx, input).await?;
     let composition = build_composition(
         ctx,
         input,
         &projections,
+        &snapshot,
         &subject,
         invocation_id,
         &mut provenance_builder,
@@ -206,6 +231,32 @@ async fn prepare_account_overview(
         },
         provenance_builder,
     })
+}
+
+async fn read_account_snapshot(
+    ctx: &AbilityContext<'_>,
+    input: &NormalizedInput,
+) -> Result<SnapshotReadOutcome, AbilityError> {
+    match ctx
+        .services()
+        .read_account_composition_snapshot(
+            input.account_id.clone(),
+            ctx.entity_context_claim_surface(),
+        )
+        .await
+    {
+        Ok(snapshot) => Ok(SnapshotReadOutcome {
+            snapshot: Some(snapshot),
+            degraded_reason: None,
+        }),
+        Err(AccountCompositionSnapshotReadError::AccountNotFound(account_id)) => Err(
+            validation_error(format!("account `{account_id}` was not found")),
+        ),
+        Err(AccountCompositionSnapshotReadError::ReadFailed(_)) => Ok(SnapshotReadOutcome {
+            snapshot: None,
+            degraded_reason: Some("account_snapshot_unavailable".to_string()),
+        }),
+    }
 }
 
 fn project_claim(
@@ -289,7 +340,9 @@ fn placement_for_claim_type(kind: ClaimType) -> ClaimPlacement {
         ClaimType::Risk | ClaimType::EntityRisk => ClaimPlacement::Risk,
         ClaimType::Win | ClaimType::EntityWin => ClaimPlacement::Win,
         ClaimType::ValueDelivered => ClaimPlacement::Value,
-        ClaimType::Commitment | ClaimType::OpenLoop => ClaimPlacement::Commitment,
+        ClaimType::Commitment | ClaimType::OpenLoop | ClaimType::Recommendation => {
+            ClaimPlacement::Commitment
+        }
         ClaimType::StakeholderEngagement
         | ClaimType::StakeholderAssessment
         | ClaimType::StakeholderRole => ClaimPlacement::Relationship,
@@ -314,8 +367,7 @@ fn placement_for_claim_type(kind: ClaimType) -> ClaimPlacement {
         | ClaimType::MeetingEventNote
         | ClaimType::AttendeeContext
         | ClaimType::MeetingChangeMarker
-        | ClaimType::SuggestedOutcome
-        | ClaimType::Recommendation => ClaimPlacement::Ignored,
+        | ClaimType::SuggestedOutcome => ClaimPlacement::Ignored,
     }
 }
 
@@ -323,61 +375,308 @@ fn build_composition(
     ctx: &AbilityContext<'_>,
     input: &NormalizedInput,
     projections: &[ClaimProjection],
+    snapshot_outcome: &SnapshotReadOutcome,
     subject: &SubjectAttribution,
     invocation_id: InvocationId,
     provenance_builder: &mut ProvenanceBuilder,
 ) -> Result<Composition, AbilityError> {
-    let mut sections = Vec::new();
-    let overview_block = build_overview_block(
+    let snapshot = snapshot_outcome.snapshot.as_ref();
+    let mut sections = Vec::with_capacity(VARIANT_D_SECTIONS.len());
+    let block_context = AccountBlockBuildContext {
+        ctx,
         input,
-        projections,
         subject,
         invocation_id,
+    };
+
+    let headline_block = build_overview_block(
+        &block_context,
+        projections,
+        snapshot_outcome,
         "/sections/0/blocks/0",
         provenance_builder,
     )?;
-    let mut overview_section = Section::new(SectionId::new("overview"), vec![overview_block]);
-    overview_section.label = Some("Overview".to_string());
-    overview_section.salience = salience(0.95, SalienceBand::Critical, "account summary");
-    sections.push(overview_section);
+    sections.push(variant_section(
+        "headline",
+        "Headline",
+        vec![headline_block],
+        SectionLayout::Stacked,
+        salience(0.95, SalienceBand::Critical, "account masthead"),
+    ));
 
-    if projections.is_empty() {
-        let empty_block = build_empty_state_block(
+    let outlook_claims = projections
+        .iter()
+        .filter(|projection| projection.placement == ClaimPlacement::Health)
+        .collect::<Vec<_>>();
+    sections.push(variant_section(
+        "outlook",
+        "Outlook",
+        build_claim_or_snapshot_section_blocks(
+            ctx,
             input,
+            "outlook",
+            1,
+            outlook_claims,
+            snapshot_fields_for_section(snapshot, "outlook"),
+            EmptySectionCopy {
+                title: "No current outlook signals",
+                body: "DailyOS has not found current account-health signals with renderable provenance.",
+                status: "source_gap",
+            },
             subject,
             invocation_id,
-            "/sections/1/blocks/0",
             provenance_builder,
-        )?;
-        let mut empty_section = Section::new(SectionId::new("empty"), vec![empty_block]);
-        empty_section.label = Some("Signals".to_string());
-        empty_section.salience = salience(0.4, SalienceBand::Contextual, "no visible claims");
-        sections.push(empty_section);
-    } else {
-        let mut signal_blocks = Vec::new();
-        for projection in projections
-            .iter()
-            .filter(|projection| projection.placement != ClaimPlacement::Overview)
-        {
-            let block_index = signal_blocks.len();
-            signal_blocks.push(build_claim_block(
-                input,
-                projection,
-                subject,
-                invocation_id,
-                &format!("/sections/1/blocks/{block_index}"),
-                provenance_builder,
-            )?);
-        }
-        if !signal_blocks.is_empty() {
-            let mut signals_section = Section::new(SectionId::new("signals"), signal_blocks);
-            signals_section.label = Some("Signals".to_string());
-            signals_section.layout = SectionLayout::Stacked;
-            signals_section.salience = salience(0.8, SalienceBand::Important, "visible claims");
-            sections.push(signals_section);
-        }
-    }
+        )?,
+        SectionLayout::Stacked,
+        salience(0.86, SalienceBand::Important, "account outlook"),
+    ));
 
+    let state_claims = projections
+        .iter()
+        .filter(|projection| {
+            matches!(
+                projection.placement,
+                ClaimPlacement::Health
+                    | ClaimPlacement::Risk
+                    | ClaimPlacement::Win
+                    | ClaimPlacement::Value
+                    | ClaimPlacement::Overview
+            )
+        })
+        .collect::<Vec<_>>();
+    sections.push(variant_section(
+        "state-of-play",
+        "State of play",
+        build_claim_or_snapshot_section_blocks(
+            ctx,
+            input,
+            "state-of-play",
+            2,
+            state_claims,
+            snapshot_fields_for_section(snapshot, "state-of-play"),
+            EmptySectionCopy {
+                title: "No active state-of-play signals",
+                body: "No active account claims are currently eligible for this surface.",
+                status: "empty",
+            },
+            subject,
+            invocation_id,
+            provenance_builder,
+        )?,
+        SectionLayout::Stacked,
+        salience(0.82, SalienceBand::Important, "current account state"),
+    ));
+
+    let room_claims = projections
+        .iter()
+        .filter(|projection| projection.placement == ClaimPlacement::Relationship)
+        .collect::<Vec<_>>();
+    sections.push(variant_section(
+        "the-room",
+        "The room",
+        build_claim_or_snapshot_section_blocks(
+            ctx,
+            input,
+            "the-room",
+            3,
+            room_claims,
+            snapshot_fields_for_section(snapshot, "the-room"),
+            EmptySectionCopy {
+                title: "No room signals",
+                body: "Stakeholder and relationship inputs are not yet grounded for this account.",
+                status: "empty",
+            },
+            subject,
+            invocation_id,
+            provenance_builder,
+        )?,
+        SectionLayout::Grid,
+        salience(0.72, SalienceBand::Contextual, "account relationships"),
+    ));
+
+    let next_claims = projections
+        .iter()
+        .filter(|projection| projection.placement == ClaimPlacement::Commitment)
+        .collect::<Vec<_>>();
+    sections.push(variant_section(
+        "whats-next",
+        "What's next",
+        build_claim_or_snapshot_section_blocks(
+            ctx,
+            input,
+            "whats-next",
+            4,
+            next_claims,
+            snapshot_fields_for_section(snapshot, "whats-next"),
+            EmptySectionCopy {
+                title: "No open next steps",
+                body: "There are no renderable commitments or next-step records for this account.",
+                status: "empty",
+            },
+            subject,
+            invocation_id,
+            provenance_builder,
+        )?,
+        SectionLayout::Stacked,
+        salience(0.8, SalienceBand::Important, "next account work"),
+    ));
+
+    let watch_claims = projections
+        .iter()
+        .filter(|projection| projection.placement == ClaimPlacement::Risk)
+        .collect::<Vec<_>>();
+    sections.push(variant_section(
+        "watch-list",
+        "Watch list",
+        build_claim_or_snapshot_section_blocks(
+            ctx,
+            input,
+            "watch-list",
+            5,
+            watch_claims,
+            snapshot_fields_for_section(snapshot, "watch-list"),
+            EmptySectionCopy {
+                title: "No active watch-list signals",
+                body: "No active risk or watch-list claims are eligible for this account.",
+                status: "empty",
+            },
+            subject,
+            invocation_id,
+            provenance_builder,
+        )?,
+        SectionLayout::Stacked,
+        salience(0.76, SalienceBand::Important, "watch-list signals"),
+    ));
+
+    let value_claims = projections
+        .iter()
+        .filter(|projection| {
+            matches!(
+                projection.placement,
+                ClaimPlacement::Value | ClaimPlacement::Win | ClaimPlacement::Commitment
+            )
+        })
+        .collect::<Vec<_>>();
+    sections.push(variant_section(
+        "value-commitments",
+        "Value commitments",
+        build_claim_or_snapshot_section_blocks(
+            ctx,
+            input,
+            "value-commitments",
+            6,
+            value_claims,
+            snapshot_fields_for_section(snapshot, "value-commitments"),
+            EmptySectionCopy {
+                title: "No commitments with current evidence",
+                body: "DailyOS has not found value or commitment claims with current evidence.",
+                status: "source_gap",
+            },
+            subject,
+            invocation_id,
+            provenance_builder,
+        )?,
+        SectionLayout::Stacked,
+        salience(0.72, SalienceBand::Important, "value and commitments"),
+    ));
+
+    let strategic_claims = projections
+        .iter()
+        .filter(|projection| {
+            matches!(
+                projection.claim_type,
+                ClaimType::CompanyContext
+                    | ClaimType::AccountFact
+                    | ClaimType::EntityIdentity
+                    | ClaimType::EntitySummary
+                    | ClaimType::UserNote
+            )
+        })
+        .collect::<Vec<_>>();
+    sections.push(variant_section(
+        "strategic-landscape",
+        "Strategic landscape",
+        build_claim_or_snapshot_section_blocks(
+            ctx,
+            input,
+            "strategic-landscape",
+            7,
+            strategic_claims,
+            snapshot_fields_for_section(snapshot, "strategic-landscape"),
+            EmptySectionCopy {
+                title: "Strategic context not yet grounded",
+                body: "No source-backed strategic context is available for this account.",
+                status: "needs_grounding",
+            },
+            subject,
+            invocation_id,
+            provenance_builder,
+        )?,
+        SectionLayout::Stacked,
+        salience(0.62, SalienceBand::Contextual, "strategic account context"),
+    ));
+
+    sections.push(variant_section(
+        "the-record",
+        "The record",
+        build_record_section_blocks(
+            ctx,
+            input,
+            projections,
+            snapshot_fields_for_section(snapshot, "the-record"),
+            8,
+            subject,
+            invocation_id,
+            provenance_builder,
+        )?,
+        SectionLayout::Stacked,
+        salience(0.58, SalienceBand::Contextual, "account evidence record"),
+    ));
+
+    let work_claims = projections
+        .iter()
+        .filter(|projection| projection.placement == ClaimPlacement::Commitment)
+        .collect::<Vec<_>>();
+    sections.push(variant_section(
+        "the-work",
+        "The work",
+        build_claim_or_snapshot_section_blocks(
+            ctx,
+            input,
+            "the-work",
+            9,
+            work_claims,
+            snapshot_fields_for_section(snapshot, "the-work"),
+            EmptySectionCopy {
+                title: "No active work items",
+                body: "No active work records are currently grounded for this account.",
+                status: "empty",
+            },
+            subject,
+            invocation_id,
+            provenance_builder,
+        )?,
+        SectionLayout::Stacked,
+        salience(0.46, SalienceBand::Background, "account work"),
+    ));
+
+    sections.push(variant_section(
+        "reports",
+        "Reports",
+        build_reports_section_blocks(
+            ctx,
+            input,
+            snapshot_fields_for_section(snapshot, "reports"),
+            10,
+            subject,
+            invocation_id,
+            provenance_builder,
+        )?,
+        SectionLayout::Grid,
+        salience(0.38, SalienceBand::Background, "account reports"),
+    ));
+
+    let section_count = sections.len();
     let generated_at = ctx.services().clock.now();
     let composition = Composition::new(
         input.composition_id.clone(),
@@ -395,21 +694,387 @@ fn build_composition(
         },
     );
 
-    attribute_static_composition_fields(provenance_builder, subject)?;
+    attribute_static_composition_fields(provenance_builder, subject, section_count)?;
     Ok(composition)
 }
 
-fn build_overview_block(
+#[derive(Debug, Clone, Copy)]
+struct EmptySectionCopy {
+    title: &'static str,
+    body: &'static str,
+    status: &'static str,
+}
+
+#[derive(Clone, Copy)]
+struct AccountBlockBuildContext<'a, 'ctx> {
+    ctx: &'a AbilityContext<'ctx>,
+    input: &'a NormalizedInput,
+    subject: &'a SubjectAttribution,
+    invocation_id: InvocationId,
+}
+
+fn variant_section(
+    id: &str,
+    label: &str,
+    blocks: Vec<Block>,
+    layout: SectionLayout,
+    salience: Salience,
+) -> Section {
+    let mut section = Section::new(SectionId::new(id), blocks);
+    section.label = Some(label.to_string());
+    section.layout = layout;
+    section.salience = salience;
+    section
+}
+
+#[allow(clippy::too_many_arguments)]
+fn build_claim_or_snapshot_section_blocks(
+    ctx: &AbilityContext<'_>,
     input: &NormalizedInput,
-    projections: &[ClaimProjection],
+    section_id: &str,
+    section_index: usize,
+    projections: Vec<&ClaimProjection>,
+    snapshot_fields: Vec<&AccountCompositionSnapshotField>,
+    empty_copy: EmptySectionCopy,
     subject: &SubjectAttribution,
     invocation_id: InvocationId,
+    provenance_builder: &mut ProvenanceBuilder,
+) -> Result<Vec<Block>, AbilityError> {
+    let has_projections = !projections.is_empty();
+    let mut blocks = if has_projections {
+        build_projection_blocks(
+            input,
+            section_id,
+            section_index,
+            projections,
+            subject,
+            invocation_id,
+            provenance_builder,
+        )?
+    } else {
+        Vec::new()
+    };
+    if has_projections {
+        if !snapshot_fields.is_empty() {
+            let block_index = blocks.len();
+            blocks.push(build_snapshot_fields_block(
+                ctx,
+                input,
+                section_id,
+                section_index,
+                block_index,
+                snapshot_fields,
+                subject,
+                invocation_id,
+                provenance_builder,
+            )?);
+        }
+        return Ok(blocks);
+    }
+    if !snapshot_fields.is_empty() {
+        return Ok(vec![build_snapshot_fields_block(
+            ctx,
+            input,
+            section_id,
+            section_index,
+            0,
+            snapshot_fields,
+            subject,
+            invocation_id,
+            provenance_builder,
+        )?]);
+    }
+    Ok(vec![build_section_state_block(
+        input,
+        section_id,
+        empty_copy,
+        section_index,
+        0,
+        subject,
+        invocation_id,
+        provenance_builder,
+    )?])
+}
+
+fn build_projection_blocks(
+    input: &NormalizedInput,
+    section_id: &str,
+    section_index: usize,
+    projections: Vec<&ClaimProjection>,
+    subject: &SubjectAttribution,
+    invocation_id: InvocationId,
+    provenance_builder: &mut ProvenanceBuilder,
+) -> Result<Vec<Block>, AbilityError> {
+    let mut blocks = Vec::with_capacity(projections.len());
+    for projection in projections {
+        let block_index = blocks.len();
+        blocks.push(build_claim_block(
+            input,
+            section_id,
+            projection,
+            subject,
+            invocation_id,
+            &format!("/sections/{section_index}/blocks/{block_index}"),
+            provenance_builder,
+        )?);
+    }
+    Ok(blocks)
+}
+
+#[allow(clippy::too_many_arguments)]
+fn build_record_section_blocks(
+    ctx: &AbilityContext<'_>,
+    input: &NormalizedInput,
+    projections: &[ClaimProjection],
+    snapshot_fields: Vec<&AccountCompositionSnapshotField>,
+    section_index: usize,
+    subject: &SubjectAttribution,
+    invocation_id: InvocationId,
+    provenance_builder: &mut ProvenanceBuilder,
+) -> Result<Vec<Block>, AbilityError> {
+    if projections.is_empty() && snapshot_fields.is_empty() {
+        return Ok(vec![build_section_state_block(
+            input,
+            "the-record",
+            EmptySectionCopy {
+                title: "No account record yet",
+                body: "No source-backed account events are available for this record.",
+                status: "empty",
+            },
+            section_index,
+            0,
+            subject,
+            invocation_id,
+            provenance_builder,
+        )?]);
+    }
+
+    let mut claim_refs = Vec::new();
+    let mut source_indexes = Vec::new();
+    let mut items = Vec::new();
+    for projection in projections {
+        claim_refs.push(claim_ref_for_projection(projection)?);
+        source_indexes.push(projection.source_index);
+        items.push(json!({
+            "label": projection.rendered_text,
+            "source_label": projection.claim.data_source,
+            "source_asof": projection.claim.source_asof,
+        }));
+    }
+    source_indexes.extend(snapshot_source_indexes(
+        ctx,
+        input,
+        &snapshot_fields,
+        provenance_builder,
+    )?);
+    for field in snapshot_fields {
+        items.push(snapshot_field_evidence_item(field));
+    }
+
+    let composition_block_path = format!("/sections/{section_index}/blocks/0");
+    let mut block = Block::new(
+        BlockId::new(block_id(input, "the-record", "evidence_list", "sources")),
+        BlockType::EvidenceList,
+        json!({ "items": items }),
+        claim_refs,
+        ProvenanceRef::new(
+            invocation_id,
+            FieldPath::new(&composition_block_path).map_err(field_error)?,
+        ),
+        None,
+    )
+    .map_err(block_error)?;
+    block.field_bindings = evidence_list_display_bindings(items.len())?;
+    block.salience = salience(0.58, SalienceBand::Contextual, "source record");
+    attribute_block(
+        provenance_builder,
+        &composition_block_path,
+        subject,
+        source_indexes,
+    )?;
+    Ok(vec![block])
+}
+
+#[allow(clippy::too_many_arguments)]
+fn build_reports_section_blocks(
+    ctx: &AbilityContext<'_>,
+    input: &NormalizedInput,
+    snapshot_fields: Vec<&AccountCompositionSnapshotField>,
+    section_index: usize,
+    subject: &SubjectAttribution,
+    invocation_id: InvocationId,
+    provenance_builder: &mut ProvenanceBuilder,
+) -> Result<Vec<Block>, AbilityError> {
+    if snapshot_fields.is_empty() {
+        let composition_block_path = format!("/sections/{section_index}/blocks/0");
+        let mut block = Block::new(
+            BlockId::new(block_id(input, "reports", "action_list", "system_config")),
+            BlockType::ActionList,
+            json!({
+                "claim_type": "system_config",
+                "items": [{
+                    "title": "Account report",
+                    "status": "unavailable",
+                    "text": "No generated account report is currently available."
+                }]
+            }),
+            Vec::new(),
+            ProvenanceRef::new(
+                invocation_id,
+                FieldPath::new(&composition_block_path).map_err(field_error)?,
+            ),
+            None,
+        )
+        .map_err(block_error)?;
+        block.field_bindings = action_list_display_bindings(1)?;
+        block.salience = salience(0.32, SalienceBand::Background, "report availability");
+        attribute_block(
+            provenance_builder,
+            &composition_block_path,
+            subject,
+            Vec::new(),
+        )?;
+        return Ok(vec![block]);
+    }
+
+    Ok(vec![build_snapshot_fields_block(
+        ctx,
+        input,
+        "reports",
+        section_index,
+        0,
+        snapshot_fields,
+        subject,
+        invocation_id,
+        provenance_builder,
+    )?])
+}
+
+#[allow(clippy::too_many_arguments)]
+fn build_snapshot_fields_block(
+    ctx: &AbilityContext<'_>,
+    input: &NormalizedInput,
+    section_id: &str,
+    section_index: usize,
+    block_index: usize,
+    fields: Vec<&AccountCompositionSnapshotField>,
+    subject: &SubjectAttribution,
+    invocation_id: InvocationId,
+    provenance_builder: &mut ProvenanceBuilder,
+) -> Result<Block, AbilityError> {
+    let source_indexes = snapshot_source_indexes(ctx, input, &fields, provenance_builder)?;
+    let items = fields
+        .iter()
+        .map(|field| snapshot_field_evidence_item(field))
+        .collect::<Vec<_>>();
+    let composition_block_path = format!("/sections/{section_index}/blocks/{block_index}");
+    let mut block = Block::new(
+        BlockId::new(block_id(input, section_id, "evidence_list", "snapshot")),
+        BlockType::EvidenceList,
+        json!({ "items": items }),
+        Vec::new(),
+        ProvenanceRef::new(
+            invocation_id,
+            FieldPath::new(&composition_block_path).map_err(field_error)?,
+        ),
+        None,
+    )
+    .map_err(block_error)?;
+    block.field_bindings = evidence_list_display_bindings(items.len())?;
+    block.salience = salience(0.54, SalienceBand::Contextual, "snapshot fields");
+    attribute_block(
+        provenance_builder,
+        &composition_block_path,
+        subject,
+        source_indexes,
+    )?;
+    Ok(block)
+}
+
+fn snapshot_field_evidence_item(field: &AccountCompositionSnapshotField) -> Value {
+    json!({
+        "label": format!("{}: {}", field.label, snapshot_value_text(&field.value)),
+        "source_label": field.source_label.as_deref().unwrap_or(match field.provenance_kind {
+            AccountCompositionProvenanceKind::NonSensitiveIdentity => "identity",
+            AccountCompositionProvenanceKind::ManualUser => "user",
+            AccountCompositionProvenanceKind::SourceField => "source",
+            AccountCompositionProvenanceKind::SystemConfig => "system_config",
+            AccountCompositionProvenanceKind::Derived => "derived",
+            AccountCompositionProvenanceKind::Unavailable => "unavailable",
+        }),
+        "source_asof": field.source_asof,
+    })
+}
+
+#[allow(clippy::too_many_arguments)]
+fn build_section_state_block(
+    input: &NormalizedInput,
+    section_id: &str,
+    copy: EmptySectionCopy,
+    section_index: usize,
+    block_index: usize,
+    subject: &SubjectAttribution,
+    invocation_id: InvocationId,
+    provenance_builder: &mut ProvenanceBuilder,
+) -> Result<Block, AbilityError> {
+    let composition_block_path = format!("/sections/{section_index}/blocks/{block_index}");
+    let mut block = Block::new(
+        BlockId::new(block_id(input, section_id, "empty_state", copy.status)),
+        BlockType::ClaimSummary,
+        json!({
+            "title": copy.title,
+            "body": copy.body,
+            "status": copy.status,
+            "empty_state": true,
+            "trust_band": "needs_verification",
+        }),
+        Vec::new(),
+        ProvenanceRef::new(
+            invocation_id,
+            FieldPath::new(&composition_block_path).map_err(field_error)?,
+        ),
+        None,
+    )
+    .map_err(block_error)?;
+    block.field_bindings = vec![
+        display_only_binding("/title")?,
+        display_only_binding("/body")?,
+        display_only_binding("/status")?,
+        display_only_binding("/empty_state")?,
+    ];
+    block.salience = salience(0.28, SalienceBand::Background, copy.status);
+    attribute_block(
+        provenance_builder,
+        &composition_block_path,
+        subject,
+        Vec::new(),
+    )?;
+    Ok(block)
+}
+
+fn build_overview_block(
+    build_context: &AccountBlockBuildContext<'_, '_>,
+    projections: &[ClaimProjection],
+    snapshot_outcome: &SnapshotReadOutcome,
     composition_block_path: &str,
     provenance_builder: &mut ProvenanceBuilder,
 ) -> Result<Block, AbilityError> {
+    let snapshot = snapshot_outcome.snapshot.as_ref();
+    let headline_fields = snapshot_fields_for_section(snapshot, "headline");
+    let mut source_indexes = projections
+        .iter()
+        .map(|projection| projection.source_index)
+        .collect::<Vec<_>>();
+    source_indexes.extend(snapshot_source_indexes(
+        build_context.ctx,
+        build_context.input,
+        &headline_fields,
+        provenance_builder,
+    )?);
     let overview_claims = projections
         .iter()
-        .filter(|projection| projection.placement == ClaimPlacement::Overview)
+        .enumerate()
+        .filter(|(_, projection)| projection.placement == ClaimPlacement::Overview)
         .collect::<Vec<_>>();
     let all_refs = projections
         .iter()
@@ -417,7 +1082,7 @@ fn build_overview_block(
         .collect::<Result<Vec<_>, _>>()?;
     let context = overview_claims
         .iter()
-        .map(|projection| {
+        .map(|(_, projection)| {
             json!({
                 "claim_id": projection.claim.id,
                 "text": projection.rendered_text,
@@ -426,23 +1091,64 @@ fn build_overview_block(
             })
         })
         .collect::<Vec<_>>();
+    let overview_claim_indexes = overview_claims
+        .iter()
+        .map(|(projection_index, _)| *projection_index)
+        .collect::<Vec<_>>();
     let trust_band = block_trust_band(projections.iter().map(|projection| projection.trust_band));
     let counts_by_band = trust_band_counts(projections);
+    let account_display_name = snapshot
+        .map(|snapshot| snapshot_value_text(&snapshot.display_name.value))
+        .filter(|value| !value.is_empty())
+        .unwrap_or_else(|| build_context.input.account_id.clone());
+    let account_type = snapshot
+        .and_then(|snapshot| snapshot.account_type.as_ref())
+        .filter(|field| field.sensitivity.is_render_safe())
+        .map(|field| snapshot_value_text(&field.value));
+    let vitals = headline_fields
+        .iter()
+        .map(|field| {
+            json!({
+                "label": field.label,
+                "value": snapshot_value_text(&field.value),
+                "source_label": field.source_label,
+                "source_asof": field.source_asof,
+                "trust_band": trust_band_label(field.trust_band),
+            })
+        })
+        .collect::<Vec<_>>();
+    let vitals_len = vitals.len();
     let attributes = json!({
-        "account_id": input.account_id,
+        "account_id": build_context.input.account_id,
+        "account": {
+            "id": build_context.input.account_id,
+            "display_name": account_display_name,
+            "type": account_type,
+        },
         "title": "Account overview",
+        "summary": overview_claims
+            .first()
+            .map(|(_, projection)| projection.rendered_text.as_str())
+            .unwrap_or("Account composition is grounded in current renderable claims and source-backed account fields."),
         "claim_count": projections.len(),
         "trust_band": trust_band_label(trust_band),
         "counts_by_trust_band": counts_by_band,
         "context": context,
+        "vitals": vitals,
+        "snapshot_degraded": snapshot_outcome.degraded_reason.as_deref().unwrap_or(""),
     });
     let mut block = Block::new(
-        BlockId::new(block_id(input, "overview", "account_overview", "summary")),
+        BlockId::new(block_id(
+            build_context.input,
+            "headline",
+            "account_overview",
+            "summary",
+        )),
         BlockType::AccountOverview,
         attributes,
         all_refs,
         ProvenanceRef::new(
-            invocation_id,
+            build_context.invocation_id,
             FieldPath::new(composition_block_path).map_err(field_error)?,
         ),
         None,
@@ -450,74 +1156,42 @@ fn build_overview_block(
     .map_err(block_error)?;
     block.salience = salience(0.95, SalienceBand::Critical, "summary");
 
+    let mut display_bindings = vec![
+        display_only_binding("/title")?,
+        display_only_binding("/account/id")?,
+        display_only_binding("/account/display_name")?,
+        display_only_binding("/account/type")?,
+        display_only_binding("/snapshot_degraded")?,
+    ];
+    display_bindings.extend(vitals_display_bindings(vitals_len)?);
+
     if projections.is_empty() {
-        block.field_bindings = vec![display_only_binding("/title")?];
+        block.field_bindings = display_bindings;
         attribute_block(
             provenance_builder,
             composition_block_path,
-            subject,
-            Vec::new(),
+            build_context.subject,
+            source_indexes,
         )?;
     } else {
-        block.field_bindings = vec![
-            computed_binding("/claim_count", 0..projections.len())?,
-            computed_binding("/counts_by_trust_band", 0..projections.len())?,
-            computed_binding("/context", 0..projections.len())?,
-            display_only_binding("/title")?,
-        ];
+        let mut bindings = vec![computed_binding("/claim_count", 0..projections.len())?];
+        bindings.extend(trust_band_count_computed_bindings(projections.len())?);
+        bindings.extend(context_computed_bindings(&overview_claim_indexes)?);
+        bindings.extend(display_bindings);
+        block.field_bindings = bindings;
         attribute_block(
             provenance_builder,
             composition_block_path,
-            subject,
-            projections
-                .iter()
-                .map(|projection| projection.source_index)
-                .collect(),
+            build_context.subject,
+            source_indexes,
         )?;
     }
     Ok(block)
 }
 
-fn build_empty_state_block(
-    input: &NormalizedInput,
-    subject: &SubjectAttribution,
-    invocation_id: InvocationId,
-    composition_block_path: &str,
-    provenance_builder: &mut ProvenanceBuilder,
-) -> Result<Block, AbilityError> {
-    let attributes = json!({
-        "title": "No visible account signals",
-        "empty_state": true,
-        "trust_band": "needs_verification",
-    });
-    let mut block = Block::new(
-        BlockId::new(block_id(input, "empty", "empty_state", "display")),
-        BlockType::ClaimSummary,
-        attributes,
-        Vec::new(),
-        ProvenanceRef::new(
-            invocation_id,
-            FieldPath::new(composition_block_path).map_err(field_error)?,
-        ),
-        None,
-    )
-    .map_err(block_error)?;
-    block.field_bindings = vec![
-        display_only_binding("/title")?,
-        display_only_binding("/empty_state")?,
-    ];
-    block.salience = salience(0.3, SalienceBand::Background, "empty state");
-    attribute_block(
-        provenance_builder,
-        composition_block_path,
-        subject,
-        Vec::new(),
-    )?;
-    Ok(block)
-}
-
 fn build_claim_block(
     input: &NormalizedInput,
+    section_id: &str,
     projection: &ClaimProjection,
     subject: &SubjectAttribution,
     invocation_id: InvocationId,
@@ -582,6 +1256,8 @@ fn build_claim_block(
                         "source_asof": projection.claim.source_asof,
                     }],
                     "claim_type": projection.claim.claim_type,
+                    "trust_band": trust_band,
+                    "source_asof": projection.claim.source_asof,
                 }),
                 source_feedback_computed_bindings("/items/0/text", "/items/0/trust_band")?,
                 0.78,
@@ -618,7 +1294,22 @@ fn build_claim_block(
                 SalienceBand::Important,
                 "health claim",
             ),
-            ClaimPlacement::Overview | ClaimPlacement::Ignored => {
+            ClaimPlacement::Overview => (
+                BlockType::ClaimSummary,
+                json!({
+                    "intent": "context",
+                    "claim_id": projection.claim.id,
+                    "text": projection.rendered_text,
+                    "claim_type": projection.claim.claim_type,
+                    "trust_band": trust_band,
+                    "source_asof": projection.claim.source_asof,
+                }),
+                source_feedback_computed_bindings("/text", "/trust_band")?,
+                0.58,
+                SalienceBand::Contextual,
+                "account context claim",
+            ),
+            ClaimPlacement::Ignored => {
                 return Err(validation_error(
                     "unexpected account overview block placement",
                 ));
@@ -628,7 +1319,7 @@ fn build_claim_block(
     let mut block = Block::new(
         BlockId::new(block_id(
             input,
-            "signals",
+            section_id,
             block_type.type_id(),
             &projection.claim.id,
         )),
@@ -653,9 +1344,141 @@ fn build_claim_block(
     Ok(block)
 }
 
+fn snapshot_fields_for_section<'a>(
+    snapshot: Option<&'a AccountCompositionSnapshot>,
+    section_id: &str,
+) -> Vec<&'a AccountCompositionSnapshotField> {
+    let Some(snapshot) = snapshot else {
+        return Vec::new();
+    };
+    snapshot
+        .fields
+        .iter()
+        .filter(|field| field.sensitivity.is_render_safe())
+        .filter(|field| snapshot_field_belongs_to_section(&field.field_path, section_id))
+        .collect()
+}
+
+fn snapshot_field_belongs_to_section(field_path: &str, section_id: &str) -> bool {
+    match section_id {
+        "headline" => {
+            field_path.starts_with("/vitals/")
+                || field_path.starts_with("/identity/")
+                || field_path == "/health/band"
+        }
+        "outlook" => {
+            field_path.starts_with("/outlook/")
+                || field_path.starts_with("/renewal/")
+                || field_path == "/vitals/contract_end"
+                || field_path == "/health/band"
+        }
+        "state-of-play" => field_path.starts_with("/state/"),
+        "the-room" => field_path.starts_with("/stakeholders/"),
+        "whats-next" => field_path.starts_with("/work/next_steps/"),
+        "watch-list" => field_path.starts_with("/watch_list/"),
+        "value-commitments" => {
+            field_path.starts_with("/value/")
+                || field_path.starts_with("/work/commitments/")
+                || field_path == "/vitals/arr"
+        }
+        "strategic-landscape" => {
+            field_path.starts_with("/strategy/")
+                || field_path.starts_with("/technical/")
+                || field_path.starts_with("/company/")
+        }
+        "the-record" => field_path.starts_with("/record/") || field_path.starts_with("/sources/"),
+        "the-work" => field_path.starts_with("/work/"),
+        "reports" => field_path.starts_with("/reports/"),
+        _ => false,
+    }
+}
+
+fn snapshot_source_indexes(
+    ctx: &AbilityContext<'_>,
+    input: &NormalizedInput,
+    fields: &[&AccountCompositionSnapshotField],
+    provenance_builder: &mut ProvenanceBuilder,
+) -> Result<Vec<crate::abilities::provenance::SourceIndex>, AbilityError> {
+    let mut indexes = Vec::new();
+    for field in fields {
+        let Some(source) = source_for_snapshot_field(ctx, input, field)? else {
+            continue;
+        };
+        let index = provenance_builder.add_source(source);
+        provenance_builder.set_source_trust_band(index, visible_trust_band(field.trust_band));
+        indexes.push(index);
+    }
+    Ok(indexes)
+}
+
+fn source_for_snapshot_field(
+    ctx: &AbilityContext<'_>,
+    input: &NormalizedInput,
+    field: &AccountCompositionSnapshotField,
+) -> Result<Option<SourceAttribution>, AbilityError> {
+    if matches!(
+        field.provenance_kind,
+        AccountCompositionProvenanceKind::NonSensitiveIdentity
+            | AccountCompositionProvenanceKind::Unavailable
+    ) && field.source_label.is_none()
+        && field.source_ref.is_none()
+        && field.source_asof.is_none()
+    {
+        return Ok(None);
+    }
+
+    let now = ctx.services().clock.now();
+    let observed_at = match parse_source_timestamp(field.source_asof.as_deref(), now, None) {
+        SourceTimestampStatus::Accepted(parsed)
+        | SourceTimestampStatus::Implausible { parsed, .. } => parsed,
+        SourceTimestampStatus::Malformed(_) | SourceTimestampStatus::Missing => now,
+    };
+    let source_asof = match parse_source_timestamp(field.source_asof.as_deref(), now, None) {
+        SourceTimestampStatus::Accepted(parsed)
+        | SourceTimestampStatus::Implausible { parsed, .. } => Some(parsed),
+        SourceTimestampStatus::Malformed(_) | SourceTimestampStatus::Missing => None,
+    };
+    SourceAttribution::new(
+        data_source_for_snapshot_field(field),
+        vec![SourceIdentifier::Entity {
+            entity_id: EntityId::new(input.account_id.clone()),
+            field: Some(field.field_path.clone()),
+        }],
+        observed_at,
+        source_asof,
+        1.0,
+        None,
+    )
+    .map(Some)
+    .map_err(|error| validation_error(format!("invalid snapshot source attribution: {error}")))
+}
+
+fn data_source_for_snapshot_field(field: &AccountCompositionSnapshotField) -> DataSource {
+    match field.provenance_kind {
+        AccountCompositionProvenanceKind::ManualUser => DataSource::User,
+        AccountCompositionProvenanceKind::SystemConfig => DataSource::LocalEnrichment,
+        _ => field
+            .source_label
+            .as_deref()
+            .map(data_source_for_claim)
+            .unwrap_or_else(|| DataSource::Other(SourceName::new("account_snapshot"))),
+    }
+}
+
+fn snapshot_value_text(value: &Value) -> String {
+    match value {
+        Value::Null => String::new(),
+        Value::String(value) => value.clone(),
+        Value::Bool(value) => value.to_string(),
+        Value::Number(value) => value.to_string(),
+        Value::Array(_) | Value::Object(_) => value.to_string(),
+    }
+}
+
 fn attribute_static_composition_fields(
     builder: &mut ProvenanceBuilder,
     subject: &SubjectAttribution,
+    section_count: usize,
 ) -> Result<(), AbilityError> {
     for path in [
         "",
@@ -666,17 +1489,24 @@ fn attribute_static_composition_fields(
         "/generated_by",
         "/metadata",
         "/salience",
-        "/sections/0/id",
-        "/sections/0/label",
-        "/sections/0/layout",
-        "/sections/0/salience",
     ] {
         builder
-            .attribute_subtree(
+            .attribute(
                 FieldPath::new(path).map_err(field_error)?,
                 FieldAttribution::constant(subject.clone()),
             )
             .map_err(provenance_error)?;
+    }
+    for section_index in 0..section_count {
+        for suffix in ["id", "label", "layout", "salience"] {
+            builder
+                .attribute(
+                    FieldPath::new(format!("/sections/{section_index}/{suffix}"))
+                        .map_err(field_error)?,
+                    FieldAttribution::constant(subject.clone()),
+                )
+                .map_err(provenance_error)?;
+        }
     }
     builder
         .attribute(
@@ -719,9 +1549,6 @@ fn attribute_block(
     builder
         .attribute(path.clone(), attribution.clone())
         .map_err(provenance_error)?;
-    builder
-        .attribute_subtree(path, attribution)
-        .map_err(provenance_error)?;
     Ok(())
 }
 
@@ -743,8 +1570,85 @@ fn computed_binding(
     binding(field_path, BindingRole::ComputedFrom, indexes.collect())
 }
 
+fn computed_binding_for_indexes(
+    field_path: &str,
+    indexes: Vec<usize>,
+) -> Result<FieldBinding, AbilityError> {
+    binding(field_path, BindingRole::ComputedFrom, indexes)
+}
+
 fn display_only_binding(field_path: &str) -> Result<FieldBinding, AbilityError> {
     binding(field_path, BindingRole::DisplayOnly, Vec::new())
+}
+
+fn trust_band_count_computed_bindings(
+    projection_count: usize,
+) -> Result<Vec<FieldBinding>, AbilityError> {
+    let indexes = (0..projection_count).collect::<Vec<_>>();
+    let mut bindings = Vec::with_capacity(3);
+    for field in [
+        "/counts_by_trust_band/likely_current",
+        "/counts_by_trust_band/use_with_caution",
+        "/counts_by_trust_band/needs_verification",
+    ] {
+        bindings.push(computed_binding_for_indexes(field, indexes.clone())?);
+    }
+    Ok(bindings)
+}
+
+fn context_computed_bindings(
+    overview_claim_indexes: &[usize],
+) -> Result<Vec<FieldBinding>, AbilityError> {
+    let mut bindings = Vec::with_capacity(overview_claim_indexes.len() * 4);
+    for (item_index, projection_index) in overview_claim_indexes.iter().copied().enumerate() {
+        for field in ["claim_id", "text", "trust_band", "source_asof"] {
+            bindings.push(computed_binding_for_indexes(
+                &format!("/context/{item_index}/{field}"),
+                vec![projection_index],
+            )?);
+        }
+    }
+    Ok(bindings)
+}
+
+fn vitals_display_bindings(item_count: usize) -> Result<Vec<FieldBinding>, AbilityError> {
+    let mut bindings = Vec::with_capacity(item_count * 5);
+    for index in 0..item_count {
+        for field in [
+            "label",
+            "value",
+            "source_label",
+            "source_asof",
+            "trust_band",
+        ] {
+            bindings.push(display_only_binding(&format!("/vitals/{index}/{field}"))?);
+        }
+    }
+    Ok(bindings)
+}
+
+fn evidence_list_display_bindings(item_count: usize) -> Result<Vec<FieldBinding>, AbilityError> {
+    let mut bindings = Vec::with_capacity(item_count * 3);
+    for index in 0..item_count {
+        bindings.push(display_only_binding(&format!("/items/{index}/label"))?);
+        bindings.push(display_only_binding(&format!(
+            "/items/{index}/source_label"
+        ))?);
+        bindings.push(display_only_binding(&format!(
+            "/items/{index}/source_asof"
+        ))?);
+    }
+    Ok(bindings)
+}
+
+fn action_list_display_bindings(item_count: usize) -> Result<Vec<FieldBinding>, AbilityError> {
+    let mut bindings = Vec::with_capacity(item_count * 3);
+    for index in 0..item_count {
+        bindings.push(display_only_binding(&format!("/items/{index}/title"))?);
+        bindings.push(display_only_binding(&format!("/items/{index}/status"))?);
+        bindings.push(display_only_binding(&format!("/items/{index}/text"))?);
+    }
+    Ok(bindings)
 }
 
 fn binding(
@@ -1112,16 +2016,20 @@ mod tests {
     use super::*;
     use crate::abilities::provenance::ProvenanceWarning;
     use crate::abilities::registry::{AbilityRegistry, ActorKind, McpExposure, ScopeSet};
-    use crate::abilities::{Actor, NOOP_ABILITY_TRACER};
+    use crate::abilities::{
+        Actor, FallbackProjectionContext, NOOP_ABILITY_TRACER, SurfaceKind,
+        project_composition_for_surface,
+    };
     use crate::intelligence::provider::{
         Completion, FingerprintMetadata, IntelligenceProvider, ModelName, ModelTier, PromptInput,
         ProviderError, ProviderKind,
     };
     use crate::sensitivity::{ClaimDismissalSurface, ClaimVerificationState};
     use crate::services::context::{
-        CompositionCommitFuture, CompositionCommitHandle, CompositionCommitRequest,
-        EntityContextClaimReadFuture, EntityContextClaimReadHandle, ExternalClients, FixedClock,
-        SeedableRng, ServiceContext,
+        AccountCompositionSnapshotReadFuture, AccountCompositionSnapshotReadHandle,
+        AccountCompositionSnapshotSensitivity, CompositionCommitFuture, CompositionCommitHandle,
+        CompositionCommitRequest, EntityContextClaimReadFuture, EntityContextClaimReadHandle,
+        ExternalClients, FixedClock, SeedableRng, ServiceContext,
     };
     use crate::types::{ClaimSensitivity, TemporalScope};
 
@@ -1194,6 +2102,39 @@ mod tests {
         }
     }
 
+    struct SpySnapshotReader {
+        result: Mutex<Result<AccountCompositionSnapshot, AccountCompositionSnapshotReadError>>,
+        calls: AtomicUsize,
+        last_surface: Mutex<Option<ClaimDismissalSurface>>,
+    }
+
+    impl SpySnapshotReader {
+        fn new(
+            result: Result<AccountCompositionSnapshot, AccountCompositionSnapshotReadError>,
+        ) -> Self {
+            Self {
+                result: Mutex::new(result),
+                calls: AtomicUsize::new(0),
+                last_surface: Mutex::new(None),
+            }
+        }
+    }
+
+    impl AccountCompositionSnapshotReadHandle for SpySnapshotReader {
+        fn read_account_composition_snapshot<'a>(
+            &'a self,
+            account_id: String,
+            surface: ClaimDismissalSurface,
+        ) -> AccountCompositionSnapshotReadFuture<'a> {
+            Box::pin(async move {
+                self.calls.fetch_add(1, Ordering::SeqCst);
+                *self.last_surface.lock().expect("snapshot surface lock") = Some(surface);
+                assert_eq!(account_id, "acct-fixture-1");
+                self.result.lock().expect("snapshot result lock").clone()
+            })
+        }
+    }
+
     struct StaticProvider;
 
     #[async_trait]
@@ -1259,6 +2200,18 @@ mod tests {
             .with_ability_id(ABILITY_NAME)
             .with_entity_context_claim_reader(reader)
             .with_composition_commit_handle(committer)
+    }
+
+    fn services_with_snapshot<'a>(
+        clock: &'a FixedClock,
+        rng: &'a SeedableRng,
+        external: &'a ExternalClients,
+        reader: Arc<SpyClaimReader>,
+        committer: Arc<RecordingCommitter>,
+        snapshot_reader: Arc<SpySnapshotReader>,
+    ) -> ServiceContext<'a> {
+        services(clock, rng, external, reader, committer)
+            .with_account_composition_snapshot_reader(snapshot_reader)
     }
 
     fn ability_ctx<'a>(
@@ -1336,6 +2289,66 @@ mod tests {
         }
     }
 
+    fn snapshot_field(
+        field_path: &str,
+        label: &str,
+        value: Value,
+        sensitivity: AccountCompositionSnapshotSensitivity,
+        source_label: Option<&str>,
+        source_asof: Option<&str>,
+    ) -> AccountCompositionSnapshotField {
+        AccountCompositionSnapshotField {
+            field_path: field_path.to_string(),
+            label: label.to_string(),
+            value,
+            sensitivity,
+            source_label: source_label.map(ToString::to_string),
+            source_ref: source_label.map(|source| format!("{source}:fixture")),
+            source_asof: source_asof.map(ToString::to_string),
+            trust_band: TrustBand::UseWithCaution,
+            trust_status: "use_with_caution".to_string(),
+            provenance_kind: AccountCompositionProvenanceKind::SourceField,
+        }
+    }
+
+    fn identity_snapshot_field(
+        field_path: &str,
+        label: &str,
+        value: &str,
+    ) -> AccountCompositionSnapshotField {
+        AccountCompositionSnapshotField {
+            field_path: field_path.to_string(),
+            label: label.to_string(),
+            value: Value::String(value.to_string()),
+            sensitivity: AccountCompositionSnapshotSensitivity::NonSensitiveIdentity,
+            source_label: None,
+            source_ref: None,
+            source_asof: None,
+            trust_band: TrustBand::LikelyCurrent,
+            trust_status: "likely_current".to_string(),
+            provenance_kind: AccountCompositionProvenanceKind::NonSensitiveIdentity,
+        }
+    }
+
+    fn snapshot_fixture(
+        fields: Vec<AccountCompositionSnapshotField>,
+    ) -> AccountCompositionSnapshot {
+        AccountCompositionSnapshot {
+            account_id: "acct-fixture-1".to_string(),
+            display_name: identity_snapshot_field(
+                "/identity/display_name",
+                "Account",
+                "Example Account",
+            ),
+            account_type: Some(identity_snapshot_field(
+                "/identity/account_type",
+                "Account type",
+                "customer",
+            )),
+            fields,
+        }
+    }
+
     fn output_json(output: &crate::abilities::provenance::AbilityOutput<Composition>) -> Value {
         serde_json::to_value(output).expect("output serializes")
     }
@@ -1385,6 +2398,34 @@ mod tests {
 
         assert_eq!(err.kind, AbilityErrorKind::Validation);
         assert_eq!(reader.calls.load(Ordering::SeqCst), 0);
+        assert_eq!(committer.calls.load(Ordering::SeqCst), 0);
+    }
+
+    #[tokio::test]
+    async fn missing_account_snapshot_rejects_before_composition_commit() {
+        let snapshot_reader = Arc::new(SpySnapshotReader::new(Err(
+            AccountCompositionSnapshotReadError::AccountNotFound("acct-fixture-1".to_string()),
+        )));
+        let (clock, rng, external, reader, committer, provider) = fixture_parts(Vec::new());
+        let services = services_with_snapshot(
+            &clock,
+            &rng,
+            &external,
+            reader.clone(),
+            committer.clone(),
+            snapshot_reader.clone(),
+        );
+        let ctx = ability_ctx(&services, &provider);
+
+        let err = match account_overview(&ctx, input()).await {
+            Ok(_) => panic!("missing account rejects"),
+            Err(error) => error,
+        };
+
+        assert_eq!(err.kind, AbilityErrorKind::Validation);
+        assert!(err.message.contains("acct-fixture-1"));
+        assert_eq!(reader.calls.load(Ordering::SeqCst), 1);
+        assert_eq!(snapshot_reader.calls.load(Ordering::SeqCst), 1);
         assert_eq!(committer.calls.load(Ordering::SeqCst), 0);
     }
 
@@ -1476,12 +2517,16 @@ mod tests {
         }));
 
         let blocks = composition.blocks().collect::<Vec<_>>();
-        assert!(blocks
-            .iter()
-            .any(|block| block.block_type == BlockType::RiskCallout));
-        assert!(blocks
-            .iter()
-            .any(|block| block.block_type == BlockType::ActionList));
+        assert!(
+            blocks
+                .iter()
+                .any(|block| block.block_type == BlockType::RiskCallout)
+        );
+        assert!(
+            blocks
+                .iter()
+                .any(|block| block.block_type == BlockType::ActionList)
+        );
         for block in blocks {
             block
                 .validate_against(output.provenance())
@@ -1505,6 +2550,45 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn high_cardinality_overview_claims_keep_provenance_under_hard_budget() {
+        let claims = (0..160)
+            .map(|index| {
+                claim(
+                    &format!("claim-context-{index:03}"),
+                    "company_context",
+                    &format!("/company/context/{index}"),
+                    &format!(
+                        "Context signal {index} remains relevant for the account composition proof."
+                    ),
+                    Some(0.94),
+                    Some("2026-05-14T09:00:00Z"),
+                    ClaimSensitivity::Internal,
+                )
+            })
+            .collect::<Vec<_>>();
+        let (clock, rng, external, reader, committer, provider) = fixture_parts(claims);
+        let services = services(&clock, &rng, &external, reader, committer);
+        let ctx = ability_ctx(&services, &provider);
+
+        let output = account_overview(&ctx, input())
+            .await
+            .expect("large overview composition stays within provenance budget");
+        let provenance_bytes = serde_json::to_vec(output.provenance())
+            .expect("provenance serializes")
+            .len();
+
+        assert!(
+            provenance_bytes < crate::abilities::provenance::builder::HARD_PROVENANCE_BUDGET_BYTES,
+            "provenance envelope should stay under hard budget, got {provenance_bytes}"
+        );
+        for block in output.data().blocks() {
+            block
+                .validate_against(output.provenance())
+                .expect("block provenance resolves");
+        }
+    }
+
+    #[tokio::test]
     async fn empty_claim_set_returns_display_only_empty_state() {
         let (clock, rng, external, reader, committer, provider) = fixture_parts(Vec::new());
         let services = services(&clock, &rng, &external, reader, committer);
@@ -1513,18 +2597,299 @@ mod tests {
         let output = account_overview(&ctx, input())
             .await
             .expect("empty state succeeds");
-        let empty_block = output
-            .data()
+        let composition = output.data();
+        let section_ids = composition
             .sections
             .iter()
-            .find(|section| section.id.as_str() == "empty")
-            .and_then(|section| section.blocks.first())
-            .expect("empty block exists");
+            .map(|section| section.id.as_str())
+            .collect::<Vec<_>>();
+        assert_eq!(
+            section_ids,
+            VARIANT_D_SECTIONS
+                .iter()
+                .map(|(id, _)| *id)
+                .collect::<Vec<_>>()
+        );
+        assert!(!section_ids.contains(&"empty"));
+        assert!(!section_ids.contains(&"signals"));
 
-        assert!(empty_block.claim_refs.is_empty());
-        assert!(empty_block.field_bindings.iter().all(|binding| {
-            binding.role == BindingRole::DisplayOnly && binding.claim_refs.is_empty()
+        let degraded_blocks = composition
+            .sections
+            .iter()
+            .flat_map(|section| section.blocks.iter())
+            .filter(|block| {
+                block
+                    .attributes
+                    .pointer("/empty_state")
+                    .and_then(Value::as_bool)
+                    == Some(true)
+            })
+            .collect::<Vec<_>>();
+        assert!(
+            degraded_blocks.len() >= 9,
+            "most non-headline sections render degraded empty blocks"
+        );
+        for block in degraded_blocks {
+            assert!(block.claim_refs.is_empty());
+            assert!(block.field_bindings.iter().all(|binding| {
+                binding.role == BindingRole::DisplayOnly && binding.claim_refs.is_empty()
+            }));
+        }
+    }
+
+    #[tokio::test]
+    async fn snapshot_fields_are_wrapped_sourced_and_sensitivity_filtered() {
+        let snapshot_reader = Arc::new(SpySnapshotReader::new(Ok(snapshot_fixture(vec![
+            snapshot_field(
+                "/vitals/lifecycle",
+                "Lifecycle",
+                Value::String("active".to_string()),
+                AccountCompositionSnapshotSensitivity::Internal,
+                Some("user"),
+                Some("2026-05-14T09:00:00Z"),
+            ),
+            snapshot_field(
+                "/vitals/arr",
+                "ARR",
+                Value::String("sensitive-commercial-value".to_string()),
+                AccountCompositionSnapshotSensitivity::Confidential,
+                Some("salesforce"),
+                Some("2026-05-14T09:00:00Z"),
+            ),
+            snapshot_field(
+                "/reports/account_report",
+                "Account report",
+                Value::String("unavailable".to_string()),
+                AccountCompositionSnapshotSensitivity::Internal,
+                Some("system_config"),
+                Some("2026-05-15T10:00:00Z"),
+            ),
+        ]))));
+        let (clock, rng, external, reader, committer, provider) = fixture_parts(Vec::new());
+        let services = services_with_snapshot(
+            &clock,
+            &rng,
+            &external,
+            reader,
+            committer,
+            snapshot_reader.clone(),
+        );
+        let ctx = ability_ctx(&services, &provider);
+
+        let output = account_overview(&ctx, input())
+            .await
+            .expect("snapshot-backed account overview succeeds");
+        let serialized = output_json(&output);
+
+        assert_eq!(snapshot_reader.calls.load(Ordering::SeqCst), 1);
+        assert_eq!(
+            *snapshot_reader
+                .last_surface
+                .lock()
+                .expect("snapshot surface lock"),
+            Some(ClaimDismissalSurface::LogStructured)
+        );
+        assert!(serialized.to_string().contains("Example Account"));
+        let headline_vitals = output.data().sections[0].blocks[0]
+            .attributes
+            .pointer("/vitals")
+            .and_then(Value::as_array)
+            .expect("headline vitals array");
+        assert!(headline_vitals.iter().any(|value| {
+            value.pointer("/label").and_then(Value::as_str) == Some("Lifecycle")
+                && value.pointer("/value").and_then(Value::as_str) == Some("active")
         }));
+        assert!(
+            !serialized
+                .to_string()
+                .contains("sensitive-commercial-value")
+        );
+        assert!(output.provenance().sources.iter().any(|source| {
+            source.identifiers.iter().any(|identifier| {
+                matches!(
+                    identifier,
+                    SourceIdentifier::Entity { field: Some(field), .. }
+                        if field == "/vitals/lifecycle"
+                )
+            })
+        }));
+    }
+
+    #[tokio::test]
+    async fn mixed_claim_and_snapshot_sections_keep_both_evidence_paths() {
+        let snapshot_reader = Arc::new(SpySnapshotReader::new(Ok(snapshot_fixture(vec![
+            snapshot_field(
+                "/value/growth_potential",
+                "Growth potential",
+                Value::String("expansion motion active".to_string()),
+                AccountCompositionSnapshotSensitivity::Internal,
+                Some("salesforce"),
+                Some("2026-05-14T09:00:00Z"),
+            ),
+        ]))));
+        let claims = vec![claim(
+            "claim-value",
+            "value_delivered",
+            "/value/latest",
+            "Adoption milestone shipped",
+            Some(0.92),
+            Some("2026-05-14T09:00:00Z"),
+            ClaimSensitivity::Internal,
+        )];
+        let (clock, rng, external, reader, committer, provider) = fixture_parts(claims);
+        let services =
+            services_with_snapshot(&clock, &rng, &external, reader, committer, snapshot_reader);
+        let ctx = ability_ctx(&services, &provider);
+
+        let output = account_overview(&ctx, input())
+            .await
+            .expect("mixed claim and snapshot account overview succeeds");
+        let composition = output.data();
+        let value_section = composition
+            .sections
+            .iter()
+            .find(|section| section.id.as_str() == "value-commitments")
+            .expect("value commitments section");
+
+        assert!(
+            value_section
+                .blocks
+                .iter()
+                .any(|block| block.block_type == BlockType::ClaimSummary
+                    && block.attributes.pointer("/text").and_then(Value::as_str)
+                        == Some("Adoption milestone shipped")),
+            "claim evidence remains renderable"
+        );
+        assert!(
+            value_section
+                .blocks
+                .iter()
+                .any(|block| block.block_type == BlockType::EvidenceList
+                    && block.attributes.to_string().contains("Growth potential")),
+            "snapshot evidence remains renderable beside claims"
+        );
+    }
+
+    #[tokio::test]
+    async fn recommendation_claims_render_as_work_actions() {
+        let claims = vec![claim(
+            "claim-recommendation",
+            "recommendation",
+            "/recommendations/review",
+            "Review the launch plan with the account owner",
+            Some(0.88),
+            Some("2026-05-14T09:00:00Z"),
+            ClaimSensitivity::Internal,
+        )];
+        let (clock, rng, external, reader, committer, provider) = fixture_parts(claims);
+        let services = services(&clock, &rng, &external, reader, committer);
+        let ctx = ability_ctx(&services, &provider);
+
+        let output = account_overview(&ctx, input())
+            .await
+            .expect("recommendation-backed account overview succeeds");
+        let composition = output.data();
+
+        for section_id in ["whats-next", "the-work"] {
+            let section = composition
+                .sections
+                .iter()
+                .find(|section| section.id.as_str() == section_id)
+                .expect("work section exists");
+            let block = section
+                .blocks
+                .iter()
+                .find(|block| {
+                    block.block_type == BlockType::ActionList
+                        && block
+                            .attributes
+                            .pointer("/claim_type")
+                            .and_then(Value::as_str)
+                            == Some("recommendation")
+                        && block
+                            .attributes
+                            .pointer("/items/0/text")
+                            .and_then(Value::as_str)
+                            == Some("Review the launch plan with the account owner")
+                })
+                .expect("recommendation is rendered as a work action");
+
+            assert!(
+                block
+                    .claim_refs
+                    .iter()
+                    .any(|claim_ref| claim_ref.claim_id == "claim-recommendation")
+            );
+            assert!(block.field_bindings.iter().any(|binding| {
+                binding.role == BindingRole::FeedbackTarget
+                    && binding.field_path.as_str() == "/items/0/text"
+                    && !binding.claim_refs.is_empty()
+            }));
+            assert_eq!(
+                block
+                    .attributes
+                    .pointer("/trust_band")
+                    .and_then(Value::as_str),
+                Some("likely_current"),
+                "work action blocks expose block-level trust for the shell badge"
+            );
+            assert_eq!(
+                block
+                    .attributes
+                    .pointer("/source_asof")
+                    .and_then(Value::as_str),
+                Some("2026-05-14T09:00:00Z"),
+                "work action blocks expose block-level freshness for the shell"
+            );
+        }
+
+        let proj_ctx = FallbackProjectionContext::new(
+            Actor::SurfaceClient {
+                instance: crate::abilities::registry::SurfaceClientId::new("sc_fixture"),
+                scopes: ScopeSet::new([crate::abilities::registry::SurfaceScope::new(
+                    "read.account_overview",
+                )])
+                .expect("scope set"),
+            },
+            SurfaceKind::SurfaceClient,
+            3,
+        );
+        let (projected, _audits) = project_composition_for_surface(composition, &proj_ctx)
+            .expect("projected recommendation action preserves shell metadata");
+
+        for section_id in ["whats-next", "the-work"] {
+            let section = projected
+                .sections
+                .iter()
+                .find(|section| section.section_id.as_str() == section_id)
+                .expect("projected work section exists");
+            let projected_block = section
+                .block_indexes
+                .iter()
+                .filter_map(|index| projected.blocks.get(*index as usize))
+                .find(|block| {
+                    block.payload.pointer("/claim_type").and_then(Value::as_str)
+                        == Some("recommendation")
+                })
+                .expect("projected recommendation work action exists");
+
+            assert_eq!(
+                projected_block
+                    .payload
+                    .pointer("/trust_band")
+                    .and_then(Value::as_str),
+                Some("likely_current"),
+                "projection must preserve block-level trust for the renderer shell"
+            );
+            assert_eq!(
+                projected_block
+                    .payload
+                    .pointer("/source_asof")
+                    .and_then(Value::as_str),
+                Some("2026-05-14T09:00:00Z"),
+                "projection must preserve block-level freshness for the renderer shell"
+            );
+        }
     }
 
     #[tokio::test]
@@ -1576,10 +2941,6 @@ mod tests {
     // contract that wasn't exercised by either side's isolated test suite.
     #[tokio::test]
     async fn dos670_producer_output_passes_w4d_projection() {
-        use crate::abilities::{
-            project_composition_for_surface, FallbackProjectionContext, SurfaceKind,
-        };
-
         let claims = vec![
             claim(
                 "claim-risk",

@@ -1374,8 +1374,12 @@ mod tests {
     ) {
         let (clock, rng, external) = test_ctx();
         let ctx = live_ctx(&clock, &rng, &external);
-        let metadata =
-            metadata_envelope(&super_recommendation_draft(metadata_source_id, source_asof));
+        let action_kind = default_action_kind(metadata_source_id);
+        let metadata = metadata_envelope(&super_recommendation_draft_with_action_kind(
+            metadata_source_id,
+            source_asof,
+            &action_kind,
+        ));
         let proposal = ClaimProposal {
             id: None,
             expected_claim_version: None,
@@ -1406,13 +1410,26 @@ mod tests {
         update_claim_trust(db, id, TrustScore(trust_score), 1, &ctx).expect("seed trust score");
     }
 
+    fn default_action_kind(id: &str) -> String {
+        format!("action_{id}").replace([':', '-'], "_")
+    }
+
     fn super_recommendation_draft(id: &str, source_asof: &str) -> RecommendationDraft {
+        let action_kind = default_action_kind(id);
+        super_recommendation_draft_with_action_kind(id, source_asof, &action_kind)
+    }
+
+    fn super_recommendation_draft_with_action_kind(
+        _id: &str,
+        source_asof: &str,
+        action_kind: &str,
+    ) -> RecommendationDraft {
         RecommendationDraft {
             subject: abilities_runtime::abilities::provenance::subject::SubjectRef::Account(
                 "acct-example".to_string(),
             ),
             recommended_action: RecommendedAction::Custom {
-                action_kind: format!("action_{id}").replace([':', '-'], "_"),
+                action_kind: action_kind.to_string(),
                 payload: serde_json::json!({ "opaque": true }),
             },
             evidence: vec![EvidenceRef {

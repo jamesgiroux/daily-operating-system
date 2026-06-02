@@ -433,3 +433,6 @@ version_dispatcher_subscribe
 render_claim_receipt
 submit_claim_feedback_command
 assign_inbox_entity
+# v1.5.0 W1 composition projection bridge: the Account route uses Tauri invoke
+# transport into the render orchestrator while the producer remains ability-routed.
+get_projected_composition

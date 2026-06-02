@@ -22,3 +22,548 @@
   justify-content: center;
   margin-top: var(--space-lg);
 }
+
+.compositionSurface {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3xl);
+  padding-bottom: var(--space-4xl);
+}
+
+.referenceBody {
+  overflow-x: hidden;
+}
+
+.compositionMasthead {
+  padding: var(--space-4xl) 0 var(--space-2xl);
+  border-bottom: 1px solid var(--color-rule-heavy);
+}
+
+.compositionMetaRow {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-sm);
+  margin-bottom: var(--space-lg);
+}
+
+.compositionTitle {
+  margin: 0;
+  max-width: 860px;
+  color: var(--color-text-primary);
+  font-family: var(--font-serif);
+  font-size: 76px;
+  font-weight: 300;
+  line-height: 0.92;
+  letter-spacing: 0;
+}
+
+.compositionSubhead {
+  max-width: 760px;
+  margin: var(--space-lg) 0 0;
+  color: var(--color-text-secondary);
+  font-family: var(--font-serif);
+  font-size: 22px;
+  font-weight: 300;
+  line-height: 1.35;
+  letter-spacing: 0;
+}
+
+.compositionMastheadGrid {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(260px, 340px);
+  gap: var(--space-2xl);
+  align-items: end;
+}
+
+.compositionVitalRail {
+  display: grid;
+  gap: var(--space-md);
+  padding-top: var(--space-lg);
+}
+
+.compositionVitalRow {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: var(--space-md);
+  align-items: baseline;
+  padding-bottom: var(--space-sm);
+  border-bottom: 1px solid var(--color-rule-light);
+}
+
+.compositionVitalLabel {
+  color: var(--color-text-tertiary);
+  font-family: var(--font-mono);
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+
+.compositionVitalValue {
+  color: var(--color-text-primary);
+  font-family: var(--font-sans);
+  font-size: 14px;
+  font-weight: 600;
+  letter-spacing: 0;
+  text-align: right;
+}
+
+.compositionSection {
+  display: grid;
+  grid-template-columns: minmax(120px, 180px) minmax(0, 1fr);
+  gap: var(--space-2xl);
+  scroll-margin-top: 96px;
+}
+
+.compositionSectionLabel {
+  position: sticky;
+  top: 96px;
+  align-self: start;
+  color: var(--color-text-tertiary);
+  font-family: var(--font-mono);
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: 0.08em;
+  line-height: 1.4;
+  text-transform: uppercase;
+}
+
+.compositionSectionBody {
+  min-width: 0;
+}
+
+.compositionSectionHeader {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: var(--space-lg);
+  padding-bottom: var(--space-md);
+  border-bottom: 1px solid var(--color-rule-heavy);
+}
+
+.compositionSectionTitle {
+  margin: 0;
+  color: var(--color-text-primary);
+  font-family: var(--font-serif);
+  font-size: 34px;
+  font-weight: 300;
+  line-height: 1;
+  letter-spacing: 0;
+}
+
+.compositionSectionDeck {
+  max-width: 620px;
+  margin: var(--space-xs) 0 0;
+  color: var(--color-text-secondary);
+  font-family: var(--font-sans);
+  font-size: 14px;
+  line-height: 1.55;
+  letter-spacing: 0;
+}
+
+.compositionSectionMeta {
+  display: inline-flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: var(--space-xs);
+  min-width: 150px;
+}
+
+.compositionBlockStack {
+  display: grid;
+  gap: var(--space-lg);
+  margin-top: var(--space-lg);
+}
+
+.compositionBlock {
+  display: grid;
+  gap: var(--space-md);
+  padding: var(--space-lg) 0 0;
+  border-top: 1px solid var(--color-rule-light);
+}
+
+.compositionFeaturedBlock {
+  display: grid;
+  gap: var(--space-lg);
+  padding: var(--space-lg);
+  border: 1px solid var(--color-rule-light);
+  border-radius: var(--radius-editorial-sm);
+  background: var(--color-surface-primary);
+}
+
+.compositionBlockHeader {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-sm);
+}
+
+.compositionBlockTitle {
+  margin: 0;
+  color: var(--color-text-primary);
+  font-family: var(--font-sans);
+  font-size: 15px;
+  font-weight: 700;
+  letter-spacing: 0;
+}
+
+.compositionBlockMeta {
+  display: inline-flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: var(--space-xs);
+}
+
+.compositionProvenanceStatus {
+  display: inline-flex;
+  align-items: center;
+  min-height: 20px;
+  padding: 0 8px;
+  border: 1px solid var(--color-border-subtle);
+  border-radius: 999px;
+  color: var(--color-text-secondary);
+  font-family: var(--font-sans);
+  font-size: 11px;
+  font-weight: 600;
+  line-height: 1;
+  letter-spacing: 0;
+}
+
+.compositionProvenanceStatus[data-provenance-state="missing"],
+.compositionProvenanceStatus[data-provenance-state="unresolved"] {
+  border-color: var(--color-trust-use-with-caution);
+  color: var(--color-trust-use-with-caution);
+}
+
+.compositionProvenanceStatus[data-provenance-state="masked"] {
+  border-color: var(--color-trust-needs-verification);
+  color: var(--color-trust-needs-verification);
+}
+
+.compositionFeedbackRow {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-xs);
+  padding-top: var(--space-sm);
+  border-top: 1px solid var(--color-rule-light);
+}
+
+.compositionNarrative {
+  margin: 0;
+  color: var(--color-text-primary);
+  font-family: var(--font-serif);
+  font-size: 22px;
+  font-weight: 300;
+  line-height: 1.4;
+  letter-spacing: 0;
+}
+
+.compositionBodyText {
+  margin: 0;
+  color: var(--color-text-secondary);
+  font-family: var(--font-sans);
+  font-size: 14px;
+  line-height: 1.55;
+  letter-spacing: 0;
+}
+
+.compositionMetricGrid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: var(--space-md);
+}
+
+.compositionMetric {
+  display: grid;
+  gap: var(--space-xs);
+  padding-top: var(--space-md);
+  border-top: 1px solid var(--color-rule-light);
+}
+
+.compositionMetricValue {
+  color: var(--color-text-primary);
+  font-family: var(--font-serif);
+  font-size: 28px;
+  font-weight: 300;
+  line-height: 1;
+  letter-spacing: 0;
+}
+
+.compositionMetricLabel {
+  color: var(--color-text-tertiary);
+  font-family: var(--font-mono);
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+
+.compositionEvidenceList {
+  display: grid;
+  gap: var(--space-sm);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.compositionEvidenceRow {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: var(--space-md);
+  align-items: start;
+  padding: var(--space-md) 0;
+  border-top: 1px solid var(--color-rule-light);
+}
+
+.compositionEvidenceMain {
+  min-width: 0;
+}
+
+.compositionEvidenceTitle {
+  margin: 0;
+  color: var(--color-text-primary);
+  font-family: var(--font-sans);
+  font-size: 14px;
+  font-weight: 600;
+  line-height: 1.35;
+  letter-spacing: 0;
+}
+
+.compositionEvidenceMeta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-xs);
+  margin-top: var(--space-xs);
+}
+
+.compositionInlineList {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-xs);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.compositionTwoColumn {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: var(--space-lg);
+}
+
+.compositionEmptyState,
+.compositionDegradedState,
+.compositionFallbackState {
+  display: grid;
+  gap: var(--space-xs);
+  padding: var(--space-md);
+  border-left: 3px solid var(--color-rule-heavy);
+  background: var(--color-desk-charcoal-4);
+}
+
+.compositionDegradedState {
+  border-left-color: var(--color-trust-use-with-caution);
+  background: var(--color-trust-use-with-caution-8);
+}
+
+.compositionFallbackState {
+  border-left-color: var(--color-trust-needs-verification);
+  background: var(--color-trust-needs-verification-8);
+}
+
+.compositionStateLabel {
+  color: var(--color-text-tertiary);
+  font-family: var(--font-mono);
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.compositionStateText {
+  margin: 0;
+  color: var(--color-text-secondary);
+  font-family: var(--font-sans);
+  font-size: 13px;
+  line-height: 1.45;
+  letter-spacing: 0;
+}
+
+.compositionRelationshipGrid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: var(--space-sm);
+}
+
+.compositionPersonNode {
+  display: grid;
+  gap: var(--space-xs);
+  padding: var(--space-md);
+  border: 1px solid var(--color-rule-light);
+  border-radius: var(--radius-editorial-sm);
+  background: var(--color-surface-primary);
+}
+
+.compositionAvatar {
+  display: inline-flex;
+  width: 34px;
+  height: 34px;
+  align-items: center;
+  justify-content: center;
+  border-radius: 999px;
+  background: var(--color-person-12);
+  color: var(--color-garden-larkspur);
+  font-family: var(--font-mono);
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.02em;
+}
+
+.compositionActionRow {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  gap: var(--space-md);
+  align-items: start;
+  padding: var(--space-md) 0;
+  border-top: 1px solid var(--color-rule-light);
+}
+
+.compositionActionIndex {
+  color: var(--color-account);
+  font-family: var(--font-mono);
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+}
+
+.compositionReportGrid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: var(--space-md);
+}
+
+.compositionReport {
+  display: grid;
+  gap: var(--space-sm);
+  min-height: 148px;
+  padding: var(--space-md);
+  border: 1px solid var(--color-rule-light);
+  border-radius: var(--radius-editorial-sm);
+  background: var(--color-surface-primary);
+}
+
+.compositionReportUnavailable {
+  background: transparent;
+  opacity: 0.72;
+}
+
+.compositionButton {
+  appearance: none;
+  width: fit-content;
+  border: 1px solid var(--color-rule-heavy);
+  border-radius: var(--radius-editorial-sm);
+  background: transparent;
+  color: var(--color-text-primary);
+  cursor: pointer;
+  font-family: var(--font-mono);
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  padding: 8px 10px;
+  text-transform: uppercase;
+}
+
+.compositionButton:hover,
+.compositionButton:focus-visible {
+  border-color: var(--color-account);
+  outline: none;
+}
+
+@media (max-width: 900px) {
+  .compositionMastheadGrid,
+  .compositionSection,
+  .compositionTwoColumn,
+  .compositionMetricGrid,
+  .compositionRelationshipGrid,
+  .compositionReportGrid {
+    grid-template-columns: 1fr;
+  }
+
+  .compositionSectionLabel {
+    position: static;
+  }
+
+  .compositionSectionHeader,
+  .compositionEvidenceRow,
+  .compositionActionRow {
+    grid-template-columns: 1fr;
+  }
+
+  .compositionSectionHeader,
+  .compositionBlockHeader {
+    align-items: flex-start;
+    flex-direction: column;
+  }
+
+  .compositionSectionMeta,
+  .compositionBlockMeta {
+    justify-content: flex-start;
+  }
+
+  .compositionTitle {
+    font-size: 54px;
+  }
+}
+
+@media (max-width: 640px) {
+  .referenceBody :global(.FloatingNavIsland_navIslandContainer),
+  .referenceBody :global(.FolioBar_folioCenter),
+  .referenceBody :global(.FolioBar_folioRight) {
+    display: none;
+  }
+
+  .referenceBody :global(.FolioBar_folioBreadcrumbs) {
+    max-width: calc(100vw - 96px);
+  }
+
+  .referenceBody :global(.MagazinePageLayout_pageContainer) {
+    width: 100%;
+    max-width: 100%;
+    overflow-x: hidden;
+  }
+
+  .compositionSurface {
+    gap: var(--space-2xl);
+  }
+
+  .compositionMasthead {
+    padding-top: var(--space-3xl);
+  }
+
+  .compositionMastheadGrid > * {
+    min-width: 0;
+  }
+
+  .compositionTitle {
+    max-width: 300px;
+    font-size: 48px;
+    overflow-wrap: normal;
+  }
+
+  .compositionSubhead {
+    max-width: 300px;
+    font-size: 19px;
+  }
+
+  .compositionVitalRow {
+    grid-template-columns: 1fr;
+    gap: var(--space-xs);
+  }
+
+  .compositionVitalValue {
+    text-align: left;
+  }
+}

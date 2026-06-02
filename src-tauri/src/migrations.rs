@@ -3400,7 +3400,7 @@ fn run_immediate_migration_transaction(
                 clippy::let_underscore_must_use,
                 reason = "intentional best-effort cleanup after migration failure"
             )]
-            // best-effort: rollback after migration failure preserves the original migration error.
+            // best-effort: rollback cleanup preserves the original migration error.
             let _ = conn.execute_batch("ROLLBACK;");
             Err(error)
         }

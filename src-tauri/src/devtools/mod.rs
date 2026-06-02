@@ -3562,12 +3562,27 @@ pub(crate) fn seed_database(db: &ActionDb) -> Result<(), String> {
         ),
     ];
 
+    let clock = crate::services::context::SystemClock;
+    let rng = crate::services::context::SystemRng;
+    let ext = crate::services::context::ExternalClients::default();
+    let ctx =
+        crate::services::context::ServiceContext::new_live(&clock, &rng, &ext).with_actor("user");
+
     for (id, entity_type, entity_id, title, content) in &context_entries {
-        conn.execute(
-            "INSERT OR REPLACE INTO entity_context_entries (id, entity_type, entity_id, title, content, created_at, updated_at) \
-             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)",
-            rusqlite::params![id, entity_type, entity_id, title, content, &today, &today],
-        ).map_err(|e| format!("Entity context entry {}: {}", id, e))?;
+        crate::services::entity_context::commit_backfilled_user_note(
+            &ctx,
+            db,
+            &crate::services::entity_context::LegacyEntityContextEntry {
+                id: (*id).to_string(),
+                entity_type: (*entity_type).to_string(),
+                entity_id: (*entity_id).to_string(),
+                title: (*title).to_string(),
+                content: (*content).to_string(),
+                created_at: today.clone(),
+                updated_at: today.clone(),
+            },
+        )
+        .map_err(|e| format!("Entity context entry {}: {}", id, e))?;
     }
 
     // =========================================================================
@@ -6631,8 +6646,10 @@ fn seed_salience_factor_weights(db: &ActionDb) -> Result<(), String> {
            ('corroboration', 0.05, 1),
            ('contradiction', 0.05, 1),
            ('openLoopRelevance', 0.05, 1)
-         ON CONFLICT(factor_kind, schema_version) DO UPDATE SET
-           default_weight = excluded.default_weight;",
+         ON CONFLICT(factor_kind) DO UPDATE SET
+           default_weight = excluded.default_weight,
+           schema_version = excluded.schema_version,
+           updated_at = strftime('%Y-%m-%dT%H:%M:%fZ','now');",
     )
     .map_err(|e| format!("Seed salience factor weights: {e}"))?;
 
@@ -7452,5 +7469,22 @@ mod tests {
         let path = dev_workspace();
         assert!(path.to_string_lossy().contains(".dailyos"));
         assert!(path.to_string_lossy().contains("dev-workspace"));
+    }
+
+    #[test]
+    fn test_mock_data_does_not_write_frozen_entity_context_table() {
+        let source = include_str!("mod.rs");
+        for prefix in [
+            "INSERT INTO",
+            "INSERT OR REPLACE INTO",
+            "UPDATE",
+            "DELETE FROM",
+        ] {
+            let forbidden = format!("{prefix} {}", "entity_context_entries");
+            assert!(
+                !source.contains(&forbidden),
+                "devtools mock data must route entity context writes through user_note claims"
+            );
+        }
     }
 }
