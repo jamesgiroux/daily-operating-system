@@ -868,6 +868,9 @@ pub struct ServiceContext<'a> {
     meeting_prep_status_reader: Option<Arc<dyn MeetingPrepStatusReadHandle>>,
     claim_receipt_reader: Option<Arc<dyn ClaimReceiptReadHandle>>,
     account_composition_snapshot_reader: Option<Arc<dyn AccountCompositionSnapshotReadHandle>>,
+    project_composition_snapshot_reader: Option<Arc<dyn ProjectCompositionSnapshotReadHandle>>,
+    person_composition_snapshot_reader: Option<Arc<dyn PersonCompositionSnapshotReadHandle>>,
+    action_composition_snapshot_reader: Option<Arc<dyn ActionCompositionSnapshotReadHandle>>,
     account_list_reader: Option<Arc<dyn AccountListReadHandle>>,
     person_list_reader: Option<Arc<dyn PersonListReadHandle>>,
     project_list_reader: Option<Arc<dyn ProjectListReadHandle>>,
@@ -1037,6 +1040,137 @@ pub trait AccountCompositionSnapshotReadHandle: Send + Sync {
         account_id: String,
         surface: ClaimDismissalSurface,
     ) -> AccountCompositionSnapshotReadFuture<'a>;
+}
+
+pub type ProjectCompositionSnapshotSensitivity = AccountCompositionSnapshotSensitivity;
+pub type ProjectCompositionProvenanceKind = AccountCompositionProvenanceKind;
+pub type ProjectCompositionSnapshotField = AccountCompositionSnapshotField;
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
+pub struct ProjectCompositionSnapshot {
+    pub project_id: String,
+    pub display_name: ProjectCompositionSnapshotField,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub status: Option<ProjectCompositionSnapshotField>,
+    pub is_parent: bool,
+    #[serde(default)]
+    pub fields: Vec<ProjectCompositionSnapshotField>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
+pub enum ProjectCompositionSnapshotReadError {
+    #[error("project not found: {0}")]
+    ProjectNotFound(String),
+    #[error("project composition snapshot read failed: {0}")]
+    ReadFailed(String),
+}
+
+pub type ProjectCompositionSnapshotReadFuture<'a> = Pin<
+    Box<
+        dyn Future<Output = Result<ProjectCompositionSnapshot, ProjectCompositionSnapshotReadError>>
+            + Send
+            + 'a,
+    >,
+>;
+
+/// Service-owned Project page input bundle for non-claim display facts.
+/// Implementations must wrap every non-identity field with sensitivity,
+/// source/freshness, trust, and provenance metadata before ability code may
+/// render it.
+pub trait ProjectCompositionSnapshotReadHandle: Send + Sync {
+    fn read_project_composition_snapshot<'a>(
+        &'a self,
+        project_id: String,
+        surface: ClaimDismissalSurface,
+    ) -> ProjectCompositionSnapshotReadFuture<'a>;
+}
+
+pub type PersonCompositionSnapshotSensitivity = AccountCompositionSnapshotSensitivity;
+pub type PersonCompositionProvenanceKind = AccountCompositionProvenanceKind;
+pub type PersonCompositionSnapshotField = AccountCompositionSnapshotField;
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
+pub struct PersonCompositionSnapshot {
+    pub person_id: String,
+    pub display_name: PersonCompositionSnapshotField,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub relationship: Option<PersonCompositionSnapshotField>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub organization: Option<PersonCompositionSnapshotField>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub role: Option<PersonCompositionSnapshotField>,
+    #[serde(default)]
+    pub fields: Vec<PersonCompositionSnapshotField>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
+pub enum PersonCompositionSnapshotReadError {
+    #[error("person not found: {0}")]
+    PersonNotFound(String),
+    #[error("person composition snapshot read failed: {0}")]
+    ReadFailed(String),
+}
+
+pub type PersonCompositionSnapshotReadFuture<'a> = Pin<
+    Box<
+        dyn Future<Output = Result<PersonCompositionSnapshot, PersonCompositionSnapshotReadError>>
+            + Send
+            + 'a,
+    >,
+>;
+
+/// Service-owned Person page input bundle for non-claim display facts.
+/// Implementations must wrap every non-identity field with sensitivity,
+/// source/freshness, trust, and provenance metadata before ability code may
+/// render it.
+pub trait PersonCompositionSnapshotReadHandle: Send + Sync {
+    fn read_person_composition_snapshot<'a>(
+        &'a self,
+        person_id: String,
+        surface: ClaimDismissalSurface,
+    ) -> PersonCompositionSnapshotReadFuture<'a>;
+}
+
+pub type ActionCompositionSnapshotSensitivity = AccountCompositionSnapshotSensitivity;
+pub type ActionCompositionProvenanceKind = AccountCompositionProvenanceKind;
+pub type ActionCompositionSnapshotField = AccountCompositionSnapshotField;
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
+pub struct ActionCompositionSnapshot {
+    pub action_id: String,
+    pub title: ActionCompositionSnapshotField,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub status: Option<ActionCompositionSnapshotField>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub priority: Option<ActionCompositionSnapshotField>,
+    #[serde(default)]
+    pub fields: Vec<ActionCompositionSnapshotField>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
+pub enum ActionCompositionSnapshotReadError {
+    #[error("action not found: {0}")]
+    ActionNotFound(String),
+    #[error("action composition snapshot read failed: {0}")]
+    ReadFailed(String),
+}
+
+pub type ActionCompositionSnapshotReadFuture<'a> = Pin<
+    Box<
+        dyn Future<Output = Result<ActionCompositionSnapshot, ActionCompositionSnapshotReadError>>
+            + Send
+            + 'a,
+    >,
+>;
+
+/// Service-owned Action Detail input bundle for non-claim display facts.
+/// Action is a first-class composition subject, not a generic entity type.
+pub trait ActionCompositionSnapshotReadHandle: Send + Sync {
+    fn read_action_composition_snapshot<'a>(
+        &'a self,
+        action_id: String,
+        surface: ClaimDismissalSurface,
+    ) -> ActionCompositionSnapshotReadFuture<'a>;
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -2126,6 +2260,9 @@ impl<'a> ServiceContext<'a> {
             meeting_prep_status_reader: None,
             claim_receipt_reader: None,
             account_composition_snapshot_reader: None,
+            project_composition_snapshot_reader: None,
+            person_composition_snapshot_reader: None,
+            action_composition_snapshot_reader: None,
             account_list_reader: None,
             person_list_reader: None,
             project_list_reader: None,
@@ -2168,6 +2305,9 @@ impl<'a> ServiceContext<'a> {
             meeting_prep_status_reader: None,
             claim_receipt_reader: None,
             account_composition_snapshot_reader: None,
+            project_composition_snapshot_reader: None,
+            person_composition_snapshot_reader: None,
+            action_composition_snapshot_reader: None,
             account_list_reader: None,
             person_list_reader: None,
             project_list_reader: None,
@@ -2221,6 +2361,9 @@ impl<'a> ServiceContext<'a> {
             meeting_prep_status_reader: None,
             claim_receipt_reader: None,
             account_composition_snapshot_reader: None,
+            project_composition_snapshot_reader: None,
+            person_composition_snapshot_reader: None,
+            action_composition_snapshot_reader: None,
             account_list_reader: None,
             person_list_reader: None,
             project_list_reader: None,
@@ -2344,6 +2487,30 @@ impl<'a> ServiceContext<'a> {
         reader: Arc<dyn AccountCompositionSnapshotReadHandle>,
     ) -> Self {
         self.account_composition_snapshot_reader = Some(reader);
+        self
+    }
+
+    pub fn with_project_composition_snapshot_reader(
+        mut self,
+        reader: Arc<dyn ProjectCompositionSnapshotReadHandle>,
+    ) -> Self {
+        self.project_composition_snapshot_reader = Some(reader);
+        self
+    }
+
+    pub fn with_person_composition_snapshot_reader(
+        mut self,
+        reader: Arc<dyn PersonCompositionSnapshotReadHandle>,
+    ) -> Self {
+        self.person_composition_snapshot_reader = Some(reader);
+        self
+    }
+
+    pub fn with_action_composition_snapshot_reader(
+        mut self,
+        reader: Arc<dyn ActionCompositionSnapshotReadHandle>,
+    ) -> Self {
+        self.action_composition_snapshot_reader = Some(reader);
         self
     }
 
@@ -2504,6 +2671,51 @@ impl<'a> ServiceContext<'a> {
         };
         reader
             .read_account_composition_snapshot(account_id, surface)
+            .await
+    }
+
+    pub async fn read_project_composition_snapshot(
+        &self,
+        project_id: String,
+        surface: ClaimDismissalSurface,
+    ) -> Result<ProjectCompositionSnapshot, ProjectCompositionSnapshotReadError> {
+        let Some(reader) = &self.project_composition_snapshot_reader else {
+            return Err(ProjectCompositionSnapshotReadError::ReadFailed(
+                self.missing_reader_error("project_composition_snapshot_reader"),
+            ));
+        };
+        reader
+            .read_project_composition_snapshot(project_id, surface)
+            .await
+    }
+
+    pub async fn read_person_composition_snapshot(
+        &self,
+        person_id: String,
+        surface: ClaimDismissalSurface,
+    ) -> Result<PersonCompositionSnapshot, PersonCompositionSnapshotReadError> {
+        let Some(reader) = &self.person_composition_snapshot_reader else {
+            return Err(PersonCompositionSnapshotReadError::ReadFailed(
+                self.missing_reader_error("person_composition_snapshot_reader"),
+            ));
+        };
+        reader
+            .read_person_composition_snapshot(person_id, surface)
+            .await
+    }
+
+    pub async fn read_action_composition_snapshot(
+        &self,
+        action_id: String,
+        surface: ClaimDismissalSurface,
+    ) -> Result<ActionCompositionSnapshot, ActionCompositionSnapshotReadError> {
+        let Some(reader) = &self.action_composition_snapshot_reader else {
+            return Err(ActionCompositionSnapshotReadError::ReadFailed(
+                self.missing_reader_error("action_composition_snapshot_reader"),
+            ));
+        };
+        reader
+            .read_action_composition_snapshot(action_id, surface)
             .await
     }
 
@@ -2887,7 +3099,10 @@ fn entity_context_entry_for_claim(claim: IntelligenceClaim) -> Result<EntityCont
         ClaimSubjectRef::Person { id } => ("person".to_string(), id),
         ClaimSubjectRef::Project { id } => ("project".to_string(), id),
         ClaimSubjectRef::Meeting { id } => ("meeting".to_string(), id),
-        ClaimSubjectRef::Email { .. } | ClaimSubjectRef::Multi(_) | ClaimSubjectRef::Global => {
+        ClaimSubjectRef::Action { .. }
+        | ClaimSubjectRef::Email { .. }
+        | ClaimSubjectRef::Multi(_)
+        | ClaimSubjectRef::Global => {
             return Err(format!(
                 "Claim `{}` has unsupported entity context subject",
                 claim.id

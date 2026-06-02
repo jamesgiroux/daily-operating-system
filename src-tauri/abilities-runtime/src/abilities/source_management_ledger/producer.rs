@@ -46,7 +46,9 @@ pub async fn source_management_action(
     finalize_action_output(ctx, schema_version, receipt)
 }
 
-fn authorize(ctx: &AbilityContext<'_>) -> Result<SourceManagementLedgerPrivacyProfile, AbilityError> {
+fn authorize(
+    ctx: &AbilityContext<'_>,
+) -> Result<SourceManagementLedgerPrivacyProfile, AbilityError> {
     match &ctx.actor {
         Actor::SurfaceClient { scopes, .. } => {
             if !scopes.contains(&SurfaceScope::new("read.workspace_sources")) {
@@ -161,7 +163,10 @@ fn provenance_config(ctx: &AbilityContext<'_>, schema_version: u32) -> Provenanc
     config
 }
 
-fn provenance_action_config(ctx: &AbilityContext<'_>, schema_version: u32) -> ProvenanceBuilderConfig {
+fn provenance_action_config(
+    ctx: &AbilityContext<'_>,
+    schema_version: u32,
+) -> ProvenanceBuilderConfig {
     let mut config =
         ProvenanceBuilderConfig::new("source_management_action", ctx.services().clock.now());
     config.ability_version = AbilityVersion::new(1, 0);

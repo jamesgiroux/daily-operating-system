@@ -390,6 +390,7 @@ pub fn entity_context_entry_for_claim(
         .map_err(|error| format!("Invalid entity context claim subject_ref: {error}"))?
     {
         crate::db::claim_invalidation::SubjectRef::Account { id } => ("account".to_string(), id),
+        crate::db::claim_invalidation::SubjectRef::Action { id } => ("action".to_string(), id),
         crate::db::claim_invalidation::SubjectRef::Person { id } => ("person".to_string(), id),
         crate::db::claim_invalidation::SubjectRef::Project { id } => ("project".to_string(), id),
         crate::db::claim_invalidation::SubjectRef::Meeting { id } => ("meeting".to_string(), id),

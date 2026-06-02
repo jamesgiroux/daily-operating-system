@@ -688,12 +688,13 @@ fn brief_subject_from_claim(claim: &IntelligenceClaim) -> Result<BriefSubjectRef
         ClaimSubjectRef::Meeting { id } => Ok(BriefSubjectRef::meeting(&id)),
         ClaimSubjectRef::Person { id } => Ok(BriefSubjectRef::person(&id)),
         ClaimSubjectRef::Project { id } => Ok(BriefSubjectRef::project(&id)),
-        ClaimSubjectRef::Email { .. } | ClaimSubjectRef::Multi(_) | ClaimSubjectRef::Global => {
-            Err(validation_error(format!(
-                "prepare_meeting claim `{}` has unsupported subject_ref",
-                claim.id
-            )))
-        }
+        ClaimSubjectRef::Action { .. }
+        | ClaimSubjectRef::Email { .. }
+        | ClaimSubjectRef::Multi(_)
+        | ClaimSubjectRef::Global => Err(validation_error(format!(
+            "prepare_meeting claim `{}` has unsupported subject_ref",
+            claim.id
+        ))),
     }
 }
 
@@ -1709,7 +1710,8 @@ impl BriefSubjectRef {
             SubjectRef::Project(id) => Some(Self::project(id)),
             SubjectRef::Person(id) => Some(Self::person(id)),
             SubjectRef::Meeting(id) => Some(Self::meeting(id)),
-            SubjectRef::User(_)
+            SubjectRef::Action(_)
+            | SubjectRef::User(_)
             | SubjectRef::Global
             | SubjectRef::Multi(_)
             | SubjectRef::Unknown => None,

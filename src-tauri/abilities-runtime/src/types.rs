@@ -140,6 +140,7 @@ pub struct EntityContextEntry {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum ClaimSubjectRef {
     Account { id: String },
+    Action { id: String },
     Meeting { id: String },
     Person { id: String },
     Project { id: String },
@@ -159,6 +160,9 @@ pub fn subject_ref_from_json(value: &serde_json::Value) -> Result<ClaimSubjectRe
 
     match kind.as_str() {
         "account" | "accounts" => Ok(ClaimSubjectRef::Account {
+            id: subject_id(value)?,
+        }),
+        "action" | "actions" => Ok(ClaimSubjectRef::Action {
             id: subject_id(value)?,
         }),
         "meeting" | "meetings" => Ok(ClaimSubjectRef::Meeting {

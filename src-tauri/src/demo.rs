@@ -181,8 +181,8 @@ pub fn install_demo(db: &ActionDb, workspace: Option<&Path>) -> Result<(), Strin
     for (id, title, priority, status, account_id, due_date, context) in &actions {
         conn.execute(
             "INSERT OR REPLACE INTO actions (id, title, priority, status, created_at, due_date, \
-             account_id, context, updated_at, is_demo) \
-             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, 1)",
+             account_id, context, updated_at, is_demo, claim_version) \
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, 1, 0)",
             rusqlite::params![
                 id, title, priority, status, &today, due_date, account_id, context, &today
             ],
@@ -697,18 +697,18 @@ pub fn install_demo(db: &ActionDb, workspace: Option<&Path>) -> Result<(), Strin
 
     // Transcript-extracted actions for demo meetings
     conn.execute_batch(
-        "INSERT OR IGNORE INTO actions (id, title, status, priority, source_type, source_id, account_id, created_at, updated_at, is_demo) VALUES
+        "INSERT OR IGNORE INTO actions (id, title, status, priority, source_type, source_id, account_id, created_at, updated_at, is_demo, claim_version) VALUES
          -- Today's meetings
-         ('demo-act-at1', 'Deliver ROI analysis deck to Acme CFO', 'backlog', 1, 'transcript', 'demo-mtg-acme', 'demo-acme', datetime('now'), datetime('now'), 1),
-         ('demo-act-at2', 'Build custom billing report template for Acme', 'backlog', 1, 'transcript', 'demo-mtg-acme', 'demo-acme', datetime('now'), datetime('now'), 1),
-         ('demo-act-at3', 'Schedule billing team training session', 'backlog', 3, 'transcript', 'demo-mtg-acme', 'demo-acme', datetime('now'), datetime('now'), 1),
-         ('demo-act-gt1', 'Create Team B 30-60-90 re-engagement plan', 'backlog', 1, 'transcript', 'demo-mtg-globex', 'demo-globex', datetime('now'), datetime('now'), 1),
-         ('demo-act-gt2', 'Complete champion context transfer to Casey Kim', 'backlog', 1, 'transcript', 'demo-mtg-globex', 'demo-globex', datetime('now'), datetime('now'), 1),
+         ('demo-act-at1', 'Deliver ROI analysis deck to Acme CFO', 'backlog', 1, 'transcript', 'demo-mtg-acme', 'demo-acme', datetime('now'), datetime('now'), 1, 0),
+         ('demo-act-at2', 'Build custom billing report template for Acme', 'backlog', 1, 'transcript', 'demo-mtg-acme', 'demo-acme', datetime('now'), datetime('now'), 1, 0),
+         ('demo-act-at3', 'Schedule billing team training session', 'backlog', 3, 'transcript', 'demo-mtg-acme', 'demo-acme', datetime('now'), datetime('now'), 1, 0),
+         ('demo-act-gt1', 'Create Team B 30-60-90 re-engagement plan', 'backlog', 1, 'transcript', 'demo-mtg-globex', 'demo-globex', datetime('now'), datetime('now'), 1, 0),
+         ('demo-act-gt2', 'Complete champion context transfer to Casey Kim', 'backlog', 1, 'transcript', 'demo-mtg-globex', 'demo-globex', datetime('now'), datetime('now'), 1, 0),
          -- Historical meetings
-         ('demo-act-a1', 'Send updated ROI analysis to Acme', 'completed', 1, 'transcript', 'demo-mh-acme-7d', 'demo-acme', datetime('now', '-7 days'), datetime('now', '-3 days'), 1),
-         ('demo-act-a2', 'Schedule billing team feedback session', 'unstarted', 1, 'transcript', 'demo-mh-acme-7d', 'demo-acme', datetime('now', '-7 days'), datetime('now', '-7 days'), 1),
-         ('demo-act-g1', 'Coordinate Team B enablement workshop', 'unstarted', 1, 'transcript', 'demo-mh-globex-14d', 'demo-globex', datetime('now', '-14 days'), datetime('now', '-14 days'), 1),
-         ('demo-act-g2', 'Draft champion transition plan for Casey Kim', 'unstarted', 3, 'transcript', 'demo-mh-globex-14d', 'demo-globex', datetime('now', '-14 days'), datetime('now', '-14 days'), 1);"
+         ('demo-act-a1', 'Send updated ROI analysis to Acme', 'completed', 1, 'transcript', 'demo-mh-acme-7d', 'demo-acme', datetime('now', '-7 days'), datetime('now', '-3 days'), 1, 0),
+         ('demo-act-a2', 'Schedule billing team feedback session', 'unstarted', 1, 'transcript', 'demo-mh-acme-7d', 'demo-acme', datetime('now', '-7 days'), datetime('now', '-7 days'), 1, 0),
+         ('demo-act-g1', 'Coordinate Team B enablement workshop', 'unstarted', 1, 'transcript', 'demo-mh-globex-14d', 'demo-globex', datetime('now', '-14 days'), datetime('now', '-14 days'), 1, 0),
+         ('demo-act-g2', 'Draft champion transition plan for Casey Kim', 'unstarted', 3, 'transcript', 'demo-mh-globex-14d', 'demo-globex', datetime('now', '-14 days'), datetime('now', '-14 days'), 1, 0);"
     ).ok();
 
     // Seed health score history for trend computation demo

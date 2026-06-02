@@ -664,6 +664,7 @@ fn subject_contains_id(subject: &SubjectRef, id: &str) -> bool {
         SubjectRef::Account(value)
         | SubjectRef::Project(value)
         | SubjectRef::Person(value)
+        | SubjectRef::Action(value)
         | SubjectRef::Meeting(value)
         | SubjectRef::User(value) => value == id,
         SubjectRef::Multi(subjects) => subjects
@@ -762,6 +763,7 @@ fn subject_from_input_json(input_json: &Value) -> Option<SubjectRef> {
         .or_else(|| string_field(input_json, "account_id").map(SubjectRef::Account))
         .or_else(|| string_field(input_json, "project_id").map(SubjectRef::Project))
         .or_else(|| string_field(input_json, "person_id").map(SubjectRef::Person))
+        .or_else(|| string_field(input_json, "action_id").map(SubjectRef::Action))
         .or_else(|| string_field(input_json, "meeting_id").map(SubjectRef::Meeting))
         .or_else(|| string_field(input_json, "user_id").map(SubjectRef::User))
 }
@@ -802,6 +804,7 @@ fn subject_from_kind_and_id(kind: &str, id: &str) -> Option<SubjectRef> {
         "account" | "accounts" => Some(SubjectRef::Account(id.to_string())),
         "project" | "projects" => Some(SubjectRef::Project(id.to_string())),
         "person" | "people" => Some(SubjectRef::Person(id.to_string())),
+        "action" | "actions" => Some(SubjectRef::Action(id.to_string())),
         "meeting" | "meetings" => Some(SubjectRef::Meeting(id.to_string())),
         "user" | "users" => Some(SubjectRef::User(id.to_string())),
         "global" => Some(SubjectRef::Global),
@@ -1035,4 +1038,33 @@ fn redacted_hash(value: &str) -> String {
     hasher.update(value.as_bytes());
     let digest = hasher.finalize();
     hex::encode(&digest[..8])
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use serde_json::json;
+
+    #[test]
+    fn subject_from_input_json_accepts_action_id() {
+        assert_eq!(
+            subject_from_input_json(&json!({ "action_id": "action-1" })),
+            Some(SubjectRef::Action("action-1".to_string()))
+        );
+    }
+
+    #[test]
+    fn subject_from_entity_fields_accepts_action_kind_without_entity_type_promotion() {
+        assert_eq!(
+            subject_from_input_json(
+                &json!({ "entity_type": "action", "entity_id": "action-entity-1" })
+            ),
+            Some(SubjectRef::Action("action-entity-1".to_string()))
+        );
+    }
+
+    #[test]
+    fn subject_from_kind_and_id_rejects_empty_action_ids() {
+        assert_eq!(subject_from_kind_and_id("action", " "), None);
+    }
 }

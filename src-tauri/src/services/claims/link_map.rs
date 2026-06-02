@@ -199,7 +199,7 @@ fn subject_type_and_id(subject: &SubjectRef) -> Option<(CanonicalSubjectType, St
         SubjectRef::Person { id } => Some((CanonicalSubjectType::Person, id.clone())),
         SubjectRef::Project { id } => Some((CanonicalSubjectType::Project, id.clone())),
         SubjectRef::Email { id } => Some((CanonicalSubjectType::Email, id.clone())),
-        SubjectRef::Multi(_) | SubjectRef::Global => None,
+        SubjectRef::Action { .. } | SubjectRef::Multi(_) | SubjectRef::Global => None,
     }
 }
 

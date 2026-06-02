@@ -43,8 +43,7 @@ pub fn upsert_meeting_for_reconcile(
             user_notes: meeting.user_notes.clone(),
             intelligence_state: meeting.intelligence_state.clone(),
         };
-        crate::services::meetings_writer::write(tx, &write_req)
-            .map_err(|e| e.to_string())?;
+        crate::services::meetings_writer::write(tx, &write_req).map_err(|e| e.to_string())?;
         crate::services::signals::emit(
             ctx,
             tx,
@@ -4408,6 +4407,9 @@ fn trust_subject_ref_from_subject(
         }
         crate::db::claim_invalidation::SubjectRef::Meeting { id } => {
             crate::abilities::provenance::SubjectRef::Meeting(id)
+        }
+        crate::db::claim_invalidation::SubjectRef::Action { id } => {
+            crate::abilities::provenance::SubjectRef::Action(id)
         }
         crate::db::claim_invalidation::SubjectRef::Multi(subjects) => {
             crate::abilities::provenance::SubjectRef::Multi(

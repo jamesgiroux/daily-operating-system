@@ -14,6 +14,7 @@
   <link rel="stylesheet" href="../_shared/styles/MagazinePageLayout.module.css">
 
   <link rel="stylesheet" href="../_shared/styles/ActionDetailPage.module.css">
+  <link rel="stylesheet" href="../_shared/styles/FinisMarker.module.css">
   <link rel="stylesheet" href="../_shared/styles/EditableText.module.css">
   <link rel="stylesheet" href="../_shared/styles/editable-date.module.css">
   <link rel="stylesheet" href="../_shared/styles/editable-inline.module.css">
@@ -164,13 +165,17 @@
 
   <template data-state="error-and-completed">
     <div class="ActionDetailPage_errorState">
-      <p class="ActionDetailPage_errorTitle">Something went wrong</p>
+      <p class="ActionDetailPage_errorTitle">Action controls unavailable</p>
       <p class="ActionDetailPage_errorMessage">Action not found</p>
       <button class="ActionDetailPage_retryButton" type="button">Try again</button>
     </div>
     <span class="ActionDetailPage_titleEditable ActionDetailPage_titleCompleted">Completed action title</span>
     <input class="ActionDetailPage_titleInput" value="Editing title" aria-label="Action title" />
   </template>
+
+  <div class="FinisMarker_root" data-ds-tier="pattern" data-ds-name="FinisMarker" data-ds-spec="patterns/FinisMarker.md">
+    <div class="FinisMarker_marks" aria-hidden="true"><span>*</span><span>*</span><span>*</span></div>
+  </div>
 </div>
 
 </main>

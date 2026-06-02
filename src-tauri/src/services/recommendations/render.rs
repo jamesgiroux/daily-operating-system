@@ -771,6 +771,7 @@ fn subject_filter(subject: Option<&SubjectRef>) -> Result<Option<(String, String
         Some(SubjectRef::Account(id)) => Some(("account".to_string(), non_empty_id(id)?)),
         Some(SubjectRef::Project(id)) => Some(("project".to_string(), non_empty_id(id)?)),
         Some(SubjectRef::Person(id)) => Some(("person".to_string(), non_empty_id(id)?)),
+        Some(SubjectRef::Action(id)) => Some(("action".to_string(), non_empty_id(id)?)),
         Some(SubjectRef::Meeting(id)) => Some(("meeting".to_string(), non_empty_id(id)?)),
         Some(SubjectRef::User(id)) => Some(("user".to_string(), non_empty_id(id)?)),
         Some(SubjectRef::Multi(_)) => {
@@ -803,6 +804,7 @@ fn subject_ref_from_storage(raw: &str) -> Result<SubjectRef> {
         "account" => SubjectRef::Account(id),
         "project" => SubjectRef::Project(id),
         "person" => SubjectRef::Person(id),
+        "action" => SubjectRef::Action(id),
         "meeting" => SubjectRef::Meeting(id),
         "user" => SubjectRef::User(id),
         "global" => SubjectRef::Global,

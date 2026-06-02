@@ -1169,7 +1169,8 @@ fn subjects_from_claim_ref(subject: &ClaimSubjectRef) -> BTreeSet<EntitySubject>
             .iter()
             .flat_map(subjects_from_claim_ref)
             .collect::<BTreeSet<_>>(),
-        ClaimSubjectRef::Meeting { .. }
+        ClaimSubjectRef::Action { .. }
+        | ClaimSubjectRef::Meeting { .. }
         | ClaimSubjectRef::Email { .. }
         | ClaimSubjectRef::Global => BTreeSet::new(),
     }
@@ -1187,6 +1188,10 @@ fn subjects_from_ref(subject: &SubjectRef) -> BTreeSet<EntitySubject> {
         }]),
         SubjectRef::Project(id) => BTreeSet::from([EntitySubject {
             entity_type: "project".to_string(),
+            entity_id: id.clone(),
+        }]),
+        SubjectRef::Action(id) => BTreeSet::from([EntitySubject {
+            entity_type: "action".to_string(),
             entity_id: id.clone(),
         }]),
         SubjectRef::Multi(subjects) => subjects

@@ -258,21 +258,94 @@ pub struct CacheStorePayload {
 #[derive(Debug, Clone)]
 pub struct ProducerProjectionInput {
     pub ability_name: &'static str,
-    pub account_id: String,
+    pub subject: ProducerSubject,
     pub composition_id: String,
     pub schema_version: u32,
     pub expected_composition_version: u64,
 }
 
 impl ProducerProjectionInput {
+    fn with_expected_composition_version(&self, expected_composition_version: u64) -> Self {
+        Self {
+            expected_composition_version,
+            ..self.clone()
+        }
+    }
+
     pub fn to_json(&self) -> serde_json::Value {
-        serde_json::json!({
-            "account_id": self.account_id,
+        let mut value = serde_json::json!({
             "composition_id": self.composition_id,
             "schema_version": self.schema_version,
             "expected_composition_version": self.expected_composition_version,
-        })
+        });
+        let object = value.as_object_mut().expect("producer input json object");
+        match &self.subject {
+            ProducerSubject::Entity {
+                entity_type,
+                entity_id,
+            } => {
+                object.insert(
+                    "entity_type".to_string(),
+                    serde_json::Value::from(entity_type.as_str()),
+                );
+                object.insert(
+                    "entity_id".to_string(),
+                    serde_json::Value::from(entity_id.as_str()),
+                );
+                object.insert(
+                    entity_type.input_key().to_string(),
+                    serde_json::Value::from(entity_id.as_str()),
+                );
+            }
+            ProducerSubject::Action { action_id } => {
+                object.insert(
+                    "action_id".to_string(),
+                    serde_json::Value::from(action_id.as_str()),
+                );
+                object.insert(
+                    "subject_ref".to_string(),
+                    serde_json::json!({ "action": action_id.as_str() }),
+                );
+            }
+        }
+        value
     }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ProducerEntityType {
+    Account,
+    Project,
+    Person,
+}
+
+impl ProducerEntityType {
+    pub const fn as_str(self) -> &'static str {
+        match self {
+            Self::Account => "account",
+            Self::Project => "project",
+            Self::Person => "person",
+        }
+    }
+
+    const fn input_key(self) -> &'static str {
+        match self {
+            Self::Account => "account_id",
+            Self::Project => "project_id",
+            Self::Person => "person_id",
+        }
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum ProducerSubject {
+    Entity {
+        entity_type: ProducerEntityType,
+        entity_id: String,
+    },
+    Action {
+        action_id: String,
+    },
 }
 
 #[derive(Debug, Clone)]
@@ -281,6 +354,11 @@ pub struct ProjectedCompositionRender {
     pub cache_hint_token: String,
     pub served_from_cache: bool,
     pub rendered_provenance: Option<RenderedProvenance>,
+}
+
+#[derive(Debug, Clone, Copy, Default)]
+pub struct ProjectCompositionRenderOptions {
+    pub force_refresh: bool,
 }
 
 /// Shared projection pipeline for Tauri, local loopback, and signed surface
@@ -292,18 +370,39 @@ pub async fn project_composition_for_surface<F, Fut>(
     actor: Actor,
     surface_kind: SurfaceKind,
     composition_id: &str,
+    invoke_producer: F,
+) -> Result<ProjectedCompositionRender, BridgeSurfaceError>
+where
+    F: FnMut(ProducerProjectionInput) -> Fut,
+    Fut: Future<Output = Result<AbilityResponseJson, BridgeSurfaceError>>,
+{
+    project_composition_for_surface_with_options(
+        state,
+        actor,
+        surface_kind,
+        composition_id,
+        ProjectCompositionRenderOptions::default(),
+        invoke_producer,
+    )
+    .await
+}
+
+/// Variant of [`project_composition_for_surface`] that lets first-party
+/// mutation flows force a recomposition after service-owned writes. External
+/// surfaces keep the default cache behavior.
+pub async fn project_composition_for_surface_with_options<F, Fut>(
+    state: &AppState,
+    actor: Actor,
+    surface_kind: SurfaceKind,
+    composition_id: &str,
+    options: ProjectCompositionRenderOptions,
     mut invoke_producer: F,
 ) -> Result<ProjectedCompositionRender, BridgeSurfaceError>
 where
     F: FnMut(ProducerProjectionInput) -> Fut,
     Fut: Future<Output = Result<AbilityResponseJson, BridgeSurfaceError>>,
 {
-    let Some(ability_name) = resolve_producer_ability_name(composition_id) else {
-        return Err(BridgeSurfaceError::Validation(
-            "project_composition_unknown_producer".to_string(),
-        ));
-    };
-    let Some(account_id) = extract_account_id_from_composition_id(composition_id) else {
+    let Some(producer_input_template) = parse_producer_projection_input(composition_id, 0) else {
         return Err(BridgeSurfaceError::Validation(
             "project_composition_invalid_id".to_string(),
         ));
@@ -313,19 +412,21 @@ where
     let current_db_version_for_lookup = current_composition_version(state, composition_id).await;
     let current_db_version = i64::try_from(current_db_version_for_lookup).unwrap_or(i64::MAX);
 
-    if let Some(cached) = orchestrator.cache_lookup(
-        &actor,
-        composition_id,
-        current_db_version,
-        surface_kind,
-        FALLBACK_POLICY_VERSION,
-    ) {
-        return Ok(ProjectedCompositionRender {
-            projection: cached.projection,
-            cache_hint_token: cached.cache_hint_token,
-            served_from_cache: true,
-            rendered_provenance: cached.rendered_provenance,
-        });
+    if !options.force_refresh {
+        if let Some(cached) = orchestrator.cache_lookup(
+            &actor,
+            composition_id,
+            current_db_version,
+            surface_kind,
+            FALLBACK_POLICY_VERSION,
+        ) {
+            return Ok(ProjectedCompositionRender {
+                projection: cached.projection,
+                cache_hint_token: cached.cache_hint_token,
+                served_from_cache: true,
+                rendered_provenance: cached.rendered_provenance,
+            });
+        }
     }
 
     let _miss_guard = orchestrator
@@ -340,31 +441,28 @@ where
 
     let guarded_db_version_for_lookup = current_composition_version(state, composition_id).await;
     let guarded_db_version = i64::try_from(guarded_db_version_for_lookup).unwrap_or(i64::MAX);
-    if let Some(cached) = orchestrator.cache_lookup(
-        &actor,
-        composition_id,
-        guarded_db_version,
-        surface_kind,
-        FALLBACK_POLICY_VERSION,
-    ) {
-        return Ok(ProjectedCompositionRender {
-            projection: cached.projection,
-            cache_hint_token: cached.cache_hint_token,
-            served_from_cache: true,
-            rendered_provenance: cached.rendered_provenance,
-        });
+    if !options.force_refresh {
+        if let Some(cached) = orchestrator.cache_lookup(
+            &actor,
+            composition_id,
+            guarded_db_version,
+            surface_kind,
+            FALLBACK_POLICY_VERSION,
+        ) {
+            return Ok(ProjectedCompositionRender {
+                projection: cached.projection,
+                cache_hint_token: cached.cache_hint_token,
+                served_from_cache: true,
+                rendered_provenance: cached.rendered_provenance,
+            });
+        }
     }
 
     let mut expected_composition_version = guarded_db_version_for_lookup;
     let mut response = None;
     for attempt in 0..2 {
-        let producer_input = ProducerProjectionInput {
-            ability_name,
-            account_id: account_id.to_string(),
-            composition_id: composition_id.to_string(),
-            schema_version: 1,
-            expected_composition_version,
-        };
+        let producer_input =
+            producer_input_template.with_expected_composition_version(expected_composition_version);
         match invoke_producer(producer_input).await {
             Ok(invocation_response) => {
                 response = Some(invocation_response);
@@ -466,23 +564,92 @@ pub fn project_from_ability_data(
         .map_err(|e| OrchestratorError::ProjectionFailed(format!("{e:?}")))
 }
 
-/// Map a SurfaceClient request's composition_id back to the producer ability
-/// name. v1.4.2 ships a single producer: `dailyos/account-overview`.
-/// composition IDs of the form `dailyos/account-overview:account:{account_id}`
-/// resolve to the account-overview ability; any other shape is rejected so
-/// the orchestrator never invokes a foreign producer.
+/// Map a request composition_id back to its producer ability name. W3 keeps
+/// this bounded to the four first-party detail composition ids so the
+/// orchestrator never invokes a foreign producer.
 pub fn resolve_producer_ability_name(composition_id: &str) -> Option<&'static str> {
-    if composition_id.starts_with("dailyos/account-overview:") {
-        Some("dailyos/account-overview")
-    } else {
-        None
-    }
+    parse_producer_projection_input(composition_id, 0).map(|input| input.ability_name)
 }
 
 /// Extract the account_id encoded in an `account-overview` composition_id.
 /// Pattern: `dailyos/account-overview:account:{account_id}`.
 pub fn extract_account_id_from_composition_id(composition_id: &str) -> Option<&str> {
-    composition_id.strip_prefix("dailyos/account-overview:account:")
+    let parts = split_composition_id(composition_id)?;
+    (parts.ability == "dailyos/account-overview" && parts.subject_key == "account")
+        .then_some(parts.subject_id)
+}
+
+pub fn parse_producer_projection_input(
+    composition_id: &str,
+    expected_composition_version: u64,
+) -> Option<ProducerProjectionInput> {
+    let parts = split_composition_id(composition_id)?;
+    let (ability_name, subject) = match (parts.ability, parts.subject_key) {
+        ("dailyos/account-overview", "account") => (
+            "dailyos/account-overview",
+            ProducerSubject::Entity {
+                entity_type: ProducerEntityType::Account,
+                entity_id: parts.subject_id.to_string(),
+            },
+        ),
+        ("dailyos/project-overview", "project") => (
+            "dailyos/project-overview",
+            ProducerSubject::Entity {
+                entity_type: ProducerEntityType::Project,
+                entity_id: parts.subject_id.to_string(),
+            },
+        ),
+        ("dailyos/person-overview", "person") => (
+            "dailyos/person-overview",
+            ProducerSubject::Entity {
+                entity_type: ProducerEntityType::Person,
+                entity_id: parts.subject_id.to_string(),
+            },
+        ),
+        ("dailyos/action-detail", "action") => (
+            "dailyos/action-detail",
+            ProducerSubject::Action {
+                action_id: parts.subject_id.to_string(),
+            },
+        ),
+        _ => return None,
+    };
+    Some(ProducerProjectionInput {
+        ability_name,
+        subject,
+        composition_id: composition_id.to_string(),
+        schema_version: 1,
+        expected_composition_version,
+    })
+}
+
+#[derive(Debug, Clone, Copy)]
+struct ParsedCompositionId<'a> {
+    ability: &'a str,
+    subject_key: &'a str,
+    subject_id: &'a str,
+}
+
+fn split_composition_id(composition_id: &str) -> Option<ParsedCompositionId<'_>> {
+    if composition_id.chars().any(char::is_control) {
+        return None;
+    }
+    let mut parts = composition_id.split(':');
+    let ability = parts.next()?;
+    let subject_key = parts.next()?;
+    let subject_id = parts.next()?;
+    if parts.next().is_some()
+        || ability.trim().is_empty()
+        || subject_key.trim().is_empty()
+        || subject_id.trim().is_empty()
+    {
+        return None;
+    }
+    Some(ParsedCompositionId {
+        ability,
+        subject_key,
+        subject_id,
+    })
 }
 
 #[derive(Debug, thiserror::Error)]
@@ -717,11 +884,38 @@ mod tests {
 
     #[test]
     fn unknown_producer_rejected() {
-        assert_eq!(
-            resolve_producer_ability_name("dailyos/account-overview:account:x"),
-            Some("dailyos/account-overview")
-        );
+        let valid_ids = [
+            (
+                "dailyos/account-overview:account:acct-1",
+                "dailyos/account-overview",
+            ),
+            (
+                "dailyos/project-overview:project:project-1",
+                "dailyos/project-overview",
+            ),
+            (
+                "dailyos/person-overview:person:person-1",
+                "dailyos/person-overview",
+            ),
+            (
+                "dailyos/action-detail:action:action-1",
+                "dailyos/action-detail",
+            ),
+        ];
+        for (composition_id, ability_name) in valid_ids {
+            assert_eq!(
+                resolve_producer_ability_name(composition_id),
+                Some(ability_name)
+            );
+        }
+
         assert!(resolve_producer_ability_name("foreign/ability").is_none());
+        assert!(
+            resolve_producer_ability_name("dailyos/project-overview:person:person-1").is_none()
+        );
+        assert!(
+            resolve_producer_ability_name("dailyos/account-overview:account:acct:extra").is_none()
+        );
     }
 
     #[test]
@@ -731,5 +925,77 @@ mod tests {
             Some("acct-42")
         );
         assert!(extract_account_id_from_composition_id("dailyos/other:foo").is_none());
+        assert!(extract_account_id_from_composition_id(
+            "dailyos/account-overview:account:acct-42:extra"
+        )
+        .is_none());
+    }
+
+    #[test]
+    fn producer_projection_input_emits_subject_specific_json() {
+        let project =
+            parse_producer_projection_input("dailyos/project-overview:project:project-42", 9)
+                .expect("project input");
+        assert_eq!(project.ability_name, "dailyos/project-overview");
+        assert_eq!(
+            project.subject,
+            ProducerSubject::Entity {
+                entity_type: ProducerEntityType::Project,
+                entity_id: "project-42".to_string(),
+            }
+        );
+        assert_eq!(
+            project.to_json(),
+            serde_json::json!({
+                "composition_id": "dailyos/project-overview:project:project-42",
+                "schema_version": 1,
+                "expected_composition_version": 9,
+                "entity_type": "project",
+                "entity_id": "project-42",
+                "project_id": "project-42",
+            })
+        );
+
+        let action = parse_producer_projection_input("dailyos/action-detail:action:action-42", 12)
+            .expect("action input");
+        assert_eq!(action.ability_name, "dailyos/action-detail");
+        assert_eq!(
+            action.subject,
+            ProducerSubject::Action {
+                action_id: "action-42".to_string(),
+            }
+        );
+        assert_eq!(
+            action.to_json(),
+            serde_json::json!({
+                "composition_id": "dailyos/action-detail:action:action-42",
+                "schema_version": 1,
+                "expected_composition_version": 12,
+                "action_id": "action-42",
+                "subject_ref": { "action": "action-42" },
+            })
+        );
+    }
+
+    #[test]
+    fn producer_projection_input_fails_closed_for_malformed_ids() {
+        let malformed = [
+            "",
+            "dailyos/account-overview:account:",
+            "dailyos/account-overview::acct-1",
+            "dailyos/account-overview:account:acct-1:extra",
+            "dailyos/account-overview:project:project-1",
+            "dailyos/project-overview:account:acct-1",
+            "dailyos/person-overview:action:action-1",
+            "dailyos/action-detail:person:person-1",
+            "dailyos/action-detail:action:action-1\n",
+            "dailyos/unknown:account:acct-1",
+        ];
+        for composition_id in malformed {
+            assert!(
+                parse_producer_projection_input(composition_id, 0).is_none(),
+                "{composition_id:?} must be rejected"
+            );
+        }
     }
 }

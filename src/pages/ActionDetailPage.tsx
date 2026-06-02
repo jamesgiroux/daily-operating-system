@@ -1,18 +1,35 @@
 import { useState, useEffect, useCallback, useRef, useMemo } from "react";
+import type { ReactNode } from "react";
 import { useParams, Link, useNavigate } from "@tanstack/react-router";
 import { invoke } from "@tauri-apps/api/core";
 import { toast } from "sonner";
 import { useRegisterMagazineShell } from "@/hooks/useMagazineShell";
+import { useRevealObserver } from "@/hooks/useRevealObserver";
+import {
+  useChapterLayout,
+  type RenderableCompositionBlock,
+  type RenderableCompositionSection,
+} from "@/hooks/useChapterLayout";
+import { useProjectedComposition } from "@/hooks/useProjectedComposition";
 import { PriorityPicker } from "@/components/ui/priority-picker";
 import { EntityPicker } from "@/components/ui/entity-picker";
 import { EditableInline } from "@/components/ui/editable-inline";
 import { EditableTextarea } from "@/components/ui/editable-textarea";
 import { EditableDate } from "@/components/ui/editable-date";
 import { EditableText } from "@/components/ui/EditableText";
+import { EditorialLoading } from "@/components/editorial/EditorialLoading";
+import { EditorialError } from "@/components/editorial/EditorialError";
+import { EditorialEmpty } from "@/components/editorial/EditorialEmpty";
+import { FinisMarker } from "@/components/editorial/FinisMarker";
+import { FolioRefreshButton } from "@/components/ui/folio-refresh-button";
+import { ReactBlockRenderer } from "@/components/composition/ReactBlockRenderer";
 import { formatFullDate } from "@/lib/utils";
 import { classifyAction } from "@/lib/entity-utils";
-import { Check, Circle, ExternalLink } from "lucide-react";
+import { Check, Circle, ExternalLink, FileText, Flag, Link as LinkIcon, ListChecks, Send } from "lucide-react";
 import type { ActionDetail, LinearPushResult } from "@/types";
+import type { ProjectedBlock } from "@/services/composition/contracts";
+import shared from "@/styles/entity-detail.module.css";
+import accountStyles from "./AccountDetailPage.module.css";
 import s from "./ActionDetailPage.module.css";
 
 // =============================================================================
@@ -33,6 +50,35 @@ function priorityAccent(priority: number | string): string {
   return "var(--color-garden-larkspur)";
 }
 
+const SECTION_ICONS: Record<string, ReactNode> = {
+  headline: <ListChecks size={18} strokeWidth={1.5} />,
+  status: <Check size={18} strokeWidth={1.5} />,
+  priority: <Flag size={18} strokeWidth={1.5} />,
+  context: <FileText size={18} strokeWidth={1.5} />,
+  reference: <LinkIcon size={18} strokeWidth={1.5} />,
+  linear: <Send size={18} strokeWidth={1.5} />,
+  "action-bar": <ListChecks size={18} strokeWidth={1.5} />,
+};
+
+function actionTitleFromBlocks(
+  blocks: ProjectedBlock[],
+  detail: ActionDetail | null,
+  actionId: string | undefined,
+): string {
+  const overview = blocks.find((block) => block.selected_known_type_id === "account_overview");
+  const action = overview?.payload.action;
+  if (action && typeof action === "object" && !Array.isArray(action)) {
+    const title = (action as Record<string, unknown>).title;
+    if (typeof title === "string" && title.trim()) return title;
+  }
+  const account = overview?.payload.account;
+  if (account && typeof account === "object" && !Array.isArray(account)) {
+    const displayName = (account as Record<string, unknown>).display_name;
+    if (typeof displayName === "string" && displayName.trim()) return displayName;
+  }
+  return detail?.title ?? actionId ?? "Action";
+}
+
 // =============================================================================
 // Main component
 // =============================================================================
@@ -46,6 +92,13 @@ export default function ActionDetailPage() {
   const [toggling, setToggling] = useState(false);
   const [saveStatus, setSaveStatus] = useState<"idle" | "saving" | "saved">("idle");
   const saveTimerRef = useRef<ReturnType<typeof setTimeout>>();
+  const composition = useProjectedComposition(
+    actionId ? { entityType: "action", entityId: actionId } : undefined,
+  );
+  const projection = composition.data?.projection ?? null;
+  const layout = useChapterLayout({ projection, entityType: "action" });
+  const visibleSections = layout.view.sections;
+  const actionTitle = actionTitleFromBlocks(projection?.blocks ?? [], detail, actionId);
 
   // Linear push state
   const [linearEnabled, setLinearEnabled] = useState(false);
@@ -53,19 +106,53 @@ export default function ActionDetailPage() {
   const [selectedTeamId, setSelectedTeamId] = useState<string | null>(null);
   const [pushing, setPushing] = useState(false);
 
+  useRevealObserver(!composition.loading && !!projection);
+
+  const chapters = useMemo(
+    () =>
+      visibleSections.map(({ section, label }) => ({
+        id: section.section_id,
+        label,
+        icon: SECTION_ICONS[section.section_id] ?? <FileText size={18} strokeWidth={1.5} />,
+      })),
+    [visibleSections],
+  );
+
   // Register magazine shell
   const shellConfig = useMemo(
     () => ({
-      folioLabel: detail?.title ? (detail.title.length > 30 ? detail.title.slice(0, 30) + "…" : detail.title) : "Action",
+      folioLabel: actionTitle.length > 30 ? actionTitle.slice(0, 30) + "…" : actionTitle,
       atmosphereColor: "terracotta" as const,
       activePage: "actions" as const,
       breadcrumbs: [
         { label: "Actions", onClick: () => navigate({ to: "/actions", search: { search: undefined } }) },
-        { label: detail?.title ?? "Action" },
+        { label: actionTitle },
       ],
-      folioStatusText: saveStatus === "saving" ? "Saving…" : saveStatus === "saved" ? "✓ Saved" : undefined,
+      chapters,
+      folioStatusText: composition.loading
+        ? "Composing..."
+        : saveStatus === "saving"
+          ? "Saving..."
+          : saveStatus === "saved"
+            ? "Saved"
+            : composition.data?.served_from_cache
+              ? "Projected from cache"
+              : undefined,
+      folioActions: (
+        <div className={shared.folioActions}>
+          <FolioRefreshButton onClick={composition.refetch} loading={composition.loading} />
+        </div>
+      ),
     }),
-    [detail?.title, navigate, saveStatus],
+    [
+      actionTitle,
+      chapters,
+      composition.data?.served_from_cache,
+      composition.loading,
+      composition.refetch,
+      navigate,
+      saveStatus,
+    ],
   );
   useRegisterMagazineShell(shellConfig);
 
@@ -84,6 +171,13 @@ export default function ActionDetailPage() {
       setLoading(false);
     }
   }, [actionId]);
+
+  const reloadAfterActionMutation = useCallback(async () => {
+    await Promise.all([
+      load(),
+      composition.refetch({ forceRefresh: true }),
+    ]);
+  }, [composition.refetch, load]);
 
   useEffect(() => {
     load();
@@ -112,7 +206,7 @@ export default function ActionDetailPage() {
       } else {
         await invoke("complete_action", { id: detail.id });
       }
-      await load();
+      await reloadAfterActionMutation();
     } finally {
       setToggling(false);
     }
@@ -126,7 +220,7 @@ export default function ActionDetailPage() {
       await invoke("update_action", {
         request: { id: detail.id, ...updates },
       });
-      await load();
+      await reloadAfterActionMutation();
       setSaveStatus("saved");
       saveTimerRef.current = setTimeout(() => setSaveStatus("idle"), 1500);
     } catch (e) {
@@ -146,7 +240,7 @@ export default function ActionDetailPage() {
         title: detail.title,
       });
       toast.success(`Created ${result.identifier}`);
-      await load();
+      await reloadAfterActionMutation();
     } catch (e) {
       toast.error(`Push failed: ${e instanceof Error ? e.message : String(e)}`);
     } finally {
@@ -154,40 +248,65 @@ export default function ActionDetailPage() {
     }
   }
 
-  // ── Loading state ──
+  if (composition.loading && !projection) return <EditorialLoading />;
+
+  if (composition.error) {
+    return <EditorialError message={composition.error} onRetry={composition.refetch} />;
+  }
+
+  if (!projection || projection.sections.length === 0 || projection.blocks.length === 0) {
+    return (
+      <EditorialEmpty
+        title="No action composition"
+        message="DailyOS has not produced an action detail surface yet."
+      />
+    );
+  }
+
+  const renderBlock = (item: RenderableCompositionBlock) => (
+    <ReactBlockRenderer
+      key={item.block.block_id}
+      block={item.block}
+      entityId={actionId}
+      entityType="action"
+      renderedProvenance={composition.renderedProvenance}
+    />
+  );
+
+  const renderSectionTitle = (section: RenderableCompositionSection) => (
+    <h2 className={accountStyles.compositionSectionTitle}>{section.label}</h2>
+  );
+
+  let controlsContent: ReactNode;
 
   if (loading) {
-    return (
-      <div className={`editorial-loading ${s.loadingSkeleton}`}>
-        <div className={`${s.skeletonBar} ${s.skeletonTitle}`} />
-        <div className={`${s.skeletonBar} ${s.skeletonHeadline}`} />
-        <div className={`${s.skeletonBar} ${s.skeletonSubhead}`} />
-        <div className={s.skeletonRule} />
-        <div className={s.skeletonBody}>
-          <div className={`${s.skeletonBlock} ${s.skeletonBlockSmall}`} />
-          <div className={`${s.skeletonBlock} ${s.skeletonBlockLarge}`} />
+    controlsContent = (
+      <section className={s.controlsPanel} aria-label="Action controls">
+        <div className={`editorial-loading ${s.loadingSkeleton}`}>
+          <div className={`${s.skeletonBar} ${s.skeletonTitle}`} />
+          <div className={`${s.skeletonBar} ${s.skeletonHeadline}`} />
+          <div className={`${s.skeletonBar} ${s.skeletonSubhead}`} />
+          <div className={s.skeletonRule} />
+          <div className={s.skeletonBody}>
+            <div className={`${s.skeletonBlock} ${s.skeletonBlockSmall}`} />
+            <div className={`${s.skeletonBlock} ${s.skeletonBlockLarge}`} />
+          </div>
         </div>
-      </div>
+      </section>
     );
-  }
-
-  // ── Error state ──
-
-  if (error || !detail) {
-    return (
-      <div className={s.errorState}>
-        <p className={s.errorTitle}>
-          Something went wrong
-        </p>
-        <p className={s.errorMessage}>
-          {error ?? "Action not found"}
-        </p>
-        <button onClick={load} className={s.retryButton}>
-          Try again
-        </button>
-      </div>
+  } else if (error || !detail) {
+    controlsContent = (
+      <section className={s.controlsPanel} aria-label="Action controls">
+        <div className={s.errorState}>
+          <p className={s.errorTitle}>Action controls unavailable</p>
+          <p className={s.errorMessage}>{error ?? "Action not found"}</p>
+          <button onClick={load} className={s.retryButton}>
+            Try again
+          </button>
+        </div>
+      </section>
     );
-  }
+  } else {
 
   const isCompleted = detail.status === "completed";
   const hasSource = detail.sourceId && detail.sourceMeetingTitle;
@@ -204,8 +323,9 @@ export default function ActionDetailPage() {
         ? "var(--color-spice-turmeric)"
         : undefined;
 
-  return (
-    <div className={s.container}>
+  controlsContent = (
+    <section className={s.controlsPanel} aria-label="Action controls">
+      <div className={s.container}>
 
         {/* ── Title band ── */}
         <div className={s.titleBand}>
@@ -477,6 +597,55 @@ export default function ActionDetailPage() {
             {isCompleted ? "Reopen" : "Mark Complete"}
           </button>
         </div>
-    </div>
+      </div>
+    </section>
+  );
+  }
+
+  return (
+    <main
+      className={accountStyles.compositionSurface}
+      data-composition-id={projection.composition_id}
+      data-composition-version={projection.composition_version ?? 0}
+      data-fallback-policy-version={projection.fallback_policy_version}
+    >
+      {visibleSections.map((renderableSection) => {
+        const section = renderableSection.section;
+        const isHeadline = section.section_id === "headline";
+        return (
+          <section
+            key={section.section_id}
+            id={section.section_id}
+            className={isHeadline ? accountStyles.compositionMasthead : accountStyles.compositionSection}
+            data-section-id={section.section_id}
+            data-section-layout={section.layout}
+            data-section-salience={section.salience.band}
+          >
+            {isHeadline ? (
+              <div className={accountStyles.compositionMastheadGrid}>
+                {renderableSection.blocks.map(renderBlock)}
+              </div>
+            ) : (
+              <>
+                <div className={accountStyles.compositionSectionLabel}>{renderableSection.label}</div>
+                <div className={accountStyles.compositionSectionBody}>
+                  <header className={accountStyles.compositionSectionHeader}>
+                    <div>{renderSectionTitle(renderableSection)}</div>
+                    {section.salience.reason && (
+                      <p className={accountStyles.compositionSectionMeta}>{section.salience.reason}</p>
+                    )}
+                  </header>
+                  <div className={accountStyles.compositionBlockStack}>
+                    {renderableSection.blocks.map(renderBlock)}
+                  </div>
+                </div>
+              </>
+            )}
+          </section>
+        );
+      })}
+      {controlsContent}
+      <FinisMarker />
+    </main>
   );
 }

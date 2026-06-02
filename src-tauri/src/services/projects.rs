@@ -322,20 +322,7 @@ pub async fn update_project_field(
             let rng = crate::services::context::SystemRng;
             let ext = crate::services::context::ExternalClients::default();
             let ctx = crate::services::context::ServiceContext::new_live(&clock, &rng, &ext);
-            crate::services::signals::emit_or_log(
-                &ctx,
-                db,
-                "project",
-                &project_id,
-                "field_updated",
-                "user_edit",
-                Some(&format!(
-                    "{{\"field\":\"{}\",\"value\":\"{}\"}}",
-                    field,
-                    value.replace('"', "\\\"")
-                )),
-                0.8,
-            );
+            emit_project_field_change_signals(&ctx, db, &project_id, &field, &value);
 
             // Self-healing: event-driven trigger evaluation
             #[allow(clippy::let_underscore_must_use, reason = "intentional best-effort discard; preserves existing non-blocking behavior")]
@@ -438,29 +425,40 @@ pub async fn update_project_notes(
                 let rng = crate::services::context::SystemRng;
                 let ext = crate::services::context::ExternalClients::default();
                 let ctx = crate::services::context::ServiceContext::new_live(&clock, &rng, &ext);
-                crate::services::signals::emit_or_log(
-                    &ctx,
-                    db,
-                    "project",
-                    &project_id,
-                    "field_updated",
-                    "user_edit",
-                    Some(&format!(
-                        "{{\"field\":\"notes\",\"value\":\"{}\"}}",
-                        notes
-                            .chars()
-                            .take(100)
-                            .collect::<String>()
-                            .replace('"', "\\\"")
-                    )),
-                    0.8,
-                );
+                let notes_preview = notes.chars().take(100).collect::<String>();
+                emit_project_field_change_signals(&ctx, db, &project_id, "notes", &notes_preview);
             }
 
             Ok(())
         })
         .await
         .map_err(String::from)
+}
+
+fn emit_project_field_change_signals(
+    ctx: &crate::services::context::ServiceContext<'_>,
+    db: &ActionDb,
+    project_id: &str,
+    field: &str,
+    value: &str,
+) {
+    let payload = serde_json::json!({
+        "field": field,
+        "value": value,
+    })
+    .to_string();
+    for signal_type in ["field_updated", "project.field_changed"] {
+        crate::services::signals::emit_or_log(
+            ctx,
+            db,
+            "project",
+            project_id,
+            signal_type,
+            "user_edit",
+            Some(&payload),
+            0.8,
+        );
+    }
 }
 
 /// Bulk-create projects from a list of names.
@@ -581,4 +579,75 @@ pub fn archive_project(
     }
 
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::db::test_utils::test_db;
+    use crate::services::context::{ExternalClients, FixedClock, SeedableRng, ServiceContext};
+    use chrono::TimeZone;
+    use rusqlite::params;
+
+    fn test_context<'a>(
+        clock: &'a FixedClock,
+        rng: &'a SeedableRng,
+        external: &'a ExternalClients,
+    ) -> ServiceContext<'a> {
+        ServiceContext::test_live(clock, rng, external)
+    }
+
+    fn signal_count(db: &ActionDb, signal_type: &str) -> i64 {
+        db.conn_ref()
+            .query_row(
+                "SELECT COUNT(*)
+                 FROM signal_events
+                 WHERE entity_type = 'project'
+                   AND entity_id = 'project-signal-1'
+                   AND signal_type = ?1",
+                params![signal_type],
+                |row| row.get(0),
+            )
+            .expect("count signal rows")
+    }
+
+    fn signal_payload(db: &ActionDb, signal_type: &str) -> serde_json::Value {
+        let value: String = db
+            .conn_ref()
+            .query_row(
+                "SELECT value
+                 FROM signal_events
+                 WHERE entity_type = 'project'
+                   AND entity_id = 'project-signal-1'
+                   AND signal_type = ?1",
+                params![signal_type],
+                |row| row.get(0),
+            )
+            .expect("read signal payload");
+        serde_json::from_str(&value).expect("payload is valid json")
+    }
+
+    #[test]
+    fn project_field_changes_emit_legacy_and_composition_invalidation_signals() {
+        let db = test_db();
+        let clock = FixedClock::new(chrono::Utc.with_ymd_and_hms(2026, 5, 15, 12, 0, 0).unwrap());
+        let rng = SeedableRng::new(42);
+        let external = ExternalClients::default();
+        let ctx = test_context(&clock, &rng, &external);
+
+        emit_project_field_change_signals(
+            &ctx,
+            &db,
+            "project-signal-1",
+            "notes",
+            "quoted \" field value",
+        );
+
+        assert_eq!(signal_count(&db, "field_updated"), 1);
+        assert_eq!(signal_count(&db, "project.field_changed"), 1);
+
+        let payload = signal_payload(&db, "project.field_changed");
+        assert_eq!(payload["field"], "notes");
+        assert_eq!(payload["value"], "quoted \" field value");
+    }
 }

@@ -214,6 +214,31 @@ describe("useChapterLayout", () => {
     expect(result.current.view.sections[1].blocks[0].variant).toBe("compact");
   });
 
+  it("keeps action layouts local instead of calling persisted entity overlay commands", async () => {
+    const { result } = renderHook(() =>
+      useChapterLayout({ projection: accountProjection(), entityType: "action" }),
+    );
+
+    await waitFor(() => expect(result.current.loading).toBe(false));
+    expect(invokeMock).not.toHaveBeenCalled();
+
+    act(() => {
+      result.current.setBlockHidden("risk-a", true);
+    });
+
+    expect(invokeMock).not.toHaveBeenCalled();
+    expect(result.current.saving).toBe(false);
+    expect(result.current.layoutRevision).toBe(0);
+    expect(result.current.view.hiddenItems.map((item) => item.id)).toEqual(["risk-a"]);
+
+    await act(async () => {
+      await result.current.resetLayout();
+    });
+
+    expect(invokeMock).not.toHaveBeenCalled();
+    expect(result.current.view.hiddenItems).toEqual([]);
+  });
+
   it("optimistically saves block visibility and accepts the saved revision", async () => {
     const save = deferred<LayoutOverlayResponse>();
     invokeMock

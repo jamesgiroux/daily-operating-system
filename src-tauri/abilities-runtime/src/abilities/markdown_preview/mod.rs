@@ -57,7 +57,10 @@ mod tests {
             .expect("markdown preview ability is registered");
 
         assert_eq!(descriptor.category, AbilityCategory::Read);
-        assert_eq!(descriptor.policy.allowed_actors, &[ActorKind::SurfaceClient]);
+        assert_eq!(
+            descriptor.policy.allowed_actors,
+            &[ActorKind::SurfaceClient]
+        );
         assert_eq!(descriptor.policy.required_scopes, &[MARKDOWN_PREVIEW_SCOPE]);
         assert_eq!(descriptor.policy.mcp_exposure, McpExposure::None);
         assert!(!descriptor.policy.may_publish);
@@ -72,8 +75,8 @@ mod tests {
             SurfaceScope::new("read.composition"),
             SurfaceScope::new("submit.feedback"),
         ]);
-        let scopes = ScopeSet::new([SurfaceScope::new("read.account_overview")])
-            .expect("scope set");
+        let scopes =
+            ScopeSet::new([SurfaceScope::new("read.account_overview")]).expect("scope set");
         let registry = AbilityRegistry::global_checked().expect("registry");
         let clock = FixedClock::new(chrono::Utc::now());
         let rng = SeedableRng::new(7);

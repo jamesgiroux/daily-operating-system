@@ -1,21 +1,36 @@
-import type { ProjectedBlock, RenderedProvenance } from "@/services/composition/contracts";
+import type {
+  CompositionFeedbackEntityType,
+  ProjectedBlock,
+  RenderedProvenance,
+} from "@/services/composition/contracts";
 import { BLOCK_RENDERERS, GenericTextBlock } from "@/components/composition/blocks/BlockComponents";
 import pageStyles from "@/pages/AccountDetailPage.module.css";
 
 export interface ReactBlockRendererProps {
   block: ProjectedBlock;
   accountId?: string;
+  entityId?: string;
+  entityType?: CompositionFeedbackEntityType;
   renderedProvenance?: RenderedProvenance | null;
   editMode?: boolean;
 }
 
-export function ReactBlockRenderer({ block, accountId, renderedProvenance, editMode = false }: ReactBlockRendererProps) {
+export function ReactBlockRenderer({
+  block,
+  accountId,
+  entityId,
+  entityType = "account",
+  renderedProvenance,
+  editMode = false,
+}: ReactBlockRendererProps) {
   const Renderer = BLOCK_RENDERERS[block.selected_known_type_id as keyof typeof BLOCK_RENDERERS];
+  const feedbackEntityId = entityId ?? accountId;
   if (Renderer) {
     return (
       <Renderer
         block={block}
-        accountId={accountId}
+        accountId={feedbackEntityId}
+        entityType={entityType}
         payload={block.payload}
         renderedProvenance={renderedProvenance}
         editMode={editMode}
@@ -26,7 +41,8 @@ export function ReactBlockRenderer({ block, accountId, renderedProvenance, editM
     return (
       <GenericTextBlock
         block={block}
-        accountId={accountId}
+        accountId={feedbackEntityId}
+        entityType={entityType}
         payload={block.payload}
         renderedProvenance={renderedProvenance}
         editMode={editMode}

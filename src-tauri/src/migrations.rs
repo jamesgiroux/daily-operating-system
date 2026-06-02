@@ -1111,6 +1111,13 @@ const MIGRATIONS: &[Migration] = &[
         version: 275,
         sql: include_str!("migrations/275_composition_layout_overlays.sql"),
     },
+    // v1.5.0 W3 — Action Detail uses first-class Action claim subjects, so
+    // actions need the same per-subject invalidation watermark as other claim
+    // subjects.
+    Migration::Sql {
+        version: 276,
+        sql: include_str!("migrations/276_action_claim_version.sql"),
+    },
 ];
 
 const V155_SHADOW_TRUST_VERSION: i64 = 1_401_003;

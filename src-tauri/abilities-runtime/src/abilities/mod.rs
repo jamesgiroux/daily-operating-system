@@ -1,6 +1,7 @@
 //! Ability runtime modules.
 
 pub mod account_overview;
+pub mod action_detail;
 pub mod claim_receipt;
 pub mod claims;
 pub mod composition;
@@ -19,7 +20,9 @@ pub mod list_pagination;
 pub mod list_people;
 pub mod list_projects;
 pub mod markdown_preview;
+pub mod person_overview;
 pub mod prepare_meeting;
+pub mod project_overview;
 pub mod provenance;
 pub mod recommendations;
 pub mod registry;

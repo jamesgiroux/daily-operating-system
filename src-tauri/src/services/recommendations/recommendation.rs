@@ -82,6 +82,9 @@ fn subject_ref_for_commit_claim(
         SubjectRef::Account(id) => subject_json("account", id)?,
         SubjectRef::Project(id) => subject_json("project", id)?,
         SubjectRef::Person(id) => subject_json("person", id)?,
+        SubjectRef::Action(_) => {
+            return Err(RecommendationProposalError::UnsupportedSubjectKind { kind: "action" });
+        }
         SubjectRef::Meeting(_) => {
             return Err(RecommendationProposalError::UnsupportedSubjectKind { kind: "meeting" });
         }

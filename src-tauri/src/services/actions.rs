@@ -102,6 +102,30 @@ fn sync_action_claim_after_mutation(
     }
 }
 
+fn emit_action_composition_field_changed_signal(
+    ctx: &ServiceContext<'_>,
+    db: &ActionDb,
+    action_id: &str,
+    field: &str,
+    value: serde_json::Value,
+) {
+    let payload = serde_json::json!({
+        "field": field,
+        "value": value,
+    })
+    .to_string();
+    crate::services::signals::emit_or_log(
+        ctx,
+        db,
+        "action",
+        action_id,
+        "action.field_changed",
+        "user_edit",
+        Some(&payload),
+        0.8,
+    );
+}
+
 /// Complete an action and emit the completion signal.
 pub fn complete_action(
     ctx: &ServiceContext<'_>,
@@ -113,6 +137,13 @@ pub fn complete_action(
     let action = db.get_action_by_id(id).ok().flatten();
     db.complete_action(id).map_err(|e| e.to_string())?;
     sync_action_claim_after_mutation(ctx, db, id, "complete");
+    emit_action_composition_field_changed_signal(
+        ctx,
+        db,
+        id,
+        "status",
+        serde_json::Value::from("completed"),
+    );
 
     if let Some(ref action) = action {
         let (entity_type, entity_id) = action_entity_info(action, id);
@@ -167,6 +198,13 @@ pub fn reopen_action(
     let action = db.get_action_by_id(id).ok().flatten();
     db.reopen_action(id).map_err(|e| e.to_string())?;
     sync_action_claim_after_mutation(ctx, db, id, "reopen");
+    emit_action_composition_field_changed_signal(
+        ctx,
+        db,
+        id,
+        "status",
+        serde_json::Value::from("unstarted"),
+    );
 
     if let Some(ref action) = action {
         let (entity_type, entity_id) = action_entity_info(action, id);
@@ -382,6 +420,13 @@ pub fn update_action_priority(
     db.update_action_priority(id, priority)
         .map_err(|e| e.to_string())?;
     sync_action_claim_after_mutation(ctx, db, id, "priority_update");
+    emit_action_composition_field_changed_signal(
+        ctx,
+        db,
+        id,
+        "priority",
+        serde_json::Value::from(priority),
+    );
 
     if let Some(ref action) = action {
         let (entity_type, entity_id) = action_entity_info(action, id);
@@ -737,20 +782,27 @@ pub(crate) fn apply_update_action(
         .map_err(|e| e.to_string())?
         .ok_or_else(|| format!("Action not found: {id}"))?;
 
+    let mut changed_fields: Vec<(&'static str, serde_json::Value)> = Vec::new();
     if let Some(t) = title {
+        changed_fields.push(("title", serde_json::Value::from(t.clone())));
         action.title = t;
     }
     if let Some(p) = priority {
+        changed_fields.push(("priority", serde_json::Value::from(p.clone())));
         action.priority = p.parse::<i32>().unwrap_or(3);
     }
     if clear_due_date == Some(true) {
         action.due_date = None;
+        changed_fields.push(("due_date", serde_json::Value::Null));
     } else if let Some(d) = due_date {
+        changed_fields.push(("due_date", serde_json::Value::from(d.clone())));
         action.due_date = Some(d);
     }
     if clear_context == Some(true) {
         action.context = None;
+        changed_fields.push(("context", serde_json::Value::Null));
     } else if let Some(c) = context {
+        changed_fields.push(("context", serde_json::Value::from(c.clone())));
         action.context = Some(c);
     }
     if clear_owner == Some(true) {
@@ -758,7 +810,9 @@ pub(crate) fn apply_update_action(
         action.owner_entity_id = None;
         action.owner_confidence = None;
         action.owner_source = Some("user_reassigned".to_string());
+        changed_fields.push(("owner_raw", serde_json::Value::Null));
     } else if let Some(owner) = owner_raw {
+        changed_fields.push(("owner_raw", serde_json::Value::from(owner.clone())));
         let commitment_id = action
             .commitment_id
             .clone()
@@ -781,28 +835,39 @@ pub(crate) fn apply_update_action(
     }
     if clear_source_label == Some(true) {
         action.source_label = None;
+        changed_fields.push(("source_label", serde_json::Value::Null));
     } else if let Some(s) = source_label {
+        changed_fields.push(("source_label", serde_json::Value::from(s.clone())));
         action.source_label = Some(s);
     }
     if clear_account == Some(true) {
         action.account_id = None;
+        changed_fields.push(("account_id", serde_json::Value::Null));
     } else if let Some(a) = account_id {
+        changed_fields.push(("account_id", serde_json::Value::from(a.clone())));
         action.account_id = Some(a);
     }
     if clear_project == Some(true) {
         action.project_id = None;
+        changed_fields.push(("project_id", serde_json::Value::Null));
     } else if let Some(p) = project_id {
+        changed_fields.push(("project_id", serde_json::Value::from(p.clone())));
         action.project_id = Some(p);
     }
     if clear_person == Some(true) {
         action.person_id = None;
+        changed_fields.push(("person_id", serde_json::Value::Null));
     } else if let Some(p) = person_id {
+        changed_fields.push(("person_id", serde_json::Value::from(p.clone())));
         action.person_id = Some(p);
     }
 
     action.updated_at = ctx.clock.now().to_rfc3339();
     db.upsert_action(&action).map_err(|e| e.to_string())?;
     sync_action_claim_after_mutation(ctx, db, &action.id, "update");
+    for (field, value) in changed_fields {
+        emit_action_composition_field_changed_signal(ctx, db, &action.id, field, value);
+    }
     Ok(())
 }
 

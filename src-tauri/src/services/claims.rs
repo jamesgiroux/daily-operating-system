@@ -2841,6 +2841,7 @@ fn compact_subject_ref(value: &serde_json::Value) -> Result<String, ClaimError> 
 pub(crate) fn canonical_subject_ref(subject: &SubjectRef) -> Result<String, ClaimError> {
     let (kind, id) = match subject {
         SubjectRef::Account { id } => ("account", id.as_str()),
+        SubjectRef::Action { id } => ("action", id.as_str()),
         SubjectRef::Meeting { id } => ("meeting", id.as_str()),
         SubjectRef::Person { id } => ("person", id.as_str()),
         SubjectRef::Project { id } => ("project", id.as_str()),
@@ -2863,6 +2864,7 @@ pub(crate) fn canonical_subject_ref(subject: &SubjectRef) -> Result<String, Clai
 fn subject_kind_label(subject: &SubjectRef) -> Option<&'static str> {
     match subject {
         SubjectRef::Account { .. } => Some("Account"),
+        SubjectRef::Action { .. } => Some("Action"),
         SubjectRef::Meeting { .. } => Some("Meeting"),
         SubjectRef::Person { .. } => Some("Person"),
         SubjectRef::Project { .. } => Some("Project"),
@@ -2874,6 +2876,7 @@ fn subject_kind_label(subject: &SubjectRef) -> Option<&'static str> {
 fn subject_id_for_lookup(subject: &SubjectRef) -> Option<&str> {
     match subject {
         SubjectRef::Account { id }
+        | SubjectRef::Action { id }
         | SubjectRef::Meeting { id }
         | SubjectRef::Person { id }
         | SubjectRef::Project { id }
@@ -3205,6 +3208,7 @@ fn subject_ref_from_canonical_entity(entity: &EntityRef) -> Option<SubjectRef> {
         .as_str()
     {
         "account" => Some(SubjectRef::Account { id: id.to_string() }),
+        "action" => Some(SubjectRef::Action { id: id.to_string() }),
         "meeting" => Some(SubjectRef::Meeting { id: id.to_string() }),
         "person" => Some(SubjectRef::Person { id: id.to_string() }),
         "project" => Some(SubjectRef::Project { id: id.to_string() }),
@@ -3304,6 +3308,9 @@ pub(crate) fn subject_ref_from_json(value: &serde_json::Value) -> Result<Subject
 
     match kind.as_str() {
         "account" | "accounts" => Ok(SubjectRef::Account {
+            id: subject_id(value)?,
+        }),
+        "action" | "actions" => Ok(SubjectRef::Action {
             id: subject_id(value)?,
         }),
         "meeting" | "meetings" => Ok(SubjectRef::Meeting {
@@ -6112,6 +6119,7 @@ where
     // subject-kind labels.
     let subject_kind_lc = match &subject {
         SubjectRef::Account { .. } => "account",
+        SubjectRef::Action { .. } => "action",
         SubjectRef::Meeting { .. } => "meeting",
         SubjectRef::Person { .. } => "person",
         SubjectRef::Project { .. } => "project",
@@ -8238,6 +8246,7 @@ fn targeted_repair_subject_from_job(
     let id = job.subject_id.clone();
     match job.subject_type.trim().to_ascii_lowercase().as_str() {
         "account" | "accounts" => Ok(SubjectRef::Account { id }),
+        "action" | "actions" => Ok(SubjectRef::Action { id }),
         "meeting" | "meetings" => Ok(SubjectRef::Meeting { id }),
         "person" | "people" => Ok(SubjectRef::Person { id }),
         "project" | "projects" => Ok(SubjectRef::Project { id }),
@@ -9963,6 +9972,7 @@ fn entity_context_subject(
     {
         "account" => "account",
         "meeting" => "meeting",
+        "action" => "action",
         "person" => "person",
         "project" => "project",
         other => {
@@ -10061,7 +10071,7 @@ fn entity_context_related_subjects(
                     }),
             );
         }
-        "meeting" | "person" => {}
+        "action" | "meeting" | "person" => {}
         _ => {}
     }
 
@@ -10146,15 +10156,15 @@ pub struct ShadowTombstoneClaim<'a> {
 
 /// L2 cycle-2 fix #1: normalize the caller-supplied subject_kind into
 /// the lowercase form `subject_ref_from_json` accepts. Runtime callers
-/// pass PascalCase ("Account", "Meeting", "Person", "Project", "Email")
+/// pass PascalCase ("Account", "Action", "Meeting", "Person", "Project", "Email")
 /// — which the parser previously rejected, silently no-op'ing the
 /// shadow write. Returns `None` when the kind has no claim-substrate
-/// representation today (currently: `Email`; tracked as a future
-/// follow-up). Callers MUST handle `None` rather than assuming a
+/// representation today. Callers MUST handle `None` rather than assuming a
 /// successful tombstone; see `shadow_write_tombstone_claim`'s contract.
 fn normalize_subject_kind_for_claim(kind: &str) -> Option<&'static str> {
     match kind.trim() {
         k if k.eq_ignore_ascii_case("account") => Some("account"),
+        k if k.eq_ignore_ascii_case("action") => Some("action"),
         k if k.eq_ignore_ascii_case("meeting") => Some("meeting"),
         k if k.eq_ignore_ascii_case("person") || k.eq_ignore_ascii_case("people") => Some("person"),
         k if k.eq_ignore_ascii_case("project") => Some("project"),
@@ -18586,6 +18596,34 @@ mod tests {
             .expect("PascalCase reader input must parse");
         assert_eq!(claims.len(), 1);
         assert_eq!(claims[0].id, "pascal-active");
+    }
+
+    #[test]
+    fn load_claims_active_accepts_action_subjects() {
+        let db = test_db();
+
+        // dos7-allowed: W3 action-detail regression seed for first-class action subjects
+        db.conn_ref()
+            .execute(
+                "INSERT INTO intelligence_claims \
+                 (id, subject_ref, claim_type, field_path, text, dedup_key, item_hash, \
+                  actor, data_source, observed_at, created_at, provenance_json, \
+                  claim_state, surfacing_state, retraction_reason, \
+                  temporal_scope, sensitivity) \
+                 VALUES \
+                 ('action-active', \
+                  '{\"kind\":\"Action\",\"id\":\"action-1\"}', 'open_loop', 'actions.action-1', \
+                  'first', 'k-action', 'h-action', 'agent:test', 'unit_test', \
+                  ?1, ?1, '{}', 'active', 'active', NULL, 'state', 'internal')",
+                params![TS],
+            )
+            .unwrap();
+
+        let reader_input = r#"{"kind":"action","id":"action-1"}"#;
+        let claims = load_claims_active(&db, reader_input, Some("open_loop"))
+            .expect("Action reader input must parse");
+        assert_eq!(claims.len(), 1);
+        assert_eq!(claims[0].id, "action-active");
     }
 
     /// L2 cycle-15 fix #1: two semantically-equal subjects with

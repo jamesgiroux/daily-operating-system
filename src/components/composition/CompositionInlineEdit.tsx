@@ -1,9 +1,13 @@
 import { EditableText } from "@/components/ui/EditableText";
 import { useIntelligenceCorrection } from "@/hooks/useIntelligenceCorrection";
-import type { EditRoute } from "@/services/composition/contracts";
+import type {
+  CompositionFeedbackEntityType,
+  EditRoute,
+} from "@/services/composition/contracts";
 
 interface CompositionInlineEditProps {
   accountId?: string;
+  entityType?: CompositionFeedbackEntityType;
   route: EditRoute | null;
   value: string;
   as?: "span" | "p" | "h1" | "h2" | "h3" | "div";
@@ -27,6 +31,7 @@ function feedbackField(route: EditRoute): string {
 
 export function CompositionInlineEdit({
   accountId,
+  entityType = "account",
   route,
   value,
   as = "span",
@@ -47,7 +52,7 @@ export function CompositionInlineEdit({
       onChange={async (correctedValue) => {
         const ok = await submit({
           entityId: accountId,
-          entityType: "account",
+          entityType,
           field: feedbackField(route),
           action: "corrected",
           itemKey: claimRef.claim_id,

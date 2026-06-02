@@ -1084,12 +1084,13 @@ fn risk_subject_from_claim(claim: &IntelligenceClaim) -> Result<RiskShiftSubject
         ClaimSubjectRef::Meeting { id } => Ok(RiskShiftSubjectRef::new("meeting", id)),
         ClaimSubjectRef::Person { id } => Ok(RiskShiftSubjectRef::new("person", id)),
         ClaimSubjectRef::Project { id } => Ok(RiskShiftSubjectRef::new("project", id)),
-        ClaimSubjectRef::Email { .. } | ClaimSubjectRef::Multi(_) | ClaimSubjectRef::Global => {
-            Err(validation_error(format!(
-                "detect_risk_shift claim `{}` has unsupported subject_ref",
-                claim.id
-            )))
-        }
+        ClaimSubjectRef::Action { .. }
+        | ClaimSubjectRef::Email { .. }
+        | ClaimSubjectRef::Multi(_)
+        | ClaimSubjectRef::Global => Err(validation_error(format!(
+            "detect_risk_shift claim `{}` has unsupported subject_ref",
+            claim.id
+        ))),
     }
 }
 

@@ -9,14 +9,14 @@
 //! Architecture:
 //!
 //! - **Per-entity** `claim_version` on `accounts`, `projects`, `people`,
-//!   `meetings_history`. Bumped synchronously inside the same transaction
+//!   `meetings`, `emails`, and `actions`. Bumped synchronously inside the same transaction
 //!   as the claim write (`services::claims::commit_claim` calls into this module).
 //!   Readers check `entity.claim_version` off the row they already loaded
 //!   — no extra query.
 //!
 //! - **`SubjectRef::Multi`** uses deterministic lock ordering: claim subjects
 //!   are sorted by `(entity_type_order, id)` lexicographically with precedence
-//!   `Account < Meeting < Person < Project` before bumping. SQLite's serialized
+//!   `Account < Meeting < Person < Project < Email < Action` before bumping. SQLite's serialized
 //!   writer + `BEGIN IMMEDIATE` makes concurrent transactions safe; the sort
 //!   gives deterministic update ordering.
 //!
@@ -44,7 +44,7 @@ use crate::db::{ActionDb, DbError};
 /// claim's `subject_ref` JSON column and passes to `bump_for_subject`.
 ///
 /// Variants are listed in the entity-type lock-order precedence:
-/// `Account < Meeting < Person < Project`. The `Multi` variant carries a
+/// `Account < Meeting < Person < Project < Email < Action`. The `Multi` variant carries a
 /// `Vec<SubjectRef>` that is sorted via `entity_type_order()` + `id` before
 /// bumping, providing deterministic update ordering across concurrent commits.
 ///
@@ -76,6 +76,11 @@ pub enum SubjectRef {
     Email {
         id: String,
     },
+    /// First-class action subjects for action-detail claim-backed surfaces.
+    /// Bumps `actions.claim_version` (added by migration v276).
+    Action {
+        id: String,
+    },
     /// Multiple entities affected by one claim. Sorted before bumping.
     Multi(Vec<SubjectRef>),
     /// v1.4.1+ only; bumps `migration_state.global_claim_epoch` instead of
@@ -94,7 +99,7 @@ pub enum SubjectRef {
 }
 
 impl SubjectRef {
-    /// Lock-order precedence: `Account < Meeting < Person < Project`. Used
+    /// Lock-order precedence: `Account < Meeting < Person < Project < Email < Action`. Used
     /// to sort `Multi` subjects before bumping so concurrent commits with
     /// reversed orderings produce deterministic update sequences.
     ///
@@ -107,6 +112,7 @@ impl SubjectRef {
             Self::Person { .. } => 2,
             Self::Project { .. } => 3,
             Self::Email { .. } => 4,
+            Self::Action { .. } => 5,
             Self::Multi(_) | Self::Global => {
                 debug_assert!(
                     false,
@@ -123,7 +129,8 @@ impl SubjectRef {
             | Self::Meeting { id }
             | Self::Person { id }
             | Self::Project { id }
-            | Self::Email { id } => id.as_str(),
+            | Self::Email { id }
+            | Self::Action { id } => id.as_str(),
             Self::Multi(_) | Self::Global => "",
         }
     }
@@ -149,6 +156,7 @@ impl ActionDb {
             SubjectRef::Person { id } => ("people", "id", id.as_str()),
             SubjectRef::Meeting { id } => ("meetings", "id", id.as_str()),
             SubjectRef::Email { id } => ("emails", "email_id", id.as_str()),
+            SubjectRef::Action { id } => ("actions", "id", id.as_str()),
             SubjectRef::Multi(_) | SubjectRef::Global => {
                 return Err(DbError::InvalidArgument(
                     "bump_entity_claim_version called with Multi/Global; \
@@ -199,7 +207,8 @@ impl ActionDb {
             | SubjectRef::Project { .. }
             | SubjectRef::Person { .. }
             | SubjectRef::Meeting { .. }
-            | SubjectRef::Email { .. } => {
+            | SubjectRef::Email { .. }
+            | SubjectRef::Action { .. } => {
                 self.bump_entity_claim_version(subject)?;
                 Ok(())
             }
@@ -296,6 +305,15 @@ mod tests {
             .expect("seed meeting");
     }
 
+    fn seed_action(db: &ActionDb, id: &str) {
+        db.conn_ref()
+            .execute(
+                "INSERT INTO actions (id, title, created_at, updated_at) VALUES (?1, ?2, ?3, ?3)",
+                params![id, format!("action-{}", id), TS],
+            )
+            .expect("seed action");
+    }
+
     fn read_claim_version(db: &ActionDb, table: &str, id: &str) -> i64 {
         let sql = format!("SELECT claim_version FROM {} WHERE id = ?1", table);
         db.conn_ref()
@@ -344,6 +362,7 @@ mod tests {
         seed_project(&db, "p");
         seed_person(&db, "ps");
         seed_meeting(&db, "m");
+        seed_action(&db, "act");
 
         db.bump_entity_claim_version(&SubjectRef::Account { id: "a".into() })
             .unwrap();
@@ -353,11 +372,14 @@ mod tests {
             .unwrap();
         db.bump_entity_claim_version(&SubjectRef::Meeting { id: "m".into() })
             .unwrap();
+        db.bump_entity_claim_version(&SubjectRef::Action { id: "act".into() })
+            .unwrap();
 
         assert_eq!(read_claim_version(&db, "accounts", "a"), 1);
         assert_eq!(read_claim_version(&db, "projects", "p"), 1);
         assert_eq!(read_claim_version(&db, "people", "ps"), 1);
         assert_eq!(read_claim_version(&db, "meetings", "m"), 1);
+        assert_eq!(read_claim_version(&db, "actions", "act"), 1);
     }
 
     #[test]

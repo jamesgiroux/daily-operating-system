@@ -21,7 +21,8 @@ use crate::bridges::{
 };
 use crate::observability::aggregate_metric::{MetricDimensions, MetricValue, Outcome};
 use crate::services::composition_render_orchestrator::{
-    project_composition_for_surface, resolve_producer_ability_name,
+    project_composition_for_surface_with_options, resolve_producer_ability_name,
+    ProjectCompositionRenderOptions,
 };
 use crate::state::AppState;
 
@@ -130,6 +131,7 @@ pub async fn get_projected_composition(
     composition_id: String,
     composition_version: Option<i64>,
     cache_hint_token: Option<String>,
+    force_refresh: Option<bool>,
 ) -> Result<ProjectedCompositionCommandResponse, BridgeSurfaceError> {
     let _ = composition_version;
     let _ = cache_hint_token;
@@ -153,11 +155,14 @@ pub async fn get_projected_composition(
         .ok_or(BridgeSurfaceError::AbilityUnavailable)?;
 
     let app_state = state.inner().clone();
-    let render = match project_composition_for_surface(
+    let render = match project_composition_for_surface_with_options(
         app_state.as_ref(),
         Actor::User,
         SurfaceKind::TauriApp,
         &composition_id,
+        ProjectCompositionRenderOptions {
+            force_refresh: force_refresh.unwrap_or(false),
+        },
         |producer_input| {
             let input = producer_input.to_json();
             let app_state = app_state.clone();
