@@ -25,11 +25,17 @@ import {
   EntityListEndMark,
   ArchiveToggle,
   FilterTabs,
+  EntitySelectionBar,
 } from "@/components/entity/EntityListShell";
 import shellStyles from "@/components/entity/EntityListShell.module.css";
 import s from "./PeoplePage.module.css";
 import { EditorialPageHeader } from "@/components/editorial/EditorialPageHeader";
 import { EntityRow } from "@/components/entity/EntityRow";
+import {
+  useEntityListSelection,
+  type EntityListSelectionApi,
+} from "@/components/entity/useEntityListSelection";
+import { BulkArchiveSelectionAction } from "@/components/entity/BulkArchiveSelectionAction";
 import { EmptyState } from "@/components/editorial/EmptyState";
 import { Avatar } from "@/components/ui/Avatar";
 import { ChapterHeading } from "@/components/editorial/ChapterHeading";
@@ -41,6 +47,11 @@ type RelationshipTab = "all" | "external" | "internal" | "unknown";
 type HygieneFilter = "unnamed" | "duplicates";
 
 const relationshipTabs: readonly RelationshipTab[] = ["all", "external", "internal", "unknown"];
+const PEOPLE_SECTIONS: { type: string; title: string }[] = [
+  { type: "external", title: "Your Contacts" },
+  { type: "internal", title: "Your Team" },
+  { type: "unknown", title: "Unclassified" },
+];
 
 const tempOrder: Record<string, number> = {
   hot: 0,
@@ -126,9 +137,8 @@ export default function PeoplePage() {
     try {
       setLoading(true);
       setError(null);
-      const filter = tab === "all" ? undefined : tab;
       const result = await invoke<PersonListItem[]>("get_people", {
-        relationship: filter ?? null,
+        relationship: null,
       });
       setPeople(result);
     } catch (e) {
@@ -136,7 +146,7 @@ export default function PeoplePage() {
     } finally {
       setLoading(false);
     }
-  }, [tab]);
+  }, []);
 
   const loadArchivedPeople = useCallback(async () => {
     try {
@@ -169,15 +179,20 @@ export default function PeoplePage() {
   useTauriEvent("people-updated", onPeopleUpdated);
 
   // Filters
+  const relationshipFiltered = useMemo(
+    () => tab === "all" ? people : people.filter((p) => p.relationship === tab),
+    [people, tab],
+  );
+
   const filtered = searchQuery
-    ? people.filter(
+    ? relationshipFiltered.filter(
         (p) =>
           p.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
           p.email.toLowerCase().includes(searchQuery.toLowerCase()) ||
           (p.organization ?? "").toLowerCase().includes(searchQuery.toLowerCase()) ||
           (p.role ?? "").toLowerCase().includes(searchQuery.toLowerCase())
       )
-    : people;
+    : relationshipFiltered;
 
   const hygieneFiltered =
     activeHygieneFilter === "unnamed"
@@ -207,13 +222,6 @@ export default function PeoplePage() {
   const isArchived = archiveTab === "archived";
   const showRelationship = tab === "all";
 
-  // Group people by relationship when showing "all" tab
-  const PEOPLE_SECTIONS: { type: string; title: string }[] = [
-    { type: "external", title: "Your Contacts" },
-    { type: "internal", title: "Your Team" },
-    { type: "unknown", title: "Unclassified" },
-  ];
-
   const groupedPeople = useMemo(() => {
     if (!showRelationship) return null; // flat list when filtered to one tab
     const groups: Record<string, PersonListItem[]> = {
@@ -226,6 +234,27 @@ export default function PeoplePage() {
     }
     return groups;
   }, [sorted, showRelationship]);
+  const activePersonIds = useMemo(() => people.map((person) => person.id), [people]);
+  const visiblePersonIds = useMemo(() => {
+    if (isArchived) return [];
+    if (!groupedPeople) return sorted.map((person) => person.id);
+    return PEOPLE_SECTIONS.flatMap(({ type }) => (
+      groupedPeople[type] ?? []
+    ).map((person) => person.id));
+  }, [groupedPeople, isArchived, sorted]);
+  const personSelection = useEntityListSelection({
+    visibleIds: visiblePersonIds,
+    activeIds: activePersonIds,
+  });
+  const { clear: clearPersonSelection } = personSelection;
+
+  useEffect(() => {
+    if (isArchived) clearPersonSelection();
+  }, [clearPersonSelection, isArchived]);
+
+  const refreshPeopleArchiveLists = useCallback(async () => {
+    await Promise.all([loadPeople(), loadArchivedPeople()]);
+  }, [loadArchivedPeople, loadPeople]);
 
   const formattedDate = new Date().toLocaleDateString("en-US", {
     weekday: "long",
@@ -323,6 +352,25 @@ export default function PeoplePage() {
           />
         )}
       </EntityListHeader>
+
+      {!isArchived && (
+        <EntitySelectionBar
+          selectedCount={personSelection.selectedCount}
+          visibleCount={visiblePersonIds.length}
+          onSelectVisible={personSelection.selectVisible}
+          onClear={personSelection.clear}
+        >
+          <BulkArchiveSelectionAction
+            selectedIds={personSelection.selectedIds}
+            entityLabel="person"
+            entityPluralLabel="people"
+            previewCommand="preview_bulk_archive_people"
+            executeCommand="bulk_archive_people"
+            onArchived={refreshPeopleArchiveLists}
+            onClearSelection={personSelection.clear}
+          />
+        </EntitySelectionBar>
+      )}
 
       {/* Add person form */}
       {!isArchived && showAddForm && (
@@ -505,7 +553,13 @@ export default function PeoplePage() {
                 <div key={type}>
                   <ChapterHeading title={title} />
                   {sectionPeople.map((person, i) => (
-                    <PersonRow key={person.id} person={person} showRelationship={false} showBorder={i < sectionPeople.length - 1} />
+                    <PersonRow
+                      key={person.id}
+                      person={person}
+                      showRelationship={false}
+                      showBorder={i < sectionPeople.length - 1}
+                      selection={personSelection}
+                    />
                   ))}
                 </div>
               );
@@ -515,7 +569,13 @@ export default function PeoplePage() {
           /* Flat view: single relationship tab selected */
           <div className={s.personList}>
             {sorted.map((person, i) => (
-              <PersonRow key={person.id} person={person} showRelationship={false} showBorder={i < sorted.length - 1} />
+              <PersonRow
+                key={person.id}
+                person={person}
+                showRelationship={false}
+                showBorder={i < sorted.length - 1}
+                selection={personSelection}
+              />
             ))}
           </div>
         )}
@@ -541,10 +601,12 @@ function PersonRow({
   person,
   showRelationship,
   showBorder,
+  selection,
 }: {
   person: PersonListItem;
   showRelationship: boolean;
   showBorder: boolean;
+  selection: EntityListSelectionApi;
 }) {
   const nameSuffix = showRelationship && person.relationship !== "unknown" ? (
     <span
@@ -583,6 +645,11 @@ function PersonRow({
       nameSuffix={nameSuffix}
       subtitle={subtitle}
       avatar={avatar}
+      selection={{
+        selected: selection.isSelected(person.id),
+        label: `Select ${person.name}`,
+        onChange: ({ shiftKey }) => selection.toggle(person.id, { shiftKey }),
+      }}
     />
   );
 }

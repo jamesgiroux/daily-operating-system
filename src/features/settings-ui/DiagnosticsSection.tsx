@@ -9,6 +9,7 @@ import {
   HardDrive,
 } from "lucide-react";
 import type { EntityMode } from "@/types";
+import { warnOnPartialArchiveResult, type ArchiveEntityCommandResult } from "@/lib/archive-command-result";
 import {
   SettingsRule,
   SettingsSectionLabel,
@@ -739,7 +740,8 @@ function ArchivedAccountsSection() {
   async function handleRestoreAccount(accountId: string) {
     setRestoringId(accountId);
     try {
-      await invoke("restore_account", { accountId, restoreChildren: true });
+      const result = await invoke<ArchiveEntityCommandResult>("restore_account", { accountId, restoreChildren: true });
+      warnOnPartialArchiveResult(result, "restored");
       await loadArchivedAccounts();
     } catch (e) {
       console.error("Failed to restore account:", e);

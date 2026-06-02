@@ -309,9 +309,10 @@ impl GleanIntelligenceProvider {
                 // succeed; per-dim filenames preserve forensic state across
                 // parallel failures.
                 {
+                    // dos259-exempt: temp debug filename disambiguator; not persisted intelligence state.
                     let ts = chrono::Utc::now().timestamp_millis();
-                    let debug_path = std::env::temp_dir()
-                        .join(format!("dailyos-glean-{}-{}.txt", dim_name, ts));
+                    let debug_path =
+                        std::env::temp_dir().join(format!("dailyos-glean-{}-{}.txt", dim_name, ts));
                     if let Err(e) = std::fs::write(&debug_path, &response_text) {
                         log::warn!(
                             "[I574] Failed to write debug response for {}: {}",

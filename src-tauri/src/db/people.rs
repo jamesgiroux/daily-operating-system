@@ -998,7 +998,7 @@ impl ActionDb {
     }
 
     /// Helper: map a row to `DbPerson`.
-    fn map_person_row(row: &rusqlite::Row<'_>) -> rusqlite::Result<DbPerson> {
+    pub(crate) fn map_person_row(row: &rusqlite::Row<'_>) -> rusqlite::Result<DbPerson> {
         Ok(DbPerson {
             id: row.get(0)?,
             email: row.get(1)?,

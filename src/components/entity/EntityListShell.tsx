@@ -131,6 +131,52 @@ export function FilterTabs<T extends string>({
   );
 }
 
+// ─── Selection Bar ───────────────────────────────────────────────────────────
+
+export function EntitySelectionBar({
+  selectedCount,
+  visibleCount,
+  onSelectVisible,
+  onClear,
+  children,
+}: {
+  selectedCount: number;
+  visibleCount: number;
+  onSelectVisible: () => void;
+  onClear: () => void;
+  children?: ReactNode;
+}) {
+  if (selectedCount <= 0) return null;
+
+  return (
+    <div className={styles.selectionBar} role="status" aria-live="polite">
+      <span className={styles.selectionCount}>
+        {selectedCount} selected
+      </span>
+      <div className={styles.selectionActions}>
+        {children}
+        <button
+          type="button"
+          className={styles.selectionButton}
+          onClick={onSelectVisible}
+          disabled={visibleCount === 0}
+          aria-label={`Select ${visibleCount} visible ${visibleCount === 1 ? "row" : "rows"}`}
+        >
+          Select visible
+        </button>
+        <button
+          type="button"
+          className={styles.selectionButton}
+          onClick={onClear}
+          aria-label="Clear selected rows"
+        >
+          Clear
+        </button>
+      </div>
+    </div>
+  );
+}
+
  
 export function EntityListEndMark(_props?: { text?: string }) {
   return <FinisMarker />;

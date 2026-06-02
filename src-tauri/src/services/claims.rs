@@ -396,6 +396,10 @@ const CLAIM_UPDATE_ALLOWED_COLUMNS: &[&str] = &[
     // backfill. Not assertion identity — it is a per-row version counter
     // for the three-view consistency contract.
     "claim_version",
+    // Recommendation feedback mutates a controlled metadata envelope branch
+    // through the claim service helper below. Callers outside this module
+    // still fail the direct-runtime-update lint.
+    "metadata_json",
 ];
 
 fn execute_claims_update<P>(conn: &Connection, sql: &str, params: P) -> Result<usize, ClaimError>
@@ -3926,6 +3930,24 @@ pub fn load_claim_by_id(
     } else {
         Ok(None)
     }
+}
+
+pub(crate) fn update_recommendation_feedback_metadata(
+    tx: &ActionDb,
+    claim_id: &str,
+    feedback_state_json: &str,
+    conversion_state_json: &str,
+) -> Result<usize, ClaimError> {
+    execute_claims_update(
+        tx.conn_ref(),
+        "UPDATE intelligence_claims
+         SET metadata_json = json_set(metadata_json,
+             '$.recommendation.feedbackState', json(?1),
+             '$.recommendation.conversionState', json(?2))
+         WHERE id = ?3
+           AND json_extract(metadata_json, '$.recommendation.feedbackState') = 'pending'",
+        params![feedback_state_json, conversion_state_json, claim_id],
+    )
 }
 
 fn record_shadow_canonicalization_for_committed_claim(

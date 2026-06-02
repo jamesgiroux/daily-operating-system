@@ -14,6 +14,16 @@ pub struct AggregateTelemetryStatus {
     pub preview: Vec<crate::observability::aggregate_metric::AggregateMetricPreview>,
 }
 
+fn workspace_path_for_request(
+    mode: crate::db::DbMode,
+    path: &str,
+) -> Result<std::path::PathBuf, String> {
+    if !std::path::Path::new(path).is_absolute() {
+        return Err("Workspace path must be absolute".to_string());
+    }
+    crate::state::workspace_path_for_mode(mode, Some(path))
+}
+
 fn validate_ai_model_choice(tier: &str, model: &str) -> Result<(), String> {
     let valid_tiers = ["synthesis", "extraction", "background", "mechanical"];
     if !valid_tiers.contains(&tier) {
@@ -87,11 +97,8 @@ pub async fn set_workspace_path(
     state: &AppState,
 ) -> Result<Config, String> {
     ctx.check_mutation_allowed().map_err(|e| e.to_string())?;
-    let workspace = std::path::Path::new(path);
-
-    if !workspace.is_absolute() {
-        return Err("Workspace path must be absolute".to_string());
-    }
+    let path = workspace_path_for_request(crate::db::db_mode(), path)?;
+    let workspace = path.as_path();
 
     let entity_mode = state
         .config
@@ -102,7 +109,7 @@ pub async fn set_workspace_path(
 
     crate::state::initialize_workspace(workspace, &entity_mode)?;
 
-    let path = path.to_string();
+    let path = path.to_string_lossy().to_string();
     let config = crate::state::create_or_update_config(state, |config| {
         config.workspace_path = path.clone();
     })?;
@@ -526,7 +533,37 @@ pub async fn set_user_profile(
 #[allow(clippy::items_after_test_module)]
 #[cfg(test)]
 mod tests {
-    use super::validate_ai_model_choice;
+    use super::{validate_ai_model_choice, workspace_path_for_request};
+    use crate::db::DbMode;
+
+    #[test]
+    fn workspace_request_preserves_live_path() {
+        let requested = std::env::temp_dir().join("DailyOS-live-request");
+        let resolved =
+            workspace_path_for_request(DbMode::Live, &requested.to_string_lossy()).unwrap();
+
+        assert_eq!(resolved, requested);
+    }
+
+    #[test]
+    fn workspace_request_uses_replica_scoped_path_before_scaffolding() {
+        let requested = std::env::temp_dir().join("DailyOS-live-default");
+        let resolved =
+            workspace_path_for_request(DbMode::Replica, &requested.to_string_lossy()).unwrap();
+
+        assert_ne!(resolved, requested);
+        assert_eq!(
+            resolved.file_name().and_then(|name| name.to_str()),
+            Some("replica-workspace")
+        );
+    }
+
+    #[test]
+    fn workspace_request_rejects_relative_path_before_mode_scoping() {
+        let error = workspace_path_for_request(DbMode::Replica, "DailyOS").unwrap_err();
+
+        assert_eq!(error, "Workspace path must be absolute");
+    }
 
     #[test]
     fn validates_background_ai_model_choice() {

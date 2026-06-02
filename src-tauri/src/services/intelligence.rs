@@ -5693,7 +5693,7 @@ mod mutation_smoke_tests {
         StakeholderInsight, StrategicPriority, SuccessMetric, SupportHealth,
     };
     use crate::intelligence::prompts::InferredRelationship;
-    use crate::intelligence::write_fence::post_commit_fenced_write;
+    use crate::intelligence::write_fence::{fenced_write_intelligence_json, FenceCycle};
     use crate::services::context::{ExternalClients, FixedClock, SeedableRng, ServiceContext};
     use crate::signals::propagation::PropagationEngine;
     use crate::state::AppState;
@@ -5701,6 +5701,7 @@ mod mutation_smoke_tests {
     use rusqlite::{params, OptionalExtension};
     use std::path::Path;
     use std::sync::Arc;
+    use std::time::Duration;
 
     fn test_ctx<'a>(
         clock: &'a FixedClock,
@@ -5729,6 +5730,22 @@ mod mutation_smoke_tests {
             keywords_extracted_at: None,
             metadata: None,
             ..Default::default()
+        }
+    }
+
+    fn seed_disk_intelligence(db: &crate::db::ActionDb, dir: &Path, intel: &IntelligenceJson) {
+        for attempt in 0..100 {
+            match FenceCycle::capture(db) {
+                Ok(cycle) => {
+                    fenced_write_intelligence_json(&cycle, db, dir, intel)
+                        .expect("seed disk intelligence");
+                    return;
+                }
+                Err(err) if err.contains("paused") && attempt < 99 => {
+                    std::thread::sleep(Duration::from_millis(10));
+                }
+                Err(err) => panic!("capture seed disk fence: {err}"),
+            }
         }
     }
 
@@ -9717,7 +9734,7 @@ mod mutation_smoke_tests {
             ..Default::default()
         };
         db.upsert_entity_intelligence(&old_intel).unwrap();
-        post_commit_fenced_write(&db, dir.path(), &old_intel, "seed disk intelligence");
+        seed_disk_intelligence(&db, dir.path(), &old_intel);
         let before_disk =
             std::fs::read_to_string(dir.path().join("intelligence.json")).expect("read seed disk");
 
@@ -9812,7 +9829,7 @@ mod mutation_smoke_tests {
             ..Default::default()
         };
         db.upsert_entity_intelligence(&old_intel).unwrap();
-        post_commit_fenced_write(&db, dir.path(), &old_intel, "seed disk intelligence");
+        seed_disk_intelligence(&db, dir.path(), &old_intel);
         let before_disk =
             std::fs::read_to_string(dir.path().join("intelligence.json")).expect("read seed disk");
 
@@ -9914,7 +9931,7 @@ mod mutation_smoke_tests {
             ..Default::default()
         };
         db.upsert_entity_intelligence(&prior).unwrap();
-        post_commit_fenced_write(&db, dir.path(), &prior, "seed disk intelligence");
+        seed_disk_intelligence(&db, dir.path(), &prior);
         let before_disk =
             std::fs::read_to_string(dir.path().join("intelligence.json")).expect("read seed disk");
 
