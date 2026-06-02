@@ -8,6 +8,7 @@ import { invoke } from "@tauri-apps/api/core";
 import { useNavigate } from "@tanstack/react-router";
 import type { Person, PersonDetail, DuplicateCandidate, ContentFile } from "@/types";
 import { mergeEntityDetailIntelligence } from "@/services/entity-intelligence/entity-detail-mapper";
+import { warnOnPartialArchiveResult, type ArchiveEntityCommandResult } from "@/lib/archive-command-result";
 import { useEntityDetailIntelligence } from "./useEntityDetailIntelligence";
 import { useTauriEvent } from "./useTauriEvent";
 
@@ -300,7 +301,8 @@ export function usePersonDetail(personId: string | undefined) {
   async function handleArchive() {
     if (!detail) return;
     try {
-      await invoke("archive_person", { id: detail.id, archived: true });
+      const result = await invoke<ArchiveEntityCommandResult>("archive_person", { id: detail.id, archived: true });
+      warnOnPartialArchiveResult(result, "archived");
       navigate({ to: "/people" });
     } catch (e) {
       setError(String(e));
@@ -310,7 +312,8 @@ export function usePersonDetail(personId: string | undefined) {
   async function handleUnarchive() {
     if (!detail) return;
     try {
-      await invoke("archive_person", { id: detail.id, archived: false });
+      const result = await invoke<ArchiveEntityCommandResult>("archive_person", { id: detail.id, archived: false });
+      warnOnPartialArchiveResult(result, "restored");
       await load();
     } catch (e) {
       setError(String(e));

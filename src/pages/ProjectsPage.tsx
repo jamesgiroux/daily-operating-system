@@ -23,6 +23,7 @@ import {
   useEntityListSelection,
   type EntityListSelectionApi,
 } from "@/components/entity/useEntityListSelection";
+import { BulkArchiveSelectionAction } from "@/components/entity/BulkArchiveSelectionAction";
 import { EmptyState } from "@/components/editorial/EmptyState";
 import { usePersonality } from "@/hooks/usePersonality";
 import { getPersonalityCopy } from "@/lib/personality";
@@ -228,6 +229,10 @@ export default function ProjectsPage() {
     if (isArchived) clearProjectSelection();
   }, [clearProjectSelection, isArchived]);
 
+  const refreshProjectArchiveLists = useCallback(async () => {
+    await Promise.all([loadProjects(), loadArchivedProjects()]);
+  }, [loadArchivedProjects, loadProjects]);
+
   const formattedDate = new Date().toLocaleDateString("en-US", {
     weekday: "long",
     month: "long",
@@ -338,7 +343,17 @@ export default function ProjectsPage() {
           visibleCount={visibleProjectIds.length}
           onSelectVisible={projectSelection.selectVisible}
           onClear={projectSelection.clear}
-        />
+        >
+          <BulkArchiveSelectionAction
+            selectedIds={projectSelection.selectedIds}
+            entityLabel="project"
+            entityPluralLabel="projects"
+            previewCommand="preview_bulk_archive_projects"
+            executeCommand="bulk_archive_projects"
+            onArchived={refreshProjectArchiveLists}
+            onClearSelection={projectSelection.clear}
+          />
+        </EntitySelectionBar>
       )}
 
       {/* Create form */}

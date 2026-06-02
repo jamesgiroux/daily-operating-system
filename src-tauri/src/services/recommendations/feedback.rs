@@ -8,13 +8,13 @@
 use abilities_runtime::abilities::recommendations::contracts as runtime;
 use abilities_runtime::abilities::registry::Actor;
 use chrono::{DateTime, Utc};
-use rusqlite::params;
 
 use crate::abilities::claims::ClaimType;
 use crate::abilities::feedback::FeedbackAction;
 use crate::db::ActionDb;
 use crate::services::claims::{
-    load_claim_by_id, record_claim_feedback, with_claim_transaction, ClaimError, ClaimFeedbackInput,
+    load_claim_by_id, record_claim_feedback, update_recommendation_feedback_metadata,
+    with_claim_transaction, ClaimError, ClaimFeedbackInput,
 };
 use crate::services::context::ServiceContext;
 use crate::services::recommendations::contracts as app;
@@ -55,14 +55,11 @@ pub fn record_recommendation_feedback(
 
         parse_recommendation_metadata(claim.metadata_json.as_deref())?;
 
-        let rows_affected = tx.conn_ref().execute(
-            "UPDATE intelligence_claims
-             SET metadata_json = json_set(metadata_json,
-                 '$.recommendation.feedbackState', json(?1),
-                 '$.recommendation.conversionState', json(?2))
-             WHERE id = ?3
-               AND json_extract(metadata_json, '$.recommendation.feedbackState') = 'pending'",
-            params![&feedback_state_json, &conversion_state_json, &claim_id.0],
+        let rows_affected = update_recommendation_feedback_metadata(
+            tx,
+            &claim_id.0,
+            &feedback_state_json,
+            &conversion_state_json,
         )?;
 
         if rows_affected == 0 {
@@ -409,6 +406,7 @@ mod tests {
     use abilities_runtime::abilities::registry::{ScopeSet, SurfaceClientId, SurfaceScope};
     use abilities_runtime::sensitivity::RenderSurface;
     use chrono::TimeZone;
+    use rusqlite::params;
     use serde_json::json;
 
     use crate::db::ActionDb;

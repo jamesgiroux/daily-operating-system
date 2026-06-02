@@ -762,6 +762,9 @@ pub fn purge_mock_data(_state: &AppState) -> Result<String, String> {
     let n = delete_mock("account_events", "account_id");
     summary.push(format!("account_events: {}", n));
 
+    let n = delete_mock("entity_archive_folders", "operation_id");
+    summary.push(format!("entity_archive_folders: {}", n));
+
     // --- Primary tables ---
     let n = delete_mock("accounts", "id");
     summary.push(format!("accounts: {}", n));
@@ -1603,6 +1606,29 @@ pub(crate) fn seed_database(db: &ActionDb) -> Result<(), String> {
         "INSERT OR REPLACE INTO accounts (id, name, lifecycle, arr, health, contract_end, nps, tracker_path, updated_at) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9)",
         rusqlite::params!["mock-globex-holdings", "Globex Holdings", "steady-state", 185_000.0, "green", "2026-05-01", 67, "Accounts/Globex Holdings/dashboard.md", &today],
     ).map_err(|e| e.to_string())?;
+
+    conn.execute(
+        "INSERT OR REPLACE INTO entity_archive_folders (
+            operation_id,
+            entity_type,
+            entity_id,
+            original_relative_path,
+            archived_relative_path,
+            folder_state,
+            archived_at,
+            restored_at,
+            updated_at,
+            last_error_code
+        ) VALUES (?1, 'account', ?2, ?3, ?4, 'restored', ?5, ?5, ?5, NULL)",
+        rusqlite::params![
+            "mock-archive-acme-restored",
+            "mock-acme-corp",
+            "Accounts/Acme Corp",
+            "_archive/entities/accounts/mock-acme-corp--acme-corp",
+            &today,
+        ],
+    )
+    .map_err(|e| format!("Seed entity_archive_folders: {}", e))?;
 
     // --- Account Domains (inbox-to-account matching) ---
     // Populated here from mock data. In production, domains are populated via:

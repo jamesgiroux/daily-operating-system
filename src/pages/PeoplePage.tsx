@@ -35,6 +35,7 @@ import {
   useEntityListSelection,
   type EntityListSelectionApi,
 } from "@/components/entity/useEntityListSelection";
+import { BulkArchiveSelectionAction } from "@/components/entity/BulkArchiveSelectionAction";
 import { EmptyState } from "@/components/editorial/EmptyState";
 import { Avatar } from "@/components/ui/Avatar";
 import { ChapterHeading } from "@/components/editorial/ChapterHeading";
@@ -251,6 +252,10 @@ export default function PeoplePage() {
     if (isArchived) clearPersonSelection();
   }, [clearPersonSelection, isArchived]);
 
+  const refreshPeopleArchiveLists = useCallback(async () => {
+    await Promise.all([loadPeople(), loadArchivedPeople()]);
+  }, [loadArchivedPeople, loadPeople]);
+
   const formattedDate = new Date().toLocaleDateString("en-US", {
     weekday: "long",
     month: "long",
@@ -354,7 +359,17 @@ export default function PeoplePage() {
           visibleCount={visiblePersonIds.length}
           onSelectVisible={personSelection.selectVisible}
           onClear={personSelection.clear}
-        />
+        >
+          <BulkArchiveSelectionAction
+            selectedIds={personSelection.selectedIds}
+            entityLabel="person"
+            entityPluralLabel="people"
+            previewCommand="preview_bulk_archive_people"
+            executeCommand="bulk_archive_people"
+            onArchived={refreshPeopleArchiveLists}
+            onClearSelection={personSelection.clear}
+          />
+        </EntitySelectionBar>
       )}
 
       {/* Add person form */}

@@ -2,10 +2,20 @@
 set -euo pipefail
 
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
-INVENTORY="$ROOT_DIR/.docs/plans/wave-W1/W1-B-channel-inventory.md"
+INVENTORY_CANDIDATES=(
+  "$ROOT_DIR/.docs/plans/wave-W1/W1-B-channel-inventory.md"
+  "$ROOT_DIR/.docs/_archive/plans-pre-v1.4.9/wave-W1/W1-B-channel-inventory.md"
+)
+INVENTORY=""
+for candidate in "${INVENTORY_CANDIDATES[@]}"; do
+  if [ -f "$candidate" ]; then
+    INVENTORY="$candidate"
+    break
+  fi
+done
 
-if [ ! -f "$INVENTORY" ]; then
-  echo "missing channel inventory: $INVENTORY" >&2
+if [ -z "$INVENTORY" ]; then
+  echo "missing channel inventory: ${INVENTORY_CANDIDATES[*]}" >&2
   exit 1
 fi
 

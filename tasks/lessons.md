@@ -1,5 +1,6 @@
 # Lessons
 
+- 2026-06-02: Replica and mock dev builds must scope both database and workspace paths before any scaffolding or managed-folder writes run. Validate the effective mode-scoped path first, then initialize; otherwise a replica-safe DB can still mutate production workspace folders.
 - 2026-05-26: Granola cache detection must treat filename versioning and storage mechanism as separate contracts. `cache-v*.json` catches version bumps, but not the newer encrypted cache path; prefer Granola's companion IPC/MCP access and make stale plaintext cache fallback explicit.
 - 2026-05-26: Treat "lock storm resolved" as unproven until a normal app startup with background workers runs cleanly. Deferring a corrupting backfill fixes storage safety, but independent writable `ActionDb` handles and long `db_write` finalization closures can still starve the SQLite writer.
 - 2026-05-25: Do not edit Rust backend files while `pnpm tauri dev` is writing to the production SQLCipher database. Tauri dev hot-restarts can terminate active WAL writers during runtime backfills or enrichment, producing real btree corruption even when earlier `quick_check` passes. Stop the app, patch and test, then restart once.

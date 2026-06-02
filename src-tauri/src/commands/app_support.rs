@@ -579,11 +579,7 @@ pub fn get_latency_rollups() -> crate::latency::LatencyRollupsPayload {
 /// console scraping. Budget set to 100 ms so any sample IS a violation.
 #[tauri::command]
 pub fn record_frontend_main_thread_stall(duration_ms: u64) {
-    crate::latency::record_latency(
-        "frontend.main_thread_stall",
-        u128::from(duration_ms),
-        100,
-    );
+    crate::latency::record_latency("frontend.main_thread_stall", u128::from(duration_ms), 100);
 }
 
 #[allow(
@@ -1543,6 +1539,25 @@ pub async fn delete_all_data(state: State<'_, Arc<AppState>>) -> Result<(), Stri
     let db_path = crate::db::ActionDb::db_path_public()
         .map(|p| p.to_string_lossy().to_string())
         .ok();
+    let internal_tracker_paths = match state
+        .db_read(crate::services::entity_archive_folders::snapshot_internal_tracker_paths)
+        .await
+    {
+        Ok(paths) => paths,
+        Err(error) => {
+            log::warn!(
+                "snapshot Internal tracker paths before data deletion failed; continuing without Internal folder deletion: {error}"
+            );
+            Vec::new()
+        }
+    };
+    let workspace_path = {
+        let configured = {
+            let guard = state.config.read();
+            guard.as_ref().map(|config| config.workspace_path.clone())
+        };
+        crate::state::resolved_workspace_path(configured.as_deref())?
+    };
 
     // Close async DB service
     {
@@ -1579,6 +1594,11 @@ pub async fn delete_all_data(state: State<'_, Arc<AppState>>) -> Result<(), Stri
         )]
         let _ = std::fs::remove_dir_all(&workspace);
     }
+
+    crate::services::entity_archive_folders::delete_mode_scoped_entity_roots(
+        &workspace_path,
+        &internal_tracker_paths,
+    )?;
 
     Ok(())
 }

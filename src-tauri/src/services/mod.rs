@@ -21,6 +21,7 @@ pub mod derived_state;
 pub mod emails;
 pub mod enrichment_side_effects;
 pub mod entities;
+pub mod entity_archive_folders;
 pub mod entity_context;
 pub mod entity_intelligence;
 pub mod entity_linking;

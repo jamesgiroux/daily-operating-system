@@ -63,6 +63,16 @@ pub struct ProjectChildSummary {
     pub open_action_count: usize,
 }
 
+/// Single-entity archive/restore command outcome.
+#[derive(Debug, serde::Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ArchiveEntityCommandResult {
+    pub status: String,
+    pub changed_ids: Vec<String>,
+    pub children_restored: usize,
+    pub item_results: Vec<crate::services::entity_archive_folders::BulkArchiveItemResult>,
+}
+
 #[allow(
     clippy::let_underscore_must_use,
     reason = "tauri::command macro emits internal Result glue that discards generated metadata"
@@ -223,7 +233,7 @@ pub fn list_database_backups() -> Result<Vec<crate::db_backup::BackupInfo>, Stri
 pub async fn restore_database_from_backup(
     backup_path: String,
     state: tauri::State<'_, Arc<AppState>>,
-) -> Result<(), String> {
+) -> Result<crate::services::entity_archive_folders::ArchiveFolderRepairPlan, String> {
     // Timeout on user-facing permit acquisition.
     let _permit = match tokio::time::timeout(
         std::time::Duration::from_secs(10),
@@ -260,7 +270,7 @@ pub async fn restore_database_from_backup(
     }
 
     state.clear_database_recovery_required();
-    Ok(())
+    Ok(plan_entity_archive_folder_reconciliation_after_reset(state.inner().clone()).await)
 }
 
 #[allow(
@@ -268,13 +278,33 @@ pub async fn restore_database_from_backup(
     reason = "tauri::command macro emits internal Result glue that discards generated metadata"
 )]
 #[tauri::command]
-pub async fn start_fresh_database(state: tauri::State<'_, Arc<AppState>>) -> Result<(), String> {
+pub async fn start_fresh_database(
+    state: tauri::State<'_, Arc<AppState>>,
+) -> Result<crate::services::entity_archive_folders::ArchiveFolderRepairPlan, String> {
     // Drop async DB service before deleting files.
     {
         let mut db_service_guard = state.db_service.write().await;
         *db_service_guard = None;
     }
-    crate::db_backup::start_fresh_database()
+    crate::db_backup::start_fresh_database()?;
+    state.init_db_service().await?;
+    Ok(plan_entity_archive_folder_reconciliation_after_reset(state.inner().clone()).await)
+}
+
+async fn plan_entity_archive_folder_reconciliation_after_reset(
+    state: Arc<AppState>,
+) -> crate::services::entity_archive_folders::ArchiveFolderRepairPlan {
+    match crate::services::entity_archive_folders::plan_entity_archive_folder_reconciliation(state)
+        .await
+    {
+        Ok(plan) => plan,
+        Err(error) => {
+            log::warn!(
+                "archive folder reconciliation planning skipped after database reset: {error}"
+            );
+            crate::services::entity_archive_folders::ArchiveFolderRepairPlan::default()
+        }
+    }
 }
 
 #[tauri::command]
@@ -450,6 +480,187 @@ pub async fn get_duplicate_people_for_person(
 // Archive / Unarchive Entities
 // =============================================================================
 
+async fn preview_bulk_archive(
+    state: State<'_, Arc<AppState>>,
+    entity_type: crate::services::entity_archive_folders::EntityArchiveType,
+    ids: Vec<String>,
+) -> Result<crate::services::entity_archive_folders::BulkArchivePreview, String> {
+    state
+        .db_read(move |db| {
+            crate::services::entity_archive_folders::preview_bulk_archive(db, entity_type, ids)
+        })
+        .await
+        .map_err(String::from)
+}
+
+async fn bulk_archive(
+    state: State<'_, Arc<AppState>>,
+    entity_type: crate::services::entity_archive_folders::EntityArchiveType,
+    ids: Vec<String>,
+    plan_id: String,
+    plan_fingerprint: String,
+) -> Result<crate::services::entity_archive_folders::BulkArchiveResult, String> {
+    let app_state = state.inner().clone();
+    let state_for_ctx = app_state.clone();
+    let plan_id_for_db = plan_id.clone();
+    let plan_fingerprint_for_db = plan_fingerprint.clone();
+    let (preview, outcomes) = state
+        .db_write(move |db| {
+            let ctx = state_for_ctx.live_service_context();
+            crate::services::entity_archive_folders::execute_bulk_archive(
+                &ctx,
+                db,
+                &app_state,
+                entity_type,
+                ids,
+                &plan_id_for_db,
+                &plan_fingerprint_for_db,
+            )
+        })
+        .await
+        .map_err(String::from)?;
+
+    if bulk_archive_preview_stale(&preview, &outcomes, &plan_id, &plan_fingerprint) {
+        return Ok(crate::services::entity_archive_folders::BulkArchiveResult {
+            status: "preview_stale".to_string(),
+            changed_ids: Vec::new(),
+            already_archived_ids: preview.already_archived_ids.clone(),
+            not_found_ids: preview.not_found_ids.clone(),
+            preview,
+            outcomes,
+            item_results: Vec::new(),
+        });
+    }
+
+    let app_state = state.inner().clone();
+    crate::services::entity_archive_folders::remove_intel_queue_entries(&app_state, &outcomes);
+    let item_results =
+        crate::services::entity_archive_folders::archive_folders_for_outcomes(app_state, &outcomes)
+            .await;
+    let changed_ids = outcomes
+        .iter()
+        .flat_map(|outcome| outcome.changed_ids.iter().cloned())
+        .collect::<std::collections::BTreeSet<_>>()
+        .into_iter()
+        .collect::<Vec<_>>();
+    let has_failure = item_results.iter().any(|item| {
+        matches!(
+            item.folder_status.as_str(),
+            "folder_failed" | "metadata_failed" | "metadata_pending" | "missing_source"
+        )
+    });
+
+    Ok(crate::services::entity_archive_folders::BulkArchiveResult {
+        status: if has_failure {
+            "partial".to_string()
+        } else {
+            "succeeded".to_string()
+        },
+        changed_ids,
+        already_archived_ids: preview.already_archived_ids.clone(),
+        not_found_ids: preview.not_found_ids.clone(),
+        preview,
+        outcomes,
+        item_results,
+    })
+}
+
+fn bulk_archive_preview_stale(
+    preview: &crate::services::entity_archive_folders::BulkArchivePreview,
+    outcomes: &[crate::services::entity_archive_folders::ArchiveMutationOutcome],
+    plan_id: &str,
+    plan_fingerprint: &str,
+) -> bool {
+    outcomes.is_empty()
+        && (preview.plan_id != plan_id || preview.plan_fingerprint != plan_fingerprint)
+}
+
+async fn archive_entity_command(
+    state: State<'_, Arc<AppState>>,
+    entity_type: crate::services::entity_archive_folders::EntityArchiveType,
+    id: String,
+    archived: bool,
+) -> Result<ArchiveEntityCommandResult, String> {
+    let app_state = state.inner().clone();
+    if !archived {
+        crate::services::entity_archive_folders::preflight_restore_targets(
+            app_state.clone(),
+            entity_type,
+            vec![id.clone()],
+        )
+        .await?;
+    }
+
+    let state_for_ctx = app_state.clone();
+    let id_for_db = id.clone();
+    let outcome = state
+        .db_write(move |db| {
+            let ctx = state_for_ctx.live_service_context();
+            crate::services::entity_archive_folders::archive_entity_with_outcome(
+                &ctx,
+                db,
+                &app_state,
+                entity_type,
+                &id_for_db,
+                archived,
+            )
+        })
+        .await
+        .map_err(String::from)?;
+
+    let app_state = state.inner().clone();
+    crate::services::entity_archive_folders::remove_intel_queue_entries(
+        &app_state,
+        std::slice::from_ref(&outcome),
+    );
+    let item_results = if archived {
+        crate::services::entity_archive_folders::archive_folders_for_outcomes(
+            app_state,
+            std::slice::from_ref(&outcome),
+        )
+        .await
+    } else {
+        crate::services::entity_archive_folders::restore_folders_for_outcomes(
+            app_state,
+            std::slice::from_ref(&outcome),
+        )
+        .await
+    };
+    Ok(archive_entity_command_result(&outcome, item_results, 0))
+}
+
+fn archive_entity_command_result(
+    outcome: &crate::services::entity_archive_folders::ArchiveMutationOutcome,
+    item_results: Vec<crate::services::entity_archive_folders::BulkArchiveItemResult>,
+    children_restored: usize,
+) -> ArchiveEntityCommandResult {
+    let has_failure = item_results.iter().any(folder_reconciliation_failed);
+    ArchiveEntityCommandResult {
+        status: if has_failure {
+            "partial".to_string()
+        } else {
+            "succeeded".to_string()
+        },
+        changed_ids: outcome.changed_ids.clone(),
+        children_restored,
+        item_results,
+    }
+}
+
+fn folder_reconciliation_failed(
+    item: &crate::services::entity_archive_folders::BulkArchiveItemResult,
+) -> bool {
+    matches!(
+        item.folder_status.as_str(),
+        "folder_failed"
+            | "metadata_failed"
+            | "metadata_pending"
+            | "missing_source"
+            | "folder_missing"
+            | "restore_conflict"
+    )
+}
+
 /// Archive or unarchive an account. Cascades to children when archiving.
 #[allow(
     clippy::let_underscore_must_use,
@@ -460,16 +671,14 @@ pub async fn archive_account(
     id: String,
     archived: bool,
     state: State<'_, Arc<AppState>>,
-) -> Result<(), String> {
-    let app_state = state.inner().clone();
-    let state_for_ctx = app_state.clone();
-    state
-        .db_write(move |db| {
-            let ctx = state_for_ctx.live_service_context();
-            crate::services::accounts::archive_account(&ctx, db, &app_state, &id, archived)
-        })
-        .await
-        .map_err(String::from)
+) -> Result<ArchiveEntityCommandResult, String> {
+    archive_entity_command(
+        state,
+        crate::services::entity_archive_folders::EntityArchiveType::Account,
+        id,
+        archived,
+    )
+    .await
 }
 
 /// Merge source account into target account.
@@ -504,16 +713,14 @@ pub async fn archive_project(
     id: String,
     archived: bool,
     state: State<'_, Arc<AppState>>,
-) -> Result<(), String> {
-    let app_state = state.inner().clone();
-    let state_for_ctx = app_state.clone();
-    state
-        .db_write(move |db| {
-            let ctx = state_for_ctx.live_service_context();
-            crate::services::projects::archive_project(&ctx, db, &app_state, &id, archived)
-        })
-        .await
-        .map_err(String::from)
+) -> Result<ArchiveEntityCommandResult, String> {
+    archive_entity_command(
+        state,
+        crate::services::entity_archive_folders::EntityArchiveType::Project,
+        id,
+        archived,
+    )
+    .await
 }
 
 /// Archive or unarchive a person.
@@ -526,16 +733,104 @@ pub async fn archive_person(
     id: String,
     archived: bool,
     state: State<'_, Arc<AppState>>,
-) -> Result<(), String> {
-    let app_state = state.inner().clone();
-    let state_for_ctx = app_state.clone();
-    state
-        .db_write(move |db| {
-            let ctx = state_for_ctx.live_service_context();
-            crate::services::people::archive_person(&ctx, db, &app_state, &id, archived)
-        })
-        .await
-        .map_err(String::from)
+) -> Result<ArchiveEntityCommandResult, String> {
+    archive_entity_command(
+        state,
+        crate::services::entity_archive_folders::EntityArchiveType::Person,
+        id,
+        archived,
+    )
+    .await
+}
+
+#[tauri::command]
+pub async fn preview_bulk_archive_accounts(
+    ids: Vec<String>,
+    state: State<'_, Arc<AppState>>,
+) -> Result<crate::services::entity_archive_folders::BulkArchivePreview, String> {
+    preview_bulk_archive(
+        state,
+        crate::services::entity_archive_folders::EntityArchiveType::Account,
+        ids,
+    )
+    .await
+}
+
+#[tauri::command]
+pub async fn bulk_archive_accounts(
+    ids: Vec<String>,
+    plan_id: String,
+    plan_fingerprint: String,
+    state: State<'_, Arc<AppState>>,
+) -> Result<crate::services::entity_archive_folders::BulkArchiveResult, String> {
+    bulk_archive(
+        state,
+        crate::services::entity_archive_folders::EntityArchiveType::Account,
+        ids,
+        plan_id,
+        plan_fingerprint,
+    )
+    .await
+}
+
+#[tauri::command]
+pub async fn preview_bulk_archive_projects(
+    ids: Vec<String>,
+    state: State<'_, Arc<AppState>>,
+) -> Result<crate::services::entity_archive_folders::BulkArchivePreview, String> {
+    preview_bulk_archive(
+        state,
+        crate::services::entity_archive_folders::EntityArchiveType::Project,
+        ids,
+    )
+    .await
+}
+
+#[tauri::command]
+pub async fn bulk_archive_projects(
+    ids: Vec<String>,
+    plan_id: String,
+    plan_fingerprint: String,
+    state: State<'_, Arc<AppState>>,
+) -> Result<crate::services::entity_archive_folders::BulkArchiveResult, String> {
+    bulk_archive(
+        state,
+        crate::services::entity_archive_folders::EntityArchiveType::Project,
+        ids,
+        plan_id,
+        plan_fingerprint,
+    )
+    .await
+}
+
+#[tauri::command]
+pub async fn preview_bulk_archive_people(
+    ids: Vec<String>,
+    state: State<'_, Arc<AppState>>,
+) -> Result<crate::services::entity_archive_folders::BulkArchivePreview, String> {
+    preview_bulk_archive(
+        state,
+        crate::services::entity_archive_folders::EntityArchiveType::Person,
+        ids,
+    )
+    .await
+}
+
+#[tauri::command]
+pub async fn bulk_archive_people(
+    ids: Vec<String>,
+    plan_id: String,
+    plan_fingerprint: String,
+    state: State<'_, Arc<AppState>>,
+) -> Result<crate::services::entity_archive_folders::BulkArchiveResult, String> {
+    bulk_archive(
+        state,
+        crate::services::entity_archive_folders::EntityArchiveType::Person,
+        ids,
+        plan_id,
+        plan_fingerprint,
+    )
+    .await
 }
 
 /// Get archived accounts.
@@ -596,16 +891,124 @@ pub async fn restore_account(
     account_id: String,
     restore_children: bool,
     state: State<'_, Arc<AppState>>,
-) -> Result<usize, String> {
+) -> Result<ArchiveEntityCommandResult, String> {
     let app_state = state.inner().clone();
-    let state_for_ctx = app_state.clone();
-    state
-        .db_write(move |db| {
-            let ctx = state_for_ctx.live_service_context();
-            crate::services::accounts::restore_account(&ctx, db, &account_id, restore_children)
+    let account_id_for_preflight = account_id.clone();
+    let restore_target_ids = state
+        .db_read(move |db| {
+            crate::services::entity_archive_folders::restore_account_target_ids(
+                db,
+                &account_id_for_preflight,
+                restore_children,
+            )
         })
         .await
-        .map_err(String::from)
+        .map_err(String::from)?;
+    crate::services::entity_archive_folders::preflight_restore_targets(
+        app_state.clone(),
+        crate::services::entity_archive_folders::EntityArchiveType::Account,
+        restore_target_ids,
+    )
+    .await?;
+    let state_for_ctx = app_state.clone();
+    let outcome = state
+        .db_write(move |db| {
+            let ctx = state_for_ctx.live_service_context();
+            crate::services::entity_archive_folders::restore_account_with_outcome(
+                &ctx,
+                db,
+                &app_state,
+                &account_id,
+                restore_children,
+            )
+        })
+        .await
+        .map_err(String::from)?;
+    let children_restored = outcome.cascaded_child_ids.len();
+    let app_state = state.inner().clone();
+    let item_results = crate::services::entity_archive_folders::restore_folders_for_outcomes(
+        app_state,
+        std::slice::from_ref(&outcome),
+    )
+    .await;
+    Ok(archive_entity_command_result(
+        &outcome,
+        item_results,
+        children_restored,
+    ))
+}
+
+#[tauri::command]
+pub async fn plan_entity_archive_folder_reconciliation(
+    state: State<'_, Arc<AppState>>,
+) -> Result<crate::services::entity_archive_folders::ArchiveFolderRepairPlan, String> {
+    crate::services::entity_archive_folders::plan_entity_archive_folder_reconciliation(
+        state.inner().clone(),
+    )
+    .await
+}
+
+#[tauri::command]
+pub async fn apply_entity_archive_folder_reconciliation(
+    confirmed_statuses: Vec<String>,
+    max_changes: usize,
+    state: State<'_, Arc<AppState>>,
+) -> Result<crate::services::entity_archive_folders::ArchiveFolderRepairResult, String> {
+    crate::services::entity_archive_folders::apply_entity_archive_folder_reconciliation(
+        state.inner().clone(),
+        confirmed_statuses,
+        max_changes,
+    )
+    .await
+}
+
+#[cfg(test)]
+mod archive_command_tests {
+    use super::bulk_archive_preview_stale;
+    use crate::services::entity_archive_folders::{BulkArchivePreview, EntityArchiveType};
+
+    fn preview() -> BulkArchivePreview {
+        BulkArchivePreview {
+            entity_type: EntityArchiveType::Project,
+            requested_ids: vec!["project-1".to_string()],
+            root_ids: vec!["project-1".to_string()],
+            changed_ids: vec!["project-1".to_string()],
+            selected_ids: vec!["project-1".to_string()],
+            cascaded_child_ids: Vec::new(),
+            covered_child_ids: Vec::new(),
+            not_found_ids: Vec::new(),
+            already_archived_ids: Vec::new(),
+            total_changed_count: 1,
+            direct_cascade_count: 0,
+            plan_id: "bulk-archive-plan".to_string(),
+            plan_fingerprint: "bulk-archive:v1:fingerprint".to_string(),
+            expires_at: "2026-06-02T12:00:00Z".to_string(),
+        }
+    }
+
+    #[test]
+    fn empty_bulk_archive_outcomes_are_stale_when_plan_id_mismatches() {
+        let preview = preview();
+
+        assert!(bulk_archive_preview_stale(
+            &preview,
+            &[],
+            "different-plan",
+            &preview.plan_fingerprint,
+        ));
+    }
+
+    #[test]
+    fn empty_bulk_archive_outcomes_can_be_clean_noops_when_plan_binding_matches() {
+        let preview = preview();
+
+        assert!(!bulk_archive_preview_stale(
+            &preview,
+            &[],
+            &preview.plan_id,
+            &preview.plan_fingerprint,
+        ));
+    }
 }
 
 // =============================================================================

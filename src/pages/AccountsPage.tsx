@@ -23,6 +23,7 @@ import {
   useEntityListSelection,
   type EntityListSelectionApi,
 } from "@/components/entity/useEntityListSelection";
+import { BulkArchiveSelectionAction } from "@/components/entity/BulkArchiveSelectionAction";
 import { ChapterHeading } from "@/components/editorial/ChapterHeading";
 import { EmptyState } from "@/components/editorial/EmptyState";
 import { EphemeralBriefing } from "@/components/editorial/EphemeralBriefing";
@@ -452,6 +453,10 @@ export default function AccountsPage() {
     if (isArchived) clearAccountSelection();
   }, [clearAccountSelection, isArchived]);
 
+  const refreshAccountArchiveLists = useCallback(async () => {
+    await Promise.all([loadAccounts(), loadArchivedAccounts()]);
+  }, [loadAccounts, loadArchivedAccounts]);
+
   const formattedDate = new Date().toLocaleDateString("en-US", {
     weekday: "long",
     month: "long",
@@ -589,7 +594,17 @@ export default function AccountsPage() {
           visibleCount={visibleAccountIds.length}
           onSelectVisible={accountSelection.selectVisible}
           onClear={accountSelection.clear}
-        />
+        >
+          <BulkArchiveSelectionAction
+            selectedIds={accountSelection.selectedIds}
+            entityLabel="account"
+            entityPluralLabel="accounts"
+            previewCommand="preview_bulk_archive_accounts"
+            executeCommand="bulk_archive_accounts"
+            onArchived={refreshAccountArchiveLists}
+            onClearSelection={accountSelection.clear}
+          />
+        </EntitySelectionBar>
       )}
 
       {/* Discovery panel */}

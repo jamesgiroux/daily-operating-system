@@ -84,6 +84,7 @@ fn workspace_ingestion_w2b_no_new_direct_writes() {
         "transcript-direct-write-v146",
         "devtools-w5-backfill-fixture",
         "v146-validation-fixture",
+        "entity-archive-folder-v150",
     ] {
         assert!(script.contains(token), "script recognizes {token}");
     }
