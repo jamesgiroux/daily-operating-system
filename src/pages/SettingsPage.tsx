@@ -1,9 +1,14 @@
-import { useMemo, useEffect, useRef, useState } from "react";
+import { useCallback, useMemo, useEffect, useRef, useState } from "react";
 import { useSearch } from "@tanstack/react-router";
-import { User, Link2, Monitor, Shield, Wrench, Loader2 } from "lucide-react";
+import { User, Link2, Monitor, PanelsTopLeft, RotateCcw, Shield, Wrench, Loader2 } from "lucide-react";
 import { invoke } from "@tauri-apps/api/core";
 import { useAppState } from "@/hooks/useAppState";
 import { useClaudeStatus } from "@/hooks/useClaudeStatus";
+import {
+  getCompositionLayoutOverlay,
+  resetCompositionLayoutOverlay,
+  type LayoutOverlayResponse,
+} from "@/services/composition/layoutOverlay";
 
 import { useRegisterMagazineShell } from "@/hooks/useMagazineShell";
 import { ChapterHeading } from "@/components/editorial/ChapterHeading";
@@ -157,6 +162,7 @@ const VALID_TABS = new Set<string>([
   "you",
   "connectors",
   "data",
+  "surfaces",
   "system",
   "diagnostics",
   ...Object.keys(LEGACY_TAB_MAP),
@@ -175,6 +181,7 @@ const CHAPTER_DEFS = [
   { id: "settings-you", label: "You", icon: <User size={18} strokeWidth={1.5} /> },
   { id: "settings-connectors", label: "Connectors", icon: <Link2 size={18} strokeWidth={1.5} /> },
   { id: "settings-data", label: "Data", icon: <Shield size={18} strokeWidth={1.5} /> },
+  { id: "settings-surfaces", label: "Surfaces", icon: <PanelsTopLeft size={18} strokeWidth={1.5} /> },
   { id: "settings-system", label: "System", icon: <Monitor size={18} strokeWidth={1.5} /> },
 ];
 
@@ -183,6 +190,78 @@ const DIAGNOSTICS_CHAPTER = {
   label: "Diagnostics",
   icon: <Wrench size={18} strokeWidth={1.5} />,
 };
+
+function SurfacesSection() {
+  const [overlay, setOverlay] = useState<LayoutOverlayResponse | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [resetting, setResetting] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  const load = useCallback(
+    async () => {
+      setLoading(true);
+      setError(null);
+      try {
+        const response = await getCompositionLayoutOverlay({
+          entityType: "account",
+          surfaceKey: "entity_page",
+        });
+        setOverlay(response);
+      } catch (err) {
+        setError(err instanceof Error ? err.message : String(err));
+      } finally {
+        setLoading(false);
+      }
+    },
+    [],
+  );
+
+  useEffect(() => {
+    void load();
+  }, [load]);
+
+  async function handleReset() {
+    setResetting(true);
+    setError(null);
+    try {
+      const response = await resetCompositionLayoutOverlay({
+        entityType: "account",
+        surfaceKey: "entity_page",
+      });
+      setOverlay(response);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : String(err));
+    } finally {
+      setResetting(false);
+    }
+  }
+
+  const customized = Boolean(overlay?.overlay);
+  return (
+    <div className={s.surfacePanel}>
+      <div className={s.surfacePanelMain}>
+        <p className={s.surfacePanelLabel}>Account page</p>
+        <p className={s.surfacePanelText}>
+          {loading
+            ? "Reading layout preference..."
+            : customized
+              ? `Custom layout saved${overlay?.updatedAt ? ` ${overlay.updatedAt}` : ""}.`
+              : "Using the shipped Account layout."}
+        </p>
+        {error && <p className={s.surfacePanelError}>{error}</p>}
+      </div>
+      <button
+        type="button"
+        className={s.surfacePanelButton}
+        disabled={loading || resetting || !customized}
+        onClick={() => void handleReset()}
+      >
+        <RotateCcw size={13} strokeWidth={1.7} />
+        {resetting ? "Resetting" : "Reset"}
+      </button>
+    </div>
+  );
+}
 
 // ═══════════════════════════════════════════════════════════════════════════
 // SettingsPage
@@ -293,6 +372,15 @@ export default function SettingsPage() {
         <div className={s.sectionInset}>
           <DataPrivacySection />
         </div>
+      </section>
+
+      {/* ═══ SURFACES ═══ */}
+      <section id="settings-surfaces" className={s.section}>
+        <ChapterHeading
+          title="Surfaces"
+          epigraph="Local presentation preferences for composed pages."
+        />
+        <SurfacesSection />
       </section>
 
       {/* ═══ SYSTEM ═══ */}

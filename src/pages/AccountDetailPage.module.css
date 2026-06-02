@@ -30,6 +30,89 @@
   padding-bottom: var(--space-4xl);
 }
 
+.compositionCustomizeButton {
+  appearance: none;
+  display: inline-flex;
+  min-height: 30px;
+  align-items: center;
+  gap: 6px;
+  border: 1px solid var(--color-rule-light);
+  border-radius: var(--radius-editorial-sm);
+  background: var(--color-surface-primary);
+  color: var(--color-text-secondary);
+  cursor: pointer;
+  font-family: var(--font-mono);
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  padding: 0 10px;
+  text-transform: uppercase;
+}
+
+.compositionCustomizeButton:hover,
+.compositionCustomizeButton:focus-visible,
+.compositionCustomizeButton[aria-pressed="true"] {
+  border-color: var(--color-account);
+  color: var(--color-text-primary);
+  outline: none;
+}
+
+.compositionEditStatus {
+  position: sticky;
+  top: 72px;
+  z-index: 3;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-md);
+  padding: var(--space-sm) 0;
+  border-top: 1px solid var(--color-rule-heavy);
+  border-bottom: 1px solid var(--color-rule-light);
+  background: var(--color-surface-primary);
+  color: var(--color-text-secondary);
+  font-family: var(--font-mono);
+  font-size: 11px;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+
+.compositionResetButton,
+.compositionInserterButton {
+  appearance: none;
+  display: inline-flex;
+  min-height: 28px;
+  align-items: center;
+  gap: 6px;
+  border: 1px solid var(--color-rule-light);
+  border-radius: var(--radius-editorial-sm);
+  background: transparent;
+  color: var(--color-text-secondary);
+  cursor: pointer;
+  font-family: var(--font-mono);
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  padding: 0 9px;
+  text-transform: uppercase;
+}
+
+.compositionResetButton:hover,
+.compositionResetButton:focus-visible,
+.compositionInserterButton:hover,
+.compositionInserterButton:focus-visible {
+  border-color: var(--color-account);
+  color: var(--color-text-primary);
+  outline: none;
+}
+
+.compositionEmptyLayoutNotice {
+  display: grid;
+  gap: var(--space-sm);
+  padding: var(--space-md) 0;
+  border-top: 1px solid var(--color-rule-light);
+  border-bottom: 1px solid var(--color-rule-light);
+}
+
 .referenceBody {
   overflow-x: hidden;
 }
@@ -174,6 +257,107 @@
   display: grid;
   gap: var(--space-lg);
   margin-top: var(--space-lg);
+}
+
+.compositionEditableBlock {
+  display: grid;
+  gap: var(--space-sm);
+  min-width: 0;
+}
+
+.compositionEditableBlock[data-edit-mode="true"] {
+  scroll-margin-top: 120px;
+}
+
+.compositionEditableBlock[data-dragging="true"] {
+  opacity: 0.76;
+}
+
+.compositionEditableBlock[data-layout-variant="compact"] .compositionBlock {
+  gap: var(--space-sm);
+  padding-top: var(--space-sm);
+}
+
+.compositionEditableBlock[data-layout-variant="compact"] .compositionNarrative,
+.compositionEditableBlock[data-layout-variant="compact"] .compositionBodyText {
+  font-size: 13px;
+  line-height: 1.45;
+}
+
+.compositionEditableBlock[data-layout-variant="spotlight"] .compositionBlock {
+  padding: var(--space-lg);
+  border: 1px solid var(--color-rule-light);
+  border-radius: var(--radius-editorial-sm);
+  background: var(--color-surface-primary);
+}
+
+.compositionBlockToolbar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-sm);
+  padding: var(--space-xs) 0;
+  border-top: 1px dashed var(--color-rule-light);
+  border-bottom: 1px dashed var(--color-rule-light);
+}
+
+.compositionReorderHandle {
+  appearance: none;
+  display: inline-flex;
+  width: 30px;
+  height: 30px;
+  align-items: center;
+  justify-content: center;
+  border: 1px solid var(--color-rule-light);
+  border-radius: var(--radius-editorial-sm);
+  background: transparent;
+  color: var(--color-text-tertiary);
+  cursor: grab;
+}
+
+.compositionReorderHandle:disabled {
+  cursor: default;
+  opacity: 0.72;
+}
+
+.compositionReorderHandle:hover,
+.compositionReorderHandle:focus-visible {
+  border-color: var(--color-account);
+  color: var(--color-text-primary);
+  outline: none;
+}
+
+.compositionAssistiveText {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip: rect(0 0 0 0);
+  white-space: nowrap;
+}
+
+.compositionLockedReason {
+  color: var(--color-text-tertiary);
+  font-family: var(--font-sans);
+  font-size: 12px;
+  line-height: 1.3;
+}
+
+.compositionToolbarControl,
+.compositionSectionVisibility {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-xs);
+  color: var(--color-text-tertiary);
+  font-family: var(--font-mono);
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+
+.compositionSectionVisibility {
+  margin-top: var(--space-sm);
 }
 
 .compositionBlock {
@@ -480,6 +664,29 @@
 .compositionButton:focus-visible {
   border-color: var(--color-account);
   outline: none;
+}
+
+.compositionInserter {
+  display: grid;
+  gap: var(--space-sm);
+  padding-top: var(--space-lg);
+  border-top: 1px solid var(--color-rule-heavy);
+}
+
+.compositionInserterLabel {
+  margin: 0;
+  color: var(--color-text-tertiary);
+  font-family: var(--font-mono);
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.compositionInserterList {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-sm);
 }
 
 @media (max-width: 900px) {

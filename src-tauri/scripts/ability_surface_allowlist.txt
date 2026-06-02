@@ -436,3 +436,9 @@ assign_inbox_entity
 # v1.5.0 W1 composition projection bridge: the Account route uses Tauri invoke
 # transport into the render orchestrator while the producer remains ability-routed.
 get_projected_composition
+# v1.5.0 W2 composition layout overlay bridge: first-party local preference
+# commands scoped to the Tauri surface. Mutations route through
+# services::composition_layout and do not create MCP/headless ability surface.
+get_composition_layout_overlay
+save_composition_layout_overlay
+reset_composition_layout_overlay

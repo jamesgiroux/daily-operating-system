@@ -79,6 +79,16 @@ A pattern knows about a domain concept (a claim, a trust state, a briefing, a me
 | [`CommitmentRow`](./CommitmentRow.md) | integrated | Captured commitment with YOURS / THEIRS tag | `PostMeetingIntelligence` local class family |
 | [`RoleTransitionRow`](./RoleTransitionRow.md) | integrated | Person role transition (before-status → after-status pill chain) | `PostMeetingIntelligence` local class family |
 
+### v1.5.0 W2 (Composition edit mode)
+
+| Name | Status | Job (one line) | Consumers |
+|---|---|---|---|
+| [`CompositionEditMode`](./CompositionEditMode.md) | integrated | In-context layout customization layer over projected composition | AccountDetail |
+| [`CompositionBlockToolbar`](./CompositionBlockToolbar.md) | integrated | Per-block controls for move, hide/show, variant, and eligible inline edit | AccountDetail |
+| [`CompositionInserter`](./CompositionInserter.md) | integrated | Restore hidden projected blocks without creating content | AccountDetail |
+| [`CompositionReorderHandle`](./CompositionReorderHandle.md) | integrated | Accessible drag handle for projected composition order | AccountDetail |
+| [`CompositionInlineEdit`](./CompositionInlineEdit.md) | integrated | EditableText wrapper that routes claim text changes through correction feedback | AccountDetail |
+
 ## Conventions
 
 - **Named after the job, not the surface.** `TrustBand`, not `BriefingTrustBand`. If a pattern is unique to one surface, it's probably surface-internal and doesn't need promotion yet.
