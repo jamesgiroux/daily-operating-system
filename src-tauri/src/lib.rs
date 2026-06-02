@@ -870,6 +870,7 @@ pub fn run() {
         .invoke_handler(tauri::generate_handler![
             // Abilities
             commands::invoke_ability,
+            commands::get_projected_composition,
             operations::invoke_operation,
             // sensitivity reveal audit
             commands::reveal_sensitive_claim_text,

@@ -6,17 +6,19 @@ use serde::{Deserialize, Serialize};
 
 use super::prompts;
 use crate::abilities::get_entity_intelligence::contracts::{
-    ContextDepth as EntityIntelligenceDepth, EntityFact, EntityIntelligenceInput, EntityKind,
-    EnvelopeSection, ENVELOPE_SCHEMA_VERSION,
+    ContextDepth as EntityIntelligenceDepth, EntityFact, EntityIntelligenceEnvelope,
+    EntityIntelligenceInput, EntityKind, EnvelopeProvenanceSource, EnvelopeSection,
+    ENVELOPE_SCHEMA_VERSION,
 };
 use crate::abilities::get_entity_intelligence::producer::build_entity_intelligence;
 use crate::abilities::provenance::source_time::{parse_source_timestamp, SourceTimestampStatus};
 use crate::abilities::provenance::trust::claim_trust_band_from_score;
 use crate::abilities::provenance::{
-    AbilityExecutionMode, AbilityVersion, CompositionId, Confidence, DataSource, FieldAttribution,
-    FieldPath, GleanDownstream, MaskReason, MeetingId, ProvenanceBuilder, ProvenanceBuilderConfig,
-    ProvenanceWarning, SchemaVersion, SourceAttribution, SourceIdentifier, SourceRef,
-    SubjectAttribution, SubjectBindingKind, SubjectFitAssessment, SubjectRef,
+    AbilityExecutionMode, AbilityVersion, CompositionId, Confidence, DataSource, DerivationKind,
+    FieldAttribution, FieldPath, GleanDownstream, MaskReason, MeetingId, Provenance,
+    ProvenanceBuilder, ProvenanceBuilderConfig, ProvenanceWarning, SchemaVersion, SignalId,
+    SourceAttribution, SourceIdentifier, SourceIndex, SourceRef, SubjectAttribution,
+    SubjectBindingKind, SubjectFitAssessment, SubjectRef,
 };
 use crate::abilities::trust::TrustBand;
 use crate::abilities::{metadata_for_claim_type, AbilityCategory};
@@ -278,7 +280,8 @@ async fn build_meeting_brief_from_context(
             },
         )
         .await?;
-        let (envelope, provenance) = child.into_parts();
+        let (envelope, mut provenance) = child.into_parts();
+        attach_entity_envelope_sources_to_child_provenance(&envelope, &mut provenance)?;
         let entries = envelope
             .facts
             .items
@@ -319,6 +322,77 @@ async fn build_meeting_brief_from_context(
         raw,
         prompts::fingerprint_from_completion(&completion, &rendered),
     )
+}
+
+fn attach_entity_envelope_sources_to_child_provenance(
+    envelope: &EntityIntelligenceEnvelope,
+    provenance: &mut Provenance,
+) -> Result<(), AbilityError> {
+    let mut source_refs = Vec::new();
+    for (index, source) in envelope
+        .provenance
+        .sources
+        .iter()
+        .filter(|source| !source.redacted)
+        .enumerate()
+    {
+        let source_index = SourceIndex(provenance.sources.len());
+        provenance
+            .sources
+            .push(source_attribution_from_entity_source(
+                source,
+                provenance.produced_at,
+                index,
+            )?);
+        source_refs.push(SourceRef::Source { source_index });
+    }
+
+    if source_refs.is_empty() {
+        return Ok(());
+    }
+
+    let attribution = FieldAttribution::computed(
+        provenance.subject.clone(),
+        "get_entity_intelligence.envelope_provenance",
+        source_refs,
+        Confidence::computed(0.8).map_err(map_field_error)?,
+    )
+    .map_err(map_field_error)?;
+    provenance
+        .field_attributions
+        .insert(FieldPath::root(), attribution);
+    Ok(())
+}
+
+fn source_attribution_from_entity_source(
+    source: &EnvelopeProvenanceSource,
+    produced_at: DateTime<Utc>,
+    index: usize,
+) -> Result<SourceAttribution, AbilityError> {
+    SourceAttribution::new(
+        envelope_data_source(source),
+        vec![SourceIdentifier::Signal {
+            signal_id: SignalId::new(format!("entity_intelligence_source_{index}")),
+        }],
+        source.as_of.unwrap_or(produced_at),
+        source.as_of,
+        0.8,
+        None,
+    )
+    .map_err(|error| AbilityError {
+        kind: AbilityErrorKind::Validation,
+        message: error.to_string(),
+    })
+}
+
+fn envelope_data_source(source: &EnvelopeProvenanceSource) -> DataSource {
+    let value = source
+        .source_type
+        .as_deref()
+        .unwrap_or(source.label.as_str())
+        .trim()
+        .to_ascii_lowercase();
+    data_source(&value)
 }
 
 pub fn draft_claims_for_publish(brief: &MeetingBrief) -> Vec<ClaimDraft> {
@@ -1021,11 +1095,29 @@ impl<'a> BriefAssembler<'a> {
                 AttributionMode::Llm,
             );
         };
-        let attribution = FieldAttribution::composed(
+        let mut source_refs = Vec::with_capacity(candidate.source_ids.len() + 1);
+        for source_id in &candidate.source_ids {
+            let source =
+                self.source_by_id.get(source_id).cloned().ok_or_else(|| {
+                    validation_error("LLM candidate referenced unknown source_id")
+                })?;
+            source_refs.push(SourceRef::Source {
+                source_index: self.ensure_source(builder, &source)?,
+            });
+        }
+        source_refs.push(SourceRef::Child {
+            composition_id: child_id.clone(),
+            field_path: FieldPath::root(),
+        });
+
+        let attribution = FieldAttribution::new(
             subject,
-            child_id,
-            FieldPath::root(),
+            DerivationKind::Composed {
+                composition_id: child_id,
+            },
+            source_refs,
             Confidence::composed_min(candidate.confidence).map_err(map_field_error)?,
+            None,
         )
         .map_err(map_field_error)?;
         Ok(Some((candidate.item, attribution)))
@@ -2421,9 +2513,29 @@ mod tests {
         });
 
         let output = harness.run(input).await.unwrap();
-        let child_source_asof = output.provenance().children[0].provenance.sources[0]
-            .source_asof
-            .unwrap()
+        let provenance = output.provenance();
+        let child_id = provenance.children[0].composition_id.clone();
+        let attendee_attribution = provenance
+            .field_attributions
+            .iter()
+            .find(|(path, _)| path.as_str().starts_with("/attendee_context/0/"))
+            .map(|(_, attribution)| attribution)
+            .expect("attendee context field attribution exists");
+        assert!(attendee_attribution.source_refs.iter().any(|source_ref| {
+            matches!(
+                source_ref,
+                SourceRef::Child {
+                    composition_id,
+                    field_path
+                } if composition_id == &child_id && field_path.is_root()
+            )
+        }));
+        let child_source_asof = provenance.children[0]
+            .provenance
+            .sources
+            .first()
+            .and_then(|source| source.source_asof)
+            .expect("child composition source_asof remains reachable")
             .to_rfc3339();
 
         assert_eq!(child_source_asof, "2026-04-28T12:00:00+00:00");

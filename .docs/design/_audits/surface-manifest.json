@@ -11,7 +11,11 @@
       "html": ".docs/design/reference/surfaces/account.html",
       "primary": "src/pages/AccountDetailPage.tsx",
       "module": "src/pages/AccountDetailPage.module.css",
-      "module_prefix": "AccountDetailPage"
+      "module_prefix": "AccountDetailPage",
+      "component": "AccountDetailPage",
+      "route_paths": ["/accounts/$accountId"],
+      "surface_model": "composition-first variant-D composed scroll",
+      "notes": "v1.5.0 W1 target reference. Source migrates from the old Health/Context/Work template during W1 L1."
     },
     {
       "html": ".docs/design/reference/surfaces/accounts.html",

@@ -41,8 +41,8 @@ pub use fallback_projection::{
     project_composition_for_surface, register_custom_block_schema, AuditCategory, AuditIntent,
     CustomBlockSchema, DiagnosticKind, DiagnosticReason, EditRoute, EditRouteRefusalReason,
     FallbackProjectionContext, ProducerOutputInvalidReason, ProjectedBlock, ProjectedComposition,
-    ProjectionDiagnostic, ProjectionError, SurfaceKind, DEFAULT_UNKNOWN_BLOCK_CAP,
-    FALLBACK_BANNER_COPY,
+    ProjectedSection, ProjectionDiagnostic, ProjectionError, SurfaceKind,
+    DEFAULT_UNKNOWN_BLOCK_CAP, FALLBACK_BANNER_COPY,
 };
 pub use feedback::{
     feedback_semantics, transition_for_feedback, ClaimFeedbackMetadata, ClaimRenderPolicy,

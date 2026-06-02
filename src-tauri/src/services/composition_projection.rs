@@ -121,6 +121,7 @@ mod tests {
             composition_id: CompositionDocId::new("composition-projection-test"),
             composition_version: Some(3),
             fallback_policy_version: policy_version,
+            sections: vec![],
             blocks: vec![ProjectedBlock {
                 block_id: BlockId::new("block-1"),
                 block_index: 0,

@@ -5,9 +5,13 @@
 //! adapters that reach SQLite from the app crate, keeping those raw handles out
 //! of the ability runtime dependency graph.
 
-use std::{collections::HashSet, sync::Arc};
+use std::{
+    collections::{HashMap, HashSet},
+    sync::Arc,
+};
 
 use abilities_runtime::abilities::recommendations::contracts as runtime_salience;
+use abilities_runtime::abilities::trust::TrustBand;
 
 pub use abilities_runtime::services::context::*;
 
@@ -63,6 +67,7 @@ pub struct LiveSourceManagementActionHandler {
     signal_engine: Option<Arc<crate::signals::propagation::PropagationEngine>>,
 }
 pub struct LiveEntityContextClaimReader;
+pub struct LiveAccountCompositionSnapshotReader;
 pub struct LivePrepareMeetingContextReader;
 pub struct LiveDailyReadinessContextReader;
 pub struct LiveTemporalWorkspaceReader;
@@ -100,6 +105,9 @@ pub fn attach_live_workspace_readers_with_signal_engine(
             signal_engine: signal_engine.clone(),
         }))
         .with_entity_context_claim_reader(Arc::new(LiveEntityContextClaimReader))
+        .with_account_composition_snapshot_reader(Arc::new(
+            LiveAccountCompositionSnapshotReader,
+        ))
         .with_prepare_meeting_context_reader(Arc::new(LivePrepareMeetingContextReader))
         .with_daily_readiness_context_reader(Arc::new(LiveDailyReadinessContextReader))
         .with_trajectory_reader(Arc::new(LiveTemporalWorkspaceReader))
@@ -1013,6 +1021,321 @@ impl EntityContextClaimReadHandle for LiveEntityContextClaimReader {
     }
 }
 
+impl AccountCompositionSnapshotReadHandle for LiveAccountCompositionSnapshotReader {
+    fn read_account_composition_snapshot<'a>(
+        &'a self,
+        account_id: String,
+        surface: ClaimDismissalSurface,
+    ) -> AccountCompositionSnapshotReadFuture<'a> {
+        Box::pin(async move {
+            tokio::task::spawn_blocking(move || {
+                let db = crate::db::ActionDb::open_readonly(std::sync::Arc::new(
+                    crate::db::LocalKeychain::new(),
+                ))
+                .map_err(|error| {
+                    AccountCompositionSnapshotReadError::ReadFailed(format!(
+                        "Database unavailable: {error}"
+                    ))
+                })?;
+                read_account_composition_snapshot_from_db(&db, &account_id, surface)
+            })
+            .await
+            .map_err(|error| {
+                AccountCompositionSnapshotReadError::ReadFailed(format!(
+                    "account composition snapshot task failed: {error}"
+                ))
+            })?
+        })
+    }
+}
+
+fn read_account_composition_snapshot_from_db(
+    db: &crate::db::ActionDb,
+    account_id: &str,
+    _surface: ClaimDismissalSurface,
+) -> Result<AccountCompositionSnapshot, AccountCompositionSnapshotReadError> {
+    let account = db
+        .get_account(account_id)
+        .map_err(|error| {
+            AccountCompositionSnapshotReadError::ReadFailed(format!("account read failed: {error}"))
+        })?
+        .ok_or_else(|| {
+            AccountCompositionSnapshotReadError::AccountNotFound(account_id.to_string())
+        })?;
+
+    let provenance = db
+        .get_account_field_provenance(account_id)
+        .map_err(|error| {
+            AccountCompositionSnapshotReadError::ReadFailed(format!(
+                "account provenance read failed: {error}"
+            ))
+        })?
+        .into_iter()
+        .map(|row| (row.field.clone(), row))
+        .collect::<HashMap<_, _>>();
+
+    let mut fields = Vec::new();
+    push_account_vital_field(
+        &mut fields,
+        &provenance,
+        "lifecycle",
+        "/vitals/lifecycle",
+        "Lifecycle",
+        account.lifecycle.as_deref().map(serde_json::Value::from),
+    );
+    push_account_vital_field(
+        &mut fields,
+        &provenance,
+        "arr",
+        "/vitals/arr",
+        "ARR",
+        account.arr.map(serde_json::Value::from),
+    );
+    push_account_vital_field(
+        &mut fields,
+        &provenance,
+        "contract_end",
+        "/vitals/contract_end",
+        "Contract end",
+        account.contract_end.as_deref().map(serde_json::Value::from),
+    );
+    push_account_vital_field(
+        &mut fields,
+        &provenance,
+        "nps",
+        "/vitals/nps",
+        "NPS",
+        account.nps.map(serde_json::Value::from),
+    );
+
+    push_sourced_account_field(
+        &mut fields,
+        "/renewal/likelihood",
+        "Renewal likelihood",
+        account.renewal_likelihood.map(serde_json::Value::from),
+        account.renewal_likelihood_source.as_deref(),
+        account.renewal_likelihood_updated_at.as_deref(),
+    );
+    push_sourced_account_field(
+        &mut fields,
+        "/vitals/support_tier",
+        "Support tier",
+        account.support_tier.as_deref().map(serde_json::Value::from),
+        account.support_tier_source.as_deref(),
+        account.support_tier_updated_at.as_deref(),
+    );
+    push_sourced_account_field(
+        &mut fields,
+        "/outlook/customer_status",
+        "Customer status",
+        account
+            .customer_status
+            .as_deref()
+            .map(serde_json::Value::from),
+        account.customer_status_source.as_deref(),
+        account.customer_status_updated_at.as_deref(),
+    );
+    push_sourced_account_field(
+        &mut fields,
+        "/value/growth_potential",
+        "Growth potential",
+        account.growth_potential_score.map(serde_json::Value::from),
+        account.growth_potential_score_source.as_deref(),
+        None,
+    );
+    push_sourced_account_field(
+        &mut fields,
+        "/strategy/icp_fit",
+        "ICP fit",
+        account.icp_fit_score.map(serde_json::Value::from),
+        account.icp_fit_score_source.as_deref(),
+        None,
+    );
+
+    if let Some(footprint) = db
+        .get_account_technical_footprint(account_id)
+        .map_err(|error| {
+            AccountCompositionSnapshotReadError::ReadFailed(format!(
+                "technical footprint read failed: {error}"
+            ))
+        })?
+    {
+        push_sourced_account_field(
+            &mut fields,
+            "/technical/usage_tier",
+            "Usage tier",
+            footprint.usage_tier.as_deref().map(serde_json::Value::from),
+            Some(footprint.source.as_str()),
+            Some(footprint.sourced_at.as_str()),
+        );
+        push_sourced_account_field(
+            &mut fields,
+            "/technical/adoption_score",
+            "Adoption score",
+            footprint.adoption_score.map(serde_json::Value::from),
+            Some(footprint.source.as_str()),
+            Some(footprint.sourced_at.as_str()),
+        );
+        push_sourced_account_field(
+            &mut fields,
+            "/technical/active_users",
+            "Active users",
+            footprint.active_users.map(serde_json::Value::from),
+            Some(footprint.source.as_str()),
+            Some(footprint.sourced_at.as_str()),
+        );
+        push_sourced_account_field(
+            &mut fields,
+            "/technical/support_tier",
+            "Technical support tier",
+            footprint
+                .support_tier
+                .as_deref()
+                .map(serde_json::Value::from),
+            Some(footprint.source.as_str()),
+            Some(footprint.sourced_at.as_str()),
+        );
+        push_sourced_account_field(
+            &mut fields,
+            "/technical/csat_score",
+            "CSAT",
+            footprint.csat_score.map(serde_json::Value::from),
+            Some(footprint.source.as_str()),
+            Some(footprint.sourced_at.as_str()),
+        );
+        push_sourced_account_field(
+            &mut fields,
+            "/technical/open_tickets",
+            "Open tickets",
+            Some(serde_json::Value::from(footprint.open_tickets)),
+            Some(footprint.source.as_str()),
+            Some(footprint.sourced_at.as_str()),
+        );
+        push_sourced_account_field(
+            &mut fields,
+            "/technical/services_stage",
+            "Services stage",
+            footprint
+                .services_stage
+                .as_deref()
+                .map(serde_json::Value::from),
+            Some(footprint.source.as_str()),
+            Some(footprint.sourced_at.as_str()),
+        );
+    }
+
+    fields.push(AccountCompositionSnapshotField {
+        field_path: "/reports/account_report".to_string(),
+        label: "Account report".to_string(),
+        value: serde_json::Value::from("unavailable"),
+        sensitivity: AccountCompositionSnapshotSensitivity::Internal,
+        source_label: Some("system_config".to_string()),
+        source_ref: None,
+        source_asof: Some(account.updated_at.clone()),
+        trust_band: TrustBand::UseWithCaution,
+        trust_status: "system_config".to_string(),
+        provenance_kind: AccountCompositionProvenanceKind::SystemConfig,
+    });
+
+    Ok(AccountCompositionSnapshot {
+        account_id: account.id.clone(),
+        display_name: account_identity_field(
+            "/identity/display_name",
+            "Account",
+            serde_json::Value::from(account.name),
+        ),
+        account_type: Some(account_identity_field(
+            "/identity/account_type",
+            "Account type",
+            serde_json::Value::from(account.account_type.as_db_str()),
+        )),
+        fields,
+    })
+}
+
+fn push_account_vital_field(
+    fields: &mut Vec<AccountCompositionSnapshotField>,
+    provenance: &HashMap<String, crate::db::DbAccountFieldProvenance>,
+    provenance_key: &str,
+    field_path: &str,
+    label: &str,
+    value: Option<serde_json::Value>,
+) {
+    let Some(value) = value else {
+        return;
+    };
+    let Some(source) = provenance.get(provenance_key) else {
+        return;
+    };
+    fields.push(AccountCompositionSnapshotField {
+        field_path: field_path.to_string(),
+        label: label.to_string(),
+        value,
+        sensitivity: AccountCompositionSnapshotSensitivity::Internal,
+        source_label: Some(source.source.clone()),
+        source_ref: None,
+        source_asof: source.updated_at.clone(),
+        trust_band: TrustBand::UseWithCaution,
+        trust_status: trust_status(TrustBand::UseWithCaution).to_string(),
+        provenance_kind: AccountCompositionProvenanceKind::SourceField,
+    });
+}
+
+fn push_sourced_account_field(
+    fields: &mut Vec<AccountCompositionSnapshotField>,
+    field_path: &str,
+    label: &str,
+    value: Option<serde_json::Value>,
+    source_label: Option<&str>,
+    source_asof: Option<&str>,
+) {
+    let Some(value) = value else {
+        return;
+    };
+    let Some(source_label) = source_label.filter(|source| !source.trim().is_empty()) else {
+        return;
+    };
+    fields.push(AccountCompositionSnapshotField {
+        field_path: field_path.to_string(),
+        label: label.to_string(),
+        value,
+        sensitivity: AccountCompositionSnapshotSensitivity::Internal,
+        source_label: Some(source_label.to_string()),
+        source_ref: None,
+        source_asof: source_asof.map(ToString::to_string),
+        trust_band: TrustBand::UseWithCaution,
+        trust_status: trust_status(TrustBand::UseWithCaution).to_string(),
+        provenance_kind: AccountCompositionProvenanceKind::SourceField,
+    });
+}
+
+fn account_identity_field(
+    field_path: &str,
+    label: &str,
+    value: serde_json::Value,
+) -> AccountCompositionSnapshotField {
+    AccountCompositionSnapshotField {
+        field_path: field_path.to_string(),
+        label: label.to_string(),
+        value,
+        sensitivity: AccountCompositionSnapshotSensitivity::NonSensitiveIdentity,
+        source_label: None,
+        source_ref: None,
+        source_asof: None,
+        trust_band: TrustBand::LikelyCurrent,
+        trust_status: trust_status(TrustBand::LikelyCurrent).to_string(),
+        provenance_kind: AccountCompositionProvenanceKind::NonSensitiveIdentity,
+    }
+}
+
+fn trust_status(band: TrustBand) -> &'static str {
+    match band {
+        TrustBand::LikelyCurrent => "likely_current",
+        TrustBand::UseWithCaution => "use_with_caution",
+        TrustBand::NeedsVerification | TrustBand::Unscored => "needs_verification",
+    }
+}
+
 impl CompositionCommitHandle for LiveCompositionCommitter {
     fn commit_composition<'a>(
         &'a self,
@@ -1401,7 +1724,12 @@ mod tests {
         // 4 personal blocks (matches the phantom-row shape) + 1 customer
         // meeting. The customer meeting is the only row Briefing should return.
         let rows = [
-            ("meet-personal-1", "Lunch", "personal", "2026-05-23T12:00:00Z"),
+            (
+                "meet-personal-1",
+                "Lunch",
+                "personal",
+                "2026-05-23T12:00:00Z",
+            ),
             ("meet-personal-2", "Gym", "personal", "2026-05-23T07:00:00Z"),
             (
                 "meet-personal-3",

@@ -9,7 +9,10 @@
 //! On failure, the caller falls back to the PTY path transparently.
 
 use std::collections::HashMap;
-use std::sync::OnceLock;
+use std::sync::{
+    atomic::{AtomicU64, Ordering},
+    OnceLock,
+};
 use std::time::{Duration, Instant};
 
 use parking_lot::Mutex;
@@ -49,6 +52,7 @@ struct DiscoveryCacheEntry {
 }
 
 static DISCOVERY_CACHE: OnceLock<Mutex<HashMap<String, DiscoveryCacheEntry>>> = OnceLock::new();
+static GLEAN_DEBUG_RESPONSE_COUNTER: AtomicU64 = AtomicU64::new(1);
 
 fn discovery_cache() -> &'static Mutex<HashMap<String, DiscoveryCacheEntry>> {
     DISCOVERY_CACHE.get_or_init(|| Mutex::new(HashMap::new()))
@@ -309,10 +313,9 @@ impl GleanIntelligenceProvider {
                 // succeed; per-dim filenames preserve forensic state across
                 // parallel failures.
                 {
-                    // dos259-exempt: temp debug filename disambiguator; not persisted intelligence state.
-                    let ts = chrono::Utc::now().timestamp_millis();
-                    let debug_path =
-                        std::env::temp_dir().join(format!("dailyos-glean-{}-{}.txt", dim_name, ts));
+                    let sequence = GLEAN_DEBUG_RESPONSE_COUNTER.fetch_add(1, Ordering::Relaxed);
+                    let debug_path = std::env::temp_dir()
+                        .join(format!("dailyos-glean-{}-{}.txt", dim_name, sequence));
                     if let Err(e) = std::fs::write(&debug_path, &response_text) {
                         log::warn!(
                             "[I574] Failed to write debug response for {}: {}",

@@ -3,1115 +3,456 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width,initial-scale=1" />
-  <title>Acme Corp · DailyOS Reference</title>
+  <title>Example Account - DailyOS Reference</title>
 
-  <!-- Fonts FIRST so the rest of the cascade has them -->
   <link rel="stylesheet" href="../_shared/fonts.css">
   <link rel="stylesheet" href="../_shared/styles/design-tokens.css">
 
-  <!-- Chrome modules — injected by chrome.js from body data attributes -->
   <link rel="stylesheet" href="../_shared/styles/AtmosphereLayer.module.css">
   <link rel="stylesheet" href="../_shared/styles/FolioBar.module.css">
   <link rel="stylesheet" href="../_shared/styles/FloatingNavIsland.module.css">
   <link rel="stylesheet" href="../_shared/styles/MagazinePageLayout.module.css">
 
-  <!-- Surface-specific modules used by AccountDetailPage.tsx.
-       AccountDetailEditorial classes below are legacy child-module coverage only;
-       the canonical routed surface metadata is AccountDetailPage. -->
   <link rel="stylesheet" href="../_shared/styles/AccountDetailPage.module.css">
-  <link rel="stylesheet" href="../_shared/styles/AccountDetailEditorial.module.css">
-  <link rel="stylesheet" href="../_shared/styles/entity-detail.module.css">
   <link rel="stylesheet" href="../_shared/styles/EntityHeroBase.module.css">
   <link rel="stylesheet" href="../_shared/styles/AccountHero.module.css">
-  <link rel="stylesheet" href="../_shared/styles/IntelligenceQualityBadge.module.css">
-  <link rel="stylesheet" href="../_shared/styles/EditableText.module.css">
-  <link rel="stylesheet" href="../_shared/styles/EditableVitalsStrip.module.css">
-  <link rel="stylesheet" href="../_shared/styles/VitalsStrip.module.css">
-  <link rel="stylesheet" href="../_shared/styles/FreshnessIndicator.module.css">
   <link rel="stylesheet" href="../_shared/styles/ChapterHeading.module.css">
-  <link rel="stylesheet" href="../_shared/styles/StateBlock.module.css">
-  <link rel="stylesheet" href="../_shared/styles/IntelligenceFeedback.module.css">
-  <link rel="stylesheet" href="../_shared/styles/IntelligenceCorrection.module.css">
-  <link rel="stylesheet" href="../_shared/styles/AccountViewSwitcher.module.css">
-  <link rel="stylesheet" href="../_shared/styles/RiskBriefingStatus.module.css">
-  <link rel="stylesheet" href="../_shared/styles/AccountOutlook.module.css">
+  <link rel="stylesheet" href="../_shared/styles/Pill.module.css">
+  <link rel="stylesheet" href="../_shared/styles/StatusDot.module.css">
+  <link rel="stylesheet" href="../_shared/styles/HealthBadge.module.css">
+  <link rel="stylesheet" href="../_shared/styles/FreshnessIndicator.module.css">
+  <link rel="stylesheet" href="../_shared/styles/TrustBandBadge.module.css">
+  <link rel="stylesheet" href="../_shared/styles/EntityChip.module.css">
   <link rel="stylesheet" href="../_shared/styles/ProvenanceTag.module.css">
-  <link rel="stylesheet" href="../_shared/styles/QuoteWall.module.css">
-  <link rel="stylesheet" href="../_shared/styles/AboutThisDossier.module.css">
-  <link rel="stylesheet" href="../_shared/styles/AccountTechnicalFootprint.module.css">
-  <link rel="stylesheet" href="../_shared/styles/ReferenceGrid.module.css">
-  <link rel="stylesheet" href="../_shared/styles/StateOfPlay.module.css">
-  <link rel="stylesheet" href="../_shared/styles/StakeholderGrid.module.css">
-  <link rel="stylesheet" href="../_shared/styles/PendingStakeholderQueue.module.css">
-  <link rel="stylesheet" href="../_shared/styles/RelationshipFabric.module.css">
-  <link rel="stylesheet" href="../_shared/styles/StakeholderGallery.module.css">
-  <link rel="stylesheet" href="../_shared/styles/EngagementSelector.module.css">
-  <link rel="stylesheet" href="../_shared/styles/TeamRoleSelector.module.css">
-  <link rel="stylesheet" href="../_shared/styles/WatchList.module.css">
-  <link rel="stylesheet" href="../_shared/styles/WatchListPrograms.module.css">
-  <link rel="stylesheet" href="../_shared/styles/ValueCommitments.module.css">
-  <link rel="stylesheet" href="../_shared/styles/StrategicLandscape.module.css">
-  <link rel="stylesheet" href="../_shared/styles/UnifiedTimeline.module.css">
-  <link rel="stylesheet" href="../_shared/styles/TimelineEntry.module.css">
-  <link rel="stylesheet" href="../_shared/styles/AddToRecord.module.css">
-  <link rel="stylesheet" href="../_shared/styles/RecommendedActions.module.css">
-  <link rel="stylesheet" href="../_shared/styles/TheWork.module.css">
-  <link rel="stylesheet" href="../_shared/styles/WorkSurface.module.css">
-  <link rel="stylesheet" href="../_shared/styles/FileListSection.module.css">
-  <link rel="stylesheet" href="../_shared/styles/FolioReportsDropdown.module.css">
-  <link rel="stylesheet" href="../_shared/styles/FolioToolsDropdown.module.css">
-  <link rel="stylesheet" href="../_shared/styles/ui-button.css">
-  <link rel="stylesheet" href="../_shared/styles/tailwind-shims.css">
+  <link rel="stylesheet" href="../_shared/styles/FinisMarker.module.css">
 
-  <!-- Reference-only chrome (chrome toggle, baseline reset) -->
   <link rel="stylesheet" href="../_shared/chrome.css">
   <link rel="stylesheet" href="../_shared/inspector.css">
 </head>
 <body
+  class="AccountDetailPage_referenceBody"
   data-folio-label="Account"
   data-tint="turmeric"
   data-active-page="accounts"
   data-folio-crumbs="Reference > Surfaces > Account"
   data-nav-base="."
-  data-folio-date="MONDAY, MAY 4, 2026"
+  data-folio-date="MONDAY, JUNE 1, 2026"
   data-folio-actions="refresh,reports,tools"
   data-folio-refresh-title="Refresh account"
-  data-chapters="headline:alignleft:The Headline|outlook:compass:Outlook|state-of-play:activity:State of Play|the-room:users:The Room|whats-next:arrowright:What's Next|watch-list:eye:Watch List|value-commitments:star:Value & Commitments|strategic-landscape:compass:Competitive & Strategic|the-record:activity:The Record|the-work:checksquare:The Work|reports:filetext:Reports">
+  data-chapters="headline:alignleft:The Headline|outlook:compass:Outlook|state-of-play:activity:State of Play|the-room:users:The Room|whats-next:arrowright:What's Next|watch-list:eye:Watch List|value-commitments:star:Value & Commitments|strategic-landscape:compass:Strategic Landscape|the-record:activity:The Record|the-work:checksquare:The Work|reports:filetext:Reports">
 
-<!-- MagazinePageLayout shell — mirrors src/components/layout/MagazinePageLayout.tsx.
-     Folio bar, atmosphere, and floating nav are injected by chrome.js. -->
 <div class="MagazinePageLayout_magazinePage">
 <main class="MagazinePageLayout_pageContainer">
 
-<div class="AccountDetailPage_view" data-ds-name="AccountDetailPage" data-ds-tier="surface" data-ds-spec="surfaces/AccountDetailPage.md">
+<div
+  class="AccountDetailPage_view AccountDetailPage_compositionSurface"
+  data-ds-name="AccountDetailPage"
+  data-ds-tier="surface"
+  data-ds-spec="surfaces/AccountDetailPage.md"
+  data-composition-id="dailyos/account-overview:account:example-account">
 
-  <section id="headline" class="entity-detail_chapterSection">
-    <div class="AccountHero_hero EntityHeroBase_hero">
-      <div class="AccountHero_heroDate EntityHeroBase_heroDate AccountHero_heroDateLayout">
-        <span class="IntelligenceQualityBadge_root" data-quality-level="fresh" title="Fresh — Last updated: 5/4/2026, 9:00:00 AM">
-          <span class="IntelligenceQualityBadge_dot"></span>
-        </span>
-        Last updated Today
-        <div class="AccountHero_typeBadgeWrapper">
-          <button type="button" class="AccountHero_badge EntityHeroBase_heroBadge AccountHero_customerBadge AccountHero_typeBadgeButton">
-            Customer
-            <svg class="AccountHero_typeBadgeChevron" xmlns="http://www.w3.org/2000/svg" width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m6 9 6 6 6-6"/></svg>
-          </button>
+  <section id="headline" class="AccountDetailPage_compositionMasthead" data-section-id="headline">
+    <div class="AccountDetailPage_compositionMastheadGrid">
+      <div>
+        <div class="AccountDetailPage_compositionMetaRow">
+          <span class="AccountHero_badge EntityHeroBase_heroBadge AccountHero_customerBadge" data-ds-tier="primitive" data-ds-name="TypeBadge" data-ds-spec="primitives/TypeBadge.md">Customer</span>
+          <span class="Pill_pill Pill_compact TrustBandBadge_badge TrustBandBadge_compact TrustBandBadge_likelyCurrent" data-ds-tier="primitive" data-ds-name="TrustBandBadge" data-ds-spec="primitives/TrustBandBadge.md">Likely current</span>
+          <span class="FreshnessIndicator_root FreshnessIndicator_inline" data-ds-tier="primitive" data-ds-name="FreshnessIndicator" data-ds-spec="primitives/FreshnessIndicator.md" data-staleness="fresh">
+            <span class="FreshnessIndicator_part"><span class="FreshnessIndicator_text">Updated today</span></span>
+          </span>
         </div>
+        <h1 class="AccountDetailPage_compositionTitle">Example Account</h1>
+        <p class="AccountDetailPage_compositionSubhead">Renewal motion is healthy, but legal timing and launch ownership are the two signals to watch this week.</p>
       </div>
 
-      <h1 class="AccountHero_name EntityHeroBase_heroTitle">
-        <span class="EditableText_editable" title="Click to edit" data-editable-text>Acme Corp</span>
-      </h1>
-
-      <div class="EditableVitalsStrip_strip">
-        <div class="EditableVitalsStrip_stripItems">
-          <span class="EditableVitalsStrip_itemWithSeparator">
-            <span class="EditableVitalsStrip_fieldStack">
-              <span class="EditableVitalsStrip_fieldRow EditableVitalsStrip_fieldRowGap">
-                <span class="EditableVitalsStrip_clickableFieldValue" data-highlight="turmeric" title="Click to edit arr">$620K ARR</span>
-              </span>
-              <span class="EditableVitalsStrip_sourceAttribution">Salesforce</span>
+      <div class="AccountDetailPage_compositionVitalRail" aria-label="Account vitals">
+        <div class="AccountDetailPage_compositionVitalRow">
+          <span class="AccountDetailPage_compositionVitalLabel">Health</span>
+          <span class="AccountDetailPage_compositionVitalValue">
+            <span class="HealthBadge_badge" data-ds-tier="primitive" data-ds-name="HealthBadge" data-ds-spec="primitives/HealthBadge.md">
+              <span class="HealthBadge_dot HealthBadge_dotStandard HealthBadge_dotGreen"></span>
+              <span class="HealthBadge_score HealthBadge_scoreStandard">Green</span>
             </span>
           </span>
-          <span class="EditableVitalsStrip_itemWithSeparator">
-            <span class="EditableVitalsStrip_separatorDot"></span>
-            <span class="EditableVitalsStrip_fieldStack">
-              <span class="EditableVitalsStrip_fieldRow">
-                <span class="EditableVitalsStrip_clickableFieldValue" title="Click to change health">Green Health</span>
-              </span>
-              <span class="EditableVitalsStrip_sourceAttribution">Glean CRM</span>
-            </span>
-          </span>
-          <span class="EditableVitalsStrip_itemWithSeparator">
-            <span class="EditableVitalsStrip_separatorDot"></span>
-            <span class="EditableVitalsStrip_fieldStack">
-              <span class="EditableVitalsStrip_fieldRow">
-                <span class="EditableVitalsStrip_clickableFieldValue" title="Click to change lifecycle">Steady-state</span>
-              </span>
-            </span>
-          </span>
-          <span class="EditableVitalsStrip_itemWithSeparator">
-            <span class="EditableVitalsStrip_separatorDot"></span>
-            <span class="EditableVitalsStrip_fieldStack">
-              <span class="EditableVitalsStrip_fieldRow">
-                <span class="EditableVitalsStrip_clickableFieldValue" title="Click to edit renewal">Renewal in 143d</span>
-              </span>
-            </span>
-          </span>
-          <span class="EditableVitalsStrip_itemWithSeparator">
-            <span class="EditableVitalsStrip_separatorDot"></span>
-            <span class="EditableVitalsStrip_fieldStack">
-              <span class="EditableVitalsStrip_fieldRow EditableVitalsStrip_fieldRowGap">
-                <span class="EditableVitalsStrip_clickableFieldValue" title="Click to edit nps">NPS 54</span>
-              </span>
-            </span>
-          </span>
-          <span class="EditableVitalsStrip_itemWithSeparator">
-            <span class="EditableVitalsStrip_separatorDot"></span>
-            <span class="EditableVitalsStrip_fieldStack">
-              <span class="EditableVitalsStrip_fieldValue">6 meetings / 30d</span>
-            </span>
-          </span>
+        </div>
+        <div class="AccountDetailPage_compositionVitalRow">
+          <span class="AccountDetailPage_compositionVitalLabel">Lifecycle</span>
+          <span class="AccountDetailPage_compositionVitalValue">Steady-state</span>
+        </div>
+        <div class="AccountDetailPage_compositionVitalRow">
+          <span class="AccountDetailPage_compositionVitalLabel">Renewal</span>
+          <span class="AccountDetailPage_compositionVitalValue">143 days</span>
+        </div>
+        <div class="AccountDetailPage_compositionVitalRow">
+          <span class="AccountDetailPage_compositionVitalLabel">Primary source</span>
+          <span class="AccountDetailPage_compositionVitalValue">CRM snapshot</span>
         </div>
       </div>
     </div>
   </section>
 
-  <div id="outlook" class="editorial-reveal entity-detail_marginLabelSection">
-    <div class="entity-detail_marginLabel">Outlook</div>
-    <div class="entity-detail_marginContent">
-      <div class="ChapterHeading_heading">
-        <hr class="ChapterHeading_rule" />
-        <div class="ChapterHeading_titleRow">
-          <h2 class="ChapterHeading_title">Outlook</h2>
+  <section id="outlook" class="AccountDetailPage_compositionSection" data-section-id="outlook">
+    <div class="AccountDetailPage_compositionSectionLabel">Outlook</div>
+    <div class="AccountDetailPage_compositionSectionBody">
+      <header class="AccountDetailPage_compositionSectionHeader">
+        <div>
+          <h2 class="AccountDetailPage_compositionSectionTitle">Outlook</h2>
+          <p class="AccountDetailPage_compositionSectionDeck">The Account producer leads with health, confidence, trend, and top risks before the dossier expands into evidence.</p>
         </div>
-      </div>
-
-      <section class="AccountOutlook_section">
-        <div class="AccountOutlook_renewalSection">
-          <h2 class="AccountOutlook_statement">
-            Renewal confidence is <span class="AccountOutlook_confidenceHigh">high</span>
-          </h2>
-          <p class="AccountOutlook_renewalProse">
-            <span class="EditableText_editable" title="Click to edit" data-editable-text>Watch for legal review timing and executive sponsor bandwidth.</span>
-            <span class="AccountOutlook_itemActions">
-              <span class="IntelligenceFeedback_wrapper">
-                <span class="IntelligenceFeedback_container">
-                  <button type="button" class="IntelligenceFeedback_button" aria-label="This was helpful" aria-pressed="false" title="Helpful">
-                    <svg xmlns="http://www.w3.org/2000/svg" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M7 10v12"/><path d="M15 5.88 14 10h5.83a2 2 0 0 1 1.92 2.56l-2.33 8A2 2 0 0 1 17.5 22H4a2 2 0 0 1-2-2v-8a2 2 0 0 1 2-2h2.76a2 2 0 0 0 1.79-1.11L12 2a3.13 3.13 0 0 1 3 3.88Z"/></svg>
-                  </button>
-                  <button type="button" class="IntelligenceFeedback_button" aria-label="This was not helpful" aria-pressed="false" title="Not helpful">
-                    <svg xmlns="http://www.w3.org/2000/svg" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M17 14V2"/><path d="M9 18.12 10 14H4.17a2 2 0 0 1-1.92-2.56l2.33-8A2 2 0 0 1 6.5 2H20a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2h-2.76a2 2 0 0 0-1.79 1.11L12 22a3.13 3.13 0 0 1-3-3.88Z"/></svg>
-                  </button>
-                </span>
-              </span>
-            </span>
-          </p>
-          <p class="AccountOutlook_renewalStart">Start the conversation by June 3, 2026.</p>
+        <div class="AccountDetailPage_compositionSectionMeta">
+          <span class="Pill_pill Pill_compact Pill_sage"><span class="Pill_dot"></span>Critical</span>
+          <span class="Pill_pill Pill_compact TrustBandBadge_badge TrustBandBadge_compact TrustBandBadge_likelyCurrent" data-ds-tier="primitive" data-ds-name="TrustBandBadge" data-ds-spec="primitives/TrustBandBadge.md">Likely current</span>
         </div>
+      </header>
 
-        <div class="AccountOutlook_growthSection">
-          <div class="AccountOutlook_sectionRule"></div>
-          <h3 class="AccountOutlook_sectionHeading">Growth Opportunities</h3>
-          <div class="AccountOutlook_signalList">
-            <div class="AccountOutlook_signalItem">
-              <div class="AccountOutlook_signalBody">
-                <p class="EditableText_editable AccountOutlook_signalText" title="Click to edit" data-editable-text>Support workflow expansion is credible now that the admin pilot is active.</p>
-                <div class="AccountOutlook_signalMeta">
-                  <span class="AccountOutlook_badge AccountOutlook_badgeSage">Evaluating</span>
-                  <span class="AccountOutlook_arrImpact">+$140K ARR</span>
-                  <span class="ProvenanceTag_tag" data-ds-tier="primitive" data-ds-name="ProvenanceTag" data-ds-spec="primitives/ProvenanceTag.md">from Glean</span>
-                </div>
-              </div>
-              <span class="AccountOutlook_itemActions">
-                <button type="button" class="AccountOutlook_dismissButton" title="Dismiss">
-                  <svg xmlns="http://www.w3.org/2000/svg" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M18 6 6 18"/><path d="m6 6 12 12"/></svg>
-                </button>
-              </span>
+      <div class="AccountDetailPage_compositionBlockStack">
+        <article class="AccountDetailPage_compositionFeaturedBlock" data-block-type="HealthSnapshot">
+          <div class="AccountDetailPage_compositionBlockHeader">
+            <h3 class="AccountDetailPage_compositionBlockTitle">Renewal confidence</h3>
+            <div class="AccountDetailPage_compositionBlockMeta">
+              <span class="FreshnessIndicator_root FreshnessIndicator_inline" data-ds-tier="primitive" data-ds-name="FreshnessIndicator" data-ds-spec="primitives/FreshnessIndicator.md" data-staleness="fresh">Fresh today</span>
+              <span class="ProvenanceTag_tag" data-ds-tier="primitive" data-ds-name="ProvenanceTag" data-ds-spec="primitives/ProvenanceTag.md">from account claims</span>
             </div>
           </div>
-        </div>
-
-        <div class="AccountOutlook_commercialSection">
-          <div class="AccountOutlook_sectionRule"></div>
-          <h3 class="AccountOutlook_sectionHeading">Commercial Reality</h3>
-          <div class="AccountOutlook_contractGrid">
-            <div class="AccountOutlook_contractCell">
-              <div class="AccountOutlook_contractLabel">Type</div>
-              <div class="AccountOutlook_contractValue">Annual SaaS</div>
+          <p class="AccountDetailPage_compositionNarrative">High confidence if legal review starts before the executive readout and the admin pilot owner stays engaged.</p>
+          <div class="AccountDetailPage_compositionMetricGrid">
+            <div class="AccountDetailPage_compositionMetric">
+              <span class="AccountDetailPage_compositionMetricValue">82</span>
+              <span class="AccountDetailPage_compositionMetricLabel">Confidence score</span>
             </div>
-            <div class="AccountOutlook_contractCell">
-              <div class="AccountOutlook_contractLabel">Auto-Renew</div>
-              <div class="AccountOutlook_contractValue">No</div>
+            <div class="AccountDetailPage_compositionMetric">
+              <span class="AccountDetailPage_compositionMetricValue">+14</span>
+              <span class="AccountDetailPage_compositionMetricLabel">Trend over 30d</span>
             </div>
-            <div class="AccountOutlook_contractCell">
-              <div class="AccountOutlook_contractLabel">Renewal</div>
-              <div class="AccountOutlook_contractValue">September 24, 2026</div>
-            </div>
-            <div class="AccountOutlook_contractCell">
-              <div class="AccountOutlook_contractLabel">Current ARR</div>
-              <div class="AccountOutlook_contractValueHighlight">$620K</div>
+            <div class="AccountDetailPage_compositionMetric">
+              <span class="AccountDetailPage_compositionMetricValue">2</span>
+              <span class="AccountDetailPage_compositionMetricLabel">Open risks</span>
             </div>
           </div>
-        </div>
-      </section>
-    </div>
-  </div>
-
-  <div class="editorial-reveal entity-detail_marginLabelSection">
-    <div class="entity-detail_marginLabel">Products</div>
-    <div class="entity-detail_marginContent">
-      <div class="ChapterHeading_heading">
-        <hr class="ChapterHeading_rule" />
-        <div class="ChapterHeading_titleRow">
-          <h2 class="ChapterHeading_title">Products & Entitlements</h2>
-        </div>
-      </div>
-      <div class="AccountDetailEditorial_productList">
-        <div class="AccountDetailEditorial_productRow">
-          <div class="AccountDetailEditorial_productInfo">
-            <div class="AccountDetailEditorial_productName">DailyOS Enterprise</div>
-          </div>
-          <div class="AccountDetailEditorial_productStatusWrapper">
-            <button type="button" class="AccountDetailEditorial_productStatusBadge" data-status="active">
-              active
-              <svg xmlns="http://www.w3.org/2000/svg" width="8" height="8" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m6 9 6 6 6-6"/></svg>
-            </button>
-          </div>
-          <div class="AccountDetailEditorial_productRight">
-            <span class="AccountDetailEditorial_productFeedback">
-              <span class="IntelligenceFeedback_wrapper">
-                <span class="IntelligenceFeedback_container">
-                  <button type="button" class="IntelligenceFeedback_button" aria-label="This was helpful" aria-pressed="false" title="Helpful"></button>
-                  <button type="button" class="IntelligenceFeedback_button" aria-label="This was not helpful" aria-pressed="false" title="Not helpful"></button>
-                </span>
-              </span>
-            </span>
-            <button type="button" class="AccountDetailEditorial_productDismiss" title="Remove — Salesforce · 94% confidence">&times;</button>
-          </div>
-        </div>
-        <div class="AccountDetailEditorial_productRow">
-          <div class="AccountDetailEditorial_productInfo">
-            <div class="AccountDetailEditorial_productName">Support Intelligence Add-on</div>
-          </div>
-          <div class="AccountDetailEditorial_productStatusWrapper">
-            <button type="button" class="AccountDetailEditorial_productStatusBadge" data-status="trial">
-              trial
-              <svg xmlns="http://www.w3.org/2000/svg" width="8" height="8" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m6 9 6 6 6-6"/></svg>
-            </button>
-          </div>
-          <div class="AccountDetailEditorial_productRight">
-            <span class="AccountDetailEditorial_productFeedback">
-              <span class="IntelligenceFeedback_wrapper">
-                <span class="IntelligenceFeedback_container">
-                  <button type="button" class="IntelligenceFeedback_button" aria-label="This was helpful" aria-pressed="false" title="Helpful"></button>
-                  <button type="button" class="IntelligenceFeedback_button" aria-label="This was not helpful" aria-pressed="false" title="Not helpful"></button>
-                </span>
-              </span>
-            </span>
-            <button type="button" class="AccountDetailEditorial_productDismiss" title="Remove — Glean · 88% confidence">&times;</button>
-          </div>
-        </div>
-      </div>
-    </div>
-  </div>
-
-  <div id="state-of-play" class="editorial-reveal entity-detail_marginLabelSection">
-    <div class="entity-detail_marginLabel">State of<br/>Play</div>
-    <div class="entity-detail_marginContent">
-        <section class="UnifiedTimeline_section">
-        <div class="ChapterHeading_heading">
-          <hr class="ChapterHeading_rule" />
-          <div class="ChapterHeading_titleRow">
-            <h2 class="ChapterHeading_title">State of Play</h2>
-          </div>
-        </div>
-
-        <div class="StateOfPlay_stateColumns">
-          <div class="StateOfPlay_stateColumn">
-            <div class="StateBlock_container" data-state-color="sage">
-              <div class="StateBlock_label">What's Working</div>
-              <div class="StateBlock_itemList">
-                <div class="StateBlock_itemRow">
-                  <div class="StateBlock_itemContent">
-                    <p class="EditableText_editable StateBlock_itemText" title="Click to edit" data-editable-text>Jen Park is active again and is carrying the renewal internally.</p>
-                  </div>
-                  <div class="StateBlock_actions">
-                    <span class="IntelligenceFeedback_wrapper"><span class="IntelligenceFeedback_container"><button type="button" class="IntelligenceFeedback_button" aria-label="This was helpful" aria-pressed="false" title="Helpful"></button><button type="button" class="IntelligenceFeedback_button" aria-label="This was not helpful" aria-pressed="false" title="Not helpful"></button></span></span>
-                    <button type="button" class="StateBlock_dismissButton" title="Dismiss"></button>
-                  </div>
-                </div>
-                <div class="StateBlock_itemRow">
-                  <div class="StateBlock_itemContent">
-                    <p class="EditableText_editable StateBlock_itemText" title="Click to edit" data-editable-text>The admin pilot is live and support leaders are using the workflow weekly.</p>
-                  </div>
-                  <div class="StateBlock_actions">
-                    <span class="IntelligenceFeedback_wrapper"><span class="IntelligenceFeedback_container"><button type="button" class="IntelligenceFeedback_button" aria-label="This was helpful" aria-pressed="false" title="Helpful"></button><button type="button" class="IntelligenceFeedback_button" aria-label="This was not helpful" aria-pressed="false" title="Not helpful"></button></span></span>
-                    <button type="button" class="StateBlock_dismissButton" title="Dismiss"></button>
-                  </div>
-                </div>
-              </div>
-            </div>
-          </div>
-
-          <div class="StateOfPlay_stateColumn">
-            <div class="StateBlock_container" data-state-color="terracotta">
-              <div class="StateBlock_label">Where It's Struggling</div>
-              <div class="StateBlock_itemList">
-                <div class="StateBlock_itemRow">
-                  <div class="StateBlock_itemContent">
-                    <p class="EditableText_editable StateBlock_itemText" title="Click to edit" data-editable-text>Legal review still needs one named owner before procurement sees the renewal package.</p>
-                  </div>
-                  <div class="StateBlock_actions">
-                    <span class="IntelligenceFeedback_wrapper"><span class="IntelligenceFeedback_container"><button type="button" class="IntelligenceFeedback_button" aria-label="This was helpful" aria-pressed="false" title="Helpful"></button><button type="button" class="IntelligenceFeedback_button" aria-label="This was not helpful" aria-pressed="false" title="Not helpful"></button></span></span>
-                    <button type="button" class="StateBlock_dismissButton" title="Dismiss"></button>
-                  </div>
-                </div>
-              </div>
-            </div>
-          </div>
-        </div>
-      </section>
-
-      <div class="AccountDetailEditorial_technicalFootprint">
-        <div class="AccountDetailEditorial_technicalFootprintLabel">Technical Footprint</div>
-        <div class="AccountDetailEditorial_technicalFootprintGrid">
-          <div class="AccountDetailEditorial_technicalFootprintItem">
-            <span class="AccountDetailEditorial_technicalFootprintItemLabel">Support</span>
-            <span class="AccountDetailEditorial_technicalFootprintItemValue">premium</span>
-          </div>
-          <div class="AccountDetailEditorial_technicalFootprintItem">
-            <span class="AccountDetailEditorial_technicalFootprintItemLabel">CSAT</span>
-            <span class="AccountDetailEditorial_technicalFootprintItemValue">4.6/5</span>
-          </div>
-          <div class="AccountDetailEditorial_technicalFootprintItem">
-            <span class="AccountDetailEditorial_technicalFootprintItemLabel">Open Tickets</span>
-            <span class="AccountDetailEditorial_technicalFootprintItemValue">3</span>
-          </div>
-          <div class="AccountDetailEditorial_technicalFootprintItem">
-            <span class="AccountDetailEditorial_technicalFootprintItemLabel">Usage Tier</span>
-            <span class="AccountDetailEditorial_technicalFootprintItemValue">enterprise</span>
-          </div>
-        </div>
-        <div class="AccountDetailEditorial_technicalFootprintSource">Source: Glean &middot; May 4</div>
-      </div>
-    </div>
-  </div>
-
-  <div class="editorial-reveal-slow AccountDetailEditorial_pullQuote">
-    <blockquote class="AccountDetailEditorial_pullQuoteText">
-      Jen is engaged again and the renewal feels orderly. Keep the next step focused on legal ownership.
-    </blockquote>
-    <cite class="AccountDetailEditorial_pullQuoteAttribution">From the executive assessment</cite>
-  </div>
-
-  <div id="the-room" class="editorial-reveal entity-detail_marginLabelSection">
-    <div class="entity-detail_marginLabel">The<br/>Room</div>
-    <div class="entity-detail_marginContent">
-      <section class="StakeholderGallery_section">
-        <div class="ChapterHeading_heading">
-          <hr class="ChapterHeading_rule" />
-          <div class="ChapterHeading_titleRow">
-            <h2 class="ChapterHeading_title">The Room</h2>
-          </div>
-          <p class="ChapterHeading_epigraph">Three stakeholders shape this relationship across the organization.</p>
-        </div>
-
-        <div class="StakeholderGallery_grid">
-          <div class="StakeholderGallery_card">
-            <button type="button" class="StakeholderGallery_cardRemoveButton" title="Remove from account"></button>
-            <div class="StakeholderGallery_cardHeader">
-              <div class="StakeholderGallery_avatarRingLinked">
-                <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="12" fill="var(--color-paper-linen)"/><text x="12" y="16" text-anchor="middle" font-family="var(--font-sans)" font-size="10" font-weight="500" fill="var(--color-text-tertiary)">J</text></svg>
-              </div>
-              <a href="person.html" class="StakeholderGallery_nameLink">Jen Park</a>
-              <svg class="StakeholderGallery_linkIcon" xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-label="Linked to Jen Park"><path d="M9 17H7A5 5 0 0 1 7 7h2"/><path d="M15 7h2a5 5 0 1 1 0 10h-2"/><path d="M8 12h8"/></svg>
-              <div class="EngagementSelector_root">
-                <button type="button" class="EngagementSelector_badge" data-engagement="strong_advocate">Strong Advocate</button>
-              </div>
-            </div>
-            <p class="StakeholderGallery_titleLine">CTO &middot; Acme Corp</p>
-            <div class="StakeholderGallery_roleBadges">
-              <span class="StakeholderGallery_roleBadge" data-source="user">Champion</span>
-              <span class="StakeholderGallery_roleBadge" data-source="intelligence">Exec Sponsor</span>
-              <div class="StakeholderGallery_addRoleWrapper">
-                <button type="button" class="StakeholderGallery_addRoleBtn">+</button>
-              </div>
-            </div>
-            <p class="StakeholderGallery_assessment">Jen is the executive sponsor for the renewal and responds best to concise owner/date/decision follow-up.</p>
-            <div class="StakeholderGallery_lastSeen">4 meetings &middot; Last seen Today</div>
-          </div>
-
-          <div class="StakeholderGallery_card">
-            <button type="button" class="StakeholderGallery_cardRemoveButton" title="Remove from account"></button>
-            <div class="StakeholderGallery_cardHeader">
-              <div class="StakeholderGallery_avatarRingLinked">
-                <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="12" fill="var(--color-paper-linen)"/><text x="12" y="16" text-anchor="middle" font-family="var(--font-sans)" font-size="10" font-weight="500" fill="var(--color-text-tertiary)">D</text></svg>
-              </div>
-              <a href="person.html" class="StakeholderGallery_nameLink">Dan Mitchell</a>
-              <svg class="StakeholderGallery_linkIcon" xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-label="Linked to Dan Mitchell"><path d="M9 17H7A5 5 0 0 1 7 7h2"/><path d="M15 7h2a5 5 0 1 1 0 10h-2"/><path d="M8 12h8"/></svg>
-              <div class="EngagementSelector_root">
-                <button type="button" class="EngagementSelector_badge" data-engagement="engaged">Engaged</button>
-              </div>
-            </div>
-            <p class="StakeholderGallery_titleLine">Procurement Lead &middot; Acme Corp</p>
-            <div class="StakeholderGallery_roleBadges">
-              <span class="StakeholderGallery_roleBadge" data-source="intelligence">Decision Maker</span>
-            </div>
-            <p class="StakeholderGallery_assessment">Dan owns the procurement path and needs the legal review owner named before finance gets the renewal package.</p>
-            <div class="StakeholderGallery_lastSeen">2 meetings &middot; Last seen Yesterday</div>
-          </div>
-
-          <div class="StakeholderGallery_card">
-            <button type="button" class="StakeholderGallery_cardRemoveButton" title="Remove from account"></button>
-            <div class="StakeholderGallery_cardHeader">
-              <div class="StakeholderGallery_avatarRingLinked">
-                <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="12" fill="var(--color-paper-linen)"/><text x="12" y="16" text-anchor="middle" font-family="var(--font-sans)" font-size="10" font-weight="500" fill="var(--color-text-tertiary)">S</text></svg>
-              </div>
-              <a href="person.html" class="StakeholderGallery_nameLink">Sara Wu</a>
-              <svg class="StakeholderGallery_linkIcon" xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-label="Linked to Sara Wu"><path d="M9 17H7A5 5 0 0 1 7 7h2"/><path d="M15 7h2a5 5 0 1 1 0 10h-2"/><path d="M8 12h8"/></svg>
-              <div class="EngagementSelector_root">
-                <button type="button" class="EngagementSelector_badge" data-engagement="engaged">Engaged</button>
-              </div>
-            </div>
-            <p class="StakeholderGallery_titleLine">Director, Support Operations &middot; Acme Corp</p>
-            <div class="StakeholderGallery_roleBadges">
-              <span class="StakeholderGallery_roleBadge" data-source="intelligence">Technical Contact</span>
-            </div>
-            <p class="StakeholderGallery_assessment">Sara validates whether the support workflow can expand beyond the admin team without adding reporting overhead.</p>
-            <div class="StakeholderGallery_lastSeen">3 meetings &middot; Last seen Apr 29</div>
-          </div>
-        </div>
-
-        <button type="button" class="StakeholderGallery_addTrigger">
-          <svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5 12h14"/><path d="M12 5v14"/></svg>
-          Add Stakeholder
-        </button>
-
-        <div class="StakeholderGallery_coverageStrip">
-          <span class="StakeholderGallery_coverageNumbers">3 of 3</span>
-          <span class="StakeholderGallery_coverageLabel">stakeholders with defined roles</span>
-        </div>
-
-        <div class="StakeholderGallery_relationshipDepthSection">
-          <div class="StakeholderGallery_depthStrip">
-            <div class="StakeholderGallery_depthCell">
-              <div class="StakeholderGallery_depthCellLabel">Champion</div>
-              <div class="StakeholderGallery_depthCellValue StakeholderGallery_depthBadgeSage">strong</div>
-            </div>
-            <div class="StakeholderGallery_depthCell">
-              <div class="StakeholderGallery_depthCellLabel">Executive Access</div>
-              <div class="StakeholderGallery_depthCellValue StakeholderGallery_depthBadgeSage">direct</div>
-            </div>
-            <div class="StakeholderGallery_depthCell">
-              <div class="StakeholderGallery_depthCellLabel">Coverage</div>
-              <div class="StakeholderGallery_depthCellValue StakeholderGallery_depthBadgeTurmeric">balanced</div>
-            </div>
-          </div>
-        </div>
-
-        <div class="StakeholderGallery_teamChipsSection">
-          <div class="StakeholderGallery_teamHeader">
-            <span class="StakeholderGallery_teamLabel">Your Team</span>
-          </div>
-          <div class="StakeholderGallery_teamChips">
-            <div class="StakeholderGallery_teamChipEditable">
-              <a href="person.html" class="StakeholderGallery_teamChipNameLink">Sam Chen</a>
-              <button type="button" class="TeamRoleSelector_badge">CSM</button>
-              <button type="button" class="StakeholderGallery_teamChipRemove" title="Remove from team">&times;</button>
-            </div>
-            <div class="StakeholderGallery_teamChipEditable">
-              <a href="person.html" class="StakeholderGallery_teamChipNameLink">Maya Iyer</a>
-              <button type="button" class="TeamRoleSelector_badge">AE</button>
-              <button type="button" class="StakeholderGallery_teamChipRemove" title="Remove from team">&times;</button>
-            </div>
-            <button type="button" class="StakeholderGallery_teamAddTrigger">
-              <svg xmlns="http://www.w3.org/2000/svg" width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5 12h14"/><path d="M12 5v14"/></svg>
-              Add
-            </button>
-          </div>
-        </div>
-      </section>
-    </div>
-  </div>
-
-  <div id="whats-next" class="editorial-reveal entity-detail_marginLabelSection">
-    <div class="entity-detail_marginLabel">What's<br/>Next</div>
-    <div class="entity-detail_marginContent">
-      <section class="SuggestedNextSteps_section" data-surface="account">
-        <div class="ChapterHeading_heading">
-          <hr class="ChapterHeading_rule" />
-          <div class="ChapterHeading_titleRow">
-            <h2 class="ChapterHeading_title">What's next with Acme Corp</h2>
-          </div>
-          <p class="ChapterHeading_epigraph">Five recommendations to consider this week.</p>
-        </div>
-
-        <div class="suggested-next-steps_list">
-          <article class="suggested-next-steps_row" data-claim-id="rec-claim-1" data-feedback-state="pending">
-            <header class="suggested-next-steps_rowHeader">
-              <h3 class="suggested-next-steps_headline">Schedule kickoff with their new VP of Engineering<span class="TrustBandIndicator TrustBandIndicator_likelyCurrent" title="Likely current">&#9679;</span></h3>
-            </header>
-            <p class="suggested-next-steps_whyThisNow">Urgency this week — first 30 days for the new role, and you don't have a thread open yet.</p>
-            <p class="suggested-next-steps_action">Schedule meeting &middot; next two weeks</p>
-            <div class="suggested-next-steps_affordances" role="group" aria-label="Feedback on this recommendation">
-              <button type="button" class="suggested-next-steps_button" data-feedback-kind="convert" aria-label="Convert this recommendation to an action">Convert to action</button>
-              <button type="button" class="suggested-next-steps_button" data-feedback-kind="dismiss" aria-label="Dismiss this recommendation">Dismiss</button>
-              <button type="button" class="suggested-next-steps_button suggested-next-steps_buttonExpand" aria-expanded="false" aria-controls="rec-claim-1-more" aria-label="More feedback options">More feedback&hellip;</button>
-            </div>
-            <div id="rec-claim-1-more" class="suggested-next-steps_subAffordances" aria-hidden="true">
-              <button type="button" class="suggested-next-steps_button suggested-next-steps_subButton" data-feedback-kind="notUseful">Mark as not useful</button>
-              <button type="button" class="suggested-next-steps_button suggested-next-steps_subButton" data-feedback-kind="tooNoisy">Mark as too noisy</button>
-              <button type="button" class="suggested-next-steps_button suggested-next-steps_subButton" data-feedback-kind="dismissWithReason">Dismiss with reason&hellip;</button>
-            </div>
-          </article>
-
-          <article class="suggested-next-steps_row" data-claim-id="rec-claim-2" data-feedback-state="pending">
-            <header class="suggested-next-steps_rowHeader">
-              <h3 class="suggested-next-steps_headline">Send the H1 expansion follow-up Jen asked for<span class="TrustBandIndicator TrustBandIndicator_useWithCaution" title="Use with caution">&#9679;</span></h3>
-            </header>
-            <p class="suggested-next-steps_whyThisNow">Open loop since the May 12 review — the proposal owner and due date were promised in the meeting recap.</p>
-            <p class="suggested-next-steps_action">Send message &middot; email &middot; Jen Park</p>
-            <div class="suggested-next-steps_affordances" role="group" aria-label="Feedback on this recommendation">
-              <button type="button" class="suggested-next-steps_button" data-feedback-kind="convert" aria-label="Convert this recommendation to an action">Convert to action</button>
-              <button type="button" class="suggested-next-steps_button" data-feedback-kind="dismiss" aria-label="Dismiss this recommendation">Dismiss</button>
-              <button type="button" class="suggested-next-steps_button suggested-next-steps_buttonExpand" aria-expanded="false" aria-controls="rec-claim-2-more" aria-label="More feedback options">More feedback&hellip;</button>
-            </div>
-            <div id="rec-claim-2-more" class="suggested-next-steps_subAffordances" aria-hidden="true">
-              <button type="button" class="suggested-next-steps_button suggested-next-steps_subButton" data-feedback-kind="notUseful">Mark as not useful</button>
-              <button type="button" class="suggested-next-steps_button suggested-next-steps_subButton" data-feedback-kind="tooNoisy">Mark as too noisy</button>
-              <button type="button" class="suggested-next-steps_button suggested-next-steps_subButton" data-feedback-kind="dismissWithReason">Dismiss with reason&hellip;</button>
-            </div>
-          </article>
-
-          <article class="suggested-next-steps_row suggested-next-steps_row--needsVerification" data-claim-id="rec-claim-3" data-feedback-state="pending">
-            <header class="suggested-next-steps_rowHeader">
-              <h3 class="suggested-next-steps_headline">Verify the procurement timeline shift Dan mentioned<span class="TrustBandIndicator TrustBandIndicator_needsVerification" title="Needs verification">&#9679;</span></h3>
-            </header>
-            <p class="suggested-next-steps_whyThisNow">A trust change worth checking — only one source mentions the shift and finance hasn't echoed it.</p>
-            <p class="suggested-next-steps_action">Investigate change &middot; renewal timeline</p>
-            <div class="suggested-next-steps_affordances" role="group" aria-label="Feedback on this recommendation">
-              <button type="button" class="suggested-next-steps_button" data-feedback-kind="convert" aria-label="Convert this recommendation to an action">Convert to action</button>
-              <button type="button" class="suggested-next-steps_button" data-feedback-kind="dismiss" aria-label="Dismiss this recommendation">Dismiss</button>
-              <button type="button" class="suggested-next-steps_button suggested-next-steps_buttonExpand" aria-expanded="false" aria-controls="rec-claim-3-more" aria-label="More feedback options">More feedback&hellip;</button>
-            </div>
-            <div id="rec-claim-3-more" class="suggested-next-steps_subAffordances" aria-hidden="true">
-              <button type="button" class="suggested-next-steps_button suggested-next-steps_subButton" data-feedback-kind="notUseful">Mark as not useful</button>
-              <button type="button" class="suggested-next-steps_button suggested-next-steps_subButton" data-feedback-kind="tooNoisy">Mark as too noisy</button>
-              <button type="button" class="suggested-next-steps_button suggested-next-steps_subButton" data-feedback-kind="dismissWithReason">Dismiss with reason&hellip;</button>
-            </div>
-          </article>
-
-          <article class="suggested-next-steps_row" data-claim-id="rec-claim-4" data-feedback-state="pending">
-            <header class="suggested-next-steps_rowHeader">
-              <h3 class="suggested-next-steps_headline">Confirm Sara's support-workflow rollout dates<span class="TrustBandIndicator TrustBandIndicator_likelyCurrent" title="Likely current">&#9679;</span></h3>
-            </header>
-            <p class="suggested-next-steps_whyThisNow">Open loop on the support workflow rehearsal — dates not yet committed in the renewal package.</p>
-            <p class="suggested-next-steps_action">Send message &middot; Slack &middot; Sara Wu</p>
-            <div class="suggested-next-steps_affordances" role="group" aria-label="Feedback on this recommendation">
-              <button type="button" class="suggested-next-steps_button" data-feedback-kind="convert" aria-label="Convert this recommendation to an action">Convert to action</button>
-              <button type="button" class="suggested-next-steps_button" data-feedback-kind="dismiss" aria-label="Dismiss this recommendation">Dismiss</button>
-              <button type="button" class="suggested-next-steps_button suggested-next-steps_buttonExpand" aria-expanded="false" aria-controls="rec-claim-4-more" aria-label="More feedback options">More feedback&hellip;</button>
-            </div>
-            <div id="rec-claim-4-more" class="suggested-next-steps_subAffordances" aria-hidden="true">
-              <button type="button" class="suggested-next-steps_button suggested-next-steps_subButton" data-feedback-kind="notUseful">Mark as not useful</button>
-              <button type="button" class="suggested-next-steps_button suggested-next-steps_subButton" data-feedback-kind="tooNoisy">Mark as too noisy</button>
-              <button type="button" class="suggested-next-steps_button suggested-next-steps_subButton" data-feedback-kind="dismissWithReason">Dismiss with reason&hellip;</button>
-            </div>
-          </article>
-
-          <article class="suggested-next-steps_row" data-claim-id="rec-claim-5" data-feedback-state="pending">
-            <header class="suggested-next-steps_rowHeader">
-              <h3 class="suggested-next-steps_headline">Update the renewal record with the new VP context<span class="TrustBandIndicator TrustBandIndicator_likelyCurrent" title="Likely current">&#9679;</span></h3>
-            </header>
-            <p class="suggested-next-steps_whyThisNow">New information on the account — the field history hasn't caught up to last week's signal.</p>
-            <p class="suggested-next-steps_action">Update record &middot; account notes</p>
-            <div class="suggested-next-steps_affordances" role="group" aria-label="Feedback on this recommendation">
-              <button type="button" class="suggested-next-steps_button" data-feedback-kind="convert" aria-label="Convert this recommendation to an action">Convert to action</button>
-              <button type="button" class="suggested-next-steps_button" data-feedback-kind="dismiss" aria-label="Dismiss this recommendation">Dismiss</button>
-              <button type="button" class="suggested-next-steps_button suggested-next-steps_buttonExpand" aria-expanded="false" aria-controls="rec-claim-5-more" aria-label="More feedback options">More feedback&hellip;</button>
-            </div>
-            <div id="rec-claim-5-more" class="suggested-next-steps_subAffordances" aria-hidden="true">
-              <button type="button" class="suggested-next-steps_button suggested-next-steps_subButton" data-feedback-kind="notUseful">Mark as not useful</button>
-              <button type="button" class="suggested-next-steps_button suggested-next-steps_subButton" data-feedback-kind="tooNoisy">Mark as too noisy</button>
-              <button type="button" class="suggested-next-steps_button suggested-next-steps_subButton" data-feedback-kind="dismissWithReason">Dismiss with reason&hellip;</button>
-            </div>
-          </article>
-        </div>
-      </section>
-    </div>
-  </div>
-
-  <div id="watch-list" class="editorial-reveal entity-detail_marginLabelSection">
-    <div class="entity-detail_marginLabel">Watch<br/>List</div>
-    <div class="entity-detail_marginContent">
-      <section class="WatchList_section">
-        <div class="ChapterHeading_heading">
-          <hr class="ChapterHeading_rule" />
-          <div class="ChapterHeading_titleRow">
-            <h2 class="ChapterHeading_title">Watch List</h2>
-          </div>
-        </div>
-
-        <div class="WatchList_sectionCard" data-type="win">
-          <div class="WatchList_sectionLabel">Wins</div>
-          <div class="WatchList_itemRow">
-            <div class="WatchList_itemText">
-              <p class="EditableText_editable WatchList_itemTextContent" title="Click to edit" data-editable-text>Support workflow rehearsal completed with the admin team and produced a forwardable proof point.</p>
-            </div>
-            <div class="WatchList_itemActions">
-              <span class="IntelligenceFeedback_wrapper"><span class="IntelligenceFeedback_container"><button type="button" class="IntelligenceFeedback_button" aria-label="This was helpful" aria-pressed="false" title="Helpful"></button><button type="button" class="IntelligenceFeedback_button" aria-label="This was not helpful" aria-pressed="false" title="Not helpful"></button></span></span>
-              <button type="button" title="Remove" class="WatchList_dismissButton"></button>
-            </div>
-          </div>
-        </div>
-
-        <div class="WatchList_sectionCard" data-type="unknown">
-          <div class="WatchList_sectionLabel">Unknowns</div>
-          <div class="WatchList_itemRow">
-            <div class="WatchList_itemText">
-              <p class="EditableText_editable WatchList_itemTextContent" title="Click to edit" data-editable-text>Finance timing is still unclear once the legal owner is named.</p>
-            </div>
-            <div class="WatchList_itemActions">
-              <span class="IntelligenceFeedback_wrapper"><span class="IntelligenceFeedback_container"><button type="button" class="IntelligenceFeedback_button" aria-label="This was helpful" aria-pressed="false" title="Helpful"></button><button type="button" class="IntelligenceFeedback_button" aria-label="This was not helpful" aria-pressed="false" title="Not helpful"></button></span></span>
-              <button type="button" title="Remove" class="WatchList_dismissButton"></button>
-            </div>
-          </div>
-        </div>
-
-        <div class="WatchListPrograms_section">
-          <div class="WatchListPrograms_heading">Active Initiatives</div>
-          <div class="WatchListPrograms_programList">
-            <div class="WatchListPrograms_program">
-              <div class="WatchListPrograms_programHeader">
-                <span class="WatchListPrograms_programName">Support workflow expansion</span>
-                <span class="WatchListPrograms_statusBadge" data-status="active">Active</span>
-                <button type="button" class="WatchListPrograms_deleteButton">x</button>
-              </div>
-              <p class="WatchListPrograms_notes">Pilot is live with the admin group; next checkpoint is support leadership adoption.</p>
-            </div>
-            <div class="WatchListPrograms_program">
-              <div class="WatchListPrograms_programHeader">
-                <span class="WatchListPrograms_programName">Executive renewal readout</span>
-                <span class="WatchListPrograms_statusBadge" data-status="planned">Planned</span>
-                <button type="button" class="WatchListPrograms_deleteButton">x</button>
-              </div>
-              <p class="WatchListPrograms_notes">Waiting on the legal owner before Jen forwards the packet to finance.</p>
-            </div>
-          </div>
-          <button type="button" class="WatchListPrograms_addButton">+ Add Initiative</button>
-        </div>
-      </section>
-    </div>
-  </div>
-
-  <div id="value-commitments" class="editorial-reveal entity-detail_marginLabelSection">
-    <div class="entity-detail_marginLabel">Value &amp;<br/>Commitments</div>
-    <div class="entity-detail_marginContent">
-      <div class="ChapterHeading_heading">
-        <hr class="ChapterHeading_rule" />
-        <div class="ChapterHeading_titleRow">
-          <h2 class="ChapterHeading_title">Value & Commitments</h2>
-        </div>
-      </div>
-
-      <section class="ValueCommitments_section">
-        <div class="ValueCommitments_subsectionLabel">Value delivered</div>
-        <div class="ValueCommitments_valueGrid">
-          <article class="ValueCommitments_valueCard">
-            <span class="ValueCommitments_impactTag ValueCommitments_impactTagSpeed">Speed</span>
-            <div class="ValueCommitments_valueHeadline">Support workflow review time dropped after the admin pilot moved into weekly use.</div>
-            <div class="ValueCommitments_valueSource">May 1 &middot; Glean</div>
-          </article>
-          <article class="ValueCommitments_valueCard">
-            <span class="ValueCommitments_impactTag ValueCommitments_impactTagRisk">Risk</span>
-            <div class="ValueCommitments_valueHeadline">The renewal thread now has a narrowed legal dependency instead of broad commercial ambiguity.</div>
-            <div class="ValueCommitments_valueSource">Apr 29 &middot; Meeting</div>
-          </article>
-        </div>
-
-        <div class="ValueCommitments_subsectionLabel">Success metrics</div>
-        <div class="ValueCommitments_metricRow">
-          <article class="ValueCommitments_metricCard">
-            <div class="ValueCommitments_metricName">Admin weekly active use</div>
-            <div class="ValueCommitments_metricValues">
-              <span class="ValueCommitments_metricCurrent">82%</span>
-              <span class="ValueCommitments_metricTarget">/ 80%</span>
-            </div>
-            <div class="ValueCommitments_metricFooter">
-              <span class="ValueCommitments_metricStatus ValueCommitments_statusAchieved">Achieved</span>
-              <span class="ValueCommitments_metricOwner">Owner: Sara Wu</span>
-            </div>
-          </article>
-          <article class="ValueCommitments_metricCard">
-            <div class="ValueCommitments_metricName">Renewal package readiness</div>
-            <div class="ValueCommitments_metricValues">
-              <span class="ValueCommitments_metricCurrent">On track</span>
-            </div>
-            <div class="ValueCommitments_metricFooter">
-              <span class="ValueCommitments_metricStatus ValueCommitments_statusOnTrack">On track</span>
-              <span class="ValueCommitments_metricOwner">Owner: Sam Chen</span>
-            </div>
-          </article>
-        </div>
-      </section>
-    </div>
-  </div>
-
-  <div id="strategic-landscape" class="editorial-reveal entity-detail_marginLabelSection">
-    <div class="entity-detail_marginLabel">Competitive &amp;<br/>Strategic</div>
-    <div class="entity-detail_marginContent">
-      <div class="ChapterHeading_heading">
-        <hr class="ChapterHeading_rule" />
-        <div class="ChapterHeading_titleRow">
-          <h2 class="ChapterHeading_title">Competitive & Strategic</h2>
-        </div>
-      </div>
-
-      <section class="StrategicLandscape_section">
-        <div class="StrategicLandscape_subsectionLabel">Strategic priorities</div>
-        <div class="StrategicLandscape_priorityGrid">
-          <article class="StrategicLandscape_priorityCard">
-            <div class="StrategicLandscape_priorityHead">
-              <div class="StrategicLandscape_priorityName">Move support operations onto the shared workflow.</div>
-              <span class="StrategicLandscape_statusTag StrategicLandscape_statusActive">Active</span>
-            </div>
-            <div class="StrategicLandscape_priorityMeta">Sara Wu &middot; Q2</div>
-            <div class="StrategicLandscape_priorityContext">The admin pilot is the proof point for expanding into front-line support.</div>
-          </article>
-          <article class="StrategicLandscape_priorityCard">
-            <div class="StrategicLandscape_priorityHead">
-              <div class="StrategicLandscape_priorityName">Keep the renewal commercial story stable before finance review.</div>
-              <span class="StrategicLandscape_statusTag StrategicLandscape_statusEvaluating">Evaluating</span>
-            </div>
-            <div class="StrategicLandscape_priorityMeta">Dan Mitchell &middot; June</div>
-            <div class="StrategicLandscape_priorityContext">Legal ownership is the remaining gating item.</div>
-          </article>
-        </div>
-
-        <div class="StrategicLandscape_subsectionLabel">Competitive landscape</div>
-        <div class="StrategicLandscape_competitorRow">
-          <article class="StrategicLandscape_competitorCard">
-            <div class="StrategicLandscape_competitorName">Service Cloud</div>
-            <div class="StrategicLandscape_threatScale">
-              <span class="StrategicLandscape_threatDot StrategicLandscape_threatDotOn"></span>
-              <span class="StrategicLandscape_threatDot StrategicLandscape_threatDotOn"></span>
-              <span class="StrategicLandscape_threatDot"></span>
-            </div>
-            <div class="StrategicLandscape_threatLabel">Moderate</div>
-            <div class="StrategicLandscape_competitorContext">Still present in the renewal conversation, mostly as the incumbent reporting layer.</div>
-            <div class="StrategicLandscape_competitorSource">May 1 &middot; Glean</div>
-          </article>
-        </div>
-
-        <div class="StrategicLandscape_subsectionLabel">Regulatory &amp; market context</div>
-        <article class="StrategicLandscape_regCard">
-          <div class="StrategicLandscape_regHead">
-            <div class="StrategicLandscape_regTitle">Audit log ownership</div>
-            <span class="StrategicLandscape_xrefPill">Compliance</span>
-          </div>
-          <p class="StrategicLandscape_regBody">Finance wants a named owner for audit-log export review before the renewal packet moves forward.</p>
         </article>
-      </section>
+      </div>
     </div>
-  </div>
+  </section>
 
-  <div id="the-record" class="editorial-reveal entity-detail_marginLabelSection">
-    <div class="entity-detail_marginLabel">The<br/>Record</div>
-    <div class="entity-detail_marginContent">
-      <section>
-        <div class="ChapterHeading_heading">
-          <hr class="ChapterHeading_rule" />
-          <div class="ChapterHeading_titleRow">
-            <h2 class="ChapterHeading_title">The Record</h2>
-          </div>
+  <section id="state-of-play" class="AccountDetailPage_compositionSection" data-section-id="state-of-play">
+    <div class="AccountDetailPage_compositionSectionLabel">State of Play</div>
+    <div class="AccountDetailPage_compositionSectionBody">
+      <header class="AccountDetailPage_compositionSectionHeader">
+        <div>
+          <h2 class="AccountDetailPage_compositionSectionTitle">State of Play</h2>
+          <p class="AccountDetailPage_compositionSectionDeck">Claim summaries and evidence rows stay together so the surface can show what changed and why it is trusted.</p>
         </div>
+        <div class="AccountDetailPage_compositionSectionMeta">
+          <span class="Pill_pill Pill_compact Pill_turmeric">Important</span>
+        </div>
+      </header>
 
-        <button type="button" class="ui-button ui-button-outline ui-button-sm AddToRecord_addButton">+ Add Note</button>
-
-        <div class="TimelineEntry_timeline">
-          <a href="meeting.html" class="TimelineEntry_entryLink">
-            <div class="TimelineEntry_entry">
-              <div class="TimelineEntry_dot TimelineEntry_dotMeeting"></div>
-              <div class="TimelineEntry_dateLine">
-                <span class="TimelineEntry_date">May 4</span>
-                <span class="TimelineEntry_typeBadge TimelineEntry_typeMeeting">Meeting</span>
+      <div class="AccountDetailPage_compositionBlockStack">
+        <article class="AccountDetailPage_compositionBlock" data-block-type="ClaimSummary">
+          <div class="AccountDetailPage_compositionBlockHeader">
+            <h3 class="AccountDetailPage_compositionBlockTitle">Current read</h3>
+            <div class="AccountDetailPage_compositionBlockMeta">
+              <span class="Pill_pill Pill_compact TrustBandBadge_badge TrustBandBadge_compact TrustBandBadge_likelyCurrent" data-ds-tier="primitive" data-ds-name="TrustBandBadge" data-ds-spec="primitives/TrustBandBadge.md">Likely current</span>
+            </div>
+          </div>
+          <ul class="AccountDetailPage_compositionEvidenceList">
+            <li class="AccountDetailPage_compositionEvidenceRow">
+              <div class="AccountDetailPage_compositionEvidenceMain">
+                <p class="AccountDetailPage_compositionEvidenceTitle">Launch sponsor is active and removing blockers.</p>
+                <div class="AccountDetailPage_compositionEvidenceMeta">
+                  <span class="ProvenanceTag_tag" data-ds-tier="primitive" data-ds-name="ProvenanceTag" data-ds-spec="primitives/ProvenanceTag.md">from meeting notes</span>
+                  <span class="FreshnessIndicator_root FreshnessIndicator_inline" data-ds-tier="primitive" data-ds-name="FreshnessIndicator" data-ds-spec="primitives/FreshnessIndicator.md">2d old</span>
+                </div>
               </div>
-              <div class="TimelineEntry_title">Acme Corp renewal checkpoint</div>
-              <div class="TimelineEntry_detail">Customer</div>
-            </div>
-          </a>
-          <div class="TimelineEntry_entry">
-            <div class="TimelineEntry_dot TimelineEntry_dotEmail"></div>
-            <div class="TimelineEntry_dateLine">
-              <span class="TimelineEntry_date">May 2</span>
-              <span class="TimelineEntry_typeBadge TimelineEntry_typeEmail">Email</span>
-            </div>
-            <div class="TimelineEntry_title">Jen asked for a single legal owner before forwarding the package.</div>
-            <div class="TimelineEntry_detail">jen.park@acme.example</div>
-          </div>
-          <div class="TimelineEntry_entry">
-            <div class="TimelineEntry_dot TimelineEntry_dotContext"></div>
-            <div class="TimelineEntry_dateLine">
-              <span class="TimelineEntry_date">Apr 29</span>
-              <span class="TimelineEntry_typeBadge TimelineEntry_typeContext">Note</span>
-            </div>
-            <div class="TimelineEntry_title">Renewal packet framing</div>
-            <div class="TimelineEntry_detail">Anchor the next update around owner, date, and decision requested. &middot; Added by you</div>
-          </div>
-          <div class="TimelineEntry_entry">
-            <div class="TimelineEntry_dot TimelineEntry_dotValue"></div>
-            <div class="TimelineEntry_dateLine">
-              <span class="TimelineEntry_date">Apr 25</span>
-              <span class="TimelineEntry_typeBadge TimelineEntry_typeValue">Value</span>
-            </div>
-            <div class="TimelineEntry_title">Milestone completed: Admin workflow rehearsal</div>
-            <div class="TimelineEntry_detail">Auto-completed by meeting evidence</div>
-          </div>
-        </div>
-      </section>
+              <button type="button" class="AccountDetailPage_compositionButton">Correct</button>
+            </li>
+            <li class="AccountDetailPage_compositionEvidenceRow">
+              <div class="AccountDetailPage_compositionEvidenceMain">
+                <p class="AccountDetailPage_compositionEvidenceTitle">Legal owner is not yet confirmed.</p>
+                <div class="AccountDetailPage_compositionEvidenceMeta">
+                  <span class="ProvenanceTag_tag ProvenanceTag_discrepancy" data-ds-tier="primitive" data-ds-name="ProvenanceTag" data-ds-spec="primitives/ProvenanceTag.md">source conflict</span>
+                  <span class="Pill_pill Pill_compact TrustBandBadge_badge TrustBandBadge_compact TrustBandBadge_useWithCaution" data-ds-tier="primitive" data-ds-name="TrustBandBadge" data-ds-spec="primitives/TrustBandBadge.md">Use with caution</span>
+                </div>
+              </div>
+              <button type="button" class="AccountDetailPage_compositionButton">Review</button>
+            </li>
+          </ul>
+        </article>
+
+        <article class="AccountDetailPage_compositionFallbackState" data-block-type="custom/unknown" aria-label="Unsupported block fallback">
+          <span class="AccountDetailPage_compositionStateLabel">Unsupported block</span>
+          <p class="AccountDetailPage_compositionStateText">DailyOS can show the safe summary for this block, but hidden fields are withheld on this surface.</p>
+          <span class="Pill_pill Pill_compact TrustBandBadge_badge TrustBandBadge_compact TrustBandBadge_needsVerification" data-ds-tier="primitive" data-ds-name="TrustBandBadge" data-ds-spec="primitives/TrustBandBadge.md">Needs verification</span>
+        </article>
+      </div>
     </div>
-  </div>
+  </section>
 
-  <div id="the-work" class="editorial-reveal entity-detail_marginLabelSection">
-    <div class="entity-detail_marginLabel">The<br/>Work</div>
-    <div class="entity-detail_marginContent">
-      <section class="TheWork_section">
-        <div class="TheWork_headerRow">
-          <div class="ChapterHeading_heading">
-            <hr class="ChapterHeading_rule" />
-            <div class="ChapterHeading_titleRow">
-              <h2 class="ChapterHeading_title">The Work</h2>
-            </div>
-          </div>
-          <div class="TheWork_headerActions">
-            <button type="button" class="TheWork_headerButton">Suggestions</button>
-            <button type="button" class="TheWork_headerButton">From Template</button>
-          </div>
+  <section id="the-room" class="AccountDetailPage_compositionSection" data-section-id="the-room">
+    <div class="AccountDetailPage_compositionSectionLabel">The Room</div>
+    <div class="AccountDetailPage_compositionSectionBody">
+      <header class="AccountDetailPage_compositionSectionHeader">
+        <div>
+          <h2 class="AccountDetailPage_compositionSectionTitle">The Room</h2>
+          <p class="AccountDetailPage_compositionSectionDeck">Relationship blocks render people, roles, confidence, and review gaps without leaking sensitive stakeholder data.</p>
         </div>
+      </header>
 
-        <div class="TheWork_actionComposer">
-          <button type="button" class="TheWork_inlineAdder">+ Objective</button>
-        </div>
-
-        <div class="TheWork_objectiveCard">
-          <div class="TheWork_objectiveTop">
-            <div class="TheWork_objectiveMain">
-              <h3 class="EditableText_editable TheWork_objectiveTitle" title="Click to edit" data-editable-text>Finalize renewal owner map</h3>
-              <p class="EditableText_editable TheWork_objectiveDescription" title="Click to edit" data-editable-text>Name the legal and launch owners before Jen forwards the executive readout.</p>
-              <div class="TheWork_objectiveMeta">Active &middot; 1 of 2 milestones &middot; 0 linked actions</div>
-              <div class="TheWork_objectiveTargetDate">Target: Jun 3</div>
-              <div class="TheWork_progressBar TheWork_progressWarning">
-                <div class="TheWork_progressFill" data-progress="50"></div>
-              </div>
+      <div class="AccountDetailPage_compositionBlockStack">
+        <article class="AccountDetailPage_compositionBlock" data-block-type="RelationshipMap">
+          <div class="AccountDetailPage_compositionRelationshipGrid">
+            <div class="AccountDetailPage_compositionPersonNode">
+              <span class="AccountDetailPage_compositionAvatar" data-ds-tier="primitive" data-ds-name="Avatar" data-ds-spec="primitives/Avatar.md">AO</span>
+              <span class="AccountDetailPage_compositionEvidenceTitle">Account owner</span>
+              <span class="Pill_pill Pill_compact Pill_sage"><span class="Pill_dot"></span>Champion</span>
+              <span class="ProvenanceTag_tag" data-ds-tier="primitive" data-ds-name="ProvenanceTag" data-ds-spec="primitives/ProvenanceTag.md">manual user</span>
             </div>
-            <div class="TheWork_objectiveActions">
-              <button type="button" class="TheWork_smallAction">Complete</button>
-              <button type="button" class="TheWork_smallActionMuted">Abandon</button>
-              <button type="button" class="TheWork_smallActionMuted">Delete</button>
+            <div class="AccountDetailPage_compositionPersonNode">
+              <span class="AccountDetailPage_compositionAvatar" data-ds-tier="primitive" data-ds-name="Avatar" data-ds-spec="primitives/Avatar.md">LS</span>
+              <span class="AccountDetailPage_compositionEvidenceTitle">Launch sponsor</span>
+              <span class="Pill_pill Pill_compact Pill_turmeric"><span class="Pill_dot"></span>Active</span>
+              <span class="ProvenanceTag_tag" data-ds-tier="primitive" data-ds-name="ProvenanceTag" data-ds-spec="primitives/ProvenanceTag.md">from calendar</span>
+            </div>
+            <div class="AccountDetailPage_compositionPersonNode">
+              <span class="AccountDetailPage_compositionAvatar" data-ds-tier="primitive" data-ds-name="Avatar" data-ds-spec="primitives/Avatar.md">?</span>
+              <span class="AccountDetailPage_compositionEvidenceTitle">Legal owner</span>
+              <span class="Pill_pill Pill_compact TrustBandBadge_badge TrustBandBadge_compact TrustBandBadge_needsVerification" data-ds-tier="primitive" data-ds-name="TrustBandBadge" data-ds-spec="primitives/TrustBandBadge.md">Needs verification</span>
+              <span class="ProvenanceTag_tag" data-ds-tier="primitive" data-ds-name="ProvenanceTag" data-ds-spec="primitives/ProvenanceTag.md">masked field</span>
             </div>
           </div>
+        </article>
+      </div>
+    </div>
+  </section>
 
-          <div class="TheWork_milestoneList">
-            <div class="TheWork_milestoneRow">
-              <button type="button" class="TheWork_milestoneToggle TheWork_milestoneToggleDone" title="Complete milestone"></button>
-              <div class="TheWork_milestoneContent">
-                <span class="EditableText_editable TheWork_milestoneTitle" title="Click to edit" data-editable-text>Confirm support workflow evidence</span>
-                <div class="TheWork_milestoneMeta">Completed &middot; May 1</div>
-              </div>
-              <div class="TheWork_milestoneActions">
-                <button type="button" class="TheWork_smallActionMuted">Delete</button>
-              </div>
-            </div>
-            <div class="TheWork_milestoneRow">
-              <button type="button" class="TheWork_milestoneToggle" title="Complete milestone"></button>
-              <div class="TheWork_milestoneContent">
-                <span class="EditableText_editable TheWork_milestoneTitle" title="Click to edit" data-editable-text>Name legal package owner</span>
-                <div class="TheWork_milestoneMeta">Pending &middot; Jun 3</div>
-              </div>
-              <div class="TheWork_milestoneActions">
-                <button type="button" class="TheWork_smallActionMuted">Skip</button>
-                <button type="button" class="TheWork_smallActionMuted">Delete</button>
+  <section id="whats-next" class="AccountDetailPage_compositionSection" data-section-id="whats-next">
+    <div class="AccountDetailPage_compositionSectionLabel">What's Next</div>
+    <div class="AccountDetailPage_compositionSectionBody">
+      <header class="AccountDetailPage_compositionSectionHeader">
+        <div>
+          <h2 class="AccountDetailPage_compositionSectionTitle">What's Next</h2>
+          <p class="AccountDetailPage_compositionSectionDeck">Action blocks are explicit about source labels and remain service-owned for any mutation.</p>
+        </div>
+      </header>
+
+      <div class="AccountDetailPage_compositionBlockStack">
+        <article class="AccountDetailPage_compositionBlock" data-block-type="ActionList">
+          <div class="AccountDetailPage_compositionActionRow">
+            <span class="AccountDetailPage_compositionActionIndex">01</span>
+            <div>
+              <p class="AccountDetailPage_compositionEvidenceTitle">Confirm the legal review owner before the renewal readout.</p>
+              <div class="AccountDetailPage_compositionEvidenceMeta">
+                <span class="StatusDot_wrapper" data-ds-tier="primitive" data-ds-name="StatusDot" data-ds-spec="primitives/StatusDot.md"><span class="StatusDot_dot StatusDot_sm StatusDot_loading"></span><span class="StatusDot_label">Waiting</span></span>
+                <span class="ProvenanceTag_tag" data-ds-tier="primitive" data-ds-name="ProvenanceTag" data-ds-spec="primitives/ProvenanceTag.md">from open loop claim</span>
               </div>
             </div>
-            <button type="button" class="TheWork_inlineAdder">+ Milestone</button>
+            <button type="button" class="AccountDetailPage_compositionButton">Open</button>
           </div>
-        </div>
-
-        <div class="TheWork_actionSection">
-          <div class="TheWork_sectionLabel">Actions</div>
-          <p class="TheWork_emptyMessage">No unlinked actions.</p>
-          <div class="TheWork_actionComposer">
-            <button type="button" class="TheWork_inlineAdder">+ Add Action</button>
+          <div class="AccountDetailPage_compositionActionRow">
+            <span class="AccountDetailPage_compositionActionIndex">02</span>
+            <div>
+              <p class="AccountDetailPage_compositionEvidenceTitle">Send pilot adoption summary to the launch sponsor.</p>
+              <div class="AccountDetailPage_compositionEvidenceMeta">
+                <span class="StatusDot_wrapper" data-ds-tier="primitive" data-ds-name="StatusDot" data-ds-spec="primitives/StatusDot.md"><span class="StatusDot_dot StatusDot_sm StatusDot_connected"></span><span class="StatusDot_label">Ready</span></span>
+                <span class="ProvenanceTag_tag" data-ds-tier="primitive" data-ds-name="ProvenanceTag" data-ds-spec="primitives/ProvenanceTag.md">from work summary</span>
+              </div>
+            </div>
+            <button type="button" class="AccountDetailPage_compositionButton">Track</button>
           </div>
-        </div>
-      </section>
-    </div>
-  </div>
-
-  <div id="reports" class="editorial-reveal entity-detail_marginLabelSection">
-    <div class="entity-detail_marginLabel">Reports</div>
-    <div class="entity-detail_marginContent">
-      <div class="ChapterHeading_heading">
-        <hr class="ChapterHeading_rule" />
-        <div class="ChapterHeading_titleRow">
-          <h2 class="ChapterHeading_title">Reports</h2>
-        </div>
-      </div>
-      <div class="AccountDetailEditorial_reportsChapter">
-        <button type="button" class="AccountDetailEditorial_reportRow">
-          <svg class="AccountDetailEditorial_reportIcon" xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><path d="M14 2v6h6"/><path d="M16 13H8"/><path d="M16 17H8"/><path d="M10 9H8"/></svg>
-          <span class="AccountDetailEditorial_reportName">Account Health</span>
-          <span class="AccountDetailEditorial_reportAction">View</span>
-        </button>
-        <button type="button" class="AccountDetailEditorial_reportRow">
-          <svg class="AccountDetailEditorial_reportIcon" xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><path d="M14 2v6h6"/><path d="M16 13H8"/><path d="M16 17H8"/><path d="M10 9H8"/></svg>
-          <span class="AccountDetailEditorial_reportName">Risk Briefing</span>
-          <span class="AccountDetailEditorial_reportAction">View</span>
-        </button>
-        <button type="button" class="AccountDetailEditorial_reportRow">
-          <svg class="AccountDetailEditorial_reportIcon" xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><path d="M14 2v6h6"/><path d="M16 13H8"/><path d="M16 17H8"/><path d="M10 9H8"/></svg>
-          <span class="AccountDetailEditorial_reportName">EBR / QBR</span>
-          <span class="AccountDetailEditorial_reportAction">View</span>
-        </button>
+        </article>
       </div>
     </div>
-  </div>
+  </section>
 
-  <div class="entity-detail_marginLabelSection">
-    <div class="entity-detail_marginLabel">Files</div>
-    <div class="entity-detail_marginContent">
-      <div class="FileListSection_section">
-        <div class="FileListSection_header">
-          <div class="FileListSection_sectionTitle">Files &middot; 2</div>
-          <div class="FileListSection_headerActions">
-            <button type="button" class="FileListSection_actionButton">Re-index</button>
+  <section id="watch-list" class="AccountDetailPage_compositionSection" data-section-id="watch-list">
+    <div class="AccountDetailPage_compositionSectionLabel">Watch List</div>
+    <div class="AccountDetailPage_compositionSectionBody">
+      <header class="AccountDetailPage_compositionSectionHeader">
+        <div>
+          <h2 class="AccountDetailPage_compositionSectionTitle">Watch List</h2>
+          <p class="AccountDetailPage_compositionSectionDeck">Background salience can remain expanded when it is short, or collapse semantically when dense.</p>
+        </div>
+        <div class="AccountDetailPage_compositionSectionMeta">
+          <span class="Pill_pill Pill_compact Pill_neutral">Background</span>
+        </div>
+      </header>
+
+      <div class="AccountDetailPage_compositionBlockStack">
+        <article class="AccountDetailPage_compositionDegradedState" data-block-type="RiskCallout">
+          <span class="AccountDetailPage_compositionStateLabel">Use with caution</span>
+          <p class="AccountDetailPage_compositionStateText">Procurement timing is inferred from stale source activity. Keep it visible, but do not promote it as current without confirmation.</p>
+          <span class="ProvenanceTag_tag ProvenanceTag_discrepancy" data-ds-tier="primitive" data-ds-name="ProvenanceTag" data-ds-spec="primitives/ProvenanceTag.md">source older than 30d</span>
+        </article>
+      </div>
+    </div>
+  </section>
+
+  <section id="value-commitments" class="AccountDetailPage_compositionSection" data-section-id="value-commitments">
+    <div class="AccountDetailPage_compositionSectionLabel">Value & Commitments</div>
+    <div class="AccountDetailPage_compositionSectionBody">
+      <header class="AccountDetailPage_compositionSectionHeader">
+        <div>
+          <h2 class="AccountDetailPage_compositionSectionTitle">Value & Commitments</h2>
+          <p class="AccountDetailPage_compositionSectionDeck">Value claims and open commitments remain correction-ready rather than becoming static narrative.</p>
+        </div>
+      </header>
+
+      <div class="AccountDetailPage_compositionBlockStack">
+        <article class="AccountDetailPage_compositionBlock" data-block-type="EvidenceList">
+          <ul class="AccountDetailPage_compositionEvidenceList">
+            <li class="AccountDetailPage_compositionEvidenceRow">
+              <div class="AccountDetailPage_compositionEvidenceMain">
+                <p class="AccountDetailPage_compositionEvidenceTitle">Admin pilot reduced support triage time for the first group.</p>
+                <div class="AccountDetailPage_compositionEvidenceMeta">
+                  <span class="Pill_pill Pill_compact Pill_sage">Value delivered</span>
+                  <span class="ProvenanceTag_tag" data-ds-tier="primitive" data-ds-name="ProvenanceTag" data-ds-spec="primitives/ProvenanceTag.md">from source ref</span>
+                </div>
+              </div>
+              <button type="button" class="AccountDetailPage_compositionButton">Correct</button>
+            </li>
+            <li class="AccountDetailPage_compositionEvidenceRow">
+              <div class="AccountDetailPage_compositionEvidenceMain">
+                <p class="AccountDetailPage_compositionEvidenceTitle">Executive readout is owed before renewal planning begins.</p>
+                <div class="AccountDetailPage_compositionEvidenceMeta">
+                  <span class="Pill_pill Pill_compact Pill_turmeric">Commitment</span>
+                  <span class="FreshnessIndicator_root FreshnessIndicator_inline" data-ds-tier="primitive" data-ds-name="FreshnessIndicator" data-ds-spec="primitives/FreshnessIndicator.md">5d old</span>
+                </div>
+              </div>
+              <button type="button" class="AccountDetailPage_compositionButton">Review</button>
+            </li>
+          </ul>
+        </article>
+      </div>
+    </div>
+  </section>
+
+  <section id="strategic-landscape" class="AccountDetailPage_compositionSection" data-section-id="strategic-landscape">
+    <div class="AccountDetailPage_compositionSectionLabel">Strategic Landscape</div>
+    <div class="AccountDetailPage_compositionSectionBody">
+      <header class="AccountDetailPage_compositionSectionHeader">
+        <div>
+          <h2 class="AccountDetailPage_compositionSectionTitle">Strategic Landscape</h2>
+          <p class="AccountDetailPage_compositionSectionDeck">Markdown document blocks stay plain-text safe and source-tagged.</p>
+        </div>
+      </header>
+
+      <div class="AccountDetailPage_compositionBlockStack">
+        <article class="AccountDetailPage_compositionBlock" data-block-type="MarkdownDocument">
+          <p class="AccountDetailPage_compositionBodyText">The renewal conversation is anchored on expanding the admin pilot into front-line support. The competing reporting layer is still present, but the sponsor's stated priority is workflow reliability.</p>
+          <ul class="AccountDetailPage_compositionInlineList">
+            <li><span class="Pill_pill Pill_compact EntityChip_chip EntityChip_chip-account" data-ds-tier="primitive" data-ds-name="EntityChip" data-ds-spec="primitives/EntityChip.md">subsidiary.com</span></li>
+            <li><span class="Pill_pill Pill_compact Pill_olive">Reporting layer</span></li>
+            <li><span class="Pill_pill Pill_compact Pill_larkspur">Workflow reliability</span></li>
+          </ul>
+        </article>
+      </div>
+    </div>
+  </section>
+
+  <section id="the-record" class="AccountDetailPage_compositionSection" data-section-id="the-record">
+    <div class="AccountDetailPage_compositionSectionLabel">The Record</div>
+    <div class="AccountDetailPage_compositionSectionBody">
+      <header class="AccountDetailPage_compositionSectionHeader">
+        <div>
+          <h2 class="AccountDetailPage_compositionSectionTitle">The Record</h2>
+          <p class="AccountDetailPage_compositionSectionDeck">Timeline evidence is source-labeled, manual entries are marked user-authored, and raw excerpts stay out of the reference.</p>
+        </div>
+      </header>
+
+      <div class="AccountDetailPage_compositionBlockStack">
+        <article class="AccountDetailPage_compositionBlock" data-block-type="EvidenceList">
+          <ul class="AccountDetailPage_compositionEvidenceList">
+            <li class="AccountDetailPage_compositionEvidenceRow">
+              <div class="AccountDetailPage_compositionEvidenceMain">
+                <p class="AccountDetailPage_compositionEvidenceTitle">Pilot status review captured launch owner and blocker list.</p>
+                <div class="AccountDetailPage_compositionEvidenceMeta">
+                  <span class="ProvenanceTag_tag" data-ds-tier="primitive" data-ds-name="ProvenanceTag" data-ds-spec="primitives/ProvenanceTag.md">meeting source</span>
+                  <span class="FreshnessIndicator_root FreshnessIndicator_inline" data-ds-tier="primitive" data-ds-name="FreshnessIndicator" data-ds-spec="primitives/FreshnessIndicator.md">May 29</span>
+                </div>
+              </div>
+              <span class="Pill_pill Pill_compact Pill_neutral">Note</span>
+            </li>
+            <li class="AccountDetailPage_compositionEvidenceRow">
+              <div class="AccountDetailPage_compositionEvidenceMain">
+                <p class="AccountDetailPage_compositionEvidenceTitle">Manual account note added to track procurement nuance.</p>
+                <div class="AccountDetailPage_compositionEvidenceMeta">
+                  <span class="ProvenanceTag_tag" data-ds-tier="primitive" data-ds-name="ProvenanceTag" data-ds-spec="primitives/ProvenanceTag.md">manual user</span>
+                </div>
+              </div>
+              <span class="Pill_pill Pill_compact Pill_neutral">Manual</span>
+            </li>
+          </ul>
+        </article>
+      </div>
+    </div>
+  </section>
+
+  <section id="the-work" class="AccountDetailPage_compositionSection" data-section-id="the-work">
+    <div class="AccountDetailPage_compositionSectionLabel">The Work</div>
+    <div class="AccountDetailPage_compositionSectionBody">
+      <header class="AccountDetailPage_compositionSectionHeader">
+        <div>
+          <h2 class="AccountDetailPage_compositionSectionTitle">The Work</h2>
+          <p class="AccountDetailPage_compositionSectionDeck">Work rows are projected blocks, not a separate frontend query fanout.</p>
+        </div>
+      </header>
+
+      <div class="AccountDetailPage_compositionBlockStack">
+        <article class="AccountDetailPage_compositionBlock" data-block-type="ActionList">
+          <div class="AccountDetailPage_compositionTwoColumn">
+            <div class="AccountDetailPage_compositionEmptyState">
+              <span class="AccountDetailPage_compositionStateLabel">No active work items</span>
+              <p class="AccountDetailPage_compositionStateText">The producer emits this empty block when no current work survives filtering.</p>
+            </div>
+            <div class="AccountDetailPage_compositionDegradedState">
+              <span class="AccountDetailPage_compositionStateLabel">Degraded</span>
+              <p class="AccountDetailPage_compositionStateText">Recently landed work is unavailable because one source field was masked by render policy.</p>
+            </div>
           </div>
+        </article>
+      </div>
+    </div>
+  </section>
+
+  <section id="reports" class="AccountDetailPage_compositionSection" data-section-id="reports">
+    <div class="AccountDetailPage_compositionSectionLabel">Reports</div>
+    <div class="AccountDetailPage_compositionSectionBody">
+      <header class="AccountDetailPage_compositionSectionHeader">
+        <div>
+          <h2 class="AccountDetailPage_compositionSectionTitle">Reports</h2>
+          <p class="AccountDetailPage_compositionSectionDeck">Reports show available and unavailable states without fabricating provenance.</p>
         </div>
-        <ul class="FileListSection_fileList">
-          <li class="FileListSection_fileRow">
-            <span><svg class="FileListSection_fileIcon" xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 14 14" fill="none" aria-hidden="true"><path d="M3 1.5h5l3 3v8a1 1 0 0 1-1 1H3a1 1 0 0 1-1-1v-10a1 1 0 0 1 1-1Z" stroke="currentColor" stroke-width="1" stroke-linecap="round" stroke-linejoin="round"/><path d="M8 1.5v3h3" stroke="currentColor" stroke-width="1" stroke-linecap="round" stroke-linejoin="round"/></svg></span>
-            <span class="FileListSection_filename">acme-renewal-owner-map.md</span>
-            <span class="FileListSection_fileMeta">42.0 KB</span>
-            <span class="FileListSection_fileMeta">Today</span>
-          </li>
-          <li class="FileListSection_fileRow">
-            <span><svg class="FileListSection_fileIcon" xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 14 14" fill="none" aria-hidden="true"><path d="M3 1.5h5l3 3v8a1 1 0 0 1-1 1H3a1 1 0 0 1-1-1v-10a1 1 0 0 1 1-1Z" stroke="currentColor" stroke-width="1" stroke-linecap="round" stroke-linejoin="round"/><path d="M8 1.5v3h3" stroke="currentColor" stroke-width="1" stroke-linecap="round" stroke-linejoin="round"/></svg></span>
-            <span class="FileListSection_filename">support-workflow-proof-points.pdf</span>
-            <span class="FileListSection_fileMeta">188.0 KB</span>
-            <span class="FileListSection_fileMeta">3d ago</span>
-          </li>
-        </ul>
-      </div>
-    </div>
-  </div>
+      </header>
 
-  <div class="editorial-reveal">
-    <div class="FinisMarker_root">
-      <div class="FinisMarker_marks">
-        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 433 407" width="18" height="18" aria-hidden="true"><path d="M159 407 161 292 57 355 0 259 102 204 0 148 57 52 161 115 159 0H273L271 115L375 52L433 148L331 204L433 259L375 355L271 292L273 407Z" fill="currentColor"/></svg>
-        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 433 407" width="18" height="18" aria-hidden="true"><path d="M159 407 161 292 57 355 0 259 102 204 0 148 57 52 161 115 159 0H273L271 115L375 52L433 148L331 204L433 259L375 355L271 292L273 407Z" fill="currentColor"/></svg>
-        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 433 407" width="18" height="18" aria-hidden="true"><path d="M159 407 161 292 57 355 0 259 102 204 0 148 57 52 161 115 159 0H273L271 115L375 52L433 148L331 204L433 259L375 355L271 292L273 407Z" fill="currentColor"/></svg>
-      </div>
-      <div class="finis-date">Last updated: 2026-05-04T09:00:00.000Z</div>
-    </div>
-  </div>
-
-  <template data-account-conditional-branches>
-    <!-- Current AccountDetailPage conditional branch coverage. The visible static
-         reference above preserves a representative account state; this template
-         keeps conditionally rendered tabs/states aligned with routed source
-         components so fidelity audits can catch missing source modules. -->
-    <div class="RiskBriefingStatus_riskBriefingStatus">
-      <span class="RiskBriefingStatus_riskBriefingStatusLabel">Risk briefing</span>
-      <span class="RiskBriefingStatus_riskBriefingStatusDetail">Running</span>
-    </div>
-    <span class="FreshnessIndicator_root FreshnessIndicator_inline">
-      <span class="FreshnessIndicator_timeText">Updated today</span>
-    </span>
-    <div class="IntelligenceCorrection_wrapper">
-      <span class="IntelligenceCorrection_prompt">About this intelligence</span>
-    </div>
-    <div class="StakeholderGrid_section">
-      <div class="StakeholderGrid_subsectionLabel">Relationship map</div>
-    </div>
-    <div class="PendingStakeholderQueue_section">
-      <div class="PendingStakeholderQueue_label">Suggested stakeholders</div>
-    </div>
-    <div class="QuoteWall_wall">
-      <div class="QuoteWall_card">
-        <blockquote class="QuoteWall_quote">Customer quote</blockquote>
-      </div>
-    </div>
-    <div class="RelationshipFabric_list">
-      <div class="RelationshipFabric_row">
-        <span class="RelationshipFabric_label">Relationship fabric</span>
-      </div>
-    </div>
-    <section class="AboutThisDossier_section">
-      <div class="AboutThisDossier_eyebrow">About the dossier</div>
-      <div class="AboutThisDossier_card">About this dossier</div>
-    </section>
-    <div class="WorkSurface_commitmentList">
-      <div class="WorkSurface_commitmentCard">
-        <div class="WorkSurface_commitmentHeadline">What we've said we'll do</div>
-        <a class="WorkSurface_visibilityLink" href="#">See Context value →</a>
-      </div>
-      <div class="WorkSurface_recCard">
-        <div class="WorkSurface_recLabel">Sugges- tions</div>
-      </div>
-      <div class="WorkSurface_refRow">
-        <strong>Shared with the team</strong>
-      </div>
-      <div class="WorkSurface_timelineRow">
-        <span class="WorkSurface_timelineEvent">Recently landed</span>
-      </div>
-    </div>
-    <div class="AccountViewSwitcher_switcher">
-      <button type="button" class="AccountViewSwitcher_tab AccountViewSwitcher_tabActive">Health</button>
-      <button type="button" class="AccountViewSwitcher_tab">Context</button>
-      <button type="button" class="AccountViewSwitcher_tab">Work</button>
-    </div>
-
-    <div class="entity-detail_folioActions">
-      <div class="FolioReportsDropdown_wrapper">
-        <button type="button" class="FolioReportsDropdown_button">Reports ▾</button>
-        <div class="FolioReportsDropdown_dropdown">
-          <button type="button" class="FolioReportsDropdown_item">Account Health</button>
-        </div>
-      </div>
-      <div class="FolioToolsDropdown_wrapper">
-        <button type="button" class="FolioToolsDropdown_button">Tools ▾</button>
-        <div class="FolioToolsDropdown_dropdown">
-          <button type="button" class="FolioToolsDropdown_item">+ Business Unit</button>
-          <button type="button" class="FolioToolsDropdown_item">Merge Into...</button>
-          <button type="button" class="FolioToolsDropdown_item">Index Files</button>
-          <div class="FolioToolsDropdown_separator"></div>
-          <button type="button" class="FolioToolsDropdown_item">Archive</button>
-        </div>
-      </div>
-    </div>
-
-    <div class="VitalsStrip_strip">
-      <div class="VitalsStrip_items">
-        <span class="VitalsStrip_item">
-          <span class="VitalsStrip_fieldStack"><span class="VitalsStrip_vitalText" data-highlight="turmeric">$620K ARR</span></span>
-        </span>
-      </div>
-    </div>
-
-    <div class="RecommendedActions_root">
-      <div class="RecommendedActions_label">Recommended</div>
-      <div class="RecommendedActions_action">
-        <div class="RecommendedActions_content">
-          <div class="RecommendedActions_metaRow">
-            <span class="RecommendedActions_priority" data-priority="2">High</span>
-            <span class="RecommendedActions_dueDate">Due Jun 3</span>
+      <div class="AccountDetailPage_compositionBlockStack">
+        <article class="AccountDetailPage_compositionReportGrid" data-block-type="ActionList">
+          <div class="AccountDetailPage_compositionReport">
+            <span class="Pill_pill Pill_compact Pill_sage">Available</span>
+            <h3 class="AccountDetailPage_compositionBlockTitle">Account health</h3>
+            <p class="AccountDetailPage_compositionBodyText">Current evidence supports a refreshed account health report.</p>
+            <button type="button" class="AccountDetailPage_compositionButton">Open</button>
           </div>
-          <div class="RecommendedActions_title"></div>
-          <div class="RecommendedActions_rationale"></div>
-          <div class="RecommendedActions_source">Based on account intelligence</div>
-        </div>
-        <div class="RecommendedActions_actions">
-          <button type="button" title="Track" class="RecommendedActions_iconButton RecommendedActions_trackButton"></button>
-          <button type="button" title="Dismiss" class="RecommendedActions_iconButton RecommendedActions_dismissButton"></button>
-        </div>
+          <div class="AccountDetailPage_compositionReport">
+            <span class="Pill_pill Pill_compact Pill_turmeric">Ready soon</span>
+            <h3 class="AccountDetailPage_compositionBlockTitle">Executive readout</h3>
+            <p class="AccountDetailPage_compositionBodyText">Needs legal-owner confirmation before generation.</p>
+            <button type="button" class="AccountDetailPage_compositionButton">Prepare</button>
+          </div>
+          <div class="AccountDetailPage_compositionReport AccountDetailPage_compositionReportUnavailable">
+            <span class="Pill_pill Pill_compact Pill_neutral">Unavailable</span>
+            <h3 class="AccountDetailPage_compositionBlockTitle">Risk briefing</h3>
+            <p class="AccountDetailPage_compositionBodyText">No current high-risk pattern is grounded enough to brief.</p>
+            <button type="button" class="AccountDetailPage_compositionButton">Review</button>
+          </div>
+        </article>
       </div>
     </div>
+  </section>
 
-    <div class="AccountTechnicalFootprint_productGroups">
-      <div class="AccountTechnicalFootprint_productGroup">
-        <div class="ReferenceGrid_featureItem AccountTechnicalFootprint_productHeader">
-          <span class="ReferenceGrid_featureDot"></span>
-          <span class="AccountTechnicalFootprint_productLabel"></span>
-          <span class="AccountTechnicalFootprint_productMeta"></span>
-        </div>
-        <div class="ReferenceGrid_featureList AccountTechnicalFootprint_productFeatureList"></div>
-        <button type="button" class="AccountTechnicalFootprint_showMoreButton"></button>
-      </div>
-    </div>
-  </template>
+  <div class="FinisMarker_root" data-ds-tier="pattern" data-ds-name="FinisMarker" data-ds-spec="patterns/FinisMarker.md">
+    <div class="FinisMarker_marks" aria-hidden="true"><span>*</span><span>*</span><span>*</span></div>
+    <div class="FinisMarker_timestamp">End of account dossier &middot; refreshed June 1, 2026</div>
+  </div>
 </div>
 
 </main>

@@ -59,6 +59,7 @@ use crate::services::surface_pairing::{
 use crate::services::surface_session_keychain::SessionKeyLookup;
 use crate::state::AppState;
 use abilities_runtime::abilities::registry::{Actor, ScopeSet, SurfaceClientId};
+use abilities_runtime::abilities::SurfaceKind;
 
 mod hmac;
 
@@ -2349,10 +2350,7 @@ async fn local_loopback_project_composition_response(
     runtime: Arc<EndpointRuntime>,
     request_id: String,
 ) -> Response<ResponseBody> {
-    use crate::services::composition_render_orchestrator::{
-        extract_account_id_from_composition_id, project_from_ability_data,
-        resolve_producer_ability_name, FALLBACK_POLICY_VERSION,
-    };
+    use crate::services::composition_render_orchestrator::project_composition_for_surface;
 
     if !request.peer_addr.ip().is_loopback() {
         return error_response(SurfaceHttpError::route_not_found().with_request_id(request_id));
@@ -2373,21 +2371,6 @@ async fn local_loopback_project_composition_response(
         log::warn!("local_project_composition: app_state is None");
         return error_response(SurfaceHttpError::runtime_unavailable().with_request_id(request_id));
     };
-
-    let Some(ability_name) = resolve_producer_ability_name(&request_payload.composition_id) else {
-        return error_response(
-            SurfaceHttpError::bad_request("project_composition_unknown_producer")
-                .with_request_id(request_id),
-        );
-    };
-    let Some(account_id) = extract_account_id_from_composition_id(&request_payload.composition_id)
-    else {
-        return error_response(
-            SurfaceHttpError::bad_request("project_composition_invalid_id")
-                .with_request_id(request_id),
-        );
-    };
-    let account_id = account_id.to_string();
 
     #[cfg(test)]
     let registry_override = runtime.ability_registry_override.clone();
@@ -2414,120 +2397,62 @@ async fn local_loopback_project_composition_response(
         }
     };
 
-    let actor = Actor::User;
-    let orchestrator = app_state.composition_render_orchestrator.clone();
-    let composition_id_for_lookup = request_payload.composition_id.clone();
-    let current_db_version_for_producer = app_state
-        .db_read(move |db| {
-            let clock = crate::services::context::SystemClock;
-            let rng = crate::services::context::SystemRng;
-            let external = crate::services::context::ExternalClients::default();
-            let ctx = crate::services::context::ServiceContext::new_live(&clock, &rng, &external);
-            crate::services::compositions::current_composition_version_for_composition_id(
-                &ctx,
-                db,
-                &composition_id_for_lookup,
-            )
-            .map_err(|e| e.to_string())
-        })
-        .await
-        .ok()
-        .unwrap_or(0);
-    let current_db_version = i64::try_from(current_db_version_for_producer).unwrap_or(i64::MAX);
-
-    if let Some(cached) =
-        orchestrator.cache_lookup(&actor, &request_payload.composition_id, current_db_version)
-    {
-        let projection_json = match serde_json::to_value(&cached.projection) {
-            Ok(value) => value,
-            Err(_) => {
-                return error_response(
-                    SurfaceHttpError::runtime_unavailable().with_request_id(request_id),
-                );
+    let render = match project_composition_for_surface(
+        app_state.as_ref(),
+        Actor::User,
+        SurfaceKind::SurfaceClient,
+        &request_payload.composition_id,
+        |producer_input| {
+            let app_state = app_state.clone();
+            let request_id = request_id.clone();
+            let input = producer_input.to_json();
+            async move {
+                match TauriAbilityBridge::new(registry)
+                    .invoke(
+                        app_state.as_ref(),
+                        producer_input.ability_name,
+                        input.clone(),
+                        TauriInvokeContext::new(
+                            Actor::User,
+                            BridgeSurface::LocalLoopback,
+                            ClaimDismissalSurface::LogStructured,
+                            false,
+                            None,
+                        ),
+                    )
+                    .await
+                {
+                    Ok(response_json) => {
+                        emit_successful_local_loopback_invocation_audit(
+                            app_state.as_ref(),
+                            &request_id,
+                            &input,
+                            &response_json,
+                        );
+                        Ok(response_json)
+                    }
+                    Err(error) => {
+                        emit_local_loopback_invocation_failure_audit(
+                            app_state.as_ref(),
+                            &request_id,
+                            producer_input.ability_name,
+                            &error,
+                        );
+                        Err(error)
+                    }
+                }
             }
-        };
-        return json_response(
-            StatusCode::OK,
-            json!({
-                "ok": true,
-                "request_id": request_id,
-                "projection": projection_json,
-                "cache_hint_token": cached.cache_hint_token,
-                "served_from_cache": true,
-            }),
-        );
-    }
-
-    let expected_version_for_producer: u64 = current_db_version_for_producer;
-    let input = json!({
-        "account_id": account_id,
-        "composition_id": request_payload.composition_id.clone(),
-        "schema_version": 1,
-        "expected_composition_version": expected_version_for_producer,
-    });
-
-    let response_json = match TauriAbilityBridge::new(registry)
-        .invoke(
-            app_state.as_ref(),
-            ability_name,
-            input.clone(),
-            TauriInvokeContext::new(
-                Actor::User,
-                BridgeSurface::LocalLoopback,
-                ClaimDismissalSurface::LogStructured,
-                false,
-                None,
-            ),
-        )
-        .await
+        },
+    )
+    .await
     {
-        Ok(response_json) => {
-            emit_successful_local_loopback_invocation_audit(
-                app_state.as_ref(),
-                &request_id,
-                &input,
-                &response_json,
-            );
-            response_json
-        }
+        Ok(render) => render,
         Err(error) => {
-            emit_local_loopback_invocation_failure_audit(
-                app_state.as_ref(),
-                &request_id,
-                ability_name,
-                &error,
-            );
             return error_response(local_bridge_surface_error(error).with_request_id(request_id));
         }
     };
 
-    let (projection, _audits) = match project_from_ability_data(
-        &response_json.data,
-        Actor::User,
-        FALLBACK_POLICY_VERSION,
-    ) {
-        Ok(tuple) => tuple,
-        Err(err) => {
-            log::warn!("local_project_composition: project_from_ability_data failed: {err:?}");
-            return error_response(
-                SurfaceHttpError::runtime_unavailable().with_request_id(request_id),
-            );
-        }
-    };
-
-    let projection_cache_version = projection
-        .composition_version
-        .unwrap_or(current_db_version_for_producer);
-    let projection_cache_version = i64::try_from(projection_cache_version).unwrap_or(i64::MAX);
-    let cache_hint_token = orchestrator
-        .cache_store(
-            &actor,
-            &request_payload.composition_id,
-            projection_cache_version,
-            projection.clone(),
-        )
-        .unwrap_or_default();
-    let projection_json = match serde_json::to_value(&projection) {
+    let projection_json = match serde_json::to_value(&render.projection) {
         Ok(value) => value,
         Err(_) => {
             return error_response(
@@ -2539,11 +2464,11 @@ async fn local_loopback_project_composition_response(
     json_response(
         StatusCode::OK,
         json!({
-            "ok": true,
-            "request_id": request_id,
-            "projection": projection_json,
-            "cache_hint_token": cache_hint_token,
-            "served_from_cache": false,
+                "ok": true,
+                "request_id": request_id,
+                "projection": projection_json,
+                "cache_hint_token": render.cache_hint_token,
+                "served_from_cache": render.served_from_cache,
         }),
     )
 }
@@ -2802,8 +2727,8 @@ async fn surface_project_composition_response(
     request_id: String,
 ) -> Response<ResponseBody> {
     use crate::services::composition_render_orchestrator::{
-        extract_account_id_from_composition_id, project_from_ability_data,
-        resolve_producer_ability_name, FALLBACK_POLICY_VERSION,
+        extract_account_id_from_composition_id, project_composition_for_surface,
+        resolve_producer_ability_name,
     };
 
     let request: SurfaceProjectCompositionRequest = match serde_json::from_slice(&body) {
@@ -2821,9 +2746,6 @@ async fn surface_project_composition_response(
         return error_response(SurfaceHttpError::runtime_unavailable().with_request_id(request_id));
     };
 
-    let actor = validated.actor.clone();
-    let orchestrator = app_state.composition_render_orchestrator.clone();
-
     // Authorize FIRST — cache hits must not bypass ability authorization,
     // rate limiting, or audit emission. The bridge gates allowed_actors,
     // required_scopes, and per-instance/per-class budgets. Skipping this
@@ -2835,7 +2757,7 @@ async fn surface_project_composition_response(
                 .with_request_id(request_id),
         );
     };
-    let Some(account_id) = extract_account_id_from_composition_id(&request.composition_id) else {
+    let Some(_account_id) = extract_account_id_from_composition_id(&request.composition_id) else {
         return error_response(
             SurfaceHttpError::bad_request("project_composition_invalid_id")
                 .with_request_id(request_id),
@@ -2892,136 +2814,51 @@ async fn surface_project_composition_response(
         }
     };
 
-    // The producer always advances composition_version monotonically and
-    // commits unconditionally. The surface's previously-rendered version is
-    // structurally meaningless as an OCC token because the surface has no
-    // write path — only the producer mutates compositions. Read the current
-    // substrate version before cache lookup so stale surface watermarks do
-    // not force a miss and re-run the producer.
-    let composition_id_for_lookup = request.composition_id.clone();
-    let current_db_version_for_producer = app_state
-        .db_read(move |db| {
-            let clock = crate::services::context::SystemClock;
-            let rng = crate::services::context::SystemRng;
-            let external = crate::services::context::ExternalClients::default();
-            let ctx = crate::services::context::ServiceContext::new_live(&clock, &rng, &external);
-            crate::services::compositions::current_composition_version_for_composition_id(
-                &ctx,
-                db,
-                &composition_id_for_lookup,
-            )
-            .map_err(|e| e.to_string())
-        })
-        .await
-        .ok()
-        .unwrap_or(0);
-    let current_db_version = i64::try_from(current_db_version_for_producer).unwrap_or(i64::MAX);
-
-    // After authorization succeeds, check the cache. Cache key includes the
-    // current DB composition version plus the scopes-canonical id, so stale
-    // client watermarks do not force misses and a different actor with
-    // different scopes will miss naturally; authorization above gates the
-    // allowed_actors/required_scopes/rate-limit policy that the cache key
-    // alone doesn't enforce.
-    if let Some(cached) =
-        orchestrator.cache_lookup(&actor, &request.composition_id, current_db_version)
-    {
-        let projection_json = match serde_json::to_value(&cached.projection) {
-            Ok(value) => value,
-            Err(_) => {
-                return error_response(
-                    SurfaceHttpError::runtime_unavailable().with_request_id(request_id),
-                );
-            }
-        };
-        return json_response(
-            StatusCode::OK,
-            json!({
-                "ok": true,
-                "request_id": request_id,
-                "projection": projection_json,
-                "cache_hint_token": cached.cache_hint_token,
-                "served_from_cache": true,
-            }),
-        );
-    }
-
     let snapshot = app_state.context_snapshot();
     let provider = provider_from_context_snapshot(&snapshot);
     let services = app_state
         .live_service_context()
         .with_actor("surface_client");
 
-    let expected_version_for_producer: u64 = current_db_version_for_producer;
-    let input = json!({
-        "account_id": account_id,
-        "composition_id": request.composition_id,
-        "schema_version": 1,
-        "expected_composition_version": expected_version_for_producer,
-    });
-    let invoke_outcome = invoke_registry_json_for_actor(
-        registry,
-        &services,
-        provider,
-        &NOOP_ABILITY_TRACER,
-        RequestScopedInvocation {
-            registry_actor: validated.actor.clone(),
-            response_actor: BridgeActor::SurfaceClient,
-            surface: BridgeSurface::SurfaceClient,
-            claim_dismissal_surface: ClaimDismissalSurface::LogStructured,
-            dry_run: false,
-            confirmation: None,
-            confirmation_store: None,
-        },
-        &authorization.canonical_ability_name,
-        input,
-    )
-    .await;
-
-    let response_json = match invoke_outcome {
-        Ok(response_json) => response_json,
-        Err(error) => {
-            return bridge_surface_error_response(
-                surface_error(error),
-                &app_state,
-                &validated,
-                request_id,
-            )
-            .await;
-        }
-    };
-
-    let (projection, _audits) = match project_from_ability_data(
-        &response_json.data,
+    let render = match project_composition_for_surface(
+        app_state.as_ref(),
         validated.actor.clone(),
-        FALLBACK_POLICY_VERSION,
-    ) {
-        Ok(tuple) => tuple,
-        Err(err) => {
-            log::warn!("project_composition: project_from_ability_data failed: {err:?}");
-            return error_response(
-                SurfaceHttpError::runtime_unavailable().with_request_id(request_id),
-            );
+        SurfaceKind::SurfaceClient,
+        &request.composition_id,
+        |producer_input| {
+            let input = producer_input.to_json();
+            async {
+                invoke_registry_json_for_actor(
+                    registry,
+                    &services,
+                    provider,
+                    &NOOP_ABILITY_TRACER,
+                    RequestScopedInvocation {
+                        registry_actor: validated.actor.clone(),
+                        response_actor: BridgeActor::SurfaceClient,
+                        surface: BridgeSurface::SurfaceClient,
+                        claim_dismissal_surface: ClaimDismissalSurface::LogStructured,
+                        dry_run: false,
+                        confirmation: None,
+                        confirmation_store: None,
+                    },
+                    &authorization.canonical_ability_name,
+                    input,
+                )
+                .await
+                .map_err(surface_error)
+            }
+        },
+    )
+    .await
+    {
+        Ok(render) => render,
+        Err(error) => {
+            return bridge_surface_error_response(error, &app_state, &validated, request_id).await;
         }
     };
 
-    // Audit intents from the projector are operator-side diagnostics. The
-    // substrate audit-logger drain is intentionally not wired in this
-    // commit; see the v1.4.2 wave maintenance backlog for the
-    // audit-emission interlock.
-    let projection_cache_version = projection
-        .composition_version
-        .unwrap_or(current_db_version_for_producer);
-    let projection_cache_version = i64::try_from(projection_cache_version).unwrap_or(i64::MAX);
-    let cache_hint_token = orchestrator
-        .cache_store(
-            &validated.actor,
-            &request.composition_id,
-            projection_cache_version,
-            projection.clone(),
-        )
-        .unwrap_or_default();
-    let projection_json = match serde_json::to_value(&projection) {
+    let projection_json = match serde_json::to_value(&render.projection) {
         Ok(value) => value,
         Err(_) => {
             return error_response(
@@ -3035,8 +2872,8 @@ async fn surface_project_composition_response(
             "ok": true,
             "request_id": request_id,
             "projection": projection_json,
-            "cache_hint_token": cache_hint_token,
-            "served_from_cache": false,
+            "cache_hint_token": render.cache_hint_token,
+            "served_from_cache": render.served_from_cache,
         }),
     )
 }
@@ -4619,6 +4456,9 @@ mod tests {
         McpExposure, ScopeSet, SignalPolicy, SurfaceClientId, SurfaceScope,
     };
     use crate::abilities::{AbilityCategory, AbilityError, Actor, ActorKind};
+    use crate::services::composition_render_orchestrator::{
+        CacheStorePayload, FALLBACK_POLICY_VERSION,
+    };
     use std::future::Future;
     use std::io::{Read, Write};
     use std::pin::Pin;
@@ -6381,7 +6221,13 @@ mod tests {
         );
         assert!(app_state
             .composition_render_orchestrator
-            .cache_lookup(&Actor::User, composition_id, 6)
+            .cache_lookup(
+                &Actor::User,
+                composition_id,
+                6,
+                SurfaceKind::SurfaceClient,
+                FALLBACK_POLICY_VERSION,
+            )
             .is_some());
         assert!(app_state
             .composition_render_orchestrator
@@ -6389,6 +6235,8 @@ mod tests {
                 &validated_surface_session_for_tests().actor,
                 composition_id,
                 6,
+                SurfaceKind::SurfaceClient,
+                FALLBACK_POLICY_VERSION,
             )
             .is_none());
     }
@@ -6477,7 +6325,12 @@ mod tests {
                 &session.actor,
                 composition_id,
                 5,
-                projected_composition_for_tests(composition_id, 5),
+                SurfaceKind::SurfaceClient,
+                FALLBACK_POLICY_VERSION,
+                CacheStorePayload {
+                    projection: projected_composition_for_tests(composition_id, 5),
+                    rendered_provenance: None,
+                },
             )
             .expect("cache stores projection at current DB version");
 
@@ -6523,7 +6376,12 @@ mod tests {
                 &session.actor,
                 composition_id,
                 5,
-                projected_composition_for_tests(composition_id, 5),
+                SurfaceKind::SurfaceClient,
+                FALLBACK_POLICY_VERSION,
+                CacheStorePayload {
+                    projection: projected_composition_for_tests(composition_id, 5),
+                    rendered_provenance: None,
+                },
             )
             .expect("cache stores projection at current DB version");
 
@@ -6584,11 +6442,23 @@ mod tests {
         assert_eq!(PROJECT_COMPOSITION_PRODUCER_COUNT.load(Ordering::SeqCst), 1);
         assert!(app_state
             .composition_render_orchestrator
-            .cache_lookup(&actor, composition_id, 1)
+            .cache_lookup(
+                &actor,
+                composition_id,
+                1,
+                SurfaceKind::SurfaceClient,
+                FALLBACK_POLICY_VERSION,
+            )
             .is_none());
         assert!(app_state
             .composition_render_orchestrator
-            .cache_lookup(&actor, composition_id, 6)
+            .cache_lookup(
+                &actor,
+                composition_id,
+                6,
+                SurfaceKind::SurfaceClient,
+                FALLBACK_POLICY_VERSION,
+            )
             .is_some());
     }
 
@@ -6620,7 +6490,12 @@ mod tests {
                 &actor,
                 composition_id,
                 5,
-                projected_composition_for_tests(composition_id, 5),
+                SurfaceKind::SurfaceClient,
+                FALLBACK_POLICY_VERSION,
+                CacheStorePayload {
+                    projection: projected_composition_for_tests(composition_id, 5),
+                    rendered_provenance: None,
+                },
             )
             .expect("cache stores old projection");
         tokio_runtime.block_on(commit_composition_version_for_tests(
@@ -6649,11 +6524,23 @@ mod tests {
         assert_eq!(PROJECT_COMPOSITION_PRODUCER_COUNT.load(Ordering::SeqCst), 1);
         assert!(app_state
             .composition_render_orchestrator
-            .cache_lookup(&actor, composition_id, 5)
+            .cache_lookup(
+                &actor,
+                composition_id,
+                5,
+                SurfaceKind::SurfaceClient,
+                FALLBACK_POLICY_VERSION,
+            )
             .is_some());
         assert!(app_state
             .composition_render_orchestrator
-            .cache_lookup(&actor, composition_id, 7)
+            .cache_lookup(
+                &actor,
+                composition_id,
+                7,
+                SurfaceKind::SurfaceClient,
+                FALLBACK_POLICY_VERSION,
+            )
             .is_some());
 
         // The fake producer returns the committed version in its payload; mirror
@@ -6712,7 +6599,12 @@ mod tests {
                 &session.actor,
                 composition_id,
                 5,
-                projected_composition_for_tests(composition_id, 5),
+                SurfaceKind::SurfaceClient,
+                FALLBACK_POLICY_VERSION,
+                CacheStorePayload {
+                    projection: projected_composition_for_tests(composition_id, 5),
+                    rendered_provenance: None,
+                },
             )
             .expect("cache stores projection at current DB version");
 
@@ -6746,22 +6638,39 @@ mod tests {
             PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("src/surface_runtime/mod.rs"),
         )
         .expect("surface runtime source is readable");
+        let orchestrator_source = std::fs::read_to_string(
+            PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+                .join("src/services/composition_render_orchestrator.rs"),
+        )
+        .expect("composition render orchestrator source is readable");
         let production_source = source
             .split("#[cfg(test)]\nmod tests")
             .next()
             .expect("production source precedes test module");
         let normalized = production_source.split_whitespace().collect::<String>();
+        let normalized_orchestrator = orchestrator_source.split_whitespace().collect::<String>();
 
         assert!(
-            normalized.contains(
-                "orchestrator.cache_lookup(&actor,&request.composition_id,current_db_version)"
-            ),
-            "project_composition cache lookup must use current_db_version"
+            normalized.contains("project_composition_for_surface("),
+            "project_composition route must delegate to the shared projection service"
         );
         assert!(
-            !normalized.contains(
-                "orchestrator.cache_lookup(&actor,&request.composition_id,request.composition_version)"
+            normalized_orchestrator.contains(
+                "orchestrator.cache_lookup(&actor,composition_id,current_db_version,surface_kind,FALLBACK_POLICY_VERSION,)"
+            ) && normalized_orchestrator.contains(
+                "orchestrator.cache_lookup(&actor,composition_id,guarded_db_version,surface_kind,FALLBACK_POLICY_VERSION,)"
             ),
+            "shared projection service must use current DB versions for cache lookup"
+        );
+        assert!(
+            normalized_orchestrator.contains(
+                "orchestrator.cache_miss_guard(&actor,composition_id,surface_kind,FALLBACK_POLICY_VERSION,)"
+            ),
+            "shared projection service miss guard must serialize by render-policy identity, not stale composition watermark"
+        );
+        assert!(
+            !normalized.contains("request.composition_version")
+                && !normalized_orchestrator.contains("request.composition_version"),
             "project_composition cache lookup must not use request.composition_version"
         );
     }

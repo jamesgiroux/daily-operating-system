@@ -1,6 +1,8 @@
 # Lessons
 
+- 2026-06-02: L2 blocking reviews should stay scoped to acceptance criteria, ADR-named contracts, and PR-introduced regressions. Extra edge cases and speculative hardening belong in path-alpha/maintenance so wave work does not stall in expanding review cycles.
 - 2026-06-02: Replica and mock dev builds must scope both database and workspace paths before any scaffolding or managed-folder writes run. Validate the effective mode-scoped path first, then initialize; otherwise a replica-safe DB can still mutate production workspace folders.
+- 2026-06-01: When a parallel session owns replica/production environment investigation, keep this session out of DB-mode, Keychain, and replica-isolation changes. Stop any local dev app processes from this session and advance only independent PR-readiness work until the blocker is resolved.
 - 2026-05-26: Granola cache detection must treat filename versioning and storage mechanism as separate contracts. `cache-v*.json` catches version bumps, but not the newer encrypted cache path; prefer Granola's companion IPC/MCP access and make stale plaintext cache fallback explicit.
 - 2026-05-26: Treat "lock storm resolved" as unproven until a normal app startup with background workers runs cleanly. Deferring a corrupting backfill fixes storage safety, but independent writable `ActionDb` handles and long `db_write` finalization closures can still starve the SQLite writer.
 - 2026-05-25: Do not edit Rust backend files while `pnpm tauri dev` is writing to the production SQLCipher database. Tauri dev hot-restarts can terminate active WAL writers during runtime backfills or enrichment, producing real btree corruption even when earlier `quick_check` passes. Stop the app, patch and test, then restart once.
