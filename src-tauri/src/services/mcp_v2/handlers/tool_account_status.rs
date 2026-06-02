@@ -831,8 +831,10 @@ fn map_subject_resolution_db_error(err: DbError) -> ToolError {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::sync::Mutex;
+
     use crate::services::mcp_v2::contracts::{
-        McpClientId, OpaqueConversationHandle, Scope, ScopedName,
+        McpClientId, OpaqueConversationHandle, ParamSchema, ReturnSpec, Scope, ScopedName, Side,
     };
 
     fn stub_actor() -> McpActor {
@@ -879,6 +881,118 @@ mod tests {
         AccountSubjectCandidate {
             id: id.to_string(),
             name: name.to_string(),
+        }
+    }
+
+    fn seed_account(db: &ActionDb, id: &str, name: &str) {
+        db.upsert_account(&DbAccount {
+            id: id.to_string(),
+            name: name.to_string(),
+            account_type: crate::db::types::AccountType::default(),
+            updated_at: "2026-01-01T00:00:00Z".to_string(),
+            ..Default::default()
+        })
+        .expect("seed account");
+    }
+
+    fn test_description() -> ToolDescription {
+        ToolDescription {
+            name: ScopedName::new(TOOL_NAME),
+            summary: "account status test handler".to_string(),
+            when_to_call: "test only".to_string(),
+            when_not_to_call: "outside tests".to_string(),
+            side: Side::Read,
+            parameters: Vec::new(),
+            returns: ReturnSpec {
+                schema: ParamSchema(json!({ "type": "object" })),
+                description: "test response".to_string(),
+            },
+            examples: Vec::new(),
+            scopes_required: vec![Scope::new(TOOL_NAME)],
+        }
+    }
+
+    fn resolution_only_handler(runtime: tokio::runtime::Handle) -> AccountStatusHandler {
+        let registry = Box::leak(Box::new(
+            AbilityRegistry::from_descriptors_checked(Vec::new())
+                .expect("empty ability registry should be valid"),
+        ));
+        AccountStatusHandler::new(test_description(), registry, runtime)
+    }
+
+    #[test]
+    fn account_subject_resolution_matches_direct_db_when_using_request_context() {
+        let dir = tempfile::tempdir().expect("tempdir");
+        let path = dir.path().join("account-status-context.db");
+        let direct_db = ActionDb::open_at_unencrypted(path.clone()).expect("direct db");
+        seed_account(&direct_db, "example-account", "Example Account");
+        seed_account(&direct_db, "exampleaccount", "ExampleAccount");
+        seed_account(&direct_db, "another-account", "Another Account");
+
+        let owned = Arc::new(Mutex::new(
+            ActionDb::open_at_unencrypted(path).expect("owned context db"),
+        ));
+        let ctx = McpHandlerContext::with_owned_connection(owned);
+
+        for subject in [
+            "another-account",
+            "example account",
+            "AnotherAccount",
+            "missing-account",
+            "Example-Account",
+        ] {
+            let direct =
+                resolve_account_subject_with_db(&direct_db, subject).expect("direct resolution");
+            let request_scoped =
+                resolve_account_subject(&ctx, subject).expect("context resolution");
+            assert_eq!(
+                request_scoped, direct,
+                "request-scoped DB context must preserve account subject resolution for {subject}"
+            );
+        }
+    }
+
+    #[test]
+    fn account_status_handler_resolution_outputs_match_direct_db_with_request_context() {
+        let runtime = tokio::runtime::Builder::new_current_thread()
+            .enable_all()
+            .build()
+            .expect("runtime");
+        let handler = resolution_only_handler(runtime.handle().clone());
+        let dir = tempfile::tempdir().expect("tempdir");
+        let path = dir.path().join("account-status-handler-context.db");
+        let direct_db = ActionDb::open_at_unencrypted(path.clone()).expect("direct db");
+        seed_account(&direct_db, "example-account", "Example Account");
+        seed_account(&direct_db, "exampleaccount", "ExampleAccount");
+
+        let owned = Arc::new(Mutex::new(
+            ActionDb::open_at_unencrypted(path).expect("owned context db"),
+        ));
+        let ctx = McpHandlerContext::with_owned_connection(owned);
+        let actor = stub_actor();
+
+        for subject in ["missing-account", "Example-Account"] {
+            let handler_output = handler
+                .invoke(&ctx, &actor, json!({ "subject": subject }))
+                .expect("handler resolution output");
+            let expected = match resolve_account_subject_with_db(&direct_db, subject)
+                .expect("direct resolution")
+            {
+                AccountSubjectResolution::NotFound { input } => {
+                    account_subject_not_found_response(&input)
+                }
+                AccountSubjectResolution::Ambiguous { input, candidates } => {
+                    account_subject_ambiguous_response(&input, &candidates)
+                }
+                AccountSubjectResolution::Resolved(subject) => {
+                    panic!("subject unexpectedly resolved: {subject:?}")
+                }
+            };
+
+            assert_eq!(
+                handler_output, expected,
+                "full handler resolution output must match direct-DB behavior for {subject}"
+            );
         }
     }
 

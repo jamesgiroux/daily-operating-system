@@ -238,6 +238,8 @@ mod tests {
     };
     use serde_json::json;
 
+    use crate::db::ActionDb;
+
     fn actor() -> Actor {
         Actor::McpClient {
             client_id: RuntimeMcpClientId::new("client-a"),
@@ -271,5 +273,43 @@ mod tests {
         assert!(out.get("response").is_none());
         assert_eq!(out["mutation_cursor"]["note_id"], "note-1");
         assert_eq!(out["conversation_handle"], "conv-a");
+    }
+
+    #[test]
+    fn insert_outbox_uses_owned_connection_when_provided() {
+        let dir = tempfile::tempdir().expect("tempdir");
+        let path = dir.path().join("owned-audit-outbox.db");
+        let db = ActionDb::open_at_unencrypted(path).expect("owned audit db");
+
+        insert_outbox(
+            "mcp.tool_invoked",
+            r#"{"tool":"dailyos.read.account_status"}"#,
+            "mcp_client",
+            Some("request-1"),
+            Some(&db),
+        )
+        .expect("owned outbox insert");
+
+        let row = db
+            .conn_ref()
+            .query_row(
+                "SELECT event, detail_json, actor_kind, request_id
+                   FROM mcp_audit_outbox",
+                [],
+                |row| {
+                    Ok((
+                        row.get::<_, String>(0)?,
+                        row.get::<_, String>(1)?,
+                        row.get::<_, String>(2)?,
+                        row.get::<_, String>(3)?,
+                    ))
+                },
+            )
+            .expect("read owned outbox row");
+
+        assert_eq!(row.0, "mcp.tool_invoked");
+        assert_eq!(row.1, r#"{"tool":"dailyos.read.account_status"}"#);
+        assert_eq!(row.2, "mcp_client");
+        assert_eq!(row.3, "request-1");
     }
 }

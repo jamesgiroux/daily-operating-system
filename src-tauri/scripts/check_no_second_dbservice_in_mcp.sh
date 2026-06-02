@@ -28,7 +28,7 @@ scan=(
   "${root}/services/mcp_v2"
 )
 
-pattern='(install_global[[:space:]]*\(|DbService::open(_at)?[[:space:]]*\()'
+pattern='(install_global[[:space:]]*\(|DbService::open[[:alnum:]_]*[[:space:]]*\()'
 
 matches="$(
   grep -rEn --include='*.rs' "$pattern" "${scan[@]}" 2>/dev/null \

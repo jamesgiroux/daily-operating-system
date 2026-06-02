@@ -1362,9 +1362,24 @@ mod tests {
     }
 
     fn insert_recommendation_claim(db: &ActionDb, id: &str, trust_score: f64, source_asof: &str) {
+        insert_recommendation_claim_with_metadata_source(db, id, id, trust_score, source_asof);
+    }
+
+    fn insert_recommendation_claim_with_metadata_source(
+        db: &ActionDb,
+        id: &str,
+        metadata_source_id: &str,
+        trust_score: f64,
+        source_asof: &str,
+    ) {
         let (clock, rng, external) = test_ctx();
         let ctx = live_ctx(&clock, &rng, &external);
-        let metadata = metadata_envelope(&super_recommendation_draft(id, source_asof));
+        let action_kind = default_action_kind(metadata_source_id);
+        let metadata = metadata_envelope(&super_recommendation_draft_with_action_kind(
+            metadata_source_id,
+            source_asof,
+            &action_kind,
+        ));
         let proposal = ClaimProposal {
             id: None,
             expected_claim_version: None,
@@ -1395,13 +1410,26 @@ mod tests {
         update_claim_trust(db, id, TrustScore(trust_score), 1, &ctx).expect("seed trust score");
     }
 
+    fn default_action_kind(id: &str) -> String {
+        format!("action_{id}").replace([':', '-'], "_")
+    }
+
     fn super_recommendation_draft(id: &str, source_asof: &str) -> RecommendationDraft {
+        let action_kind = default_action_kind(id);
+        super_recommendation_draft_with_action_kind(id, source_asof, &action_kind)
+    }
+
+    fn super_recommendation_draft_with_action_kind(
+        _id: &str,
+        source_asof: &str,
+        action_kind: &str,
+    ) -> RecommendationDraft {
         RecommendationDraft {
             subject: abilities_runtime::abilities::provenance::subject::SubjectRef::Account(
                 "acct-example".to_string(),
             ),
             recommended_action: RecommendedAction::Custom {
-                action_kind: format!("action_{id}").replace([':', '-'], "_"),
+                action_kind: action_kind.to_string(),
                 payload: serde_json::json!({ "opaque": true }),
             },
             evidence: vec![EvidenceRef {
@@ -1792,23 +1820,13 @@ mod tests {
     fn material_baseline_uses_subject_action_render_for_duplicate_claims() {
         let db = test_db();
         insert_recommendation_claim(&db, "claim-subject-action-1", 0.95, "2026-05-26T10:00:00Z");
-        insert_recommendation_claim(&db, "claim-subject-action-2", 0.95, "2026-05-26T10:00:00Z");
-        let shared_metadata_json: String = db
-            .conn_ref()
-            .query_row(
-                "SELECT metadata_json FROM intelligence_claims WHERE id = 'claim-subject-action-1'",
-                [],
-                |row| row.get(0),
-            )
-            .expect("read shared metadata");
-        db.conn_ref()
-            .execute(
-                "UPDATE intelligence_claims
-                    SET metadata_json = ?1
-                  WHERE id = 'claim-subject-action-2'",
-                [shared_metadata_json],
-            )
-            .expect("share action signature");
+        insert_recommendation_claim_with_metadata_source(
+            &db,
+            "claim-subject-action-2",
+            "claim-subject-action-1",
+            0.95,
+            "2026-05-26T10:00:00Z",
+        );
         let (clock, rng, external) = test_ctx();
         let ctx = live_ctx(&clock, &rng, &external);
         let engine = PropagationEngine::new();

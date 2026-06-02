@@ -3395,6 +3395,7 @@ fn run_immediate_migration_transaction(
                 clippy::let_underscore_must_use,
                 reason = "intentional best-effort cleanup after migration failure"
             )]
+            // best-effort: rollback cleanup preserves the original migration error.
             let _ = conn.execute_batch("ROLLBACK;");
             Err(error)
         }
@@ -7518,7 +7519,7 @@ mod tests {
         let conn = mem_db();
         conn.execute_batch(
             "CREATE TABLE intelligence_claims (id TEXT PRIMARY KEY);
-            INSERT INTO intelligence_claims (id) VALUES ('claim-old');
+            INSERT INTO intelligence_claims /* dos7-allowed: migration 273 fixture seeds parent claim row */ (id) VALUES ('claim-old');
 
             CREATE TABLE surfacing_decisions (
                 id TEXT PRIMARY KEY,
@@ -7878,7 +7879,7 @@ mod tests {
         let conn = mem_db();
         conn.execute_batch(
             "CREATE TABLE intelligence_claims (id TEXT PRIMARY KEY);
-             INSERT INTO intelligence_claims (id) VALUES ('claim-final');",
+             INSERT INTO intelligence_claims /* dos7-allowed: migration 273 fixture seeds parent claim row */ (id) VALUES ('claim-final');",
         )
         .expect("create parent claim table");
         migrate_v271_recommendation_surfacing(&conn).expect("create final surfacing schema");

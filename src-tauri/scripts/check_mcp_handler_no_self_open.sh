@@ -31,16 +31,26 @@ fi
 manifest=(
   "${root}/services/mcp_v2/handlers"
   "${root}/services/mcp_v2/audit.rs"
+  "${root}/services/context.rs"
+  "${root}/services/workspace_ingestion/workspace_intake_impl.rs"
 )
 
 pattern='(ActionDb::open(_readonly|_encrypted)?|LocalKeychain::new)[[:space:]]*\('
 
-matches="$(
-  grep -rEn --include='*.rs' "$pattern" "${manifest[@]}" 2>/dev/null \
-    | grep -vE ':\s*(//|//!|///|\*)' \
-    | grep -v 'mcp-self-open-allowed:' \
-    || true
-)"
+matches=""
+for entry in "${manifest[@]}"; do
+  while IFS=: read -r file line _match; do
+    [[ -z "${file:-}" || -z "${line:-}" ]] && continue
+    if sed -n "${line}p" "$file" | grep -q 'mcp-self-open-allowed:'; then
+      continue
+    fi
+    matches+="${file}:${line}:${_match}"$'\n'
+  done < <(
+    grep -rEn --include='*.rs' "$pattern" "$entry" 2>/dev/null \
+      | grep -vE ':\s*(//|//!|///|\*)' \
+      || true
+  )
+done
 
 if [[ -n "$matches" ]]; then
   echo "MCP handler self-open forbidden: route DB access through McpHandlerContext." >&2

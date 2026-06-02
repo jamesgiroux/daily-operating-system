@@ -160,7 +160,8 @@ pub(crate) fn ingest_sync(
         .map(parse_category)
         .transpose()?;
 
-    let db = ActionDb::open(Arc::new(LocalKeychain::new()))
+    // mcp-self-open-allowed: handler-reachable intake adapter fallback; indirect workspace write routing is outside this direct MCP handler pass.
+    let db = ActionDb::open(Arc::new(LocalKeychain::new())) // mcp-self-open-allowed: handler-reachable intake adapter fallback
         .map_err(|e| WorkspaceIntakeError::DbError(e.to_string()))?;
     let conn = db.conn_ref();
 
@@ -348,7 +349,8 @@ fn place_document_sync(
         ));
     }
 
-    let db = ActionDb::open(Arc::new(LocalKeychain::new()))
+    // mcp-self-open-allowed: handler-reachable placement adapter fallback; indirect workspace write routing is outside this direct MCP handler pass.
+    let db = ActionDb::open(Arc::new(LocalKeychain::new())) // mcp-self-open-allowed: handler-reachable placement adapter fallback
         .map_err(|e| PlacementError::internal(e.to_string()))?;
     let conn = db.conn_ref();
     let target_key = crate::db::local_db_keyed_audit_tag(

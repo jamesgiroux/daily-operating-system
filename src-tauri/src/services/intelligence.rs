@@ -5693,7 +5693,7 @@ mod mutation_smoke_tests {
         StakeholderInsight, StrategicPriority, SuccessMetric, SupportHealth,
     };
     use crate::intelligence::prompts::InferredRelationship;
-    use crate::intelligence::write_fence::post_commit_fenced_write;
+    use crate::intelligence::write_fence::{post_commit_fenced_write, write_fence_test_guard};
     use crate::services::context::{ExternalClients, FixedClock, SeedableRng, ServiceContext};
     use crate::signals::propagation::PropagationEngine;
     use crate::state::AppState;
@@ -6725,6 +6725,7 @@ mod mutation_smoke_tests {
 
     #[test]
     fn pty_side_effect_failure_stays_non_fatal_after_commit() {
+        let _guard = write_fence_test_guard();
         let state = remote_glean_state();
         let db = test_db();
         let entity_id = "acc-finalize-side-effect-failure-pty";
@@ -9695,6 +9696,7 @@ mod mutation_smoke_tests {
 
     #[test]
     fn update_stakeholders_disk_db_atomicity_under_rollback() {
+        let _guard = write_fence_test_guard();
         let db = test_db();
         let engine = PropagationEngine::default();
         let account = make_account("acc-stakeholder-rollback");
@@ -9797,6 +9799,7 @@ mod mutation_smoke_tests {
 
     #[test]
     fn enrich_entity_disk_db_atomicity_under_rollback() {
+        let _guard = write_fence_test_guard();
         let db = test_db();
         let engine = PropagationEngine::default();
         let account = make_account("acc-enrich-rollback");
@@ -9875,6 +9878,7 @@ mod mutation_smoke_tests {
 
     #[test]
     fn compose_enrichment_full_path_rollback_atomicity() {
+        let _guard = write_fence_test_guard();
         let db = test_db();
         let engine = PropagationEngine::default();
         let account = make_account("acc-compose-rollback");
