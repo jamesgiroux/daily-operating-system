@@ -197,8 +197,8 @@
       <p class="callout-prose">Pin <code>@dnd-kit/core@6.3.1</code> + <code>@dnd-kit/sortable@10.0.0</code> (the React-18 line — stable, not stale) for reorder in edit mode only. Layout config is ours. DOS-829 reparent shares the dep.</p>
     </article>
     <article class="callout">
-      <h3 class="callout-title">Migration slot — SQL namespace</h3>
-      <p class="callout-prose">The layout-overlay table is one <code>NNN_</code> SQL migration; latest registered is <strong>272</strong> (file <code>272_…</code>), so the next free slot is <strong>273</strong> — take it at kickoff. Not the <code>vNNN</code> Rust series.</p>
+      <h3 class="callout-title">Migration slots — SQL namespace</h3>
+      <p class="callout-prose">Latest registered is <strong>273</strong> (<code>migrate_v273_recommendation_w2_shape_repair</code>). The List-Surfaces archive-folder metadata PR is the active migration owner and reserves registered version <strong>274</strong> with SQL file <code>274_entity_archive_folders.sql</code>. This follows the current v268+ SQL migration pattern and <code>migrations.rs</code> rule that registered <code>version</code> is authoritative; the older off-by-one solution note is stale for this range. Layout-overlay must take the next free registered slot after rebasing, currently expected as <strong>275</strong> if List-Surfaces lands first. Any additional SQL migration in v1.5.0 must update this slot list before implementation. Not the <code>vNNN</code> Rust series.</p>
     </article>
   </div>
 </section>
