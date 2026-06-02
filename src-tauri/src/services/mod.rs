@@ -48,6 +48,7 @@ pub mod people;
 pub mod projection_signing;
 pub mod projects;
 pub mod recommendations;
+pub mod replica_refresh;
 pub mod reports;
 pub mod runtime_evidence_backfill;
 pub mod sensitivity;

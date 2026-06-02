@@ -10,6 +10,7 @@
 
 use std::fs;
 use std::path::{Path, PathBuf};
+use std::sync::Arc;
 
 use chrono::Utc;
 
@@ -249,7 +250,7 @@ const BACKUP_MAX_BUSY_RETRIES: u32 = 600;
 /// Drive a `rusqlite::backup::Backup` to completion using chunked stepping
 /// with Busy/Locked retry. Shared shape with `migrations.rs::create_backup_via_api`
 /// so both startup-time and live-time backups go through the same proven path.
-fn run_chunked_backup(
+pub(crate) fn run_chunked_backup(
     source: &rusqlite::Connection,
     destination: &mut rusqlite::Connection,
 ) -> Result<(), String> {
@@ -293,6 +294,191 @@ fn run_chunked_backup(
             }
             Err(e) => return Err(format!("Database backup step failed: {e}")),
         }
+    }
+}
+
+pub(crate) fn clone_database_to_path(
+    source_db_path: &Path,
+    destination_db_path: &Path,
+) -> Result<(), String> {
+    guard_database_clone_destination(destination_db_path)?;
+    let staged_path = database_refresh_temp_path(destination_db_path);
+    clone_database_to_staged_path(source_db_path, destination_db_path, &staged_path)?;
+    activate_staged_database_clone(&staged_path, destination_db_path)?.commit();
+    Ok(())
+}
+
+pub(crate) fn clone_database_to_staged_path(
+    source_db_path: &Path,
+    destination_db_path: &Path,
+    staged_db_path: &Path,
+) -> Result<(), String> {
+    guard_database_clone_destination(destination_db_path)?;
+    let provider = Arc::new(crate::db::LocalKeychain::new());
+    let source_db =
+        ActionDb::open_readonly_at(source_db_path, provider.clone()).map_err(|e| e.to_string())?;
+
+    let parent = staged_db_path
+        .parent()
+        .ok_or_else(|| "Database clone staged path has no parent directory".to_string())?;
+    fs::create_dir_all(parent)
+        .map_err(|e| format!("Failed to create database clone destination directory: {e}"))?;
+
+    if staged_db_path == destination_db_path {
+        return Err("Database clone staged path must differ from destination path".to_string());
+    }
+    remove_file_if_exists(staged_db_path)?;
+
+    let mut destination_conn = rusqlite::Connection::open(staged_db_path)
+        .map_err(|e| format!("Failed to open database clone staged file: {e}"))?;
+    let destination_key = crate::db::DbKeyProvider::get_or_create_key(
+        provider.as_ref(),
+        &crate::db::UserIdentity::local(destination_db_path.to_path_buf()),
+    )
+    .map_err(|e| format!("Failed to resolve database clone key: {e}"))?;
+    destination_conn
+        .execute_batch(&destination_key.to_pragma())
+        .map_err(|e| format!("Failed to key database clone staged file: {e}"))?;
+
+    run_chunked_backup(source_db.conn_ref(), &mut destination_conn)?;
+    drop(destination_conn);
+    drop(source_db);
+
+    crate::db::hardening::set_file_permissions(staged_db_path);
+
+    Ok(())
+}
+
+pub(crate) fn database_refresh_temp_path(destination_db_path: &Path) -> PathBuf {
+    destination_db_path.with_file_name(format!(
+        "{}.refresh.tmp",
+        destination_db_path
+            .file_name()
+            .and_then(|name| name.to_str())
+            .unwrap_or("dailyos-replica.db")
+    ))
+}
+
+#[derive(Debug)]
+pub(crate) struct ActivatedDatabaseClone {
+    backups: Vec<(PathBuf, PathBuf)>,
+}
+
+impl ActivatedDatabaseClone {
+    pub(crate) fn rollback(self) {
+        for (backup, destination) in self.backups.into_iter().rev() {
+            if let Err(error) = remove_file_if_exists(&destination) {
+                log::warn!(
+                    "database clone rollback could not remove activated file {}: {error}",
+                    destination.display()
+                );
+            }
+            if backup.exists() {
+                if let Err(error) = fs::rename(&backup, &destination) {
+                    log::warn!(
+                        "database clone rollback could not restore {} from {}: {error}",
+                        destination.display(),
+                        backup.display()
+                    );
+                }
+            }
+        }
+    }
+
+    pub(crate) fn commit(self) {
+        for (backup, _) in self.backups {
+            if let Err(error) = remove_file_if_exists(&backup) {
+                log::warn!(
+                    "database clone cleanup could not remove backup {}: {error}",
+                    backup.display()
+                );
+            }
+        }
+    }
+}
+
+pub(crate) fn activate_staged_database_clone(
+    staged_db_path: &Path,
+    destination_db_path: &Path,
+) -> Result<ActivatedDatabaseClone, String> {
+    guard_database_clone_destination(destination_db_path)?;
+    if staged_db_path == destination_db_path {
+        return Err("Database clone staged path must differ from destination path".to_string());
+    }
+    if !staged_db_path.exists() {
+        return Err(format!(
+            "Database clone staged file does not exist: {}",
+            staged_db_path.display()
+        ));
+    }
+
+    let mut backups = Vec::new();
+    for destination in [
+        destination_db_path.to_path_buf(),
+        wal_path(destination_db_path),
+        shm_path(destination_db_path),
+    ] {
+        let backup = refresh_previous_path(&destination);
+        if let Err(error) = remove_file_if_exists(&backup) {
+            let activated = ActivatedDatabaseClone { backups };
+            activated.rollback();
+            return Err(error);
+        }
+        if destination.exists() {
+            if let Err(error) = fs::rename(&destination, &backup) {
+                let activated = ActivatedDatabaseClone { backups };
+                activated.rollback();
+                return Err(format!(
+                    "Failed to move existing database file {} aside to {}: {e}",
+                    destination.display(),
+                    backup.display(),
+                    e = error
+                ));
+            }
+            backups.push((backup, destination));
+        }
+    }
+
+    match fs::rename(staged_db_path, destination_db_path) {
+        Ok(()) => {}
+        Err(error) => {
+            let activated = ActivatedDatabaseClone { backups };
+            activated.rollback();
+            return Err(format!(
+                "Failed to activate database clone {} from {}: {error}",
+                destination_db_path.display(),
+                staged_db_path.display()
+            ));
+        }
+    }
+    crate::db::hardening::set_file_permissions(destination_db_path);
+
+    Ok(ActivatedDatabaseClone { backups })
+}
+
+fn guard_database_clone_destination(destination_db_path: &Path) -> Result<(), String> {
+    crate::db::guard_path_for_mode(destination_db_path).map_err(|e| {
+        format!(
+            "Refusing to activate database clone for destination {} in current DB mode: {e}",
+            destination_db_path.display()
+        )
+    })
+}
+
+fn refresh_previous_path(path: &Path) -> PathBuf {
+    path.with_file_name(format!(
+        "{}.refresh.previous",
+        path.file_name()
+            .and_then(|name| name.to_str())
+            .unwrap_or("dailyos-replica.db")
+    ))
+}
+
+fn remove_file_if_exists(path: &Path) -> Result<(), String> {
+    match fs::remove_file(path) {
+        Ok(()) => Ok(()),
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => Ok(()),
+        Err(e) => Err(format!("Failed to remove {}: {e}", path.display())),
     }
 }
 
@@ -348,6 +534,13 @@ pub fn restore_database_from_backup(backup_path: &Path) -> Result<(), String> {
 }
 
 fn restore_database_from_backup_for_path(db_path: &Path, backup_path: &Path) -> Result<(), String> {
+    crate::db::guard_path_for_mode(db_path).map_err(|e| {
+        format!(
+            "Refusing database restore for active DB path {} in current DB mode: {e}",
+            db_path.display()
+        )
+    })?;
+
     let backup_path = backup_path
         .canonicalize()
         .map_err(|e| format!("Failed to resolve backup path: {e}"))?;
@@ -495,7 +688,17 @@ pub fn validate_backup(path: &Path) -> Result<(), String> {
 /// Delete the active database and all associated WAL/SHM files.
 pub fn start_fresh_database() -> Result<(), String> {
     let db_path = active_db_path()?;
-    for path in [&db_path, &wal_path(&db_path), &shm_path(&db_path)] {
+    start_fresh_database_for_path(&db_path)
+}
+
+fn start_fresh_database_for_path(db_path: &Path) -> Result<(), String> {
+    crate::db::guard_path_for_mode(db_path).map_err(|e| {
+        format!(
+            "Refusing to start fresh database for active DB path {} in current DB mode: {e}",
+            db_path.display()
+        )
+    })?;
+    for path in [db_path, &wal_path(db_path), &shm_path(db_path)] {
         match fs::remove_file(path) {
             Ok(()) => {}
             Err(e) if e.kind() == std::io::ErrorKind::NotFound => {}
@@ -569,6 +772,14 @@ pub fn rebuild_from_filesystem(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    struct ResetDbMode;
+
+    impl Drop for ResetDbMode {
+        fn drop(&mut self) {
+            crate::db::set_db_mode(crate::db::DbMode::Live);
+        }
+    }
 
     #[test]
     fn test_backup_creates_file() {
@@ -695,6 +906,204 @@ mod tests {
     }
 
     #[test]
+    fn restore_database_from_backup_for_path_refuses_prod_path_in_replica_mode() {
+        let _lock = crate::db::DB_MODE_TEST_LOCK.lock().expect("db mode lock");
+        let _reset = ResetDbMode;
+        crate::db::set_db_mode(crate::db::DbMode::Replica);
+
+        let dailyos_dir = crate::db::dailyos_data_dir().expect("data dir");
+        let prod_path = dailyos_dir.join("dailyos.db");
+        let backup_path = tempfile::NamedTempFile::new()
+            .expect("backup temp")
+            .into_temp_path();
+
+        let error = restore_database_from_backup_for_path(&prod_path, &backup_path)
+            .expect_err("replica mode must not restore the production DB");
+        assert!(error.contains("Refused to open production database"));
+    }
+
+    #[test]
+    fn start_fresh_database_for_path_refuses_prod_path_in_replica_mode() {
+        let _lock = crate::db::DB_MODE_TEST_LOCK.lock().expect("db mode lock");
+        let _reset = ResetDbMode;
+        crate::db::set_db_mode(crate::db::DbMode::Replica);
+
+        let dailyos_dir = crate::db::dailyos_data_dir().expect("data dir");
+        let prod_path = dailyos_dir.join("dailyos.db");
+
+        let error = start_fresh_database_for_path(&prod_path)
+            .expect_err("replica mode must not start fresh against the production DB");
+        assert!(error.contains("Refused to open production database"));
+    }
+
+    #[test]
+    fn start_fresh_database_for_path_removes_target_wal_and_shm() {
+        let dir = tempfile::tempdir().expect("tempdir");
+        let db_path = dir.path().join("dailyos-replica.db");
+        let wal = wal_path(&db_path);
+        let shm = shm_path(&db_path);
+        std::fs::write(&db_path, b"db").expect("db");
+        std::fs::write(&wal, b"wal").expect("wal");
+        std::fs::write(&shm, b"shm").expect("shm");
+
+        start_fresh_database_for_path(&db_path).expect("fresh database");
+
+        assert!(!db_path.exists(), "target DB should be removed");
+        assert!(!wal.exists(), "target WAL should be removed");
+        assert!(!shm.exists(), "target SHM should be removed");
+    }
+
+    #[test]
+    fn clone_database_to_staged_path_refuses_prod_destination_in_replica_mode() {
+        let _lock = crate::db::DB_MODE_TEST_LOCK.lock().expect("db mode lock");
+        let _reset = ResetDbMode;
+        crate::db::set_db_mode(crate::db::DbMode::Replica);
+
+        let dailyos_dir = crate::db::dailyos_data_dir().expect("data dir");
+        let prod_path = dailyos_dir.join("dailyos.db");
+        let dir = tempfile::tempdir().expect("tempdir");
+        let staged_path = dir.path().join("dailyos.db.refresh.tmp");
+
+        let error = clone_database_to_staged_path(
+            &dir.path().join("missing-source.db"),
+            &prod_path,
+            &staged_path,
+        )
+        .expect_err("replica mode must not stage a clone for the production DB");
+        assert!(error.contains("Refused to open production database"));
+        assert!(
+            !staged_path.exists(),
+            "destination guard must fire before writing a staged DB"
+        );
+    }
+
+    #[test]
+    fn activate_staged_database_clone_refuses_prod_destination_in_replica_mode() {
+        let _lock = crate::db::DB_MODE_TEST_LOCK.lock().expect("db mode lock");
+        let _reset = ResetDbMode;
+        crate::db::set_db_mode(crate::db::DbMode::Replica);
+
+        let dailyos_dir = crate::db::dailyos_data_dir().expect("data dir");
+        let prod_path = dailyos_dir.join("dailyos.db");
+        let staged = tempfile::NamedTempFile::new().expect("staged db");
+
+        let error = activate_staged_database_clone(staged.path(), &prod_path)
+            .expect_err("replica mode must not activate a clone over the production DB");
+        assert!(error.contains("Refused to open production database"));
+        assert!(
+            staged.path().exists(),
+            "destination guard must fire before consuming the staged DB"
+        );
+    }
+
+    #[test]
+    fn activate_staged_database_clone_rolls_back_db_when_sidecar_cleanup_fails() {
+        let dir = tempfile::tempdir().expect("tempdir");
+        let destination_path = dir.path().join("dailyos-replica.db");
+        let staged_path = dir.path().join("dailyos-replica.db.refresh.tmp");
+        std::fs::write(&destination_path, b"old db").expect("old db");
+        std::fs::write(&staged_path, b"new db").expect("staged db");
+
+        let wal_backup = refresh_previous_path(&wal_path(&destination_path));
+        std::fs::create_dir(&wal_backup).expect("stale wal backup directory");
+
+        let error = activate_staged_database_clone(&staged_path, &destination_path)
+            .expect_err("sidecar cleanup failure must abort activation");
+        assert!(
+            error.contains("Failed to remove"),
+            "unexpected activation error: {error}"
+        );
+        assert_eq!(
+            std::fs::read(&destination_path).expect("restored db"),
+            b"old db",
+            "old destination DB must be restored after mid-loop failure"
+        );
+        assert!(
+            !refresh_previous_path(&destination_path).exists(),
+            "rollback should not strand the old DB at the previous path"
+        );
+        assert!(
+            staged_path.exists(),
+            "staged DB should remain for the caller cleanup path"
+        );
+    }
+
+    #[test]
+    fn clone_database_to_path_produces_readable_encrypted_clone_and_clears_stale_sidecars() {
+        let dir = tempfile::tempdir().expect("tempdir");
+        let source_path = dir.path().join("source.db");
+        let destination_path = dir.path().join("dailyos-replica.db");
+        let provider = Arc::new(crate::db::LocalKeychain::new());
+
+        let source_db =
+            ActionDb::open_at(source_path.clone(), provider).expect("open encrypted source");
+        source_db
+            .conn_ref()
+            .execute_batch(
+                "CREATE TABLE IF NOT EXISTS replica_clone_marker (label TEXT);
+                 DELETE FROM replica_clone_marker;",
+            )
+            .expect("marker schema");
+        source_db
+            .conn_ref()
+            .execute(
+                "INSERT INTO replica_clone_marker (label) VALUES (?1)",
+                ["cloned"],
+            )
+            .expect("marker insert");
+        source_db
+            .conn_ref()
+            .execute_batch("PRAGMA wal_checkpoint(TRUNCATE);")
+            .expect("checkpoint source");
+        drop(source_db);
+
+        let old_destination = ActionDb::open_at(
+            destination_path.clone(),
+            Arc::new(crate::db::LocalKeychain::new()),
+        )
+        .expect("open old encrypted destination");
+        old_destination
+            .conn_ref()
+            .execute_batch(
+                "CREATE TABLE IF NOT EXISTS replica_clone_marker (label TEXT);
+                 DELETE FROM replica_clone_marker;
+                 INSERT INTO replica_clone_marker (label) VALUES ('old');",
+            )
+            .expect("old marker");
+        old_destination
+            .conn_ref()
+            .execute_batch("PRAGMA wal_checkpoint(TRUNCATE);")
+            .expect("checkpoint old destination");
+        drop(old_destination);
+        std::fs::write(wal_path(&destination_path), b"old wal").expect("old wal");
+        std::fs::write(shm_path(&destination_path), b"old shm").expect("old shm");
+
+        clone_database_to_path(&source_path, &destination_path).expect("clone database");
+
+        assert!(
+            !wal_path(&destination_path).exists(),
+            "stale destination WAL should be removed during activation"
+        );
+        assert!(
+            !shm_path(&destination_path).exists(),
+            "stale destination SHM should be removed during activation"
+        );
+
+        let cloned = ActionDb::open_readonly_at(
+            &destination_path,
+            Arc::new(crate::db::LocalKeychain::new()),
+        )
+        .expect("open encrypted clone");
+        let label: String = cloned
+            .conn_ref()
+            .query_row("SELECT label FROM replica_clone_marker", [], |row| {
+                row.get(0)
+            })
+            .expect("read clone marker");
+        assert_eq!(label, "cloned");
+    }
+
+    #[test]
     fn test_list_database_backups_for_path_includes_known_backup_kinds() {
         let dir = tempfile::tempdir().expect("tempdir");
         let db_path = dir.path().join("dailyos.db");
@@ -738,7 +1147,9 @@ mod tests {
         // 1024 pages * 4 KB = 4 MB; seed with 8 MB worth of payload so the copy
         // requires at least two chunked-step iterations.
         let payload = vec![0xA5_u8; 8192];
-        let mut stmt = src.prepare("INSERT INTO rows (payload) VALUES (?1)").expect("prep");
+        let mut stmt = src
+            .prepare("INSERT INTO rows (payload) VALUES (?1)")
+            .expect("prep");
         for _ in 0..1024 {
             stmt.execute([&payload]).expect("insert");
         }
