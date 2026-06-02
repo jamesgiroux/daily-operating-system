@@ -45,6 +45,69 @@
       }
     },
     {
+      "name": "dailyos/action-detail",
+      "description": "",
+      "category": "read",
+      "annotations": {},
+      "wp_permission": "none",
+      "allowed_actors": [
+        "user",
+        "surface_client"
+      ],
+      "required_scopes": [
+        "read.action_detail"
+      ],
+      "mcp_exposure": "invocable",
+      "client_side_executable": false,
+      "idempotency_class": "idempotent",
+      "composition_kind": {
+        "produces_blocks": false,
+        "block_types": []
+      }
+    },
+    {
+      "name": "dailyos/person-overview",
+      "description": "",
+      "category": "read",
+      "annotations": {},
+      "wp_permission": "none",
+      "allowed_actors": [
+        "user",
+        "surface_client"
+      ],
+      "required_scopes": [
+        "read.person_overview"
+      ],
+      "mcp_exposure": "invocable",
+      "client_side_executable": false,
+      "idempotency_class": "idempotent",
+      "composition_kind": {
+        "produces_blocks": false,
+        "block_types": []
+      }
+    },
+    {
+      "name": "dailyos/project-overview",
+      "description": "",
+      "category": "read",
+      "annotations": {},
+      "wp_permission": "none",
+      "allowed_actors": [
+        "user",
+        "surface_client"
+      ],
+      "required_scopes": [
+        "read.project_overview"
+      ],
+      "mcp_exposure": "invocable",
+      "client_side_executable": false,
+      "idempotency_class": "idempotent",
+      "composition_kind": {
+        "produces_blocks": false,
+        "block_types": []
+      }
+    },
+    {
       "name": "detect_risk_shift",
       "description": "",
       "category": "transform",
