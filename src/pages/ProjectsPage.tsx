@@ -13,10 +13,16 @@ import {
   EntityListHeader,
   EntityListEndMark,
   ArchiveToggle,
+  EntitySelectionBar,
 } from "@/components/entity/EntityListShell";
 import shellStyles from "@/components/entity/EntityListShell.module.css";
 import { EditorialPageHeader } from "@/components/editorial/EditorialPageHeader";
 import { EntityRow } from "@/components/entity/EntityRow";
+import {
+  flattenEntityTreeIds,
+  useEntityListSelection,
+  type EntityListSelectionApi,
+} from "@/components/entity/useEntityListSelection";
 import { EmptyState } from "@/components/editorial/EmptyState";
 import { usePersonality } from "@/hooks/usePersonality";
 import { getPersonalityCopy } from "@/lib/personality";
@@ -171,7 +177,7 @@ export default function ProjectsPage() {
   }
 
   // Filters — archived/active split handled by archiveTab; no status sub-filter
-  const activeProjects = projects.filter((p) => !p.archived);
+  const activeProjects = useMemo(() => projects.filter((p) => !p.archived), [projects]);
 
   const filtered = useMemo(() => {
     if (!searchQuery) return activeProjects;
@@ -199,6 +205,28 @@ export default function ProjectsPage() {
   const isArchived = archiveTab === "archived";
   const displayList = isArchived ? filteredArchived : filtered;
   const activeCount = activeProjects.length;
+  const activeProjectIds = useMemo(
+    () => flattenEntityTreeIds(activeProjects, childrenCache),
+    [activeProjects, childrenCache],
+  );
+  const visibleProjectIds = useMemo(
+    () => isArchived
+      ? []
+      : flattenEntityTreeIds(filtered, childrenCache, {
+        expandedOnly: true,
+        expandedParents,
+      }),
+    [childrenCache, expandedParents, filtered, isArchived],
+  );
+  const projectSelection = useEntityListSelection({
+    visibleIds: visibleProjectIds,
+    activeIds: activeProjectIds,
+  });
+  const { clear: clearProjectSelection } = projectSelection;
+
+  useEffect(() => {
+    if (isArchived) clearProjectSelection();
+  }, [clearProjectSelection, isArchived]);
 
   const formattedDate = new Date().toLocaleDateString("en-US", {
     weekday: "long",
@@ -304,6 +332,15 @@ export default function ProjectsPage() {
         <ArchiveToggle archiveTab={archiveTab} onTabChange={setArchiveTab} />
       </EntityListHeader>
 
+      {!isArchived && (
+        <EntitySelectionBar
+          selectedCount={projectSelection.selectedCount}
+          visibleCount={visibleProjectIds.length}
+          onSelectVisible={projectSelection.selectVisible}
+          onClear={projectSelection.clear}
+        />
+      )}
+
       {/* Create form */}
       {creating && !isArchived && (
         <div style={{ marginBottom: 16 }}>
@@ -376,6 +413,7 @@ export default function ProjectsPage() {
                     childrenCache={childrenCache}
                     toggleExpand={toggleExpand}
                     isLastSibling={i === filtered.length - 1}
+                    selection={projectSelection}
                   />
                 ))}
           </div>
@@ -396,6 +434,7 @@ function ProjectTreeNode({
   childrenCache,
   toggleExpand,
   isLastSibling,
+  selection,
 }: {
   project: ProjectListItem;
   depth: number;
@@ -403,6 +442,7 @@ function ProjectTreeNode({
   childrenCache: Record<string, ProjectListItem[]>;
   toggleExpand: (id: string) => void;
   isLastSibling: boolean;
+  selection: EntityListSelectionApi;
 }) {
   const isExpanded = expandedParents.has(project.id);
   const children = childrenCache[project.id] ?? [];
@@ -416,6 +456,7 @@ function ProjectTreeNode({
         isExpanded={isExpanded}
         onToggleExpand={project.isParent ? () => toggleExpand(project.id) : undefined}
         showBorder={!isLastSibling || hasExpandedChildren}
+        selection={selection}
       />
       {hasExpandedChildren &&
         children.map((child, ci) => (
@@ -427,6 +468,7 @@ function ProjectTreeNode({
             childrenCache={childrenCache}
             toggleExpand={toggleExpand}
             isLastSibling={ci === children.length - 1 && isLastSibling}
+            selection={selection}
           />
         ))}
     </div>
@@ -441,12 +483,14 @@ function ProjectRow({
   isExpanded,
   onToggleExpand,
   showBorder,
+  selection,
 }: {
   project: ProjectListItem;
   depth?: number;
   isExpanded?: boolean;
   onToggleExpand?: () => void;
   showBorder: boolean;
+  selection: EntityListSelectionApi;
 }) {
   const subtitle = [
     project.owner,
@@ -471,28 +515,25 @@ function ProjectRow({
       >
         {statusLabel[project.status] ?? project.status}
       </span>
-      {onToggleExpand && (
-        <button
-          onClick={(e) => {
-            e.preventDefault();
-            e.stopPropagation();
-            onToggleExpand();
-          }}
-          style={{
-            fontFamily: "var(--font-mono)",
-            fontSize: 11,
-            color: "var(--color-text-tertiary)",
-            background: "none",
-            border: "none",
-            cursor: "pointer",
-            padding: 0,
-          }}
-        >
-          {isExpanded ? "\u25BE" : "\u25B8"} {project.childCount} sub{project.childCount !== 1 ? "s" : ""}
-        </button>
-      )}
     </>
   );
+  const controls = onToggleExpand ? (
+    <button
+      onClick={onToggleExpand}
+      style={{
+        fontFamily: "var(--font-mono)",
+        fontSize: 11,
+        color: "var(--color-text-tertiary)",
+        background: "none",
+        border: "none",
+        cursor: "pointer",
+        padding: 0,
+      }}
+      type="button"
+    >
+      {isExpanded ? "\u25BE" : "\u25B8"} {project.childCount} sub{project.childCount !== 1 ? "s" : ""}
+    </button>
+  ) : undefined;
 
   return (
     <EntityRow
@@ -504,6 +545,12 @@ function ProjectRow({
       paddingLeft={depth > 0 ? depth * 28 : 0}
       nameSuffix={nameSuffix}
       subtitle={subtitle || undefined}
+      controls={controls}
+      selection={{
+        selected: selection.isSelected(project.id),
+        label: `Select ${project.name}`,
+        onChange: ({ shiftKey }) => selection.toggle(project.id, { shiftKey }),
+      }}
     >
       {project.targetDate && (
         <span style={{ fontFamily: "var(--font-mono)", fontSize: 13, color: "var(--color-text-tertiary)" }}>

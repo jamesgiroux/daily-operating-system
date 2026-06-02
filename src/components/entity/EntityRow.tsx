@@ -1,6 +1,12 @@
-import { type ReactNode } from "react";
+import { type CSSProperties, type ReactNode } from "react";
 import { Link } from "@tanstack/react-router";
 import s from "./EntityRow.module.css";
+
+interface EntityRowSelection {
+  selected: boolean;
+  label?: string;
+  onChange: (options: { shiftKey: boolean }) => void;
+}
 
 interface EntityRowProps {
   to?: string;
@@ -18,6 +24,10 @@ interface EntityRowProps {
   children?: ReactNode;
   /** Optional avatar element to replace the accent dot */
   avatar?: ReactNode;
+  /** Optional row-level selection control */
+  selection?: EntityRowSelection;
+  /** Interactive row controls rendered outside the entity link */
+  controls?: ReactNode;
 }
 
 export function EntityRow({
@@ -32,9 +42,15 @@ export function EntityRow({
   subtitle,
   children,
   avatar,
+  selection,
+  controls,
 }: EntityRowProps) {
-  const className = `${s.row} ${showBorder ? s.rowBorder : ""}`;
-  const rowStyle = { paddingLeft };
+  const className = [
+    s.row,
+    showBorder ? s.rowBorder : "",
+    selection?.selected ? s.rowSelected : "",
+  ].filter(Boolean).join(" ");
+  const rowStyle: CSSProperties = { paddingLeft };
   const content = (
     <>
       {/* Avatar or accent dot */}
@@ -72,37 +88,54 @@ export function EntityRow({
     </>
   );
 
+  const bodyClassName = to || href ? s.rowLink : s.rowBody;
+
+  let body: ReactNode;
   if (href) {
-    return (
+    body = (
       <a
         href={href}
         target="_blank"
         rel="noreferrer"
-        className={className}
-        style={rowStyle}
+        className={bodyClassName}
       >
         {content}
       </a>
     );
-  }
-
-  if (to) {
-    return (
+  } else if (to) {
+    body = (
       <Link
         to={to}
         params={params ?? {}}
-        className={className}
-        // Runtime hierarchy controls nested row indentation.
-        style={rowStyle}
+        className={bodyClassName}
       >
         {content}
       </Link>
     );
+  } else {
+    body = <div className={bodyClassName}>{content}</div>;
   }
 
   return (
     <div className={className} style={rowStyle}>
-      {content}
+      {selection && (
+        <input
+          type="checkbox"
+          className={s.checkbox}
+          checked={selection.selected}
+          aria-label={selection.label ?? `Select ${name}`}
+          onChange={(event) => {
+            const nativeEvent = event.nativeEvent as Event & { shiftKey?: boolean };
+            selection.onChange({ shiftKey: Boolean(nativeEvent.shiftKey) });
+          }}
+        />
+      )}
+      {body}
+      {controls && (
+        <div className={s.controls}>
+          {controls}
+        </div>
+      )}
     </div>
   );
 }
