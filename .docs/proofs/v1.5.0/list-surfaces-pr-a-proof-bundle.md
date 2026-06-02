@@ -106,3 +106,14 @@ Not run for PR A. The diff is frontend-only and does not touch Tauri, services, 
 ## Remaining Gates
 
 - Browser/L4 surface proof before PR if local Tauri/browser environment is available without entering the replica/production database path currently under separate investigation.
+
+## L4 Attempt - 2026-06-02
+
+Result: blocked by environment, not by a PR A code finding.
+
+- `DAILYOS_DB_MODE=replica RUST_LOG=warn pnpm tauri dev` launched Vite and compiled the PR A backend, but startup entered database recovery because the shared replica DB is already at schema version 274 from the later PR B stack while PR A supports schema version 273.
+- No recovery, downgrade, or production/live DB action was attempted.
+- `DAILYOS_DB_MODE=mock RUST_LOG=warn pnpm tauri dev` launched against the fixture DB path and completed startup migrations for `dailyos-dev.db`; only expected mock/dev warnings were observed.
+- Native surface inspection was blocked because the macOS session was at the lock screen, and the agent must not unlock the machine or enter credentials.
+
+Draft status remains appropriate until native Tauri L4 proof can be captured from an unlocked session or after PR A is evaluated against a compatible branch/database state.
