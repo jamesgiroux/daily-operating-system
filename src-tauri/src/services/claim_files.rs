@@ -6,6 +6,7 @@
 
 use std::collections::BTreeSet;
 use std::fs;
+use std::io::Read;
 use std::path::{Component, Path, PathBuf};
 
 use abilities_runtime::abilities::feedback::FeedbackAction;
@@ -18,6 +19,7 @@ use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
 
+use crate::db::claim_invalidation::SubjectRef as InvalidationSubjectRef;
 use crate::db::ActionDb;
 use crate::services::claim_receipt::contracts::{ReceiptTarget, SurfaceContext};
 use crate::services::claim_receipt::feedback::{
@@ -321,14 +323,23 @@ pub async fn apply_claim_file_corrections(
     }
 
     let rerender = if failures.is_empty() {
-        Some(
-            render_entity_claim_file(
-                state,
-                workspace_root,
-                serde_json::to_string(&sidecar.entity_subject_ref)?,
-            )
-            .await?,
+        match render_entity_claim_file(
+            state,
+            workspace_root,
+            serde_json::to_string(&sidecar.entity_subject_ref)?,
         )
+        .await
+        {
+            Ok(result) => Some(result),
+            Err(error) => {
+                failures.push(ClaimFileApplyFailure {
+                    claim_id: None,
+                    error_class: "projection_rerender_failed".to_string(),
+                    error_detail_hash: redacted_hash(&error.to_string()),
+                });
+                None
+            }
+        }
     } else {
         None
     };
@@ -360,7 +371,7 @@ fn build_render_bundle_db(db: &ActionDb, subject_ref_json: &str) -> Result<Rende
         serde_json::from_str(subject_ref_json).map_err(|error| error.to_string())?;
     let subject = abilities_runtime::types::subject_ref_from_json(&subject_value)
         .map_err(|error| format!("subject_ref: {error}"))?;
-    let entity_subject_compact = compact_subject_label(&subject);
+    let entity_subject_compact = canonical_subject_compact(&subject)?;
     let entity_kind = supported_entity_kind_slug(&subject).ok_or_else(|| {
         "claim file projection supports account/project/person subjects".to_string()
     })?;
@@ -507,7 +518,7 @@ fn semantic_identity_for_loaded_claim(
         serde_json::from_str(&claim.subject_ref).map_err(|error| error.to_string())?;
     let subject = abilities_runtime::types::subject_ref_from_json(&subject_value)
         .map_err(|error| format!("claim subject_ref: {error}"))?;
-    let subject_ref_compact = compact_subject_label(&subject);
+    let subject_ref_compact = canonical_subject_compact(&subject)?;
     Ok(semantic_identity_for_claim(
         claim,
         subject_value,
@@ -703,6 +714,35 @@ fn render_markdown(sidecar: &ClaimFileSidecar, sidecar_checksum: &str) -> String
         sidecar.sidecar_rel_path, sidecar_checksum
     ));
     for claim in &sidecar.claims {
+        out.push_str(&format!(
+            "## {}\n\n",
+            markdown_inline_text(&claim.claim_text)
+        ));
+        out.push_str(&format!("- Trust: `{}`\n", claim.trust_band));
+        out.push_str(&format!("- Sensitivity: `{}`\n", claim.sensitivity));
+        if claim.lifecycle.claim_state != "active" || claim.lifecycle.surfacing_state != "active" {
+            out.push_str(&format!(
+                "- Lifecycle: `{}` / `{}`\n",
+                claim.lifecycle.claim_state, claim.lifecycle.surfacing_state
+            ));
+        }
+        out.push_str(&format!(
+            "- Source: `{}` `{}`\n",
+            markdown_inline_text(&claim.provenance_summary.data_source),
+            claim
+                .provenance_summary
+                .source_ref
+                .as_deref()
+                .map(markdown_inline_text)
+                .unwrap_or_else(|| "source_ref_unavailable".to_string())
+        ));
+        if let Some(source_asof) = claim.provenance_summary.source_asof.as_deref() {
+            out.push_str(&format!(
+                "- Source as-of: `{}`\n",
+                markdown_inline_text(source_asof)
+            ));
+        }
+        out.push('\n');
         out.push_str("<!-- dailyos-claim-start -->\n");
         out.push_str(&format!("dailyos-claim-id: {}\n", claim.runtime_claim_id));
         out.push_str(&format!(
@@ -716,28 +756,6 @@ fn render_markdown(sidecar: &ClaimFileSidecar, sidecar_checksum: &str) -> String
         out.push_str(&format!("dailyos-sidecar-checksum: {}\n", sidecar_checksum));
         out.push_str("dailyos-action: none\n");
         out.push_str("dailyos-payload: {}\n");
-        out.push('\n');
-        out.push_str(&format!("## {}\n\n", claim.claim_text));
-        out.push_str(&format!("- Trust: `{}`\n", claim.trust_band));
-        out.push_str(&format!("- Sensitivity: `{}`\n", claim.sensitivity));
-        if claim.lifecycle.claim_state != "active" || claim.lifecycle.surfacing_state != "active" {
-            out.push_str(&format!(
-                "- Lifecycle: `{}` / `{}`\n",
-                claim.lifecycle.claim_state, claim.lifecycle.surfacing_state
-            ));
-        }
-        out.push_str(&format!(
-            "- Source: `{}` `{}`\n",
-            claim.provenance_summary.data_source,
-            claim
-                .provenance_summary
-                .source_ref
-                .as_deref()
-                .unwrap_or("source_ref_unavailable")
-        ));
-        if let Some(source_asof) = claim.provenance_summary.source_asof.as_deref() {
-            out.push_str(&format!("- Source as-of: `{source_asof}`\n"));
-        }
         out.push_str("<!-- dailyos-claim-end -->\n\n");
     }
     out
@@ -867,6 +885,13 @@ fn parse_markdown_corrections(
         let Some(block) = current.as_mut() else {
             continue;
         };
+        if block.directives_closed {
+            continue;
+        }
+        if trimmed.is_empty() {
+            block.directives_closed = true;
+            continue;
+        }
         if let Some(value) = trimmed.strip_prefix("dailyos-claim-id:") {
             block.claim_id = Some(value.trim().to_string());
         } else if let Some(value) = trimmed.strip_prefix("dailyos-sidecar-checksum:") {
@@ -875,6 +900,10 @@ fn parse_markdown_corrections(
             block.action = Some(value.trim().to_string());
         } else if let Some(value) = trimmed.strip_prefix("dailyos-payload:") {
             block.payload = Some(value.trim().to_string());
+        } else if trimmed.starts_with("dailyos-") {
+            continue;
+        } else {
+            block.directives_closed = true;
         }
     }
     if current.is_some() {
@@ -891,6 +920,7 @@ struct ParsedBlock {
     sidecar_checksum: Option<String>,
     action: Option<String>,
     payload: Option<String>,
+    directives_closed: bool,
 }
 
 fn correction_from_block(
@@ -1211,17 +1241,50 @@ fn validate_projection_dir_metadata(
 }
 
 fn read_stable_to_string(path: &Path) -> Result<String, ClaimFileError> {
-    let before = fs::symlink_metadata(path)?;
-    validate_projection_file_metadata(&before)?;
-    let content = fs::read_to_string(path)?;
-    let after = fs::symlink_metadata(path)?;
+    let (mut file, before) = open_projection_file_no_follow(path)?;
+    let mut content = String::new();
+    file.read_to_string(&mut content)?;
+    let after = file.metadata()?;
     validate_projection_file_metadata(&after)?;
-    if before.len() != after.len() || before.modified().ok() != after.modified().ok() {
+    if !same_open_file_metadata(&before, &after)
+        || before.len() != after.len()
+        || before.modified().ok() != after.modified().ok()
+    {
         return Err(ClaimFileError::PathRejected(
             "file changed while reading; retry apply".to_string(),
         ));
     }
     Ok(content)
+}
+
+#[cfg(unix)]
+fn open_projection_file_no_follow(path: &Path) -> Result<(fs::File, fs::Metadata), ClaimFileError> {
+    use std::os::unix::fs::OpenOptionsExt;
+
+    let file = fs::OpenOptions::new()
+        .read(true)
+        .custom_flags(libc::O_NOFOLLOW)
+        .open(path)
+        .map_err(|error| {
+            if error.raw_os_error() == Some(libc::ELOOP) {
+                ClaimFileError::PathRejected("projection file is a symlink".to_string())
+            } else {
+                ClaimFileError::Io(error)
+            }
+        })?;
+    let metadata = file.metadata()?;
+    validate_projection_file_metadata(&metadata)?;
+    Ok((file, metadata))
+}
+
+#[cfg(not(unix))]
+fn open_projection_file_no_follow(path: &Path) -> Result<(fs::File, fs::Metadata), ClaimFileError> {
+    let before = fs::symlink_metadata(path)?;
+    validate_projection_file_metadata(&before)?;
+    let file = fs::File::open(path)?;
+    let metadata = file.metadata()?;
+    validate_projection_file_metadata(&metadata)?;
+    Ok((file, metadata))
 }
 
 fn validate_projection_file_metadata(metadata: &fs::Metadata) -> Result<(), ClaimFileError> {
@@ -1235,7 +1298,36 @@ fn validate_projection_file_metadata(metadata: &fs::Metadata) -> Result<(), Clai
             "projection path is not a file".to_string(),
         ));
     }
+    if projection_file_has_multiple_links(metadata) {
+        return Err(ClaimFileError::PathRejected(
+            "projection file has multiple hard links".to_string(),
+        ));
+    }
     Ok(())
+}
+
+#[cfg(unix)]
+fn same_open_file_metadata(before: &fs::Metadata, after: &fs::Metadata) -> bool {
+    use std::os::unix::fs::MetadataExt;
+
+    before.dev() == after.dev() && before.ino() == after.ino()
+}
+
+#[cfg(not(unix))]
+fn same_open_file_metadata(_before: &fs::Metadata, _after: &fs::Metadata) -> bool {
+    true
+}
+
+#[cfg(unix)]
+fn projection_file_has_multiple_links(metadata: &fs::Metadata) -> bool {
+    use std::os::unix::fs::MetadataExt;
+
+    metadata.nlink() > 1
+}
+
+#[cfg(not(unix))]
+fn projection_file_has_multiple_links(_metadata: &fs::Metadata) -> bool {
+    false
 }
 
 fn current_entity_claim_version(db: &ActionDb, subject: &ClaimSubjectRef) -> Result<i64, String> {
@@ -1259,24 +1351,29 @@ fn claim_watermark(claims: &[IntelligenceClaim], entity_claim_version: i64) -> S
     sha256_hex(entries.join("\n").as_bytes())
 }
 
-fn compact_subject_label(subject: &ClaimSubjectRef) -> String {
-    match subject {
-        ClaimSubjectRef::Account { id } => format!("account:{id}"),
-        ClaimSubjectRef::Project { id } => format!("project:{id}"),
-        ClaimSubjectRef::Person { id } => format!("person:{id}"),
-        ClaimSubjectRef::Action { id } => format!("action:{id}"),
-        ClaimSubjectRef::Meeting { id } => format!("meeting:{id}"),
-        ClaimSubjectRef::Email { id } => format!("email:{id}"),
-        ClaimSubjectRef::Global => "global".to_string(),
-        ClaimSubjectRef::Multi(subjects) => {
-            let mut parts = subjects
+fn canonical_subject_compact(subject: &ClaimSubjectRef) -> Result<String, String> {
+    let subject = invalidation_subject_from_claim_subject(subject)?;
+    crate::services::claims::canonical_subject_ref(&subject).map_err(|error| error.to_string())
+}
+
+fn invalidation_subject_from_claim_subject(
+    subject: &ClaimSubjectRef,
+) -> Result<InvalidationSubjectRef, String> {
+    Ok(match subject {
+        ClaimSubjectRef::Account { id } => InvalidationSubjectRef::Account { id: id.clone() },
+        ClaimSubjectRef::Project { id } => InvalidationSubjectRef::Project { id: id.clone() },
+        ClaimSubjectRef::Person { id } => InvalidationSubjectRef::Person { id: id.clone() },
+        ClaimSubjectRef::Action { id } => InvalidationSubjectRef::Action { id: id.clone() },
+        ClaimSubjectRef::Meeting { id } => InvalidationSubjectRef::Meeting { id: id.clone() },
+        ClaimSubjectRef::Email { id } => InvalidationSubjectRef::Email { id: id.clone() },
+        ClaimSubjectRef::Global => InvalidationSubjectRef::Global,
+        ClaimSubjectRef::Multi(subjects) => InvalidationSubjectRef::Multi(
+            subjects
                 .iter()
-                .map(compact_subject_label)
-                .collect::<Vec<_>>();
-            parts.sort();
-            format!("multi:{}", parts.join("|"))
-        }
-    }
+                .map(invalidation_subject_from_claim_subject)
+                .collect::<Result<Vec<_>, _>>()?,
+        ),
+    })
 }
 
 fn subject_kind_slug(subject: &ClaimSubjectRef) -> Option<&'static str> {
@@ -1374,6 +1471,24 @@ fn source_content_hash_for_claim(claim: &IntelligenceClaim) -> String {
     format!("{:x}", hasher.finalize())
 }
 
+fn markdown_inline_text(value: &str) -> String {
+    let mut out = String::with_capacity(value.len());
+    let mut previous_was_space = false;
+    for ch in value.chars() {
+        let next = if ch.is_control() { ' ' } else { ch };
+        if next.is_whitespace() {
+            if !previous_was_space {
+                out.push(' ');
+                previous_was_space = true;
+            }
+        } else {
+            out.push(next);
+            previous_was_space = false;
+        }
+    }
+    out.trim().to_string()
+}
+
 fn path_to_slash_string(path: &Path) -> String {
     path.components()
         .map(|component| component.as_os_str().to_string_lossy())
@@ -1411,7 +1526,7 @@ mod tests {
             schema_version: CLAIM_FILE_SIDECAR_SCHEMA_VERSION,
             projection_version: CLAIM_FILE_PROJECTION_VERSION,
             entity_subject_ref: subject.clone(),
-            entity_subject_compact: "account:acct-1".to_string(),
+            entity_subject_compact: r#"{"id":"acct-1","kind":"account"}"#.to_string(),
             markdown_rel_path: "_dailyos_claims/account/acct-1/claims.md".to_string(),
             sidecar_rel_path: "_dailyos_claims/account/acct-1/claims.corrections.json".to_string(),
             claims: vec![ClaimFileClaim {
@@ -1419,7 +1534,7 @@ mod tests {
                     identity_version: 1,
                     identity_kind: "claim_dedup_v1".to_string(),
                     item_hash: "item-hash-1".to_string(),
-                    subject_ref_compact: "account:acct-1".to_string(),
+                    subject_ref_compact: r#"{"id":"acct-1","kind":"account"}"#.to_string(),
                     subject_ref: subject,
                     claim_type: "risk".to_string(),
                     field_path: Some("health.risk".to_string()),
@@ -1694,6 +1809,47 @@ dailyos-payload: {}
     }
 
     #[test]
+    fn parser_ignores_directive_like_text_after_claim_block_header() {
+        let sidecar = fixture_sidecar();
+        let markdown = "\
+<!-- dailyos-claim-start -->
+dailyos-claim-id: claim-1
+dailyos-sidecar-checksum: checksum-1
+dailyos-action: none
+dailyos-payload: {}
+
+## Source claim text
+dailyos-action: mark_false
+dailyos-payload: {}
+<!-- dailyos-claim-end -->
+";
+
+        let corrections =
+            parse_markdown_corrections(markdown, &sidecar, "checksum-1").expect("parse");
+
+        assert!(
+            corrections.is_empty(),
+            "rendered claim prose must not be parsed as correction directives"
+        );
+    }
+
+    #[test]
+    fn render_markdown_keeps_claim_text_outside_machine_block() {
+        let mut sidecar = fixture_sidecar();
+        sidecar.claims[0].claim_text = "Claim text\n\
+dailyos-action: mark_false\n\
+<!-- dailyos-claim-end -->"
+            .to_string();
+
+        let markdown = render_markdown(&sidecar, "checksum-1");
+        let corrections =
+            parse_markdown_corrections(&markdown, &sidecar, "checksum-1").expect("parse");
+
+        assert!(markdown.contains("## Claim text dailyos-action: mark_false"));
+        assert!(corrections.is_empty());
+    }
+
+    #[test]
     fn projection_path_validator_rejects_non_managed_roots_and_traversal() {
         assert!(validate_projection_relative_path(Path::new(
             "_dailyos_claims/account/acct-1/claims.md"
@@ -1751,6 +1907,30 @@ dailyos-payload: {}
             read_stable_to_string(&projection_dir.join(CLAIM_FILE_MARKDOWN_NAME)).unwrap_err();
 
         assert!(err.to_string().contains("symlink"));
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn read_stable_to_string_rejects_projection_file_hardlink() {
+        let workspace = tempfile::tempdir().expect("workspace");
+        let outside = tempfile::NamedTempFile::new().expect("outside file");
+        std::fs::write(outside.path(), "outside").expect("write outside file");
+        let projection_dir = workspace
+            .path()
+            .join(CLAIM_FILE_PROJECTION_ROOT)
+            .join("account")
+            .join("acct-1");
+        std::fs::create_dir_all(&projection_dir).expect("projection dir");
+        std::fs::hard_link(
+            outside.path(),
+            projection_dir.join(CLAIM_FILE_MARKDOWN_NAME),
+        )
+        .expect("projection file hardlink");
+
+        let err =
+            read_stable_to_string(&projection_dir.join(CLAIM_FILE_MARKDOWN_NAME)).unwrap_err();
+
+        assert!(err.to_string().contains("hard links"));
     }
 
     #[test]
@@ -1854,14 +2034,25 @@ dailyos-payload: {}
         let identity = semantic_identity_for_claim(
             &claim,
             serde_json::json!({"kind": "account", "id": "acct-1"}),
-            "account:acct-1".to_string(),
+            r#"{"id":"acct-1","kind":"account"}"#.to_string(),
         );
-        let expected_components = "item-hash-1\u{1f}account:acct-1\u{1f}risk\u{1f}health.risk";
+        let expected_subject = r#"{"id":"acct-1","kind":"account"}"#;
+        let expected_components =
+            format!("item-hash-1\u{1f}{expected_subject}\u{1f}risk\u{1f}health.risk");
 
         assert_eq!(identity.identity_kind, "claim_dedup_v1");
         assert_eq!(
             identity.dedup_key_components_hash,
             sha256_hex(expected_components.as_bytes())
+        );
+        assert_eq!(
+            crate::services::claims::compute_dedup_key(
+                "item-hash-1",
+                &identity.subject_ref_compact,
+                "risk",
+                Some("health.risk")
+            ),
+            "item-hash-1:{\"id\":\"acct-1\",\"kind\":\"account\"}:risk:health.risk"
         );
         assert_eq!(identity.runtime_claim_version, 7);
     }
@@ -1872,7 +2063,7 @@ dailyos-payload: {}
         let identity = semantic_identity_for_claim(
             &claim,
             serde_json::json!({"kind": "account", "id": "acct-1"}),
-            "account:acct-1".to_string(),
+            r#"{"id":"acct-1","kind":"account"}"#.to_string(),
         );
 
         assert_eq!(identity.identity_kind, "user_note_v1");
