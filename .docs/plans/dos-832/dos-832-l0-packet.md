@@ -4,8 +4,8 @@
 **Issue:** [DOS-832](https://linear.app/a8c/issue/DOS-832)  
 **Author date:** 2026-06-03  
 **Tier:** Tier 3 (markdown-only)  
-**Scope tier:** Wave-coupled substrate. L0 requires `/codex challenge` equivalent, `ce-feasibility-reviewer`, `ce-security-lens-reviewer`, and mandatory K-in. External `/codex challenge` is not recorded in this draft; local adversarial document review is the substitute unless the external run is explicitly approved.
-**Status:** Draft for L0 review.
+**Scope tier:** Wave-coupled substrate. L0 requires `/codex challenge` or a project-approved equivalent, `ce-feasibility-reviewer`, `ce-security-lens-reviewer`, and mandatory K-in. Local adversarial document review may harden the draft, but it does not make the packet L0-approved on its own.
+**Status:** Draft for L0 review; not approved until the adversarial, feasibility, security-lens, and K-in verdicts are recorded.
 
 ---
 
@@ -294,7 +294,7 @@ pnpm tsc --noEmit
 - **K-in:** `ce-learnings-researcher` completed; findings folded into §1-§6.
 - **Feasibility:** `ce-feasibility-reviewer` required to verify this can be built from current source registration, ingestion, claim, feedback, and DB-mode services.
 - **Security:** `ce-security-lens-reviewer` required because DOS-832 touches filesystem trust boundaries, Live destructive operation, recovery docs, exported DB copies, and sensitive correction data.
-- **Adversarial doc review:** local substitute for external `/codex challenge` unless external review is explicitly approved.
+- **Adversarial review:** external `/codex challenge` or a project-approved equivalent is required for formal L0 approval. If the external run is unavailable, record the failure and keep the packet in draft/not-approved status; local adversarial review is only an input to hardening edits.
 
 Approval requires unanimous pass or explicit L6 decision on any residual release gate.
 
@@ -318,7 +318,7 @@ Approval requires unanimous pass or explicit L6 decision on any residual release
 
 ## §9 Definition of Done
 
-- L0 packet passes K-in, feasibility, security-lens, and adversarial review.
+- L0 packet passes K-in, feasibility, security-lens, and external/project-approved adversarial review.
 - L1 implementation either waits for DOS-628 or remains explicitly non-releaseable until DOS-628 sidecar semantics exist.
 - Fresh-schema rebuild succeeds in Replica mode with generic fixtures and real-workspace PII-free proof.
 - Correction replay proves typed feedback, tombstone, contradiction, and ambiguity behavior.
