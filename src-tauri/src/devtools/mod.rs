@@ -20,6 +20,9 @@
 //! Workspace placement idempotency, rate, and audit ledgers are not statically
 //! seeded in mock scenarios: they are service-owned operational records and
 //! must be produced through the workspace placement service path.
+//! Claim file projection ledgers follow the same rule: they are service-owned
+//! operational receipts produced by claim-file render/apply abilities, not
+//! static mock fixture data.
 //! Composition layout overlays are also not statically seeded: they are local
 //! presentation preferences produced through `services::composition_layout`,
 //! not intelligence substrate or demo content.

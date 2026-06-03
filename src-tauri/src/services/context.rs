@@ -7,9 +7,11 @@
 
 use std::{
     collections::{HashMap, HashSet},
+    path::PathBuf,
     sync::Arc,
 };
 
+use abilities_runtime::abilities::claim_files::contracts as runtime_claim_files;
 use abilities_runtime::abilities::recommendations::contracts as runtime_salience;
 use abilities_runtime::abilities::trust::TrustBand;
 
@@ -66,6 +68,7 @@ pub struct LiveRecommendationFeedbackWriter;
 pub struct LiveSourceManagementActionHandler {
     signal_engine: Option<Arc<crate::signals::propagation::PropagationEngine>>,
 }
+pub struct LiveClaimFileOperations;
 pub struct LiveEntityContextClaimReader;
 pub struct LiveAccountCompositionSnapshotReader;
 pub struct LiveProjectCompositionSnapshotReader;
@@ -136,6 +139,7 @@ pub fn attach_live_workspace_readers_with_signal_engine(
         .with_workspace_intake(Arc::new(
             crate::services::workspace_ingestion::workspace_intake_impl::IngestPipelineWorkspaceIntake::from_config_or_empty_with_signal_engine(signal_engine),
         ))
+        .with_claim_file_operations(Arc::new(LiveClaimFileOperations))
 }
 
 impl EntityContextReadHandle for LiveEntityContextReader {
@@ -546,6 +550,129 @@ impl SourceManagementActionHandle for LiveSourceManagementActionHandler {
                 ))
             })?
         })
+    }
+}
+
+impl ClaimFileOperationHandle for LiveClaimFileOperations {
+    fn render_entity_claim_file<'a>(
+        &'a self,
+        request: ClaimFileRenderRequest,
+    ) -> ClaimFileRenderFuture<'a> {
+        Box::pin(async move {
+            let workspace_root = configured_claim_file_workspace_root()?;
+            let subject_ref_json =
+                serde_json::to_string(&request.input.subject_ref).map_err(|error| {
+                    runtime_claim_files::ClaimFileOperationError::InvalidRequest(error.to_string())
+                })?;
+            let state = crate::state::AppState::new();
+            let result = crate::services::claim_files::render_entity_claim_file(
+                &state,
+                workspace_root,
+                subject_ref_json,
+            )
+            .await
+            .map_err(claim_file_error_to_runtime)?;
+            Ok(claim_file_projection_result_to_runtime(result))
+        })
+    }
+
+    fn apply_claim_file_corrections<'a>(
+        &'a self,
+        request: ClaimFileApplyRequest,
+    ) -> ClaimFileApplyFuture<'a> {
+        Box::pin(async move {
+            let workspace_root = configured_claim_file_workspace_root()?;
+            let state = crate::state::AppState::new();
+            let result = crate::services::claim_files::apply_claim_file_corrections(
+                &state,
+                workspace_root,
+                PathBuf::from(request.input.markdown_rel_path),
+                request.actor_principal_id,
+            )
+            .await
+            .map_err(claim_file_error_to_runtime)?;
+            claim_file_apply_result_to_runtime(result)
+        })
+    }
+}
+
+fn configured_claim_file_workspace_root(
+) -> Result<PathBuf, runtime_claim_files::ClaimFileOperationError> {
+    let config = crate::state::load_config().map_err(|error| {
+        runtime_claim_files::ClaimFileOperationError::OperationFailed(error.to_string())
+    })?;
+    let workspace_path = config.workspace_path.trim();
+    if workspace_path.is_empty() {
+        return Err(
+            runtime_claim_files::ClaimFileOperationError::InvalidRequest(
+                "workspace path is not configured".to_string(),
+            ),
+        );
+    }
+    Ok(PathBuf::from(workspace_path))
+}
+
+fn claim_file_projection_result_to_runtime(
+    result: crate::services::claim_files::ClaimFileProjectionResult,
+) -> runtime_claim_files::ClaimFileProjectionResult {
+    runtime_claim_files::ClaimFileProjectionResult {
+        run_id: result.run_id,
+        markdown_rel_path: result.markdown_rel_path,
+        sidecar_rel_path: result.sidecar_rel_path,
+        claim_count: result.claim_count,
+        markdown_checksum: result.markdown_checksum,
+        sidecar_checksum: result.sidecar_checksum,
+    }
+}
+
+fn claim_file_apply_result_to_runtime(
+    result: crate::services::claim_files::ClaimFileApplyResult,
+) -> Result<runtime_claim_files::ClaimFileApplyResult, runtime_claim_files::ClaimFileOperationError>
+{
+    let responses = result
+        .responses
+        .into_iter()
+        .map(serde_json::to_value)
+        .collect::<Result<Vec<_>, _>>()
+        .map_err(|error| {
+            runtime_claim_files::ClaimFileOperationError::OperationFailed(error.to_string())
+        })?;
+    Ok(runtime_claim_files::ClaimFileApplyResult {
+        applied_count: result.applied_count,
+        skipped_count: result.skipped_count,
+        failures: result
+            .failures
+            .into_iter()
+            .map(|failure| runtime_claim_files::ClaimFileApplyFailure {
+                claim_id: failure.claim_id,
+                error_class: failure.error_class,
+                error_detail_hash: failure.error_detail_hash,
+            })
+            .collect(),
+        responses,
+        rerender: result.rerender.map(claim_file_projection_result_to_runtime),
+    })
+}
+
+fn claim_file_error_to_runtime(
+    error: crate::services::claim_files::ClaimFileError,
+) -> runtime_claim_files::ClaimFileOperationError {
+    match error {
+        crate::services::claim_files::ClaimFileError::BadRequest(message)
+        | crate::services::claim_files::ClaimFileError::PathRejected(message) => {
+            runtime_claim_files::ClaimFileOperationError::InvalidRequest(message)
+        }
+        crate::services::claim_files::ClaimFileError::Json(error) => {
+            runtime_claim_files::ClaimFileOperationError::InvalidRequest(error.to_string())
+        }
+        crate::services::claim_files::ClaimFileError::ProjectionFailed(message)
+        | crate::services::claim_files::ClaimFileError::ApplyFailed(message)
+        | crate::services::claim_files::ClaimFileError::Db(message) => {
+            runtime_claim_files::ClaimFileOperationError::OperationFailed(message)
+        }
+        crate::services::claim_files::ClaimFileError::Io(error) => {
+            runtime_claim_files::ClaimFileOperationError::OperationFailed(error.to_string())
+        }
     }
 }
 

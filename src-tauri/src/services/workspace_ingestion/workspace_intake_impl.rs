@@ -34,7 +34,10 @@ use super::pipeline::{file_id_from_identity, EntityRef, FileIdError, IngestError
 use super::registry::{ResolvePathError, WorkspaceCategoryRegistry};
 use super::signals::emit_pre_pipeline_rejection;
 use super::wiring::build_pipeline;
-use super::{registry::WorkspaceSourceRegistry, runs::IngestionMode};
+use super::{
+    registry::{is_claim_file_projection_root_path, WorkspaceSourceRegistry},
+    runs::IngestionMode,
+};
 
 const PLACEMENT_RATE_LIMIT_MAX: i64 = 200;
 const PLACEMENT_RATE_LIMIT_WINDOW_SECONDS: i64 = 60 * 60;
@@ -296,6 +299,7 @@ fn is_valid_path_segment_slug(slug: &str) -> bool {
 fn intake_error_from_rejection(reason: RejectionReason) -> WorkspaceIntakeError {
     match reason {
         RejectionReason::PathTraversalAttempt => WorkspaceIntakeError::PathTraversalAttempt,
+        RejectionReason::ManagedOutputRoot => WorkspaceIntakeError::ManagedOutputRoot,
         RejectionReason::OutsideWorkspace => WorkspaceIntakeError::OutsideWorkspace,
         RejectionReason::SymlinkRaced | RejectionReason::SymlinkRefused => {
             WorkspaceIntakeError::SymlinkRaced
@@ -1720,6 +1724,12 @@ fn validate_relative_components_io(path: &Path) -> io::Result<()> {
         return Err(io::Error::new(
             io::ErrorKind::InvalidInput,
             "absolute path rejected",
+        ));
+    }
+    if is_claim_file_projection_root_path(path) {
+        return Err(io::Error::new(
+            io::ErrorKind::InvalidInput,
+            "managed output root rejected",
         ));
     }
     for component in path.components() {
