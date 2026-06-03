@@ -2,6 +2,27 @@
   "schema_version": 1,
   "abilities": [
     {
+      "name": "apply_claim_file_corrections",
+      "description": "",
+      "category": "maintenance",
+      "annotations": {},
+      "wp_permission": "none",
+      "allowed_actors": [
+        "user",
+        "surface_client"
+      ],
+      "required_scopes": [
+        "submit.claim_file_corrections"
+      ],
+      "mcp_exposure": "none",
+      "client_side_executable": false,
+      "idempotency_class": "side_effect",
+      "composition_kind": {
+        "produces_blocks": false,
+        "block_types": []
+      }
+    },
+    {
       "name": "claim_receipt",
       "description": "",
       "category": "read",
@@ -433,6 +454,27 @@
         "runtime"
       ],
       "required_scopes": [],
+      "mcp_exposure": "none",
+      "client_side_executable": false,
+      "idempotency_class": "side_effect",
+      "composition_kind": {
+        "produces_blocks": false,
+        "block_types": []
+      }
+    },
+    {
+      "name": "render_entity_claim_file",
+      "description": "",
+      "category": "maintenance",
+      "annotations": {},
+      "wp_permission": "none",
+      "allowed_actors": [
+        "user",
+        "surface_client"
+      ],
+      "required_scopes": [
+        "write.claim_files"
+      ],
       "mcp_exposure": "none",
       "client_side_executable": false,
       "idempotency_class": "side_effect",
