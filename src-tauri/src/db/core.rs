@@ -141,16 +141,26 @@ pub fn set_db_mode(mode: DbMode) {
 /// `DAILYOS_DB_MODE=live|replica|mock`. If neither is present, leave DB_MODE
 /// unset so `db_mode()` keeps its fail-closed default.
 pub fn resolve_and_set_db_mode_from_process() {
-    if let Some(mode) = std::env::args().find_map(|arg| DbMode::from_process_arg(&arg)) {
+    if let Some(mode) = explicit_db_mode_from_process() {
         set_db_mode(mode);
-        return;
+    }
+}
+
+/// Resolve DB mode from process inputs, falling back to a caller-owned default,
+/// and set the process-wide mode. Use for binaries whose no-env behavior must
+/// not inherit `db_mode()`'s release-build Live default.
+pub fn resolve_and_set_db_mode_from_process_or(default: DbMode) {
+    set_db_mode(explicit_db_mode_from_process().unwrap_or(default));
+}
+
+pub fn explicit_db_mode_from_process() -> Option<DbMode> {
+    if let Some(mode) = std::env::args().find_map(|arg| DbMode::from_process_arg(&arg)) {
+        return Some(mode);
     }
 
-    if let Ok(value) = std::env::var("DAILYOS_DB_MODE") {
-        if let Some(mode) = DbMode::from_env_value(&value) {
-            set_db_mode(mode);
-        }
-    }
+    std::env::var("DAILYOS_DB_MODE")
+        .ok()
+        .and_then(|value| DbMode::from_env_value(&value))
 }
 
 /// Resolve the active DB mode. **Fail-closed default when unset:** non-release
@@ -1190,6 +1200,21 @@ mod db_mode_tests {
             Err(DbError::ProdOpenDenied { .. }) => {}
             Err(err) => panic!("expected ProdOpenDenied, got {err:?}"),
             Ok(_) => panic!("non-Live mode must deny production DB read path"),
+        }
+    }
+
+    #[test]
+    fn explicit_process_default_sets_replica_when_no_mode_is_supplied() {
+        let _lock = DB_MODE_TEST_LOCK.lock().expect("db mode test lock");
+        let _reset = ResetDbMode;
+        let previous = std::env::var_os("DAILYOS_DB_MODE");
+        std::env::remove_var("DAILYOS_DB_MODE");
+
+        resolve_and_set_db_mode_from_process_or(DbMode::Replica);
+
+        assert_eq!(db_mode(), DbMode::Replica);
+        if let Some(previous) = previous {
+            std::env::set_var("DAILYOS_DB_MODE", previous);
         }
     }
 

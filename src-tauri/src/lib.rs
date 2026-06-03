@@ -89,6 +89,8 @@ pub mod intelligence;
 pub mod json_loader;
 mod latency;
 pub mod linear;
+pub mod mcp_launcher_contract;
+pub mod mcp_runtime_guard_constants;
 pub mod meeting_prep_queue;
 mod migrations;
 mod notification;

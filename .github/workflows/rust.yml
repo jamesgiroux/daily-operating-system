@@ -55,11 +55,7 @@ jobs:
             macos-cargo-v2-
 
       - name: Create sidecar stub for Tauri externalBin validation
-        run: |
-          mkdir -p src-tauri/binaries
-          TARGET=$(rustc -vV | awk '/^host:/ { print $2 }')
-          touch "src-tauri/binaries/dailyos-mcp-$TARGET"
-          touch src-tauri/build.rs
+        run: bash src-tauri/scripts/build-mcp.sh --stub
 
       - name: Run claim projection roundtrip regression
         run: cargo test --manifest-path src-tauri/Cargo.toml -p dailyos --test dos301_claim_projection_roundtrip_test
