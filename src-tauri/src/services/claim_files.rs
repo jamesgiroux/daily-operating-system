@@ -1,4 +1,4 @@
-//! Readable claim-file projection and correction apply service (DOS-628).
+//! Readable claim-file projection and correction apply service.
 //!
 //! Files under `_dailyos_claims` are projections of canonical claims. They are
 //! never source evidence, and applying edits routes through the existing

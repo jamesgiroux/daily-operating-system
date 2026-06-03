@@ -1,4 +1,4 @@
-//! Wire contracts for readable claim-file projection abilities (DOS-628).
+//! Wire contracts for readable claim-file projection abilities.
 
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};

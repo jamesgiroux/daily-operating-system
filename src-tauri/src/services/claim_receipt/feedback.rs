@@ -9,7 +9,7 @@
 //!    (`claim_receipt::auth::can_surface_for`). `Actor::Agent` collapses to
 //!    deny at every surface in v1.4.4 (AC-8.13).
 //! 3. Validates per-action metadata against the ADR-0123 §1 variant field
-//!    schema plus the DOS-628 canonical bridge — `WrongSubject.corrected_subject_ref`
+//!    schema plus the claim-file canonical bridge — `WrongSubject.corrected_subject_ref`
 //!    (with legacy `corrected_to` accepted), `WrongSource.source_content_hash`
 //!    (ADR-0131 canonicalization, NOT an index), `NeedsNuance.corrected_text`,
 //!    `CannotVerify.note`, `SurfaceInappropriate.surface`, `NotRelevantHere.invocation_id`
@@ -1213,7 +1213,7 @@ mod tests {
 
     #[test]
     fn rejects_intended_subject_ref_alias_for_wrong_subject() {
-        // DOS-628 canonicalizes on corrected_subject_ref; do not accept freeform aliases.
+        // Claim-file feedback canonicalizes on corrected_subject_ref; do not accept aliases.
         let err = validate_and_sanitize_metadata(
             FeedbackAction::WrongSubject,
             Some(&serde_json::json!({"intended_subject_ref": {"account": "acct-2"}})),

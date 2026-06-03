@@ -1118,12 +1118,12 @@ const MIGRATIONS: &[Migration] = &[
         version: 276,
         sql: include_str!("migrations/276_action_claim_version.sql"),
     },
-    // v1.4.9 W3 / DOS-628 — readable claim-file projection ledger.
+    // v1.4.9 W3 — readable claim-file projection ledger.
     Migration::Sql {
         version: 280,
         sql: include_str!("migrations/280_claim_file_projection_runs.sql"),
     },
-    // v1.4.9 W3 / DOS-628 — per-run projected claim membership.
+    // v1.4.9 W3 — per-run projected claim membership.
     Migration::Sql {
         version: 281,
         sql: include_str!("migrations/281_claim_file_projection_run_claims.sql"),
