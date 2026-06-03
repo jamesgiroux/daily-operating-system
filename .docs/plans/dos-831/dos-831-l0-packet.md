@@ -24,6 +24,7 @@ The work is debug-driven and decision-driven:
 In scope:
 
 1. Author a superseding ADR-0092 amendment section that explicitly retires SQLCipher for the local same-OS-user product posture and names FileVault / OS disk controls as the at-rest boundary.
+   - Author the missing DB-mode-isolation ADR/addendum for DOS-820-A in the same docs pass, because the active wave plan assigns that storage-boundary record to DOS-831.
 2. Switch `rusqlite` from `bundled-sqlcipher` to the non-SQLCipher bundled SQLite feature set while preserving `backup`.
 3. Replace encrypted DB open chokepoints with plain SQLite opens:
    - `ActionDb::open`, `open_for_inspection`, `open_at`, `open_readonly`, and test helpers.
@@ -54,7 +55,7 @@ Out of scope:
 
 ### Migration Slots
 
-The v1.4.9 wave plan reserves W1b slots `v274-v277`. DOS-831 is expected to require **no schema migration**: it changes the storage engine/open path, not the logical schema. If L1 discovers a durable marker table/column is required, claim `v274` before implementation and update this packet plus `.docs/plans/v1.4.9-waves.md`.
+The current dev schema head in this worktree is `v276`; next free is `v277`. DOS-831 is expected to require **no schema migration**: it changes the storage engine/open path, not the logical schema. If L1 discovers a durable marker table/column is required, claim `v277` before implementation and update this packet plus `.docs/plans/v1.4.9-waves.md`.
 
 ---
 
@@ -124,6 +125,13 @@ Do **not** implement SQLCipher export/import as the migration path for DOS-831. 
 
 L1 should make plain SQLite the runtime target and keep direct conversion out of scope. If a developer needs to salvage an encrypted DB during the transition, use the documented logical-extraction/rebuild path, not automatic startup conversion.
 
+DOS-831 is not releaseable to any environment with an existing encrypted active DB unless one of these is true:
+
+- DOS-832's rebuild path is available and validated for that environment.
+- The release is explicitly coordinated as a storage-reset cutover with operator confirmation that no encrypted active DB is being opened by the plain build.
+
+This gate prevents a compile-clean plain SQLite build from stranding users before the rebuild path exists.
+
 ### D3 - Fail Loud on Encrypted Input
 
 After DOS-831, an existing SQLCipher-encrypted DB at the active path must not be treated as a new empty DB. Startup/open should fail with a clear storage-health error that names the unsupported encrypted store and routes to rebuild/restore guidance.
@@ -143,11 +151,11 @@ Document it as retired/unused and file cleanup as an explicit follow-up if desir
 
 This decision applies only to the SQLCipher DB key. OAuth tokens, surface session keys, projection signing keys, provider credentials, and other Keychain-backed secrets remain canonical and are outside the cleanup blast radius.
 
-### D5 - Backups Become Plain SQLite Copies
+### D5 - Backups and Exports Become Plain SQLite Copies
 
-Manual, pre-migration, and restore-point backups become plain SQLite files. Keep chunked backup API behavior, backup validation, restore snapshots, permissions, and pruning.
+Manual, pre-migration, restore-point, and user-selected export copies become plain SQLite files. Keep chunked backup API behavior, backup validation, restore snapshots, permissions, and pruning.
 
-The PR body and ADR amendment must not claim backup confidentiality from app-layer encryption. Backup confidentiality is now the same OS disk boundary as the active DB.
+The PR body and ADR amendment must not claim backup/export confidentiality from app-layer encryption. Backup confidentiality is now the same OS disk boundary as the active DB. Exported copies are different because the user chooses the destination: Settings/recovery copy must state that destination disk/cloud controls determine confidentiality once the DB is exported.
 
 ---
 
@@ -156,6 +164,7 @@ The PR body and ADR amendment must not claim backup confidentiality from app-lay
 ### U1 - ADR + Docs
 
 - Add an ADR-0092 amendment dated 2026-06-03 (or implementation date) that supersedes the SQLCipher decision for v1.4.9.
+- Add the missing DB-mode-isolation ADR/addendum for DOS-820-A, or amend the wave plan if that deliverable moves elsewhere before L1 starts.
 - Update operation/release docs that still describe DB files/backups as encrypted.
 - Keep the distinction between DB at-rest posture and other Keychain-backed secrets.
 - Enumerate ADR-0092 sub-decisions explicitly: SQLCipher/key/recovery decisions are retired; file permissions, Time Machine/iCloud posture, app lock, and PII log hygiene remain unless separately amended.
@@ -194,6 +203,7 @@ The PR body and ADR amendment must not claim backup confidentiality from app-lay
 ### U5 - Backup / Restore / Migration Safety
 
 - Update `db_backup.rs` so backup destinations are plain SQLite and validation does not try to create/fetch DB encryption keys.
+- Update `export_database_copy` and its Settings/recovery entry points so exported copies are treated as plaintext egress: restrictive file permissions where possible, no app-layer confidentiality claim, and user/operator copy that names destination disk/cloud controls as the confidentiality boundary.
 - Update `migrations.rs` backup helpers to remove destination keying and SQLCipher fallback.
 - Keep hollow-backup detection, chunked stepping, Busy/Locked retry, restore snapshot, WAL/SHM cleanup, permissions, and pruning.
 - Review restore shutdown ordering for both `state.db_service` and any installed global DB service before replacing/restoring files.
@@ -208,7 +218,9 @@ Focused tests should cover:
 - Encrypted-looking/non-SQLite active DB fails loudly and does not get migrated/overwritten silently.
 - SQLCipher-era `NotADatabase` recovery handling is updated for plain SQLite semantics instead of retrying as a key/WAL race.
 - Manual backup produces a plain SQLite backup whose schema version can be read without key material.
+- Export copy produces a plain SQLite file, sets restrictive permissions where possible, and the Settings/recovery UI copy warns that destination disk/cloud controls determine confidentiality.
 - `check_db_open_guard_allowlist.sh` remains clean.
+- Service/writer boundary gates remain clean: no new mutating fresh-connection bypass is introduced, and the SQLCipher `PRAGMA key` exception disappears rather than widening.
 - No `PRAGMA key`, `sqlcipher_export`, `bundled-sqlcipher`, or DB encryption-key runtime dependency remains outside explicit historical docs/tests.
 - Frontend startup/recovery UI no longer gates valid plain DB startup on `get_encryption_key_status` or shows key recovery as the normal error path.
 
@@ -218,14 +230,17 @@ Focused tests should cover:
 
 - **AC1 - ADR supersession:** ADR-0092 has a committed amendment that explicitly retires SQLCipher for the v1.4.9 local same-OS-user posture, states the FileVault/OS disk boundary, and names what protection is no longer provided.
 - **AC1a - Non-cipher hardening preserved:** The ADR amendment explicitly says ADR-0092's file permissions, Time Machine/iCloud posture, app lock, and PII log hygiene remain active unless separately amended.
+- **AC1b - DB-mode record closed:** The missing DOS-820-A DB-mode-isolation ADR/addendum is committed in this PR, or the active wave plan is amended before L1 to assign that deliverable elsewhere.
 - **AC2 - Plain runtime DB:** The app, MCP read-only path, maintenance bins, and backup/restore code open valid DailyOS DB files as plain SQLite with no `PRAGMA key` or DB encryption-key dependency.
 - **AC3 - Fail-loud encrypted input:** An encrypted-looking existing DB at the active path is not silently overwritten, migrated, or treated as empty. The user/operator gets a clear storage-health/rebuild/restore error.
-- **AC4 - Backups stay safe:** Manual/pre-migration/restore backups use the proven chunked backup path, validate integrity, keep restrictive file permissions, and are plain SQLite under the same OS disk boundary.
+- **AC3a - Release/cutover gate:** DOS-831 is not releaseable to an environment with an existing encrypted active DB until DOS-832 rebuild is available and validated for that environment, or until a coordinated storage-reset cutover confirms the plain build will not strand encrypted stores.
+- **AC4 - Backups/exports stay safe:** Manual/pre-migration/restore backups and user-selected export copies use the proven copy path, validate integrity where applicable, keep restrictive file permissions where possible, and are plain SQLite under the destination's disk/cloud boundary.
 - **AC5 - Guards preserved:** DB-mode structural deny, open guard lint, single-writer routing, WAL pragmas, and migration backup behavior still pass.
 - **AC6 - Keychain retirement:** Normal DB open no longer touches the SQLCipher Keychain key. Existing DB key material is documented as retired/unused, not automatically deleted in this PR.
+- **AC6a - Diagnostic keys re-sourced:** `local_db_keyed_audit_tag`, `local_db_workspace_graph_diagnostic_key_bytes`, and their consumers use a non-DB-key scheme and do not touch the retired SQLCipher key.
 - **AC7 - No accidental collateral:** Non-DB Keychain-backed secrets, runtime anchors, and surface/session/projection signing keys are untouched.
 - **AC7a - Audit semantics corrected:** DB-key-specific audit/status copy is removed or renamed so runtime reports no longer imply SQLCipher key access.
-- **AC8 - Gates green:** `cargo clippy -- -D warnings && cargo test && pnpm tsc --noEmit` pass.
+- **AC8 - Gates green:** `cargo clippy -- -D warnings && cargo test && pnpm tsc --noEmit && pnpm test` pass.
 
 ---
 
@@ -238,6 +253,9 @@ cargo test --manifest-path src-tauri/Cargo.toml --lib db::
 cargo test --manifest-path src-tauri/Cargo.toml --lib db_backup
 cargo test --manifest-path src-tauri/Cargo.toml --lib migrations::
 bash src-tauri/scripts/check_db_open_guard_allowlist.sh
+bash scripts/check_service_layer_boundary.sh
+bash scripts/check_db_mutator_must_use.sh
+pnpm test -- src/routerStartupGate.test.ts
 rg -n "bundled-sqlcipher|PRAGMA key|sqlcipher_export|SqlCipherPragma|EncryptionKey|sqlcipher-key" src-tauri/src src-tauri/Cargo.toml src-tauri/Cargo.lock
 ```
 
@@ -247,6 +265,7 @@ Full gates:
 cargo clippy -- -D warnings
 cargo test
 pnpm tsc --noEmit
+pnpm test
 ```
 
 If the implementation touches MCP sidecar packaging or release-gate readers, also run the Tauri external binary setup path:
@@ -284,6 +303,8 @@ The `rg` command is a review aid, not a blanket delete instruction. Legitimate h
 - `.docs/plans/v1.4.9-replica-db-l0-plan.md` / `.html` - D5 was intentionally decoupled from DB-mode isolation and requires its own ADR-0092 amendment. DOS-831 must not re-open DOS-820's Live/Replica/Mock decisions.
 - `.docs/plans/v1.4.9-waves.md` - Records the FileVault/local trust direction and ADR sub-decision requirement. The active W1b text now points DOS-831 at an ADR-0092 amendment and fail-loud + rebuild instead of ADR-0136 and split-build decrypt/sentinel.
 - Linear DOS-848 - The logical extraction repair is evidence that automatic conversion/repair of damaged encrypted DBs is not trustworthy. DOS-831 should fail loud and point to rebuild/restore rather than adding another fragile startup repair.
+- L0 security-lens review - Export copies are plaintext egress outside the active DB path; DOS-831 must cover `export_database_copy` and Settings/recovery copy, not only internal backups.
+- L0 adversarial document review - DOS-831 must close release/cutover gating, migration-slot freshness, DB-mode ADR ownership, frontend recovery gates, writer-bypass gates, and diagnostic-key re-sourcing before L1.
 
 ---
 
@@ -305,6 +326,8 @@ Review questions:
 3. Are DB-mode and single-writer guarantees preserved?
 4. Are non-DB Keychain surfaces protected from collateral deletion?
 5. Are backup/restore and migration safety still real after removing destination keying?
+6. Does the release/cutover gate prevent a plain build from stranding encrypted active DBs before DOS-832 is available?
+7. Are exported DB copies handled as plaintext egress with destination-boundary copy?
 
 ---
 
@@ -312,8 +335,12 @@ Review questions:
 
 - L0 packet approved unanimously and mirrored to Linear.
 - ADR-0092 amendment committed.
+- DB-mode-isolation ADR/addendum committed, or active wave plan amended before L1 to move that deliverable.
 - Runtime opens, read-only opens, migration backups, manual backups, and restore validation run as plain SQLite with no DB encryption key dependency.
+- User-selected export copies are plain SQLite, permission-hardened where possible, and surfaced with destination-boundary copy.
 - Encrypted-looking active DB fails loud with restore/rebuild guidance.
+- Release/cutover gate prevents DOS-831 from shipping into an environment with an encrypted active DB before DOS-832 rebuild is available, unless an explicit storage-reset cutover confirms safety.
 - Keychain DB key is retired from runtime but not deleted automatically.
+- DB-key-derived audit/workspace diagnostic helpers are re-sourced without touching the retired SQLCipher key.
 - Focused tests and full gates pass.
 - PR targets `dev`, links DOS-831, includes `security_auditor_invoked: true`, and carries the correct `L2-status` line.
