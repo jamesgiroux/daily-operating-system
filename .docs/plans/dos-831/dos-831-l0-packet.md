@@ -168,7 +168,7 @@ The PR body and ADR amendment must not claim backup/export confidentiality from 
 - Update operation/release docs that still describe DB files/backups as encrypted.
 - Keep the distinction between DB at-rest posture and other Keychain-backed secrets.
 - Enumerate ADR-0092 sub-decisions explicitly: SQLCipher/key/recovery decisions are retired; file permissions, Time Machine/iCloud posture, app lock, and PII log hygiene remain unless separately amended.
-- Keep `.docs/plans/v1.4.9-waves.md` aligned with this per-ticket L0: ADR-0136 is already occupied by a different decision, and the prior split-build decrypt/sentinel plan is superseded by fail-loud + rebuild guidance. DOS-831 amends ADR-0092 instead of minting or reusing ADR-0136.
+- Keep `.docs/plans/v1.4.9-waves.md` and `.docs/plans/v1.4.9-waves.html` aligned with this per-ticket L0: ADR-0136 is already occupied by a different decision, and the prior split-build decrypt/sentinel plan is superseded by fail-loud + rebuild guidance. DOS-831 amends ADR-0092 instead of minting or reusing ADR-0136.
 
 ### U2 - Cargo / Build Feature
 
@@ -301,7 +301,7 @@ The `rg` command is a review aid, not a blanket delete instruction. Legitimate h
 - `.docs/decisions/0134-reader-pool-sizing.md` - SQLCipher decryption cost is independent of reader pool sizing. Removing SQLCipher changes one residual cost but does not settle reader ownership policy.
 - `docs/solutions/workflow-issues/k-in-grep-substrate-type-not-proposed-name-2026-05-19.md` - K-in must search the substrate primitives, not only "SQLCipher drop." This packet cites DB open guard, DB-mode resolver, backup path, key provider, and writer substrate.
 - `.docs/plans/v1.4.9-replica-db-l0-plan.md` / `.html` - D5 was intentionally decoupled from DB-mode isolation and requires its own ADR-0092 amendment. DOS-831 must not re-open DOS-820's Live/Replica/Mock decisions.
-- `.docs/plans/v1.4.9-waves.md` - Records the FileVault/local trust direction and ADR sub-decision requirement. The active W1b text now points DOS-831 at an ADR-0092 amendment and fail-loud + rebuild instead of ADR-0136 and split-build decrypt/sentinel.
+- `.docs/plans/v1.4.9-waves.md` / `.docs/plans/v1.4.9-waves.html` - Record the FileVault/local trust direction and ADR sub-decision requirement. The active W1b text now points DOS-831 at an ADR-0092 amendment and fail-loud + rebuild instead of ADR-0136 and split-build decrypt/sentinel.
 - Linear DOS-848 - The logical extraction repair is evidence that automatic conversion/repair of damaged encrypted DBs is not trustworthy. DOS-831 should fail loud and point to rebuild/restore rather than adding another fragile startup repair.
 - L0 security-lens review - Export copies are plaintext egress outside the active DB path; DOS-831 must cover `export_database_copy` and Settings/recovery copy, not only internal backups.
 - L0 adversarial document review - DOS-831 must close release/cutover gating, migration-slot freshness, DB-mode ADR ownership, frontend recovery gates, writer-bypass gates, and diagnostic-key re-sourcing before L1.

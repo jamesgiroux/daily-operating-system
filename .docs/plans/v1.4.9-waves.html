@@ -95,14 +95,14 @@
     <h2 id="decisions" class="plans-section-title">The eight architecture calls.</h2>
   </header>
   <div class="callout-grid">
-    <article class="callout"><h3 class="callout-title">1 · Drop SQLCipher (supersede 0092)</h3><p class="callout-prose">L6-approved. DOS-831 authors ADR-0136 enumerating ADR-0092's six sub-decisions — retire SQLCipher/perms/Time-Machine/iCloud/app-lock; KEEP PII-log-hygiene (ADR-0108). No fabricated "§D5".</p></article>
-    <article class="callout"><h3 class="callout-title">2 · Decrypt-then-drop</h3><p class="callout-prose">Split build + one-shot decrypt (mirror of <code>migrate_to_encrypted</code>) + sentinel that exits before old auto-encrypt runs; both <code>core.rs:506,650</code> sites deleted. Fallback: rebuild.</p></article>
+    <article class="callout"><h3 class="callout-title">1 · Drop SQLCipher (amend 0092)</h3><p class="callout-prose">L6-approved. DOS-831 amends ADR-0092 directly because ADR-0136 is already occupied. Retire SQLCipher, DB-key recovery, <code>PRAGMA key</code>, encrypted backups, and rekey paths; FileVault / OS disk controls become the DB at-rest boundary. Non-cipher hardening remains active unless separately amended.</p></article>
+    <article class="callout"><h3 class="callout-title">2 · Fail-loud + rebuild</h3><p class="callout-prose">No automatic cipher-to-plain conversion path. Existing encrypted-looking DBs fail loud with storage-health/rebuild/restore guidance; DOS-832 owns rebuild after correction-preserving projection. DOS-831 is gated from environments with encrypted active DBs unless rebuild is validated or a storage-reset cutover is explicitly confirmed.</p></article>
     <article class="callout"><h3 class="callout-title">3 · Corrections survive rebuild</h3><p class="callout-prose">Content-identity correction-journal sidecar (<code>compute_dedup_key</code> shape, not raw runtime dedup_key); replay respects <code>claim_state</code> (no tombstone resurrection); tie-break + orphan-when-ambiguous; exact derivation → DOS-832 L0. Amends ADR-0048 P-4.</p></article>
     <article class="callout"><h3 class="callout-title">4 · Files-as-projection</h3><p class="callout-prose">Edit = correction input via <code>services/claims.rs</code> typed <code>FeedbackAction</code> (ADR-0123/0126); Actor::User; workspace-confined; sensitivity re-validated. Never files-as-truth.</p></article>
     <article class="callout"><h3 class="callout-title">5 · Single-writer ownership</h3><p class="callout-prose">647/758 consume ADR-0133/0134 + the db-lock-storm-class doc verbatim. The only hard prerequisite for the loop.</p></article>
     <article class="callout"><h3 class="callout-title">6 · Centralized trust rendering</h3><p class="callout-prose">One provenance + trust-band + sensitivity renderer for app and MCP (ADR-0105/0108). W5 is parity, not a second renderer.</p></article>
     <article class="callout"><h3 class="callout-title">7 · MCP writes via ADR-0128 §D</h3><p class="callout-prose">169/170 reconcile against §D (already authorizes <code>submit.action</code>/<code>submit.action_status</code>) — confirm it survived reconciliation; not a new amendment.</p></article>
-    <article class="callout"><h3 class="callout-title">8 · Migration slots</h3><p class="callout-prose">Dev head v273. W1b v274–277 · W2 v278–279 · W3 v280–283 · W4 v284–289 · W6 v290–295. Wave lead writes confirmed numbers before branch-open.</p></article>
+    <article class="callout"><h3 class="callout-title">8 · Migration slots</h3><p class="callout-prose">Dev head v276; next free v277. W1b v277 only if DOS-831 truly needs a marker; DOS-832 adds no migration. W2 v278–279 · W3 v280–283 · W4 v284–289 · W6 v290–295.</p></article>
   </div>
 </section>
 
@@ -114,7 +114,7 @@
 
   <h3 class="plans-subhead">W1 — DB ownership + storage hardening · substrate</h3>
   <p><strong>W1a (gating):</strong> DOS-647 single-writer + priority lane; DOS-758 request-scoped DB/services + nested-writer guard; DOS-823 (820-C) replica-refresh (consumes shipped 820-A DbMode + run_chunked_backup) + destructive-command guards, completes DOS-820.</p>
-  <p><strong>W1b (parallel):</strong> DOS-831 cipher-drop (ADR-0136 + 820-A DB-mode ADR; decrypt-then-drop); DOS-832 rebuild-from-canonical, corrections-preserving (depends on W3); DOS-767/768/770/812 ingestion-hygiene.</p>
+  <p><strong>W1b (parallel):</strong> DOS-831 cipher-drop (ADR-0092 amendment + 820-A DB-mode ADR; fail loud on encrypted input and route rebuild to DOS-832); DOS-832 rebuild-from-canonical, corrections-preserving (depends on W3); DOS-767/768/770/812 ingestion-hygiene.</p>
   <p><strong>Proof —</strong> substrate; replica-refresh clones prod→replica read-only, prod-destroyers refuse outside the guard, a rebuild reproduces the working DB <em>including user corrections</em>.</p>
 
   <h3 class="plans-subhead">W2 — Security right-size · substrate (parallel)</h3>
@@ -146,7 +146,7 @@
   </header>
   <ul>
     <li>Headline proven + felt: a correction in app, file, and MCP each changes a surfacing the user did not directly touch, survives re-enrichment + rebuild, measured by DOS-338.</li>
-    <li>Substrate reset: plain SQLite (ADR-0136 landed); decrypt-then-drop done; rebuild preserves corrections; single-writer; replica-refresh + guards (DOS-820 closed); auth right-sized + threat-model/0102 supersession.</li>
+    <li>Substrate reset: plain SQLite (ADR-0092 amendment landed); encrypted-looking stores fail loud into restore/rebuild guidance; DOS-831 release/cutover gate prevents stranding encrypted active DBs before DOS-832 is available or a storage-reset cutover is explicitly confirmed; rebuild preserves corrections; single-writer; replica-refresh + guards (DOS-820 closed); auth right-sized + threat-model/0102 supersession.</li>
     <li>Cross-surface parity modulo the ADR-0125 sensitivity gate (Confidential/UserOnly app-only).</li>
     <li>No stubs in shipped waves: contradiction.rs / render_rules.rs / deviation.rs / recommendations/eval.rs real.</li>
     <li>Gates green: <code>cargo clippy -- -D warnings &amp;&amp; cargo test &amp;&amp; pnpm tsc --noEmit</code> (DOS-824 flake tracked separately).</li>
@@ -168,7 +168,7 @@
 
 <div class="finis">
   <div class="finis-mark">W1 · W2 · W3 · W4 · W5 · W6</div>
-  <div class="finis-date">v1.4.9 Wave Plan · L0 plan-altitude converged · 2026-05-30</div>
+  <div class="finis-date">v1.4.9 Wave Plan · L0 plan-altitude converged · refreshed 2026-06-03</div>
   <div class="finis-caption">Mechanism-depth design routes to the per-wave L0 packets; the version plan converges at plan altitude.</div>
 </div>
 
