@@ -6,8 +6,8 @@
 - **Author date:** 2026-06-03
 - **Tier:** Tier 3 markdown-only
 - **Trust topology:** Local-to-local single-user for Tauri/file surfaces. Transcript content is still hostile input for prompts and private content for logs. MCP egress, if a transcript-backed claim becomes MCP-readable through W5 tools, remains subject to ADR-0125 sensitivity gating.
-- **Scope tier:** Wave-scope claim/provenance producer, source typing, trust recomputation, prompt-boundary, and read-surface proof. L0 requires `/codex challenge` or project-approved equivalent, `ce-feasibility-reviewer`, `ce-security-lens-reviewer`, and mandatory K-in. Add `ce-data-migrations-reviewer` only if L1 adds or migrates source/claim/provenance tables or registry columns; add `ce-performance-reviewer` only if L1 reprocesses historical transcript corpora in bulk.
-- **Status:** Revised after Codex challenge cycle 1; not approved until adversarial, feasibility, security-lens, any routed specialist, and K-in verdicts are recorded.
+- **Scope tier:** Wave-scope claim/provenance producer, source typing, trust recomputation, prompt-boundary, and read-surface proof. L0 requires `/codex challenge` or project-approved equivalent, `ce-feasibility-reviewer`, `ce-security-lens-reviewer`, and mandatory K-in. Cycle 1 routed `ce-data-migrations-reviewer` for source/corroboration storage risk and `ce-performance-reviewer` for reprocessing scope. Any later bulk/historical mode must return to L0 with performance and data/migration review.
+- **Status:** L0 approved on 2026-06-03 CDT after adversarial, feasibility, security-lens, routed specialist, and K-in cycles reached unanimous pass on the current packet text.
 
 ---
 
@@ -27,6 +27,8 @@
 - Quote Wall consumes quote-bearing claims and rendered provenance. It must not create a raw quote table, display unprovenanced snippets, or infer trust from quote presence.
 - Raw transcript text, prompt text, and model response text must not be emitted to logs, audit sidecars, diagnostics, screenshots, fixtures, or CI output.
 - Existing capture tables, meeting transcript metadata, role-change rows, dynamics rows, and captured commitments remain downstream artifacts/read models until explicitly migrated. They are not sufficient proof that W6 shipped the claim substrate.
+- W6 L1 does not perform historical or bulk transcript backfill. It is limited to bounded single-transcript fresh intake and explicit single-meeting reprocess. Bulk/provider-wide backfill requires a new L0 review with performance and migration/data reviewers.
+- W6 L1 uses conservative transcript trust behavior: transcript-backed claims do not write transcript-source corroboration rows and do not gain positive trust reinforcement from transcript volume. A storage/trust migration for source-ref-aware corroboration is a later L0 decision.
 
 ### Section 0.1 - Branch and Authority Notes
 
@@ -41,6 +43,17 @@ This packet was authored on `codex/v1.4.9-w6-dos511-l0` from `public/dev`. Curre
 - `claim_corroborations` currently coalesces by `(claim_id, data_source)`, not concrete transcript `source_ref`. That is a known W6 blocker, not an implementation detail.
 
 L1 must rebase onto the latest W1-W5 authority before implementation and reconcile any changed claim registry, feedback, MCP, or source lifecycle contracts.
+
+### Section 0.2 - L0 Cycle 1 Decisions
+
+Cycle 1 failed the draft packet on concrete blockers that are now W6 contracts:
+
+1. **One-transcript-one-source trust chooses the conservative path.** W6 does not modify `claim_corroborations` and does not let transcript sources positively reinforce trust. Transcript claims can render cautiously from their own provenance and can later be corroborated by independent non-transcript sources.
+2. **No bulk or historical backfill in W6.** The claim producer runs only for bounded single-transcript fresh intake and explicit single-meeting reprocess. Provider-wide sync/backfill, historical migrations, or batch reprocessing return to L0 with a rollout/performance plan.
+3. **Provider-to-workspace identity consumes current substrate.** The canonical `source_ref` is the workspace lifecycle `file_id` for the persisted transcript destination. Provider ids/content hashes are duplicate-detection inputs and provenance metadata, not primary source refs. Temp paths and raw provider ids never become source identity.
+4. **Model output is hostile when reused.** Phase-to-phase model output is treated as untrusted derived content under ADR-0093; later prompts must wrap/sanitize earlier phase output the same way they wrap transcript text.
+5. **Error/result messages are observability surfaces.** Internal result records, processing logs, and audit sidecars must use stable codes/counts/lengths only, never raw model output or transcript snippets. User-visible toasts, sync states, and rendered errors must use ADR-0083 product vocabulary, with internal codes kept out of visible text.
+6. **Runtime proof must be end-to-end.** W6 proof starts from synthetic transcript input processed through the transcript pipeline into the claim service and then into runtime surfaces. A manually inserted synthetic claim is not sufficient.
 
 ---
 
@@ -98,10 +111,11 @@ W6 must make the transcript source identity stable and opaque. A quote offset, c
 
 Canonical transcript identity for W6:
 
-1. If the transcript is workspace-backed, `source_ref` is `workspace_file:<file_id>`. The file id comes from the workspace lifecycle/source ledger, not from a local path.
-2. If the transcript enters through a provider before a workspace file id exists, L1 must create or look up the workspace lifecycle/source row before committing claims. Provider ids and content hashes can be stored as source identifiers/provenance, but they do not replace the canonical `source_ref`.
-3. Generic transcript imports must get an approved workspace file kind before claim commit. Do not store raw source or destination paths in `source_ref`, provenance, logs, or proof artifacts.
-4. Same meeting + same provider + same provider transcript id or same workspace file id resolves to the same transcript source. Re-imported local paths do not create a new source.
+1. If the transcript is workspace-backed, `source_ref` is `workspace_file:<file_id>`. The file id comes from the workspace lifecycle/source ledger for the persisted transcript destination, not from a temp import path or caller-supplied source path.
+2. The current workspace lifecycle substrate is path-backed. W6 consumes it rather than inventing a provider source table: L1 must create or look up the lifecycle row for the canonical persisted transcript destination before committing claims, then use that lifecycle `file_id` as the source identity.
+3. If a provider transcript enters before a workspace lifecycle row exists, L1 first materializes or resolves the canonical persisted transcript destination. Provider ids, meeting ids, and content hashes may be stored only as normalized/hash metadata for duplicate detection and provenance; they do not replace the canonical `source_ref`.
+4. Generic transcript imports must get an approved workspace file kind before claim commit. Do not store raw source, temp, or destination paths in `source_ref`, provenance, logs, proof artifacts, or result messages.
+5. Same workspace file id resolves to the same transcript source. Same provider + same provider transcript id/content hash should resolve to the same canonical workspace file before commit; if W6 cannot prove that mapping for a provider path, the producer must skip claim commit with a structured warning rather than creating a second source.
 
 ### Section 1.4 - Surface Consumers
 
@@ -109,6 +123,7 @@ The W6 proof must use existing intelligence-loop consumers:
 
 - `get_entity_intelligence` and the account/project overview projections already read claim-backed entity context and render trust/provenance data.
 - `get_daily_briefing` composes daily readiness, meeting prep status, and entity intelligence. W5 decides MCP exposure; W6 only needs app/runtime parity proof that transcript claims reach briefing inputs.
+- `build_intelligence_context()` and `gather_account_context()` are runtime consumers for account/customer intelligence context. W6 L1 must include them in the runtime-wide trust/provenance audit or prove they do not consume the affected transcript-backed claim classes on the implementation base.
 - Quote Wall is source/provenance readiness. If no current Tauri Quote Wall surface exists on the implementation base, W6 must prove the projection contract with a renderer/component fixture or a typed block payload, not by reviving an archived WordPress implementation.
 - Existing runtime readers must parse transcript claim `data_source` strings into the structured provenance source type. Falling back to `DataSource::Other` for `workspace_file:quill_transcript`, `workspace_file:granola_transcript`, or the approved generic transcript kind is not W6-compliant.
 
@@ -130,10 +145,21 @@ The exact Rust type names are L1 decisions, but the boundary is fixed:
 - The service resolves canonical subject refs for account/project/person/meeting through existing services or typed inputs. Unsupported or ambiguous subjects are dropped with structured warnings.
 - The service maps each extracted item to a registered claim type or returns an explicit unsupported-type warning. Unknown free-form claim types are not passed into `commit_claim`.
 - The service constructs provenance with source attribution, transcript source identity, extraction phase id, prompt template id/version or parser version, and field-level quote/evidence pointers where available.
-- The service calls `commit_claim` for every accepted proposal and returns counts, claim ids only where allowed for the caller, warnings, and recompute/invalidation status.
+- The service preflights every accepted proposal against active claims by dedup identity, canonical/semantic match, `source_ref`, and lifecycle state before calling `commit_claim`. It calls `commit_claim` only for proposals that do not match an existing active claim under the duplicate/corroboration path.
+- If a transcript proposal matches an existing claim, the W6 conservative path returns a structured duplicate/no-op or review warning and does **not** call `commit_claim`, because current `commit_claim` would route the match into `corroborate_in_tx` and inflate transcript-source trust. `CommittedClaim::Reinforced` is not an allowed W6 transcript producer outcome.
+- If L1 wants transcript evidence to attach to an existing claim as positive corroboration, it must return to L0 with a writer option or source-ref-aware corroboration migration.
+- The service returns counts, claim ids only where allowed for the caller, warnings, and recompute/invalidation status.
 - The service emits or enqueues the same signal/invalidation family used by other claim producers. No hidden refresh side effects.
 
 The transcript processor calls this service after phase parsing/review, not inside prompt construction. Existing capture writes can continue as read-model compatibility, but they are not the source of truth for W6 claims.
+
+W6 L1 scope is bounded:
+
+- fresh single-transcript intake may call the producer after successful phase parsing/review;
+- explicit single-meeting reprocess may call the producer after building the reprocessing manifest in §2.4;
+- provider-wide sync, historical backfill, migration-time transcript replay, and background batch reprocessing do not call the W6 producer in this packet.
+
+If L1 needs any bulk/historical mode, it returns to L0 with batch size, concurrency, dry-run counts, checkpoint/resume, maximum transcripts/claims/quotes per run, quote-verifier cost bounds, recompute/invalidation coalescing, stop conditions, and `ce-performance-reviewer` approval.
 
 ### Section 2.2 - Claim Type Mapping
 
@@ -173,7 +199,16 @@ For every transcript claim:
 - `provenance_json` carries source attribution and field attribution. It does not carry raw transcript text.
 - Claims extracted from the same transcript share the same transcript `source_ref`.
 
-Reprocessing the same transcript source must be idempotent. Same-source reprocessing may reinforce or no-op; it must not duplicate claims, resurrect tombstoned claims, or create artificial corroboration edges. If model output changes materially for the same transcript, W6 must follow the existing claim lifecycle: fork, supersede through a service-approved path, or surface a review warning. It must not overwrite the immutable assertion core.
+Reprocessing the same transcript source must be idempotent and manifest-driven. Before committing, the producer loads existing transcript-backed claims for the same `source_ref`, compares proposed items by the existing claim dedup identity plus source-ref/source-as-of metadata, and returns a `TranscriptReprocessManifest` or equivalent structured report:
+
+- unchanged proposal: no-op; do not add corroboration volume;
+- new proposal: commit through `commit_claim`;
+- changed assertion for the same source/dedup family: fork, supersede through a service-approved path, or surface a review warning; never overwrite immutable assertion/source fields;
+- missing prior proposal: retain the existing claim unless a reviewed service path tombstones/suppresses it; never delete just because a new model run omitted it;
+- tombstoned/dismissed/contradicted claim: do not resurrect; report the skipped proposal with a structured warning;
+- feedback and contradiction edges remain attached to the existing claim lifecycle and are not dropped during rerun.
+
+The manifest contains claim ids only in internal proof contexts where allowed, and no raw transcript snippets, names, paths, provider ids, or model output.
 
 Every transcript-mapped claim type whose registry default is `State` must explicitly set `temporal_scope = Some(TemporalScope::PointInTime)` in the `ClaimProposal`. L1 tests must assert this for every non-meeting claim type W6 maps.
 
@@ -185,9 +220,14 @@ Trust computation must respect ADR-0126 source diversity:
 - Quote fragments, speakers, extraction phases, chunks, and prompt attempts are evidence locations inside the source, not independent sources.
 - Multiple imports of the same meeting transcript from the same provider collapse to one source identity.
 - The trust audit must verify that existing corroboration math does not count `workspace_file:quill_transcript` rows from the same meeting as independent evidence merely because quote refs differ.
-- Current corroboration storage coalesces by `data_source`; that is insufficient for W6. L1 must ship one of these before transcript claims can influence trust positively:
-  - a storage/trust fix that keys source reinforcement by concrete source identity (`source_ref` or an equivalent source edge id) while preserving provider/source-class taxonomy; or
-  - conservative transcript rendering where transcript-backed claims remain uncorroborated/needs-verification and do not reinforce trust from same-provider transcript repeats.
+- Current corroboration storage coalesces by `data_source`; that is insufficient for W6. W6 chooses the conservative no-migration path:
+  - transcript proposals are duplicate-preflighted before `commit_claim`; matching proposals are skipped or routed to review and must not reach `commit_claim`'s `CommittedClaim::Reinforced` path;
+  - transcript claim production does not insert, update, or count `claim_corroborations` rows whose corroborating source is the same transcript source or another transcript source from the same provider class;
+  - transcript-backed claims render cautiously (`needs_verification` or the existing single-source trust band) until independently corroborated by a non-transcript source through the existing trust path;
+  - multiple quotes, speakers, extraction phases, prompt attempts, reruns, and same-provider transcript repeats never raise independent-source confidence;
+  - same-provider different transcripts may remain distinct in provenance/source identity, but they still do not positively reinforce trust in W6 unless a later source-ref-aware corroboration migration is approved;
+  - if L1 wants transcript-to-transcript positive corroboration, it must return to L0 with a storage/trust migration that keys reinforcement by concrete `source_ref` or equivalent source edge id, plus registered migration slot, backfill/rollback, and data-migration review.
+- No W6 migration is required for the approved conservative path. The reserved W6 migration block remains unused unless a later approved packet selects the storage/trust fix.
 - Tests must include three cases: same transcript with multiple quotes, same provider with two different transcripts, and different source classes corroborating the same claim.
 
 Do not seed arbitrary trust scores to avoid cautious rendering. Transcript claims render through the same trust compiler/recompute path as other producers.
@@ -205,6 +245,10 @@ Quote Wall readiness means:
 - If no quote is present, the claim can still be valid. Quote presence improves explainability, not trust by itself.
 - Fabricated or paraphrased quotes are forbidden. If the model produces an unsupported quote, drop the quote metadata and keep/drop the claim based on extractor confidence rules.
 
+Quote Wall readiness uses a typed projection payload, not ad hoc metadata reads. The exact type name is an L1 decision, but the payload must include: claim reference usable by the local app, claim type, assertion text or approved display text, exactness status, bounded `evidence_quote` when policy-allowed, optional display-safe speaker label, source locator, source-as-of, transcript source kind, trust band, sensitivity/redaction state, provenance envelope, and correction/feedback affordance. It must not include raw transcript text beyond the verified snippet, raw paths, raw provider ids, prompt/model output, hidden claim ids on non-app surfaces, or unbounded metadata JSON.
+
+Quote sensitivity is the maximum of claim-type default sensitivity, meeting/source sensitivity, speaker/person sensitivity when known, and quote-content policy. Person assessments, employment/role judgments, sensitive customer/account claims, or quotes containing private notes default to at least the registry sensitivity and may be raised to Confidential/UserOnly. A quote-bearing claim can be committed without exposing the quote on a given surface.
+
 ### Section 2.7 - Runtime Provenance Rendering
 
 W6 must wire transcript source typing through the runtime reader/render path:
@@ -219,15 +263,18 @@ W6 must wire transcript source typing through the runtime reader/render path:
 Transcript text is untrusted input for prompts and private content for observability:
 
 - Continue using `wrap_user_data`, hostile-input preambles, and bounded model output parsing.
+- Treat phase-to-phase model output as untrusted derived content. When Phase 1 output is fed into Phase 2 or Phase 3, or any model/parser output is reused in a later prompt, it must be wrapped/sanitized with the same ADR-0093 treatment as transcript text and must not be allowed to set authority fields.
 - The model output cannot choose actor, subject authority, sensitivity, source authority, trust score, lifecycle state, or target service.
-- Audit/log records contain stable codes, lengths, phase ids, schema versions, and counts only. They do not contain raw transcript snippets, claim text, meeting titles if avoidable, prompt text, or response text.
+- Internal audit/log/result records contain stable codes, lengths, phase ids, schema versions, and counts only. They do not contain raw transcript snippets, claim text, meeting titles if avoidable, prompt text, response text, or model-output previews.
+- User-visible transcript toasts, sync states, and rendered errors use ADR-0083 product vocabulary. They may describe the user-facing outcome, but must not display internal codes, raw transcript snippets, quote snippets, claim text, local paths, provider ids, prompt text, response text, model-output previews, or raw parse failures.
 - Any retained diagnostic artifact with raw content must live in an encrypted, user-local content store with explicit render policy. It must not be a plaintext audit sidecar or CI artifact.
 
 Known current leaks that W6 must explicitly close before code shipment:
 
 - `write_audit_entry(..., "transcript-p1" | "transcript-p2" | "transcript-p3", ..., phase_output)` raw model-output sidecars.
 - `log::info!("Phase N output ... {}", preview)` raw response previews.
-- processing-log or diagnostic rows that persist source/destination local paths, prompt text, response text, quote snippets, claim text, or meeting titles.
+- `TranscriptResult.message` and serialized frontend/sync failure state that include strings such as "Raw output: ...".
+- UI toasts, Quill sync status, processing-log, or diagnostic rows that persist source/destination local paths, prompt text, response text, quote snippets, claim text, meeting titles, or raw parse failures.
 - fixtures or proof artifacts that include real transcript snippets, provider ids, local paths, names, emails, account names, or meeting titles.
 
 ---
@@ -244,27 +291,27 @@ Known current leaks that W6 must explicitly close before code shipment:
 
 **AC5 - Source identity is stable and singular.** Every claim from one transcript shares one opaque transcript `source_ref`, canonically `workspace_file:<file_id>`. Quote/chunk/speaker/phase identifiers are locators inside provenance, not independent source ids. Raw local paths, provider ids, and quote offsets never become primary source refs.
 
-**AC6 - Source taxonomy and identity algorithm.** Quill and Granola transcript sources use the existing workspace transcript kinds where available. Generic transcript files get an approved source-kind mapping with freshness/rendering tests before shipment. L1 must define and test canonical transcript identity from workspace file id plus provider/content identifiers in provenance; path-derived identity is forbidden.
+**AC6 - Source taxonomy and identity algorithm.** Quill and Granola transcript sources use the existing workspace transcript kinds where available. Generic transcript files get an approved source-kind mapping with freshness/rendering tests before shipment. L1 must define and test canonical transcript identity from the workspace lifecycle `file_id` for the persisted transcript destination, with normalized/hash provider and content identifiers used only for duplicate detection/provenance. Temp paths, raw source paths, raw destination paths, and raw provider ids are forbidden in `source_ref`, logs, result messages, proof artifacts, and rendered provenance.
 
-**AC7 - One-source corroboration.** Tests prove multiple quotes or extraction phases from the same transcript do not inflate independent-source trust. Re-importing the same transcript no-ops/reinforces as same-source evidence, not as a new source. Same provider with two different transcript `source_ref`s must not collapse incorrectly, and same transcript with many quote locators must not gain independent-source confidence. If the storage/trust model cannot represent this, transcript claims must render conservatively and not reinforce trust.
+**AC7 - One-source corroboration.** W6 ships the conservative no-migration trust path. Tests prove transcript proposals are duplicate-preflighted before `commit_claim`, duplicate/canonical-match transcript proposals do not return `CommittedClaim::Reinforced`, and multiple quotes, extraction phases, reruns, and same-provider transcript repeats do not insert/update transcript-source `claim_corroborations` rows or raise independent-source confidence. Same provider with two different transcript `source_ref`s must remain distinct in provenance but still not positively reinforce trust in W6. Independent non-transcript sources can corroborate normally.
 
-**AC8 - Idempotent reprocessing.** Re-running transcript processing for the same source does not duplicate claims, resurrect tombstones, drop user feedback, or overwrite immutable assertion fields.
+**AC8 - Idempotent reprocessing.** Re-running transcript processing for the same source builds a reprocessing manifest and does not duplicate claims, resurrect tombstones, drop user feedback, delete omitted prior claims, create artificial corroboration, or overwrite immutable assertion/source fields. W6 L1 supports only fresh single-transcript intake and explicit single-meeting reprocess; bulk/historical backfill is out of scope.
 
 **AC9 - Quote Wall readiness.** Quote-bearing claims carry exact bounded quote metadata, speaker when safely known, source-as-of, trust band, sensitivity, and rendered provenance. Quote Wall does not read raw transcript files or unprovenanced capture rows as authority. A quote can be marked exact only after verifier confirmation against the canonical transcript source.
 
 **AC10 - No quote-only authority.** No standalone quote table or quote-only claim type ships unless a reviewed registry addition defines its semantics. Quote snippets explain claims; they do not replace claims.
 
-**AC11 - Sensitivity mapping.** Transcript claim sensitivity derives from claim type defaults plus meeting/source context. `Confidential` and `UserOnly` transcript-backed claims do not cross MCP or publish-style surfaces.
+**AC11 - Sensitivity mapping.** Transcript claim and quote sensitivity derives from claim type defaults plus meeting/source context, speaker/person context when known, and quote-content policy. Quote metadata may be redacted even when the underlying claim remains visible. `Confidential` and `UserOnly` transcript-backed claims do not cross MCP or publish-style surfaces.
 
-**AC12 - Hostile-input guard.** Transcript source text and model output cannot set actor, subject authority, sensitivity, source authority, trust, lifecycle, or tool routing. Tests cover prompt-injection attempts in transcript text.
+**AC12 - Hostile-input guard.** Transcript source text and phase-to-phase model output cannot set actor, subject authority, sensitivity, source authority, trust, lifecycle, or tool routing. Tests cover prompt-injection attempts in transcript text and in reused Phase 1/2 model output before later prompts.
 
-**AC13 - Observability privacy.** Touched transcript paths stop logging or auditing raw transcript text, raw prompt text, raw model response text, quote snippets, claim text, local paths, provider ids, account names, person names, or meeting titles. L1 must explicitly remove/sanitize `transcript-p1/p2/p3` raw audit sidecars, `Phase N output` previews, and processing-log source/destination paths before W6 code ships. Tests or static checks prove logs/audit outputs use codes/counts/lengths only.
+**AC13 - Observability privacy.** Observability and diagnostic surfaces in touched transcript paths stop logging, auditing, returning in result messages, displaying in toasts/sync/error states, or persisting in logs/audit/proof/diagnostic artifacts raw transcript text, raw prompt text, raw model response text, unverified quote snippets, claim text, local paths, provider ids, account names, person names, meeting titles, or raw parse failures. This does not prohibit policy-allowed, verifier-produced `evidence_quote` metadata or claim assertion/display text from being persisted and rendered through the claim substrate, runtime projections, and Quote Wall paths required by AC9, AC16, and AC21. L1 must explicitly remove/sanitize `transcript-p1/p2/p3` raw audit sidecars, `Phase N output` previews, `TranscriptResult.message` raw output strings, frontend transcript toasts, Quill sync failure state, and processing-log source/destination paths before W6 code ships. Tests or static checks prove internal logs/audit/result outputs use codes/counts/lengths only, and prove user-visible transcript toasts/errors use ADR-0083 product copy without visible internal codes or private payloads.
 
 **AC14 - Legacy read-model compatibility.** Existing capture/metadata/dynamics/commitment outputs continue to work unless explicitly replaced. The W6 claim proof does not depend on capture rows as the source of truth.
 
-**AC15 - Trust recomputation audit.** L1 inventories claim type metadata, producer path, trust inputs, recompute trigger, and surface behavior per the K-in solution on claim producers. Missing recompute behavior renders as `needs_verification` or blocks shipment; arbitrary seeded trust is forbidden.
+**AC15 - Trust recomputation audit.** L1 inventories claim type metadata, producer path, trust inputs, recompute trigger, and surface behavior per the K-in solution on claim producers. The W6 conservative path must prove transcript-source volume does not positively reinforce trust. Missing recompute behavior renders as `needs_verification` or blocks shipment; arbitrary seeded trust is forbidden.
 
-**AC16 - Briefing surface proof.** A synthetic transcript claim appears in an entity-intelligence or daily-briefing path with source-as-of, trust band, sensitivity, and provenance rendered through the existing runtime, not a parallel SQL/prose shortcut. Runtime provenance parsing must render transcript `data_source` as `DataSource::WorkspaceFile { kind }` and must fail the test if it falls back to `DataSource::Other`.
+**AC16 - End-to-end runtime surface proof.** A synthetic transcript input flows through the transcript processor, quote verifier when applicable, `commit_transcript_claims`, `commit_claim`, and then appears in an entity-intelligence or daily-briefing path with source-as-of, trust band, sensitivity, and provenance rendered through the existing runtime, not a parallel SQL/prose shortcut. Runtime provenance parsing must render transcript `data_source` as `DataSource::WorkspaceFile { kind }` and must fail the test if it falls back to `DataSource::Other`. The runtime audit includes `build_intelligence_context()` and `gather_account_context()` or proves they do not consume the affected transcript-backed claim classes.
 
 **AC17 - Correction loop proof.** A correction/dismissal/corroboration against a transcript-backed claim flows through the same `claim_feedback` path as other claims, updates lifecycle/trust/receipt state, and changes the follow-up surface.
 
@@ -278,6 +325,8 @@ Known current leaks that W6 must explicitly close before code shipment:
 
 **AC22 - Runtime provenance parser.** L1 updates every W6-consuming runtime reader/projection path so transcript source kinds survive claim row -> runtime provenance -> rendered surface. Tests cover Quill, Granola, and the approved generic transcript kind.
 
+**AC23 - No bulk backfill.** W6 implementation does not run claim production for historical corpora, provider-wide sync, migration-time replay, or background batches. Any bulk mode requires a new L0 packet with performance-review approval, batch/concurrency caps, checkpoint/resume, dry-run counts, quote-verifier cost bounds, recompute/invalidation coalescing, stop conditions, and rollback.
+
 ---
 
 ## Section 4 - Test and Proof Plan
@@ -286,12 +335,13 @@ Minimum L1 proof bundle:
 
 1. **Unit tests:** claim type mapping, subject validation matrix, source identity construction, source-as-of fallback, quote metadata bounding, quote exactness verification, and injection text unable to set authority fields.
 2. **Service tests:** `commit_transcript_claims` commits through `commit_claim`, rejects unknown claim types, handles ambiguous subjects, respects tombstones, and produces idempotent same-source behavior.
-3. **Trust tests:** same transcript with multiple quotes does not raise independent-source confidence; same provider with two concrete transcript sources behaves per the chosen storage/trust fix; a second independent source can still corroborate normally.
-4. **Surface tests:** transcript claim appears in entity intelligence / daily briefing with trust, provenance, sensitivity, source-as-of, and structured transcript source kind.
+3. **Trust tests:** duplicate/canonical-match transcript proposals are skipped or routed to review before `commit_claim` and never return `CommittedClaim::Reinforced`; same transcript with multiple quotes does not raise independent-source confidence; same provider with two concrete transcript sources remains distinct in provenance but does not positively reinforce transcript trust in W6; a second independent non-transcript source can still corroborate normally.
+4. **Surface tests:** synthetic transcript input flows through the processor into entity intelligence / daily briefing with trust, provenance, sensitivity, source-as-of, and structured transcript source kind.
 5. **Feedback tests:** typed claim feedback against a transcript-backed claim updates lifecycle/trust/receipt behavior.
 6. **Quote tests:** Quote Wall projection renders exact bounded quote snippets only when verified against the canonical transcript and policy-allowed.
-7. **Privacy tests:** logs/audit records for transcript processing contain no raw transcript, quote, prompt, response, claim text, local path, provider id, account name, person name, or meeting title; tests cover the known `transcript-p1/p2/p3`, `Phase N output`, and processing-log paths.
-8. **Fixture governance:** all test data uses generic entities and synthetic transcript text.
+7. **Privacy tests:** logs/audit/result records for transcript processing contain no raw transcript, quote, prompt, response, claim text, local path, provider id, account name, person name, meeting title, or raw parse failure; user-visible transcript toasts/errors use ADR-0083 product copy without visible internal codes; tests cover the known `transcript-p1/p2/p3`, `Phase N output`, `TranscriptResult.message`, UI toast/sync failure, and processing-log paths.
+8. **Reprocessing/performance tests:** single-transcript reprocess manifest preserves feedback/tombstones and does not duplicate claims or trigger transcript corroboration; tests assert bulk/historical entry points are not wired to W6 claim production.
+9. **Fixture governance:** all test data uses generic entities and synthetic transcript text.
 
 Suggested focused commands before full gates:
 
@@ -310,11 +360,11 @@ Exact test module names may change in L1; the proof bundle must name the command
 
 1. **Claim model:** Yes. Transcript outcomes become first-class claims with registered claim types, explicit subject attribution, point-in-time temporal scope, sensitivity, lifecycle state, and feedback behavior. Legacy capture rows are read models, not the intelligence source of truth.
 
-2. **Provenance and trust:** Every transcript claim carries `source_asof`, `observed_at`, `data_source`, `source_ref`, source attribution, extraction metadata, quote locator metadata when present, and trust recompute inputs. Trust bands come from the shared compiler/recompute path; missing trust renders cautiously.
+2. **Provenance and trust:** Every transcript claim carries `source_asof`, `observed_at`, `data_source`, `source_ref`, source attribution, extraction metadata, quote locator metadata when present, and trust recompute inputs. Trust bands come from the shared compiler/recompute path; W6 transcript sources do not positively reinforce trust through transcript-source corroboration.
 
 3. **Signals and invalidation:** Claim commits and feedback use existing claim/service signals and invalidation. Transcript processing emits structured producer results; it does not silently mutate derived surfaces.
 
-4. **Runtime and surfaces:** `get_entity_intelligence`, daily briefing, and Quote Wall projection/readiness consume transcript claims through the same runtime readers as other claims. MCP sees only W5-approved, sensitivity-eligible transcript-backed claims.
+4. **Runtime and surfaces:** `get_entity_intelligence`, daily briefing, `build_intelligence_context()`, `gather_account_context()`, and Quote Wall projection/readiness consume transcript claims through the same runtime readers as other claims or are proven not to consume the affected classes. MCP sees only W5-approved, sensitivity-eligible transcript-backed claims.
 
 5. **Feedback loop:** User corrections, dismissals, corroborations, contradictions, and source fixes flow through `claim_feedback`. Reprocessing respects tombstones, feedback, contradictions, supersession, and immutable source identity.
 
@@ -334,3 +384,30 @@ Exact test module names may change in L1; the proof bundle must name the command
 | `.docs/plans/abilities-runtime-producer-audit-2026-05-23.md` | Identifies `processor/transcript.rs` as producing transcript artifacts without a direct claim producer. |
 
 K-in conclusion: W6 should not build a quote surface first. The missing substrate is a service-owned transcript claim producer with source identity, point-in-time temporal semantics, trust recompute, privacy-safe observability, and feedback parity.
+
+---
+
+## Section 7 - L0 Review Verdict
+
+**Verdict:** APPROVE. DOS-511/W6 may move to L1 against this packet.
+
+Final cycle approvals were recorded on the packet text that includes duplicate preflight before `commit_claim`, conservative no-transcript-corroboration trust behavior, path-backed `workspace_file` source identity, no bulk backfill, ADR-0083 user-visible copy separation, and AC13 observability/Quote Wall scoping.
+
+| Lane | Final verdict | Notes |
+| --- | --- | --- |
+| `/codex challenge` | APPROVE | Final adversarial pass found no concrete L0 blocker after AC13 was scoped to observability/diagnostic surfaces while preserving verified claim/Quote Wall evidence. |
+| `ce-feasibility-reviewer` | APPROVE | Current packet is implementable against existing claim writer, workspace file lifecycle, runtime reader, and transcript processor constraints. |
+| `ce-security-lens-reviewer` | APPROVE | Prompt-boundary, raw-output, source identity, visible-copy, and observability privacy concerns are covered at plan altitude. |
+| `ce-data-migrations-reviewer` / trust lane | APPROVE | W6 chooses the no-migration conservative trust path; duplicate/canonical matches must skip or route to review before `commit_claim` can return `CommittedClaim::Reinforced`. |
+| `ce-performance-reviewer` | APPROVE | W6 remains bounded to fresh single-transcript intake and explicit single-meeting reprocess; historical/bulk backfill returns to L0. |
+| `ce-product-lens-reviewer` / Quote Wall lane | APPROVE | Quote Wall readiness is projection over first-class claims, not a quote-only authority layer. |
+| `ce-learnings-researcher` / K-in | APPROVE | Prior substrate and ADR conflicts are applied, including ADR-0083 product vocabulary and ADR-0120 observability privacy. |
+
+Resolved L0 blockers:
+
+1. W6 uses current path-backed workspace lifecycle rows for transcript source identity; raw paths and raw provider ids are never source authority.
+2. W6 forbids transcript-source trust reinforcement and `CommittedClaim::Reinforced` producer outcomes by preflighting duplicate/canonical matches before `commit_claim`.
+3. W6 excludes historical/provider-wide/bulk backfill until a separate L0 packet defines rollout, bounds, and performance controls.
+4. Phase-to-phase model output is treated as hostile input under ADR-0093.
+5. Internal logs/results/audit use stable shape data only; visible transcript toasts/errors use ADR-0083 product copy without visible internal codes.
+6. AC13 privacy applies to observability and diagnostic surfaces, while policy-allowed verified `evidence_quote` metadata and claim display/assertion text remain valid through claim substrate, runtime projection, and Quote Wall paths.
