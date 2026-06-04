@@ -5,8 +5,8 @@
 - **Related issues:** DOS-510, DOS-759, DOS-760, DOS-169, DOS-170
 - **Author date:** 2026-06-03
 - **Tier:** Tier 3 markdown-only
-- **Scope tier:** Wave-scope security substrate. L0 requires `/codex challenge` or a project-approved equivalent, `ce-security-lens-reviewer`, `ce-feasibility-reviewer`, `ce-api-contract-reviewer`, and mandatory K-in. Add `ce-data-migrations-reviewer` if any migration drops ceremony tables.
-- **Status:** Revised after Codex challenge cycle 1; not approved until adversarial, security-lens, feasibility, API/contract, any routed migration verdicts, and K-in verdicts are recorded.
+- **Scope tier:** Wave-scope security substrate. Per the Engineering Ladder, L0 requires `/codex challenge`, two planning reviewers (`ce-security-lens-reviewer` + `ce-feasibility-reviewer`), and mandatory K-in. Add `ce-data-migrations-reviewer` if any migration drops ceremony tables.
+- **Status:** L0 approved after cycle 3; adversarial, security-lens, feasibility, and K-in verdicts are recorded.
 
 ---
 
@@ -24,12 +24,14 @@
 
 **Non-negotiables:**
 
-- Preserve `Actor::McpClient` versus `Actor::User`; the distinction is provenance and forensic attribution, not just auth.
+- Preserve `Actor::McpClient` versus `Actor::User`; the distinction is provenance and local surface attribution, not remote-client authentication.
 - Do not remove service-boundary enforcement. MCP write handlers must still call `services::*`, never write DB tables directly.
 - Do not broaden the ADR-0128 write surface. W2 does not authorize new MCP writes beyond the existing submit/action/action-status decisions that W5 reconciles.
 - Local stdio write exposure is allowlist-only. Until ADR-0128 is amended by L0/API/security/product review, `dailyos.write.place_document` is not an invocable W2 local-stdio write.
 - Do not delete `surface_runtime/hmac.rs`, `services/surface_pairing.rs`, or `services/surface_nonce.rs` as a side effect. Those are SurfaceClient/WordPress substrate unless a call site is proved MCP-specific.
 - Do not treat document, email, calendar, transcript, or workspace content as instructions. External and derived content is evidence only.
+- Do not derive MCP audit digest keys from the SQLCipher/local DB key, SurfaceClient transport keys, pairing keys, or HMAC transport material.
+- Do not make local stdio client identity caller asserted. Production local stdio identity must be server-owned and stable per install.
 
 **Migration slots:** The wave plan reserved W2 `v278-v279`, while this branch's `public/dev` schema head is `v276`. L1 must reconcile slot ownership in `.docs/plans/v1.4.9-waves.md` before adding migrations. `v261` already drops the obsolete `mcp_transport_nonce_ledger`; any W2 migration should target only remaining obsolete MCP ceremony state such as `mcp_client_manifest`, `mcp_tool_grant`, `mcp_conversation_handle`, or `mcp_tool_call_ledger` if L1 proves they are no longer read.
 
@@ -47,6 +49,14 @@ Cycle 1 failed this packet on three L0 blockers that are now L1 acceptance crite
 2. `DAILYOS_MCP_LEGACY_V1=1` still starts a legacy MCP server with its own `ServerHandler`, `list_tools`, and `call_tool` path outside the v2 gateway. W2 must delete, quarantine, or prove this path cannot start in production.
 3. Current MCP audit writes read `params` and `response` into append-only JSONL audit storage. W1 is retiring SQLCipher, so "encrypted local read detail" is not a real option unless L1 adds a new encryption primitive. W2 chooses keyed read-audit digests or an explicit ADR that approves plaintext local read audit.
 
+### Section 0.3 - L0 Challenge Cycle 2 Decisions
+
+Cycle 2 found that this packet still left three local-security contracts ambiguous. W2 now makes these decisions before L1:
+
+1. **Audit digest key custody is W2-owned unless DOS-831 has already landed a compatible primitive.** L1 must add a dedicated install-local MCP audit digest key provider if no shared local-secret provider exists after rebase. The provider generates 32 random bytes on first use, stores them in the OS keychain under a DailyOS-specific audit-digest service/account, and exposes only a signing interface to MCP audit code. It is independent of SQLCipher/local DB keys, SurfaceClient/HMAC transport keys, and any pairing material. Tests use an injectable deterministic provider; production never falls back to a static key. Rotation is manual/operator-triggered only; append-only audit rows are not rebuilt in place, and proof must document that old digest rows remain comparable only while the old key is retained. If the key cannot be loaded, or if a required read-audit row cannot be appended to either the primary audit log or approved audit outbox, the MCP read call fails before returning the tool result to the host model. It must not "fail closed" merely by omitting plaintext audit detail while still sending the read response across MCP.
+2. **Conversation continuity stays as product metadata, not auth, and uses a buildable rmcp carrier.** W2 must not delete continuity without replacement. The installed `rmcp` shape exposes only `CallToolRequestParam { name, arguments }` and `CallToolResult { content, is_error }`, so local stdio cannot rely on a custom top-level transport field. W2 therefore uses a reserved transport-metadata argument key, `"_dailyos"`, and a JSON text-content response envelope. Success responses are serialized as `{"dailyos":{"conversationHandle":"..."},"result":<typed tool value>}`. Follow-up calls echo the handle as `arguments._dailyos.conversationHandle`; the transport/gateway strips `_dailyos` before handler schema validation. `_dailyos` may contain only `conversationHandle`; attempts to pass actor, client id, scopes, side, sensitivity, raw `conversation_id`, or arbitrary metadata are rejected. The continuity store may reuse an existing table only if the schema/commentary is amended to be auth-free local continuity; otherwise L1 adds a small local continuity store with handle hash/id, local client id, issued/last-seen/expires/revoked timestamps, and no raw prompt or payload data. A host that cannot echo a handle may still make first-call writes because the gateway mints a fresh handle, but it cannot claim continuity with a prior receipt. Lifecycle tests must cover mint, echo, expiry, revocation, first-write minting, `_dailyos` stripping, malformed `_dailyos` rejection, and raw `conversation_id` rejection.
+3. **Local MCP client identity is server-owned.** `DAILYOS_MCP_CLIENT_ID` must not be the production authority for `Actor::McpClient.client_id`. L1 must mint or load a stable per-install local MCP client id through server-owned storage and ignore caller-supplied client ids in tool params. A test-only override may exist behind `#[cfg(test)]` or explicit fixture wiring. The ADR/proof wording must not claim per-host authentication: in personal local stdio, the guarantee is stable local MCP surface attribution plus `Actor::McpClient` separation from `Actor::User`, not proof of which third-party host process invoked the server.
+
 ---
 
 ## Section 1 - Existing Substrate W2 Must Consume
@@ -63,7 +73,7 @@ Cycle 1 failed this packet on three L0 blockers that are now L1 acceptance crite
 W2 should promote the local stdio path to the canonical personal-tier path. The replacement path is:
 
 1. Registered handlers and the taxonomy catalog define the tool surface.
-2. Local stdio startup derives an opaque local MCP client id for attribution.
+2. Local stdio startup loads or mints a server-owned opaque local MCP client id for attribution.
 3. The transport builds normal MCP `{ name, arguments }` requests into `McpToolRequestEnvelope`.
 4. The gateway admits only registered, invocable tools and rejects caller-asserted internal fields.
 5. The handler invokes services or abilities with `Actor::McpClient`.
@@ -88,14 +98,14 @@ ADR-0128 cites the same trust-boundary contract while preserving the headless MC
 
 DOS-833 must supersede or amend the current language this way:
 
-- Keep `Actor::McpClient`, `ActorKind::McpClient`, tool taxonomy, side classification, tool-description discipline, and service-only writes.
+- Keep `Actor::McpClient`, `ActorKind::McpClient`, server-owned local MCP client id, tool taxonomy, side classification, tool-description discipline, and service-only writes.
 - Remove pairing handshake, transport HMAC, caller-specific scope grants, and presence nonce as requirements for local stdio / same-OS-user loopback.
 - Treat tool exposure as server-owned product configuration derived from registered handlers, taxonomy, and ability policy, not as a caller-negotiated grant.
 - Preserve "caller cannot assert scopes/conversation internals in params" as a request-shape invariant.
 - Treat rate limiting as local backpressure/quality of service if retained, not as client authorization.
 - Treat revocation as disabling a local tool/surface configuration, not revoking a remote pairing.
-- Preserve audit attribution. Read-side `params` and `response` must be stored as install-local keyed digests independent of transport HMAC, unless a superseding ADR explicitly approves plaintext local read audit detail. "Encrypted local read detail" is not available on this base because audit storage is append-only JSONL and W1b retires the SQLCipher at-rest contract.
-- Keep `OpaqueConversationHandle` as optional continuity metadata, not an auth credential. A host that cannot echo a handle must not be rejected solely because the old remote-client contract expected one.
+- Preserve audit attribution. Read-side `params` and `response` must be stored as install-local keyed digests using the dedicated W2/DOS-831-compatible audit digest key provider, unless a superseding ADR explicitly approves plaintext local read audit detail. "Encrypted local read detail" is not available on this base because audit storage is append-only JSONL and W1b retires the SQLCipher at-rest contract.
+- Keep `OpaqueConversationHandle` as continuity metadata, not an auth credential. On rmcp v2 it rides in the W2-defined `_dailyos.conversationHandle` request metadata and the JSON text-content response envelope, not a custom top-level rmcp field. A host that cannot echo a handle must not be rejected solely because the old remote-client contract expected one, but it also cannot claim continuity with earlier reads/receipts unless it echoes the server-minted handle.
 
 ### Section 1.3 - Live Gateway/Auth Dependencies
 
@@ -169,7 +179,7 @@ Canonical local stdio flow:
 3. Local stdio exposure records are derived from registered handler descriptions and the W2 MCP write allowlist. Registration alone is not authority for write exposure.
 4. `V2ServerHandler::from_local_stdio` starts without opening auth tables or writing a manifest.
 5. `tools/list` exposes only registered invocable tools.
-6. `call_tool` builds an envelope with no hidden auth params.
+6. `call_tool` builds an envelope with no hidden auth params. The only reserved transport metadata is `arguments._dailyos.conversationHandle`, which is continuity metadata, is stripped before handler invocation, and cannot carry actor/client/scope/side/sensitivity authority.
 7. The gateway checks registered tool, side/exposure, request-shape invariants, optional local rate budget, and handler schema.
 8. The handler invokes through service/ability boundaries as `Actor::McpClient`.
 9. Audit and signal emission record client id, tool name, side, mutation cursor where applicable, and sanitized detail.
@@ -184,7 +194,9 @@ L1 must make one path canonical enough that future engineers do not re-add cerem
 - legacy MCP v1 path: delete it, make it compile/test-only, or guard it behind a non-production build flag that cannot be activated by `DAILYOS_MCP_LEGACY_V1` in the shipping binary. A production-startable legacy `ServerHandler` outside the v2 gateway fails W2.
 - `auth.rs`: remove, deprecate, or quarantine pairing/grant APIs. `ensure_local_stdio_client_grants` should either disappear or become an in-memory exposure builder outside DB auth.
 - `contracts.rs` and `taxonomy.rs`: rewrite comments so `Scope` is tool metadata / legacy vocabulary, not a local auth grant. Preserve tool-name namespace validation.
-- `audit.rs`: preserve actor attribution and write-payload sanitization. Replace read `params`/`response` plaintext with keyed digests unless a superseding ADR approves plaintext local read audit.
+- local client identity: replace production `DAILYOS_MCP_CLIENT_ID` authority/default shared id with a server-owned per-install id provider. Environment/config values may be test fixtures or display aliases only; they cannot decide `Actor::McpClient.client_id` in production.
+- conversation continuity: keep or replace `OpaqueConversationHandle` storage as an auth-free local continuity store. Implement the rmcp-visible carrier: extract and strip `arguments._dailyos.conversationHandle` before typed handler validation, reject disallowed `_dailyos` fields and raw `conversation_id`, and wrap successful `CallToolResult` content as `{"dailyos":{"conversationHandle":"..."},"result":...}`. Do not let removal of pairing/grants remove first-write minting, expiry, revocation, or raw `conversation_id` rejection.
+- `audit.rs`: preserve actor attribution and write-payload sanitization. Replace read `params`/`response` plaintext with canonical keyed digests using the dedicated install-local audit digest key provider unless a superseding ADR approves plaintext local read audit. For read-class MCP calls, digest creation plus successful append to the primary audit log or approved audit outbox is part of the response precondition; key load failure, digest failure, and audit append/outbox failure return an MCP error without exposing the read result.
 - migrations: drop or leave inert obsolete ceremony tables only after proving no production path reads them. If dropping tables, update `verify_required_schema`, reconcile slots, provide rollback notes, and keep `mcp_audit_outbox` if audit fallback still uses it.
 
 ### Section 2.3 - What "Strip Scope-Grant" Means
@@ -227,21 +239,23 @@ DOS-169 and DOS-170 remain reconciled against ADR-0128 Section D, not re-authori
 
 **AC1 - ADR supersession.** L1 adds or amends an ADR that supersedes ADR-0102's local MCP pairing/HMAC/scope-manifest requirements and updates ADR-0128's trust-boundary citation. It preserves `Actor::McpClient`, MCP product-surface framing, narrow write surface, and sensitivity egress gates.
 
-**AC2 - Ceremony-free local startup.** The MCP v2 default stdio server starts, lists tools, and invokes at least one representative read tool without `pair_client`, `mcp_client_manifest`, `mcp_tool_grant`, `mcp_conversation_handle`, transport HMAC, presence nonce, or user/operator pairing setup.
+**AC2 - Ceremony-free local startup.** The MCP v2 default stdio server starts, lists tools, and invokes at least one representative read tool without `pair_client`, `mcp_client_manifest`, `mcp_tool_grant`, transport HMAC, presence nonce, or user/operator pairing setup. If `mcp_conversation_handle` remains, it is used only as the auth-free continuity store named in this packet, not as startup/auth ceremony.
 
-**AC3 - Actor attribution preserved.** MCP-originated handler calls still project to `Actor::McpClient` with opaque local client id and, where available, conversation metadata. No MCP path silently reclassifies calls as `Actor::User`.
+**AC3 - Actor attribution preserved.** MCP-originated handler calls still project to `Actor::McpClient` with a server-owned opaque local client id and, where available, conversation metadata. No MCP path silently reclassifies calls as `Actor::User`. Production local stdio does not trust `DAILYOS_MCP_CLIENT_ID`, tool params, or host-provided ids as the actor id.
 
 **AC4 - Tool exposure remains server-owned.** `tools/list` and `call_tool` expose only registered handler/catalog entries with invocable exposure. Caller params cannot assert scopes, grants, raw conversation ids, tool side, actor, or sensitivity.
 
 **AC5 - Scope-grant removal is real.** Static review and tests prove local stdio authorization does not depend on `mcp_tool_grant` rows, per-client manifests, or caller/operator selected scope grants. Any remaining `Scope` use is documented as taxonomy metadata or legacy compatibility, not local auth.
 
-**AC6 - Obsolete code/tables resolved.** Pairing, manifest, revocation, conversation, and rate-ledger code/tables are deleted, migrated away, or quarantined behind explicit non-default legacy/test seams. The proof names every retained old symbol and why it remains.
+**AC6 - Obsolete code/tables resolved.** Pairing, manifest, remote-client revocation, and rate-ledger code/tables are deleted, migrated away, or quarantined behind explicit non-default legacy/test seams. Conversation-handle substrate is either retained as an auth-free continuity store or migrated to a replacement continuity store with the lifecycle contract in Section 0.3. The proof names every retained old symbol and why it remains.
 
 **AC7 - Local stdio write allowlist.** `tools/list`, `call_tool`, and local exposure construction cannot expose writes outside ADR-0128's authorized submit-class trio unless an L0-approved ADR amendment expands the write surface. Tests prove `dailyos.write.place_document` is hidden or rejected for local stdio on the W2 path, or the ADR amendment explicitly authorizes it.
 
 **AC8 - Legacy MCP v1 quarantined.** The shipping `dailyos-mcp` binary cannot start a production legacy MCP v1 server outside the v2 gateway. L1 either deletes the legacy path, makes it test-only/non-production, or adds a static/runtime check proving `DAILYOS_MCP_LEGACY_V1` cannot activate a production command path. Tests cover the old `ServerHandler` / `list_tools` / `call_tool` path or its removal.
 
-**AC9 - Audit privacy resolved.** Audit still records MCP actor/client/tool/side attribution and mutation cursors. Write and submit-correction payloads are sanitized. Read `params` and `response` are stored as install-local keyed digests independent of transport HMAC, unless a superseding ADR explicitly approves plaintext local read audit. No implementation may claim encrypted local read detail without adding a real encryption mechanism and tests.
+**AC9 - Audit privacy resolved.** Audit still records MCP actor/client/tool/side attribution and mutation cursors. Write and submit-correction payloads are sanitized. Read `params` and `response` are stored as install-local keyed digests from the dedicated audit digest key provider, independent of transport HMAC, SurfaceClient keys, and SQLCipher/local DB keys, unless a superseding ADR explicitly approves plaintext local read audit. No implementation may claim encrypted local read detail without adding a real encryption mechanism and tests. For read-class MCP calls, audit success is an egress precondition: key load failure, digest failure, primary audit append failure plus outbox failure, or any other required read-audit persistence failure returns an MCP error and withholds the read response from the host model. Proof covers key source, storage, generation, fixture injection, response-withheld failure behavior, manual rotation/rebuild implications, and DOS-831 coordination.
+
+**AC9a - Conversation continuity preserved without auth ceremony.** Local stdio returns server-minted `OpaqueConversationHandle` metadata through the W2 rmcp carrier: success `CallToolResult` content is a JSON text envelope with `dailyos.conversationHandle`, and follow-up calls echo it as `arguments._dailyos.conversationHandle`. The transport/gateway strips `_dailyos` before handler schema validation, accepts only `conversationHandle`, rejects raw `conversation_id` params, rejects any `_dailyos` actor/client/scope/side/sensitivity fields, and persists enough auth-free metadata to support mint, echo, expiry, revocation, and first-write minting. Hosts that do not echo handles remain usable but receive fresh continuity. Tests prove W2 does not silently delete the ADR-0128 continuity affordance and that a real rmcp loopback can receive and echo the handle.
 
 **AC10 - Service-boundary writes.** MCP write and submit-correction handlers route through `services::*`. Static review shows no direct DB writes from MCP command/handler code except approved audit/outbox or service-owned writer helpers.
 
@@ -326,13 +340,16 @@ Avoid:
 Focused MCP tests:
 
 - Default v2 stdio startup builds handler/catalog state without opening/writing MCP auth tables.
+- Default v2 stdio startup loads or mints a server-owned local MCP client id; production actor id is not caller/environment asserted.
+- Local stdio returns and accepts `OpaqueConversationHandle` through the rmcp-visible carrier: success `CallToolResult` JSON text content contains `dailyos.conversationHandle`, follow-up request `arguments._dailyos.conversationHandle` is accepted and stripped before handler validation, malformed/disallowed `_dailyos` fields are rejected, and tests cover mint, echo, expiry, revocation, first-write minting, and raw `conversation_id` rejection.
 - `tools/list` returns registered invocable handlers from local exposure records.
 - `tools/list` and `call_tool` hide or reject `dailyos.write.place_document` unless ADR-0128 is amended in this branch.
 - Representative `dailyos.read.*` call succeeds with no pairing/HMAC/manifest setup.
 - Caller-provided `granted_scopes`, `conversation_id`, side, actor, or sensitivity params are rejected or ignored per schema.
 - `Actor::McpClient` reaches handler/service code; a regression test fails if MCP is projected as `Actor::User`.
 - Forbidden sensitivity fixture does not appear in MCP output.
-- Read audit stores keyed parameter/response digests or an ADR-approved plaintext detail; write/submit-correction audit omits raw payload fields and includes only IDs/mutation cursor.
+- Read audit stores canonical keyed parameter/response digests from the dedicated audit digest key provider or an ADR-approved plaintext detail; write/submit-correction audit omits raw payload fields and includes only IDs/mutation cursor.
+- Audit digest key tests cover first-use generation, stable reuse, deterministic fixture provider, missing-key response-withheld behavior, primary append failure with outbox success, primary append plus outbox failure returning an MCP error with no read result, and proof that the provider does not call the SQLCipher/local DB key provider or SurfaceClient/HMAC key paths.
 - Static or unit test proves no default local stdio path calls `pair_client`, `load_client_record`, `resolve_tool_grant`, or `resolve_or_mint_handle` for auth.
 - Static or unit test proves `DAILYOS_MCP_LEGACY_V1` cannot activate a production legacy MCP server path outside the v2 gateway.
 
@@ -385,7 +402,6 @@ Required:
 - `/codex challenge` or project-approved equivalent: adversarial review for auth-boundary regression and over/under-correction.
 - `ce-security-lens-reviewer`: review local trust topology, MCP egress, hostile-input fixtures, audit privacy, and PII-proof discipline.
 - `ce-feasibility-reviewer`: verify the code-path replacement and migration plan are buildable against current MCP v2 code.
-- `ce-api-contract-reviewer`: verify local stdio `tools/list`, `call_tool`, conversation handle, error shape, and write exposure remain coherent after scope-grant removal and legacy-path quarantine.
 - `ce-learnings-researcher`: mandatory K-in over `docs/solutions/` and `.docs/decisions/`.
 
 Conditional:
@@ -397,3 +413,19 @@ Approval standard:
 
 - Unanimous L0 approval required before L1 implementation.
 - Any finding that W2 removes `Actor::McpClient`, broadens MCP writes, leaks `Confidential`/`UserOnly` to MCP, weakens SurfaceClient auth, leaves a default pairing/HMAC/scope-grant requirement, or treats hostile document text as instruction authority is BLOCKING.
+
+### Section 8.1 - L0 Cycle 3 Verdicts
+
+Cycle 3 is the passing L0 cycle after the packet chose the rmcp-visible `_dailyos.conversationHandle` carrier and made read-audit persistence a response precondition.
+
+| Reviewer | Verdict | Notes |
+|---|---|---|
+| `/codex challenge` | APPROVE | No P1 findings. P2s: migration-slot cleanup, host-facing docs/fixtures for the JSON text-content envelope, retained legacy seam risk, audit key rotation/retention proof. |
+| `ce-security-lens-reviewer` | APPROVE | No P1/P2 security findings after `_dailyos` carrier validation, read-audit response withholding, server-owned client identity, MCP egress, SurfaceClient preservation, and hostile-input proof were made explicit. |
+| `ce-feasibility-reviewer` | APPROVE | No P1 findings. `_dailyos` carrier plus JSON text response envelope is buildable against current `rmcp`; migration risk remains conditional and already acceptance-gated. |
+| `ce-learnings-researcher` | APPROVE | No P1 substrate miss. Relevant hits: ADR-0102, ADR-0128, ADR-0027, ADR-0111, ADR-0135, ADR-0094, ADR-0092, ADR-0068, ADR-0093, ADR-0108, ADR-0101, ADR-0071, ADR-0112, and matching `docs/solutions/` entries. |
+
+Conditional reviewers still apply during L1/L2 if triggered:
+
+- `ce-data-migrations-reviewer` if W2 drops or makes inert MCP auth/rate/continuity tables.
+- `ce-product-lens-reviewer` plus API/security/product approval if L1 expands ADR-0128's write surface instead of hiding/rejecting `dailyos.write.place_document`.
