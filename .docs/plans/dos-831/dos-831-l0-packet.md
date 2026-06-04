@@ -4,7 +4,7 @@
 **Issue:** [DOS-831](https://linear.app/a8c/issue/DOS-831). Parent umbrella [DOS-820](https://linear.app/a8c/issue/DOS-820).
 **Author date:** 2026-06-03
 **Tier:** Tier 3 (markdown-only). **Scope tier:** High-risk substrate/security change.
-**Status:** Draft for L0 cycle 1 review.
+**Status:** L0 approved on 2026-06-04 CDT after adversarial, feasibility, security-lens, data/migration, and K-in cycles reached unanimous pass on the current packet text.
 
 ---
 
@@ -23,7 +23,12 @@ The work is debug-driven and decision-driven:
 
 In scope:
 
-1. Author a superseding ADR-0092 amendment section that explicitly retires SQLCipher for the local same-OS-user product posture and names FileVault / OS disk controls as the at-rest boundary.
+1. Author a superseding storage-boundary ADR amendment set that explicitly retires SQLCipher for the local same-OS-user product posture and names FileVault / OS disk controls as the at-rest boundary.
+   - ADR-0092 is the primary amendment.
+   - ADR-0098 must be amended because its data-governance lifecycle says SQLCipher covers all locally stored data, including Glean-sourced records.
+   - ADR-0116 must be amended because its local-app content-storage claim and `DbKeyProvider` seam assume encrypted local DB content.
+   - ADR-0120 must be amended because its observability contract says content lives in the encrypted DB.
+   - ADR-0133 must be amended because it names SQLCipher `PRAGMA key` ordering as a writer-path exception and says ADR-0092 ordering remains unchanged.
    - Author the missing DB-mode-isolation ADR/addendum for DOS-820-A in the same docs pass, because the active wave plan assigns that storage-boundary record to DOS-831.
 2. Switch `rusqlite` from `bundled-sqlcipher` to the non-SQLCipher bundled SQLite feature set while preserving `backup`.
 3. Replace encrypted DB open chokepoints with plain SQLite opens:
@@ -96,14 +101,18 @@ Current implementation mirrors that:
 - **Execution mode:** ADR-0104's `ExecutionMode` and service mutation checks are orthogonal to DB-mode `Live`/`Replica`/`Mock`. DOS-831 must not blur those boundaries.
 - **Other Keychain contracts:** ADR-0068 and ADR-0116 keep OAuth/session/control-plane key material separate from the DB encryption key. DOS-831 retires the DB key path only.
 - **Audit semantics:** ADR-0094 audit/event semantics may mention DB key or backup events; L1 must either remove stale DB-key audit semantics or rename them without leaking content.
+- **Source-aware data governance:** ADR-0098 currently says SQLCipher covers all locally stored data, including Glean-sourced records. DOS-831 must update that governance statement so source-specific purge/lifecycle rules remain intact while the storage boundary moves to FileVault / OS disk controls.
+- **Control-plane/BYOK boundary:** ADR-0116 currently says the local app stores all user content encrypted on device and names `DbKeyProvider` as the BYOK seam. DOS-831 must update that seam honestly: the local personal-tier DB no longer uses the SQLCipher DB key path, while control-plane content exclusion and non-DB Keychain secrets remain active.
+- **Observability wording:** ADR-0120 currently says content lives in the encrypted DB. DOS-831 must update it to preserve the shape-only log contract without claiming app-layer DB encryption.
 
 ### §1.3 What Is Genuinely Unbuilt
 
-- A superseding ADR-0092 amendment for the new at-rest security posture.
+- A superseding storage-boundary ADR amendment set for the new at-rest security posture: ADR-0092, ADR-0098, ADR-0116, ADR-0120, and ADR-0133.
 - Plain SQLite open/read/backup/migration path with no SQLCipher key dependency.
 - Keychain DB-key retirement behavior.
 - Tests proving missing SQLCipher key material no longer blocks opening a valid plain SQLite DB.
 - Tests proving encrypted SQLCipher DBs are not silently accepted as plain SQLite or mistaken for empty/fresh DBs.
+- A release-gate enforcement mechanism that prevents a plain build from shipping into an encrypted active-DB environment without DOS-832 validation evidence or an explicit storage-reset approval artifact.
 
 ---
 
@@ -131,6 +140,13 @@ DOS-831 is not releaseable to any environment with an existing encrypted active 
 - The release is explicitly coordinated as a storage-reset cutover with operator confirmation that no encrypted active DB is being opened by the plain build.
 
 This gate prevents a compile-clean plain SQLite build from stranding users before the rebuild path exists.
+
+L1 must make this gate enforceable in the existing release-gate path, not just document it. The current `release_gate.rs` has manual DB schema evidence but no DOS-831 storage-cutover evidence input. DOS-831 must add a release-gate-owned storage cutover check, either as explicit `GateConfig` fields/CLI flags or an equivalent checked manifest, with these accepted states:
+
+- `dos832_validated`: points to a DOS-832 rebuild proof bundle or release-gate artifact for the target environment and verifies it before the gate passes.
+- `storage_reset_approved`: points to an operator-approved storage-reset/cutover artifact that records the target environment, git SHA/build id, active DB path class, confirmation that no encrypted active DB is being opened by the plain build, approver, and timestamp.
+
+If neither state is present, the release gate fails before producing a pass verdict. Manual evidence text alone is insufficient unless it is parsed as one of the approved storage-cutover artifact shapes. The gate must also keep the manual DB reader path updated for plain SQLite so release validation does not depend on retired DB key material.
 
 ### D3 - Fail Loud on Encrypted Input
 
@@ -164,6 +180,7 @@ The PR body and ADR amendment must not claim backup/export confidentiality from 
 ### U1 - ADR + Docs
 
 - Add an ADR-0092 amendment dated 2026-06-03 (or implementation date) that supersedes the SQLCipher decision for v1.4.9.
+- Add explicit amendments to ADR-0098, ADR-0116, ADR-0120, and ADR-0133, or one clearly indexed storage-boundary amendment that updates those ADRs by number and section. It is not enough for the PR body or wave plan to say "ADR-0092 superseded"; the changed ADRs must no longer make false active claims about SQLCipher covering local data, local content being app-encrypted, content staying encrypted in the DB, or SQLCipher `PRAGMA key` remaining a writer-path exception.
 - Add the missing DB-mode-isolation ADR/addendum for DOS-820-A, or amend the wave plan if that deliverable moves elsewhere before L1 starts.
 - Update operation/release docs that still describe DB files/backups as encrypted.
 - Keep the distinction between DB at-rest posture and other Keychain-backed secrets.
@@ -209,6 +226,16 @@ The PR body and ADR amendment must not claim backup/export confidentiality from 
 - Review restore shutdown ordering for both `state.db_service` and any installed global DB service before replacing/restoring files.
 - Add explicit test coverage for schema-version reads and backup validation without Keychain.
 
+### U5a - Release/Cutover Gate
+
+- Extend the existing release-gate path so DOS-831 cannot pass release validation without a structured storage-cutover decision.
+- The accepted evidence is one of:
+  - a DOS-832 rebuild validation artifact for the target environment; or
+  - a storage-reset approval artifact that names target environment, git SHA/build id, active DB path class, encrypted-active-DB disposition, approver, and timestamp.
+- The release gate fails if the evidence is absent, malformed, points at the wrong git SHA/build id, or claims an encrypted active DB will be opened by the plain build without a validated DOS-832 path.
+- Keep `release_gate.rs` manual DB readers plain-SQLite-compatible and key-free. Release-gate schema checks must not fetch or require `LocalKeychain`.
+- Add tests for pass/fail states: no evidence, malformed evidence, DOS-832 validated, storage-reset approved, wrong SHA/build id, and encrypted-active-DB denied.
+
 ### U6 - Guard / Regression Tests
 
 Focused tests should cover:
@@ -223,6 +250,7 @@ Focused tests should cover:
 - Service/writer boundary gates remain clean: no new mutating fresh-connection bypass is introduced, and the SQLCipher `PRAGMA key` exception disappears rather than widening.
 - No `PRAGMA key`, `sqlcipher_export`, `bundled-sqlcipher`, or DB encryption-key runtime dependency remains outside explicit historical docs/tests.
 - Frontend startup/recovery UI no longer gates valid plain DB startup on `get_encryption_key_status` or shows key recovery as the normal error path.
+- Release-gate storage-cutover checks fail without DOS-832 validation evidence or an explicit storage-reset approval artifact, and pass only for the two approved evidence shapes.
 
 ---
 
@@ -231,9 +259,11 @@ Focused tests should cover:
 - **AC1 - ADR supersession:** ADR-0092 has a committed amendment that explicitly retires SQLCipher for the v1.4.9 local same-OS-user posture, states the FileVault/OS disk boundary, and names what protection is no longer provided.
 - **AC1a - Non-cipher hardening preserved:** The ADR amendment explicitly says ADR-0092's file permissions, Time Machine/iCloud posture, app lock, and PII log hygiene remain active unless separately amended.
 - **AC1b - DB-mode record closed:** The missing DOS-820-A DB-mode-isolation ADR/addendum is committed in this PR, or the active wave plan is amended before L1 to assign that deliverable elsewhere.
+- **AC1c - Cross-ADR storage-boundary cleanup:** ADR-0098, ADR-0116, ADR-0120, and ADR-0133 are amended or explicitly superseded so no active decision text still claims SQLCipher covers all local source data, the local app stores all content app-encrypted, content stays in an encrypted DB, or SQLCipher `PRAGMA key` remains an active writer-path exception.
 - **AC2 - Plain runtime DB:** The app, MCP read-only path, maintenance bins, and backup/restore code open valid DailyOS DB files as plain SQLite with no `PRAGMA key` or DB encryption-key dependency.
 - **AC3 - Fail-loud encrypted input:** An encrypted-looking existing DB at the active path is not silently overwritten, migrated, or treated as empty. The user/operator gets a clear storage-health/rebuild/restore error.
 - **AC3a - Release/cutover gate:** DOS-831 is not releaseable to an environment with an existing encrypted active DB until DOS-832 rebuild is available and validated for that environment, or until a coordinated storage-reset cutover confirms the plain build will not strand encrypted stores.
+- **AC3b - Release-gate enforcement:** The release-gate implementation has a structured storage-cutover check. It fails without either a verified DOS-832 rebuild artifact or a verified storage-reset approval artifact, and it does not treat free-form manual evidence as sufficient. Tests cover absent, malformed, mismatched-SHA/build, DOS-832-validated, and storage-reset-approved evidence.
 - **AC4 - Backups/exports stay safe:** Manual/pre-migration/restore backups and user-selected export copies use the proven copy path, validate integrity where applicable, keep restrictive file permissions where possible, and are plain SQLite under the destination's disk/cloud boundary.
 - **AC5 - Guards preserved:** DB-mode structural deny, open guard lint, single-writer routing, WAL pragmas, and migration backup behavior still pass.
 - **AC6 - Keychain retirement:** Normal DB open no longer touches the SQLCipher Keychain key. Existing DB key material is documented as retired/unused, not automatically deleted in this PR.
@@ -252,6 +282,7 @@ Focused:
 cargo test --manifest-path src-tauri/Cargo.toml --lib db::
 cargo test --manifest-path src-tauri/Cargo.toml --lib db_backup
 cargo test --manifest-path src-tauri/Cargo.toml --lib migrations::
+cargo test --manifest-path src-tauri/Cargo.toml --lib release_gate
 bash src-tauri/scripts/check_db_open_guard_allowlist.sh
 bash scripts/check_service_layer_boundary.sh
 bash scripts/check_db_mutator_must_use.sh
@@ -292,12 +323,14 @@ The `rg` command is a review aid, not a blanket delete instruction. Legitimate h
 
 - `docs/solutions/architecture-patterns/db-lock-storm-class-2026-05-27.md` - Consume the SQLite WAL contract: one file-level writer; dropping SQLCipher does not justify new writer connections or bypassing the pool. Also consume the documented SQLCipher reader-CPU cost.
 - `.docs/decisions/0092-data-security-at-rest-and-operational-hardening.md` - Currently authoritative for SQLCipher, Keychain key, `PRAGMA key` first, encrypted backups, and recovery screen. DOS-831 must amend/supersede this explicitly.
+- `.docs/decisions/0098-data-governance-source-aware-lifecycle.md` - Its source-aware lifecycle model says SQLCipher covers all locally stored data including Glean-sourced records. DOS-831 must update that storage-boundary claim while preserving source-specific purge semantics.
 - `.docs/decisions/0071-schema-migration-framework.md` - Preserve schema versioning, forward-compatibility, and pre-migration backup behavior. Avoid adding a schema migration unless a durable marker is truly required.
 - `.docs/decisions/0068-oauth-pkce-keychain-hardening.md` - Keychain remains canonical for OAuth/token storage. DB-key retirement is not a general Keychain rollback.
 - `.docs/decisions/0094-audit-log-and-enterprise-observability.md` - Audit and diagnostic output must retain PII hygiene and stop implying DB-key access if that path disappears.
 - `.docs/decisions/0104-execution-mode-and-mode-aware-services.md` - `ExecutionMode` is separate from DB-mode isolation. Cipher-drop must not re-open Live/Replica/Mock semantics.
-- `.docs/decisions/0116-tenant-control-plane-boundary.md` - Future key-provider/control-plane seams separate DB key material from other secrets. DOS-831 retires only the local DB SQLCipher key path.
-- `.docs/decisions/0133-writer-queue-responsibility.md` - Preserve single mutating connection/process, writer queue semantics, and open/write-path lints. The SQLCipher pragma exception should disappear rather than become a broader exception.
+- `.docs/decisions/0116-tenant-control-plane-boundary.md` - Future key-provider/control-plane seams separate DB key material from other secrets. DOS-831 retires only the local DB SQLCipher key path, but ADR-0116's local encrypted-content and `DbKeyProvider` seam claims must be amended rather than left stale.
+- `.docs/decisions/0120-observability-contract.md` - Logs stay shape-only, but the ADR's "content lives in the encrypted database" and "content stays encrypted" wording becomes stale after DOS-831 and must be amended.
+- `.docs/decisions/0133-writer-queue-responsibility.md` - Preserve single mutating connection/process, writer queue semantics, and open/write-path lints. The SQLCipher pragma exception should disappear rather than become a broader exception, and ADR-0133 must be amended so it no longer says ADR-0092 ordering remains unchanged.
 - `.docs/decisions/0134-reader-pool-sizing.md` - SQLCipher decryption cost is independent of reader pool sizing. Removing SQLCipher changes one residual cost but does not settle reader ownership policy.
 - `docs/solutions/workflow-issues/k-in-grep-substrate-type-not-proposed-name-2026-05-19.md` - K-in must search the substrate primitives, not only "SQLCipher drop." This packet cites DB open guard, DB-mode resolver, backup path, key provider, and writer substrate.
 - `.docs/plans/v1.4.9-replica-db-l0-plan.md` / `.html` - D5 was intentionally decoupled from DB-mode isolation and requires its own ADR-0092 amendment. DOS-831 must not re-open DOS-820's Live/Replica/Mock decisions.
@@ -305,6 +338,8 @@ The `rg` command is a review aid, not a blanket delete instruction. Legitimate h
 - Linear DOS-848 - The logical extraction repair is evidence that automatic conversion/repair of damaged encrypted DBs is not trustworthy. DOS-831 should fail loud and point to rebuild/restore rather than adding another fragile startup repair.
 - L0 security-lens review - Export copies are plaintext egress outside the active DB path; DOS-831 must cover `export_database_copy` and Settings/recovery copy, not only internal backups.
 - L0 adversarial document review - DOS-831 must close release/cutover gating, migration-slot freshness, DB-mode ADR ownership, frontend recovery gates, writer-bypass gates, and diagnostic-key re-sourcing before L1.
+- L0 cycle 1 K-in re-review - ADR-0098, ADR-0116, ADR-0120, and ADR-0133 are active storage-boundary/writer/observability decisions and must be amended or explicitly superseded in DOS-831.
+- L0 cycle 1 `/codex challenge` - Release/cutover gating must be implemented in `release_gate.rs` or an equivalent checked release artifact path, not left as free-form policy text.
 
 ---
 
@@ -326,8 +361,9 @@ Review questions:
 3. Are DB-mode and single-writer guarantees preserved?
 4. Are non-DB Keychain surfaces protected from collateral deletion?
 5. Are backup/restore and migration safety still real after removing destination keying?
-6. Does the release/cutover gate prevent a plain build from stranding encrypted active DBs before DOS-832 is available?
+6. Does the release/cutover gate have an implementable checked artifact path that prevents a plain build from stranding encrypted active DBs before DOS-832 is available?
 7. Are exported DB copies handled as plaintext egress with destination-boundary copy?
+8. Are all active ADRs that still claim local DB encryption updated, not just ADR-0092?
 
 ---
 
@@ -335,12 +371,36 @@ Review questions:
 
 - L0 packet approved unanimously and mirrored to Linear.
 - ADR-0092 amendment committed.
+- ADR-0098, ADR-0116, ADR-0120, and ADR-0133 amendments or explicit supersession notes committed.
 - DB-mode-isolation ADR/addendum committed, or active wave plan amended before L1 to move that deliverable.
 - Runtime opens, read-only opens, migration backups, manual backups, and restore validation run as plain SQLite with no DB encryption key dependency.
 - User-selected export copies are plain SQLite, permission-hardened where possible, and surfaced with destination-boundary copy.
 - Encrypted-looking active DB fails loud with restore/rebuild guidance.
-- Release/cutover gate prevents DOS-831 from shipping into an environment with an encrypted active DB before DOS-832 rebuild is available, unless an explicit storage-reset cutover confirms safety.
+- Release/cutover gate has structured checked evidence and prevents DOS-831 from shipping into an environment with an encrypted active DB before DOS-832 rebuild is available, unless an explicit storage-reset cutover artifact confirms safety.
 - Keychain DB key is retired from runtime but not deleted automatically.
 - DB-key-derived audit/workspace diagnostic helpers are re-sourced without touching the retired SQLCipher key.
 - Focused tests and full gates pass.
 - PR targets `dev`, links DOS-831, includes `security_auditor_invoked: true`, and carries the correct `L2-status` line.
+
+---
+
+## §10 L0 Review Verdict
+
+**Verdict:** APPROVE. DOS-831 may move to L1 against this packet.
+
+Final cycle approvals were recorded on the packet text that includes the cross-ADR storage-boundary amendment set, the structured release-gate storage-cutover mechanism, no in-place SQLCipher conversion, fail-loud encrypted active DB input, plain backup/export egress handling, non-DB Keychain preservation, DB-mode/open-guard/single-writer preservation, and diagnostic key re-sourcing.
+
+| Lane | Final verdict | Notes |
+| --- | --- | --- |
+| `/codex challenge` | APPROVE | No concrete L0 blocker remains after release/cutover gating became an implementable checked artifact path and missed storage-boundary ADRs were named. |
+| `ce-security-lens-reviewer` | APPROVE | ADR supersession, FileVault/OS disk boundary, plaintext backup/export, fail-loud encrypted input, MCP sensitivity, Keychain collateral, and DOS-848 honesty are covered. |
+| `ce-feasibility-reviewer` | APPROVE | The packet is implementable across current DB open, backup, migration, release-gate, frontend recovery, and key-provider chokepoints. |
+| `ce-data-migrations-reviewer` | APPROVE | No schema migration is expected; migration-slot/data safety, backup/export, restore/cutover, and fail-loud encrypted input are acceptance-gated. |
+| `ce-learnings-researcher` / K-in | APPROVE | K-in blockers for ADR-0098, ADR-0116, ADR-0120, ADR-0133, and release-gate substrate are resolved. |
+
+Resolved L0 blockers:
+
+1. ADR-0098, ADR-0116, ADR-0120, and ADR-0133 are now explicit amendment/supersession targets alongside ADR-0092.
+2. Release/cutover policy is no longer free-form. L1 must add a structured release-gate storage-cutover check that accepts only DOS-832 validation evidence or a storage-reset approval artifact.
+3. Manual evidence text alone cannot pass the release gate.
+4. Release-gate DB readers must become plain-SQLite-compatible and must not require retired DB key material.
