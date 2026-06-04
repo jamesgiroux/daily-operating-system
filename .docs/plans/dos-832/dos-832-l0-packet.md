@@ -5,13 +5,21 @@
 **Author date:** 2026-06-03  
 **Tier:** Tier 3 (markdown-only)  
 **Scope tier:** Wave-coupled substrate. L0 requires `/codex challenge` or a project-approved equivalent, `ce-feasibility-reviewer`, `ce-security-lens-reviewer`, and mandatory K-in. Local adversarial document review may harden the draft, but it does not make the packet L0-approved on its own.
-**Status:** Draft for L0 review; not approved until the adversarial, feasibility, security-lens, and K-in verdicts are recorded.
+**Status:** L0 approved on 2026-06-04 CDT after unanimous adversarial, feasibility, security-lens, data/migrations, and K-in review.
 
 ---
 
 ## §0 Origination + Boundary
 
 **Origination class:** Debug-driven. DOS-832 comes from the 2026-05-28/29 storage-loss recovery path and the v1.4.9 storage reset program. The existing manual recovery shape was "delete/recreate/re-enrich until the app works." This packet turns that into a first-class, repeatable, auditable rebuild path.
+
+**Debug trace:**
+
+- **Incident symptom:** the v1.4.9 wave plan records the trigger as the "2026-05-28 production DB-loss incident (dev-workflow `pkill` on a hot WAL writer; root-caused in PR #416, isolation in DOS-820/821/822)." The user-visible recovery symptom was an app that could only be brought back by recreating local state and rerunning enrichment, with correction history not guaranteed to survive.
+- **Source call path:** dev/test workflow killed a process while DB writes and WAL state were active; recovery then fell back to storage reset and `db_backup::rebuild_from_filesystem`, which calls account/project/person workspace sync from `src-tauri/src/db_backup.rs:545-554`.
+- **Suspected failure points:** pre-W1 single-writer ownership allowed unsafe writer/process interaction around a hot DB; the legacy rebuild fallback is partial by design (`src-tauri/src/db_backup.rs:533-544`) and cannot recover claim substrate, provenance, feedback, contradictions, source lifecycle, embeddings, or invalidation state.
+- **Rejected hypotheses:** the fix is not in-place cipher/plain migration, row-ID copy from an old DB, generated markdown as database authority, or a broader multi-user trust model. DOS-831 owns storage-mode retirement; DOS-820/821/822/DOS-758/DOS-823 own DB ownership and Replica isolation; DOS-832 owns the first-class rebuild after those guards exist.
+- **AC intersection:** AC1/AC1a replace the partial entity-only fallback with validated canonical input replay; AC2/AC3 preserve corrections through claim services instead of row copy; AC4/AC10 prove provenance, signals, and replay idempotency; AC5/AC8/AC9 prevent recovery from racing normal DB writers/readers while swapping Live storage.
 
 **Critical dependency:** DOS-832 is not a generic import script and not a W1-only feature. The v1.4.9 wave plan routes correction-preserving rebuild through W3/DOS-628's structured corrections sidecar. DOS-832 can design and implement source inventory, fresh-schema orchestration, source registration, ingestion replay, and Replica proof now, but **the correction-preserving release gate cannot pass until DOS-628 defines and ships the sidecar projection contract**.
 
@@ -100,16 +108,19 @@ The intended phases:
 
 1. **Plan:** resolve workspace root, DB mode, target DB path, existing DB health, and source inventory. Produce a PII-safe summary using handles/counts/reason codes.
 2. **Fresh schema:** create or open the target rebuild DB and run migrations to head (`v276` on current `dev`; reserve `v277+` only if L1 adds rebuild-run schema).
-3. **Canonical entity seed:** run the existing entity JSON sync for `Accounts`, `Projects`, and `People`, while preserving the fact that this is only the entity seed layer.
+3. **Canonical entity seed:** run the existing entity JSON sync for `Accounts`, `Projects`, and `People` through `WorkspaceSourceRegistry::open_validated` or a rebuild-owned bounded-open helper with the same traversal, symlink, race, workspace-escape, size, and hardlink protections, while preserving the fact that this is only the entity seed layer.
 4. **Source registration:** reuse/extend `workspace_backfill` to register workspace files and entity links. It remains privacy-aware and resumable.
 5. **Source ingestion:** run the workspace ingestion pipeline over registered eligible files. Claims must enter through `commit_claim` with `DataSource::WorkspaceFile`, `source_ref`, `source_asof`, `observed_at`, temporal scope, sensitivity, and provenance intact.
-6. **Re-enrichment:** run existing claim/enrichment producers needed to reproduce entities, claims, provenance, trust inputs, salience, embeddings, and derived context. Any producer newly invoked by rebuild must pass the runtime-wide trust audit in `docs/solutions/architecture-patterns/claim-producers-require-runtime-wide-trust-audit-2026-05-22.md`.
+6. **Re-enrichment:** run existing claim/enrichment producers needed to reproduce entities, claims, provenance, trust inputs, salience, embeddings, and derived context. Any producer newly invoked by rebuild must pass the runtime-wide trust audit in `docs/solutions/architecture-patterns/claim-producers-require-runtime-wide-trust-audit-2026-05-22.md` and the ADR-0120 invocation-record contract.
 7. **Correction replay:** after DOS-628/W3 supplies the corrections sidecar, match regenerated claims by semantic content identity and replay typed corrections through `record_claim_feedback`.
-8. **Verification:** compare source inventory, entity counts, claim counts by type/state/trust band, correction replay outcomes, orphaned sidecar entries, and surface smoke checks. No PII in committed proof.
+8. **Verification:** compare source inventory, entity counts, claim counts by type/state/trust band, correction replay outcomes, orphaned sidecar entries, invocation/audit counters, and surface smoke checks. No PII in committed proof.
 
 Implementation shape:
 
 - Add a `services::rebuild` owner. Commands and maintenance binaries only parse/validate options and invoke the service.
+- Add a rebuild-owned entity seed reader under `services::rebuild` for account, project, and person JSON. It may wrap the existing entity sync services, but rebuild seed reads must not use direct `std::fs::read_dir` / `read_to_string` over `Accounts`, `Projects`, or `People` paths unless the path has first crossed the same validated workspace boundary as workspace ingestion.
+- Existing entity JSON read paths in `accounts`, `projects`, `people`, `entity_io`, and `db_backup` are either bypassed by the rebuild reader or refactored behind the bounded-open helper for rebuild use. L1 must include a static/code-review proof that rebuild cannot ingest account/project/person JSON from symlinks, outside-workspace paths, race-swapped files, oversize inputs, or hardlinks rejected by `open_validated`.
+- Rebuild orchestration, source registration, ingestion, re-enrichment, correction replay, cutover, queue pause/drain/resume, verification, and failure/rollback phases emit ADR-0120 `InvocationRecord`s. Rebuild/replay run state stores or correlates `invocation_id` / `caused_by_invocation_id` where the row answers "what invocation caused this."
 - Pause/drain background intelligence queues before Live replacement or long writer-exclusive phases, then resume or requeue pending work. Rebuild cannot race normal startup/background writers.
 - Add durable rebuild/replay run state if the existing `workspace_backfill_runs` tables are insufficient. If new schema is required, reserve from v277 upward and update the wave plan after DOS-831's corrections merge.
 
@@ -117,7 +128,7 @@ Implementation shape:
 
 Canonical inputs are:
 
-- workspace JSON where ADRs define it as durable structured state (`dashboard.json`, `person.json`, project/account equivalents);
+- workspace JSON where ADRs define it as durable structured state (`dashboard.json`, `person.json`, project/account equivalents), opened through `WorkspaceSourceRegistry::open_validated` or the rebuild-owned equivalent bounded-open helper;
 - governed workspace files opened through `WorkspaceSourceRegistry::open_validated`;
 - source registry/lifecycle metadata derived from those files and source kinds;
 - DOS-628 corrections sidecar once shipped.
@@ -126,7 +137,7 @@ Derived replay outputs are not canonical inputs. L1 must inventory each producer
 
 | Producer family | Canonical inputs | Derived outputs | Verification metric |
 | --- | --- | --- | --- |
-| Entity JSON sync | account/project/person JSON | entity rows, tracker paths, basic relationships | counts by entity type, archived/internal exclusions, tracker-path parity |
+| Entity JSON sync | validated account/project/person JSON | entity rows, tracker paths, basic relationships | counts by entity type, archived/internal exclusions, tracker-path parity, trust-boundary rejection counts |
 | Workspace registration/ingestion | validated workspace files + source metadata | lifecycle rows, entity links, workspace-backed claims | file counts by source kind/category, claim counts by type/source, source-time confidence counts |
 | Re-enrichment/trust/salience | canonical entities, workspace sources, service evidence, AI runtime output | claims, trust inputs/bands, salience, embeddings, derived contexts | counts by producer/claim type/trust band, provenance completeness, invalidation/recompute markers |
 | Correction replay | DOS-628 sidecar events | feedback rows, claim lifecycle/verification changes, contradiction/supersession state | applied/skipped/orphaned counts by stable event id and reason |
@@ -173,8 +184,10 @@ Default posture:
 - Live destructive replacement requires explicit Live mode plus an explicit operator flag.
 - Existing active DB replacement must create a restore point and validate storage health before and after.
 - Live replacement uses a DB-service cutover protocol, not a blind file copy: block new readers/writers, pause/drain background queues, close/drop the active DB pool, checkpoint/handle WAL, stage the rebuilt DB, atomically swap, remove stale WAL/SHM, harden permissions, validate, then reopen.
+- Live replacement owns a process-wide cutover gate under `services::rebuild` (name flexible in L1, semantics fixed). While active, the gate covers pooled app access (`AppState::db_read`, `AppState::db_write`), app service reopen paths (`AppState::init_db_service`, `reinit_db_service`, `recover_db_service_after_access_error`, recovery/restore command reopen paths), direct DB open paths (`ActionDb::open`, `open_at`, `open_readonly`, `open_for_inspection`, test/maintenance direct-open wrappers), and raw service lifecycle paths (`DbService::open`, `open_at`, `install_global`, `uninstall_global`). New opens/reopens/installs during the gate must block behind the gate or fail with a typed `RebuildCutoverInProgress` error; they must not silently create a fresh legacy connection or install a new pool while the cutover owner has dropped service access.
+- Only the rebuild cutover owner may reopen or install service access while the gate is active, and only by holding a scoped cutover token after replacement validation passes. The cutover sequence is: acquire the process-wide gate token; mark the rebuild run as `cutover_in_progress`; emit an ADR-0120 invocation span for the cutover root; reject or queue new read/write/open/reopen/install attempts; pause and drain all DB-writing or DB-reading processors involved in intelligence freshness (`IntelligenceQueue`, `EmbeddingQueue`, `MeetingPrepQueue`, workspace ingestion/backfill workers, source processors, enrichment processors, and any claim-feedback repair queue touched by replay); wait for in-flight work to finish or snapshot and requeue it with reason-coded status; close/drop the global DB service and active pools; checkpoint/flush WAL; stage and atomically swap the rebuilt DB; remove stale WAL/SHM; validate schema/storage health/proof counters through a plain-SQLite reader; reinstall/reopen DB services through the scoped token; resume queues and requeue claimed-but-unfinished jobs. Failure reopens the original DB from the restore point where possible through the scoped token, resumes queues, and leaves a PII-safe operator report with the restore path handle and failed phase.
 - If an encrypted-looking active DB is present after DOS-831, the app fails loud and routes to storage-health rebuild/restore guidance; it does not run an in-place decrypt repair.
-- Exported DB copies are plaintext egress after DOS-831 and must use destination-boundary warnings and restrictive permissions where possible.
+- Exported DB copies are plaintext egress after DOS-831 and must use destination-boundary warnings, restrictive permissions where possible, and an append-only PII-safe audit event per ADR-0094/ADR-0098. Audit details use counts/categories/result, export kind, sensitivity labels, and destination handles, never absolute paths or raw content.
 
 ### §2.5 Sensitive Artifacts
 
@@ -187,13 +200,15 @@ Security contract:
 - Files are written with owner-only permissions where supported.
 - Reports/logs use handles, counts, hashes, reason codes, and sensitivity labels; they do not include raw correction text, entity names, absolute local paths, or source payloads.
 - Retention is explicit: after successful replay, the sidecar is retained only if it is part of the durable DOS-628 projection contract; transient replay journals are pruned or marked completed according to the operator policy. Failed/orphaned entries retain only the minimum data needed for safe retry.
-- Exporting a sidecar follows the same destination-boundary warning and evidence-governance rules as exported DB copies.
+- Exporting a sidecar follows the same destination-boundary warning, evidence-governance, owner-only permission, and append-only audit-event rules as exported DB copies.
 
 ---
 
 ## §3 Acceptance Criteria
 
 **AC1 — Fresh intelligence-substrate proof.** Starting from an empty target DB at schema head, rebuild reproduces the reconstructable intelligence substrate from canonical workspace inputs plus service re-enrichment: accounts, projects, people, workspace sources, entity links, claims, provenance, trust-band inputs, salience/derived context needed by covered shipped surfaces, and source lifecycle state. Meeting history, email enrichment cache state, and action source references are either covered by named canonical producers and verification counts or explicitly reported as degraded/out-of-scope.
+
+**AC1a — Entity seed trust boundary.** Account, project, and person JSON seed reads cross `WorkspaceSourceRegistry::open_validated` or an equivalent rebuild-owned bounded-open helper before parsing. Tests reject symlink escapes, outside-workspace paths, race-swapped files, oversize inputs, and hardlinks that the workspace ingestion boundary rejects.
 
 **AC2 — Correction preservation.** With a DOS-628 corrections sidecar containing representative feedback, demotions/tombstones, contradictions, supersession, stable replay IDs, and a deliberate ambiguous match, rebuild replays corrections through the named `services::claims` replay helper. Regenerated claims reflect the correction state; ambiguous entries are reported as orphans.
 
@@ -203,15 +218,15 @@ Security contract:
 
 **AC5 — DB-mode safety.** Dry-run and Replica proof cannot open or mutate the production DB. Live replacement refuses unless DB mode is Live and an explicit operator flag is present. Existing DB replacement creates a restore point and validates storage health.
 
-**AC6 — Exported DB egress.** Exported DB copies after DOS-831 are treated as plaintext egress: the UI/operator flow shows an explicit warning, destination handling avoids leaking absolute paths or source details into logs, and owner-only permissions are applied where supported.
+**AC6 — Exported DB egress.** Exported DB copies after DOS-831 are treated as plaintext egress: the UI/operator flow shows an explicit warning, destination handling avoids leaking absolute paths or source details into logs, owner-only permissions are applied where supported, and an append-only ADR-0094/ADR-0098 audit event is written with export kind, counts/categories/result, sensitivity labels, and a destination handle. The audit event never stores raw content, customer/entity names, correction text, or absolute local paths.
 
-**AC7 — Correction sidecar security.** DOS-628 sidecars and DOS-832 replay journals have a classified storage/retention contract: bounded path, owner-only permissions where supported, no raw correction/source payloads in logs or reports, explicit retention/prune behavior, and safe orphan retry metadata.
+**AC7 — Correction sidecar security.** DOS-628 sidecars and DOS-832 replay journals have a classified storage/retention contract: bounded path, owner-only permissions where supported, no raw correction/source payloads in logs or reports, append-only audit events for sidecar export/retention/prune outcomes, explicit retention/prune behavior, and safe orphan retry metadata.
 
-**AC8 — Live cutover exclusivity.** Live destructive replacement blocks new readers/writers, pauses/drains background queues, closes/drops the active DB service/pool, stages and atomically swaps the rebuilt DB, cleans WAL/SHM, validates the replacement, and reopens service access. Failure restores the prior DB or leaves a clear restore point.
+**AC8 — Live cutover exclusivity.** Live destructive replacement blocks new readers/writers, direct DB open paths, and service reopen/install paths, including `AppState::db_read`, `AppState::db_write`, `AppState::init_db_service`, `reinit_db_service`, `recover_db_service_after_access_error`, recovery/restore command reopen paths, `ActionDb::open`, `open_at`, `open_readonly`, `open_for_inspection`, `DbService::open`, `open_at`, `install_global`, `uninstall_global`, and the legacy fallback after global uninstall. The cutover gate pauses/drains named background queues/processors (`IntelligenceQueue`, `EmbeddingQueue`, `MeetingPrepQueue`, workspace ingestion/backfill, source processing, enrichment, and replay/repair workers), records in-flight work behavior, closes/drops the active DB service/pool, stages and atomically swaps the rebuilt DB, cleans WAL/SHM, validates the replacement through a plain-SQLite reader, and reopens service access only through a rebuild-owned scoped cutover token. New opens/reopens/installs during cutover block or fail with typed `RebuildCutoverInProgress`; they do not create fresh legacy connections or install a new pool. Failure restores the prior DB or leaves a clear restore point and resumes or safely reports queued work.
 
 **AC9 — Single-writer/service boundary.** Rebuild writes route through service-owned mutation paths and the writer discipline. No command handler or maintenance bin directly mutates tables outside services. No fresh mutating DB connection is introduced to bypass the writer path.
 
-**AC10 — Resumability and observability.** Long rebuilds are resumable by durable run state. The run report uses PII-safe handles/counts/reason codes and records failures for source registration, ingestion, enrichment, correction replay, and verification. Replay resume is idempotent across process restarts by claiming stable sidecar event IDs before mutation.
+**AC10 — Resumability and observability.** Long rebuilds are resumable by durable run state. `services::rebuild`, cutover, queue pause/drain/resume, source registration, ingestion, re-enrichment, correction replay, replay helpers, verification, rollback, and export/retention operations emit ADR-0120 `InvocationRecord`s and propagate `invocation_id` / `caused_by_invocation_id` into rebuild/replay run state and any new correlateable storage where applicable. The run report uses PII-safe handles/counts/reason codes and records failures for source registration, ingestion, enrichment, correction replay, cutover, export/audit emission, and verification. Replay resume is idempotent across process restarts by claiming stable sidecar event IDs before mutation.
 
 **AC11 — ADR + docs.** ADR-0048 Principle 4 is amended to describe first-class intelligence rebuild and its dependency on correction sidecars. Operator recovery docs explain dry-run, Replica proof, Live cutover, encrypted-looking DB failure, sidecar retention, plaintext export warnings, and restoration.
 
@@ -229,7 +244,7 @@ pnpm tsc --noEmit
 
 1. **Claim model:** Rebuild produces claims, not display-only rows. Existing claim types and `ClaimProposal` metadata remain authoritative. New rebuild-run metadata is operational, not a claim, unless L1 introduces a user-visible assertion about rebuild health.
 2. **Provenance + trust:** Producers must pass full provenance and trust inputs into `commit_claim`. Trust recomputation/audit covers source lifecycle, freshness, corroboration, contradiction, correction state, sensitivity, and verification state. Rebuild must not seed arbitrary trust scores.
-3. **Signals + invalidation:** Rebuild must emit or reconstitute the signals needed for source ingestion, claim commits, feedback replay, targeted repair, trust recompute, and surface invalidation. A rebuilt DB with stale rendered surfaces is not accepted.
+3. **Signals + invalidation:** Rebuild must emit or reconstitute the signals needed for source ingestion, claim commits, feedback replay, targeted repair, trust recompute, and surface invalidation. Signal and claim rows caused by rebuild carry ADR-0120 invocation correlation where applicable. A rebuilt DB with stale rendered surfaces is not accepted.
 4. **Runtime + surfaces:** Tauri and MCP read the rebuilt DB through existing services and sensitivity gates. `build_intelligence_context()`, account/project/person contexts, workspace graph reads, and claim receipt routes must behave against the rebuilt store. Meeting prep/readiness surfaces are included only where their canonical source inputs/producers are covered; otherwise rebuild proof must show an explicit source-gap/degraded state rather than silent stale output.
 5. **Feedback loop:** User corrections survive by structured sidecar replay into `claim_feedback` and claim lifecycle state. New feedback after rebuild continues through the same services and source-reliability/trust inputs. Sidecar storage and replay logs preserve the correction loop without exposing raw sensitive correction text.
 
@@ -261,15 +276,19 @@ Focused L1 tests:
 
 - Unit tests for rebuild plan/source inventory skip reasons and PII-safe report shape.
 - Replica-mode test proving production DB path denial.
+- Entity seed reader tests proving account/project/person JSON reads use the validated workspace boundary and reject symlink escapes, outside-workspace paths, race-swapped files, oversize inputs, and hardlinks rejected by `open_validated`.
 - Workspace source registration integration test reusing existing generic fixtures.
 - Deterministic `source_asof` precedence test where file mtime changes but canonical source metadata keeps the same provenance timestamp.
 - Ingestion replay test proving claims enter through `commit_claim` and carry `DataSource::WorkspaceFile`, `source_ref`, `source_asof`, provenance, and sensitivity.
 - Producer-inventory test or fixture proof that each claimed derived output has named canonical inputs, produced tables/claims, trust/provenance behavior, and verification counts.
 - Correction replay test using generic sidecar fixtures with stable replay IDs for confirm/current, false/outdated, wrong subject/source, nuance, surface inappropriate, not relevant, contradiction, supersession, tombstone, unknown claim ID, and ambiguous/non-unique endpoints.
 - Idempotency/resume test that claims sidecar event IDs before mutation and restarts after source registration, ingestion, enrichment, and correction replay without duplicate claims, feedback, repair jobs, or replay effects.
-- Queue pause/drain/resume and DB-service close/drop/reopen test for Live cutover phases.
-- Exported DB copy test for warning state, destination-boundary handling, owner-only permissions where supported, and no raw destination/path/source details in logs.
-- Sidecar/replay-journal security test for bounded path, owner-only permissions where supported, report redaction, orphan metadata shape, and retention/prune behavior.
+- ADR-0120 observability test proving rebuild orchestration, cutover, queue pause/drain/resume, source registration/ingestion, re-enrichment, correction replay, replay helper, verification, rollback, and export/retention phases emit invocation records and propagate `invocation_id` / `caused_by_invocation_id` into rebuild/replay run state where applicable.
+- Process-wide Live cutover test that holds the rebuild gate while `AppState::db_read`, `AppState::db_write`, `AppState::init_db_service`, `reinit_db_service`, `recover_db_service_after_access_error`, recovery/restore command reopen paths, `ActionDb::open`, `open_at`, `open_readonly`, `open_for_inspection`, `DbService::open`, `open_at`, `install_global`, `uninstall_global`, and the legacy fallback after global uninstall attempt access; each blocks or returns typed `RebuildCutoverInProgress`, never a fresh legacy connection or new installed pool.
+- Scoped cutover-token test proving only the rebuild cutover owner can reopen/install DB service access while the gate is active, and only after replacement validation passes or rollback begins.
+- Queue pause/drain/resume and DB-service close/drop/reopen test for Live cutover phases covering `IntelligenceQueue`, `EmbeddingQueue`, `MeetingPrepQueue`, workspace ingestion/backfill, source processing, enrichment, and replay/repair workers, including in-flight completion/requeue behavior.
+- Exported DB copy test for warning state, destination-boundary handling, owner-only permissions where supported, append-only PII-safe audit event shape, and no raw destination/path/source details in logs.
+- Sidecar/replay-journal security test for bounded path, owner-only permissions where supported, append-only PII-safe audit event shape for export/retention/prune, report redaction, orphan metadata shape, and retention/prune behavior.
 - Storage-health test for encrypted-looking / unreadable active DB guidance.
 - Operator CLI/command tests for dry-run, apply, resume, and Live refusal.
 
@@ -306,7 +325,12 @@ Approval requires unanimous pass or explicit L6 decision on any residual release
 - `docs/solutions/architecture-patterns/db-lock-storm-class-2026-05-27.md`: rebuild touches write-heavy paths; consume ADR-0133 writer discipline, no fresh writer connections, no locks across `.await`.
 - `docs/solutions/workflow-issues/k-in-grep-substrate-type-not-proposed-name-2026-05-19.md`: search by substrate primitives. DOS-832 extends existing workspace ingestion/claim feedback substrate rather than inventing a new import/correction system.
 - `.docs/evals/evaluation-evidence-contract.md` and `.docs/evals/fixture-governance.md`: real-data proof must be PII-free, repo-relative, hash-bound, and lintable.
+- ADR-0120: rebuild is a service/background-worker/projection orchestration path, so it emits invocation records and propagates invocation correlation through signals, claims, run state, replay, and verification storage where applicable.
+- ADR-0094 + ADR-0098 Principle 4: exported DB copies and sidecar exports are data export events and require append-only, PII-safe audit records with counts/categories/result and destination handles.
 - Security L0 cycle: exported DB copies, correction sidecars/replay journals, and Live file-swap exclusivity are explicit AC/test surfaces, not posture-only bullets.
+- Security L0 cycle: entity JSON seed reads are part of the workspace filesystem trust boundary. Rebuild cannot make `dashboard.json` / `person.json` canonical while bypassing `WorkspaceSourceRegistry::open_validated` or an equivalent bounded-open helper.
+- Feasibility L0 cycle: Live cutover exclusivity must bind both pooled service access and direct `ActionDb::open*` fallback paths, including behavior after `DbService::uninstall_global`, with named queue/processor pause-drain-resume semantics.
+- Adversarial L0 cycle: debug-driven packets require a symptom-to-failure trace, and Live cutover must also bind `AppState::init_db_service` / `reinit_db_service`, recovery reopen paths, raw `DbService::open/open_at`, and `install_global` so service access cannot be reinstalled during the swap window.
 - Adversarial L0 cycle: DOS-831 authority correction is a precondition, derived producer outputs are not canonical inputs, legacy rebuild gaps are either covered or reported as degraded, and correction replay requires stable event IDs plus a named `services::claims` replay helper.
 - ADR-0048: current rebuild principle is partial and must be amended.
 - ADR-0107: `DataSource::WorkspaceFile { kind }` exists and sets file-derived facts as reference posture.
@@ -324,3 +348,24 @@ Approval requires unanimous pass or explicit L6 decision on any residual release
 - Correction replay proves typed feedback, tombstone, contradiction, and ambiguity behavior.
 - ADR-0048 and operator docs are updated.
 - Full gates pass.
+
+---
+
+## §10 L0 Review Verdict
+
+**Final verdict:** APPROVE. DOS-832 is L0-approved for L1 implementation, subject to the DOS-831 authority precondition and DOS-628 correction-sidecar release gate already stated in §0/§2.3.
+
+| Lane | Final verdict | Notes |
+| --- | --- | --- |
+| `/codex challenge` | APPROVE | Final rerun approved after verifying debug trace, Live cutover reopen-path coverage, ADR-0120 observability, ADR-0094/0098 audit events, entity seed trust boundary, correction replay, source-time determinism, and release gates. Evidence: `CODEX_DOS832_FINAL2_ERR=/tmp/codex-dos832-final2-err-EJJPzG`; tokens used: 710,957. |
+| `ce-security-lens-reviewer` | APPROVE | Approved after entity JSON seed reads were bound to the workspace trust boundary, cutover gates covered DB/service reopen paths, and sidecar/export audit/security obligations were explicit. |
+| `ce-feasibility-reviewer` | APPROVE | Approved after process-wide cutover gate, scoped reopen token, queue pause/drain/resume semantics, service ownership, and current-code reopen paths were named. |
+| `ce-data-migrations-reviewer` | APPROVE | Approved schema/data-integrity posture: fresh-schema replay, v277+ reservation only if new run state is required, no raw claim copy, replay idempotency, and invocation correlation where applicable. |
+| `ce-learnings-researcher` | APPROVE | Confirmed prior substrate is represented: ADR-0120, ADR-0094/0098, ADR-0048, ADR-0107/0098, ADR-0123/0126/0131, ADR-0133, ADR-0110, and documented claim-producer/runtime trust audit and DB lock-storm learnings. |
+
+Cycle notes:
+
+- Cycle 1 blockers: security required entity JSON seed reads to use the workspace trust boundary; feasibility required process-wide Live cutover gating across pooled and direct DB open paths.
+- Cycle 2 blocker: adversarial review required a debug-driven symptom-to-failure trace and explicit gating for `AppState::init_db_service` / `reinit_db_service` plus raw `DbService::open/open_at/install_global` paths.
+- Cycle 3 blocker: K-in required ADR-0120 invocation observability and ADR-0094/0098 append-only audit events for exported DB copies and sidecar export/retention/prune operations.
+- Cycle 4 result: all lanes approved the revised packet.
