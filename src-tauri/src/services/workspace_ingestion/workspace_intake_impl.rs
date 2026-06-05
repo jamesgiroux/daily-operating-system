@@ -34,7 +34,10 @@ use super::pipeline::{file_id_from_identity, EntityRef, FileIdError, IngestError
 use super::registry::{ResolvePathError, WorkspaceCategoryRegistry};
 use super::signals::emit_pre_pipeline_rejection;
 use super::wiring::build_pipeline;
-use super::{registry::WorkspaceSourceRegistry, runs::IngestionMode};
+use super::{
+    registry::{is_claim_file_projection_root_path, WorkspaceSourceRegistry},
+    runs::IngestionMode,
+};
 
 const PLACEMENT_RATE_LIMIT_MAX: i64 = 200;
 const PLACEMENT_RATE_LIMIT_WINDOW_SECONDS: i64 = 60 * 60;
@@ -160,7 +163,8 @@ pub(crate) fn ingest_sync(
         .map(parse_category)
         .transpose()?;
 
-    let db = ActionDb::open(Arc::new(LocalKeychain::new()))
+    // mcp-self-open-allowed: non-MCP workspace intake fallback; registered MCP tools inject the request-owned ActionDb.
+    let db = ActionDb::open(Arc::new(LocalKeychain::new())) // mcp-self-open-allowed: non-MCP workspace intake fallback
         .map_err(|e| WorkspaceIntakeError::DbError(e.to_string()))?;
     let conn = db.conn_ref();
 
@@ -296,6 +300,7 @@ fn is_valid_path_segment_slug(slug: &str) -> bool {
 fn intake_error_from_rejection(reason: RejectionReason) -> WorkspaceIntakeError {
     match reason {
         RejectionReason::PathTraversalAttempt => WorkspaceIntakeError::PathTraversalAttempt,
+        RejectionReason::ManagedOutputRoot => WorkspaceIntakeError::ManagedOutputRoot,
         RejectionReason::OutsideWorkspace => WorkspaceIntakeError::OutsideWorkspace,
         RejectionReason::SymlinkRaced | RejectionReason::SymlinkRefused => {
             WorkspaceIntakeError::SymlinkRaced
@@ -338,6 +343,54 @@ fn place_document_sync(
     invocation: PlacementInvocationContext,
     req: WorkspacePlaceDocumentRequest,
 ) -> Result<WorkspacePlaceDocumentReceipt, PlacementError> {
+    // mcp-self-open-allowed: non-MCP workspace intake fallback; registered MCP placement injects the request-owned ActionDb.
+    let db = ActionDb::open(Arc::new(LocalKeychain::new())) // mcp-self-open-allowed: non-MCP workspace intake fallback
+        .map_err(|e| PlacementError::internal(e.to_string()))?;
+    place_document_sync_with_db(
+        ctx,
+        &db,
+        &workspace_root,
+        signal_engine.as_deref(),
+        invocation,
+        req,
+    )
+}
+
+pub(crate) fn place_document_sync_with_db(
+    ctx: &ServiceContext<'_>,
+    db: &ActionDb,
+    workspace_root: &Path,
+    signal_engine: Option<&crate::signals::propagation::PropagationEngine>,
+    invocation: PlacementInvocationContext,
+    req: WorkspacePlaceDocumentRequest,
+) -> Result<WorkspacePlaceDocumentReceipt, PlacementError> {
+    let target_key = crate::db::local_db_keyed_audit_tag(
+        // mcp-self-open-allowed: non-MCP workspace intake fallback
+        "target",
+        "workspace-placement-target-v1",
+        &[&req.entity.entity_type, &req.entity.entity_id],
+    )
+    .map_err(PlacementError::internal)?;
+    place_document_sync_with_db_and_target_key(
+        ctx,
+        db,
+        workspace_root,
+        signal_engine,
+        invocation,
+        req,
+        target_key,
+    )
+}
+
+pub(crate) fn place_document_sync_with_db_and_target_key(
+    ctx: &ServiceContext<'_>,
+    db: &ActionDb,
+    workspace_root: &Path,
+    signal_engine: Option<&crate::signals::propagation::PropagationEngine>,
+    invocation: PlacementInvocationContext,
+    req: WorkspacePlaceDocumentRequest,
+    target_key: String,
+) -> Result<WorkspacePlaceDocumentReceipt, PlacementError> {
     if workspace_root.as_os_str().is_empty() {
         return Err(PlacementError::internal("workspace root is not configured"));
     }
@@ -348,15 +401,7 @@ fn place_document_sync(
         ));
     }
 
-    let db = ActionDb::open(Arc::new(LocalKeychain::new()))
-        .map_err(|e| PlacementError::internal(e.to_string()))?;
     let conn = db.conn_ref();
-    let target_key = crate::db::local_db_keyed_audit_tag(
-        "target",
-        "workspace-placement-target-v1",
-        &[&req.entity.entity_type, &req.entity.entity_id],
-    )
-    .map_err(PlacementError::internal)?;
     let category_audit_slug = category_slug_for_audit(&req);
     if let Err(error) = reserve_placement_rate(conn, &invocation, ctx.clock.now()) {
         write_attempt_audit(
@@ -372,9 +417,9 @@ fn place_document_sync(
     }
     let outcome = place_document_after_rate(
         ctx,
-        &db,
-        &workspace_root,
-        signal_engine.as_deref(),
+        db,
+        workspace_root,
+        signal_engine,
         &invocation,
         &req,
         target_key.as_str(),
@@ -1720,6 +1765,12 @@ fn validate_relative_components_io(path: &Path) -> io::Result<()> {
         return Err(io::Error::new(
             io::ErrorKind::InvalidInput,
             "absolute path rejected",
+        ));
+    }
+    if is_claim_file_projection_root_path(path) {
+        return Err(io::Error::new(
+            io::ErrorKind::InvalidInput,
+            "managed output root rejected",
         ));
     }
     for component in path.components() {

@@ -44,6 +44,16 @@ static IN_FLIGHT_CYCLES: AtomicUsize = AtomicUsize::new(0);
 /// completion.
 static CUTOVER_CAPTURE_PAUSE_DEPTH: AtomicUsize = AtomicUsize::new(0);
 
+#[cfg(test)]
+static WRITE_FENCE_TEST_MUTEX: std::sync::Mutex<()> = std::sync::Mutex::new(());
+
+#[cfg(test)]
+pub(crate) fn write_fence_test_guard() -> std::sync::MutexGuard<'static, ()> {
+    WRITE_FENCE_TEST_MUTEX
+        .lock()
+        .unwrap_or_else(|poisoned| poisoned.into_inner())
+}
+
 /// RAII guard that pauses fresh [`FenceCycle::capture`] attempts until drop.
 #[derive(Debug)]
 pub struct CutoverCapturePauseGuard {
@@ -287,15 +297,6 @@ pub fn fenced_write_intelligence_json(
 mod tests {
     use super::*;
     use crate::db::test_utils::test_db;
-    use std::sync::{Mutex, MutexGuard};
-
-    static WRITE_FENCE_TEST_MUTEX: Mutex<()> = Mutex::new(());
-
-    fn write_fence_test_guard() -> MutexGuard<'static, ()> {
-        WRITE_FENCE_TEST_MUTEX
-            .lock()
-            .unwrap_or_else(|poisoned| poisoned.into_inner())
-    }
 
     #[test]
     fn capture_reads_initial_epoch_one() {

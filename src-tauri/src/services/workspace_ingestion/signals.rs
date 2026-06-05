@@ -345,6 +345,7 @@ fn serialize_payload<T: Serialize>(
 pub fn rejection_reason_code(reason: &RejectionReason) -> &'static str {
     match reason {
         RejectionReason::PathTraversalAttempt => "path_traversal_attempt",
+        RejectionReason::ManagedOutputRoot => "managed_output_root",
         RejectionReason::SymlinkRefused => "symlink_refused",
         RejectionReason::SymlinkRaced => "symlink_raced",
         RejectionReason::OutsideWorkspace => "outside_workspace",
