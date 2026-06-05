@@ -1761,7 +1761,7 @@ fn create_json_replacement_temp_file(_path: &Path, temp_path: &Path) -> io::Resu
 
 fn create_dailyos_mcp_dir_synced(paths: &IntegrationPaths) -> io::Result<()> {
     std::fs::create_dir_all(&paths.home)?;
-    create_private_directory(&paths.home.join(".dailyos"))?;
+    create_private_directory(&paths.home.join(".dailyos"))?; // dailyos-path-allowed: Claude Desktop MCP launcher config is shared app-managed runtime state, not DB-mode-scoped data.
     create_private_directory(&paths.app_mcp_dir())?;
     sync_directory_tree(&paths.app_mcp_dir())
 }
@@ -1798,7 +1798,7 @@ fn validate_private_managed_runtime_dirs(
     runtime_dir: &Path,
 ) -> Result<(), String> {
     for dir in [
-        paths.home.join(".dailyos"),
+        paths.home.join(".dailyos"), // dailyos-path-allowed: validates shared app-managed MCP runtime parent permissions before trusting Claude config.
         paths.app_mcp_dir(),
         runtime_dir.to_path_buf(),
     ] {
