@@ -130,6 +130,7 @@ fn is_valid_slug_shape(s: &str) -> bool {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum RejectionReason {
     PathTraversalAttempt,
+    ManagedOutputRoot,
     SymlinkRefused,
     SymlinkRaced,
     OutsideWorkspace,

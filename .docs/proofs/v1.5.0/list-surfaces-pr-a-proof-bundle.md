@@ -1,8 +1,8 @@
 # v1.5.0 List-Surfaces PR A Proof Bundle - DOS-826 Shared Entity Selection
 
-**Date:** 2026-06-01  
-**Branch:** `codex/v1.5.0-list-surfaces`  
-**Base:** `public/dev` at `f4caeb05`  
+**Date:** 2026-06-01
+**Branch:** `codex/v1.5.0-list-surfaces`
+**Base:** `public/dev` at `f4caeb05`
 **Scope:** frontend-only shared selection affordance for active Accounts, Projects, and People list rows.
 
 ## Acceptance Evidence

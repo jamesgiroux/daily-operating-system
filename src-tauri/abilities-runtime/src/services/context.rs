@@ -42,6 +42,10 @@ use serde::de::Error as _;
 use serde::{Deserialize, Deserializer, Serialize, Serializer};
 use serde_json::Value;
 
+pub use crate::abilities::claim_files::contracts::{
+    ClaimFileApplyRequest, ClaimFileApplyResult, ClaimFileOperationError,
+    ClaimFileProjectionResult, ClaimFileRenderRequest,
+};
 use crate::abilities::composition::{Composition, CompositionDocId};
 pub use crate::abilities::markdown_preview::contracts::{
     MarkdownPreviewOutput, MarkdownPreviewReadRequest,
@@ -882,6 +886,7 @@ pub struct ServiceContext<'a> {
     recommendation_feedback_writer: Option<Arc<dyn RecommendationFeedbackWriteHandle>>,
     source_management_action_handler: Option<Arc<dyn SourceManagementActionHandle>>,
     workspace_intake: Option<Arc<dyn WorkspaceIntakeService>>,
+    claim_file_operations: Option<Arc<dyn ClaimFileOperationHandle>>,
 }
 
 pub type EntityContextReadFuture<'a> =
@@ -1546,6 +1551,28 @@ pub trait SourceManagementActionHandle: Send + Sync {
         &'a self,
         request: SourceManagementActionRequest,
     ) -> SourceManagementActionFuture<'a>;
+}
+
+pub type ClaimFileRenderFuture<'a> = Pin<
+    Box<
+        dyn Future<Output = Result<ClaimFileProjectionResult, ClaimFileOperationError>> + Send + 'a,
+    >,
+>;
+
+pub type ClaimFileApplyFuture<'a> = Pin<
+    Box<dyn Future<Output = Result<ClaimFileApplyResult, ClaimFileOperationError>> + Send + 'a>,
+>;
+
+pub trait ClaimFileOperationHandle: Send + Sync {
+    fn render_entity_claim_file<'a>(
+        &'a self,
+        request: ClaimFileRenderRequest,
+    ) -> ClaimFileRenderFuture<'a>;
+
+    fn apply_claim_file_corrections<'a>(
+        &'a self,
+        request: ClaimFileApplyRequest,
+    ) -> ClaimFileApplyFuture<'a>;
 }
 
 // -----------------------------------------------------------------------------
@@ -2274,6 +2301,7 @@ impl<'a> ServiceContext<'a> {
             recommendation_feedback_writer: None,
             source_management_action_handler: None,
             workspace_intake: None,
+            claim_file_operations: None,
         }
     }
 
@@ -2319,6 +2347,7 @@ impl<'a> ServiceContext<'a> {
             recommendation_feedback_writer: None,
             source_management_action_handler: None,
             workspace_intake: None,
+            claim_file_operations: None,
         }
     }
 
@@ -2375,6 +2404,7 @@ impl<'a> ServiceContext<'a> {
             recommendation_feedback_writer: None,
             source_management_action_handler: None,
             workspace_intake: None,
+            claim_file_operations: None,
         }
     }
 
@@ -2584,6 +2614,14 @@ impl<'a> ServiceContext<'a> {
 
     pub fn with_workspace_intake(mut self, service: Arc<dyn WorkspaceIntakeService>) -> Self {
         self.workspace_intake = Some(service);
+        self
+    }
+
+    pub fn with_claim_file_operations(
+        mut self,
+        operations: Arc<dyn ClaimFileOperationHandle>,
+    ) -> Self {
+        self.claim_file_operations = Some(operations);
         self
     }
 
@@ -2975,6 +3013,32 @@ impl<'a> ServiceContext<'a> {
         };
 
         handler.apply_source_management_action(request).await
+    }
+
+    pub async fn render_entity_claim_file(
+        &self,
+        request: ClaimFileRenderRequest,
+    ) -> Result<ClaimFileProjectionResult, ClaimFileOperationError> {
+        let Some(operations) = &self.claim_file_operations else {
+            return Err(ClaimFileOperationError::OperationFailed(
+                self.missing_reader_error("claim_file_operations"),
+            ));
+        };
+
+        operations.render_entity_claim_file(request).await
+    }
+
+    pub async fn apply_claim_file_corrections(
+        &self,
+        request: ClaimFileApplyRequest,
+    ) -> Result<ClaimFileApplyResult, ClaimFileOperationError> {
+        let Some(operations) = &self.claim_file_operations else {
+            return Err(ClaimFileOperationError::OperationFailed(
+                self.missing_reader_error("claim_file_operations"),
+            ));
+        };
+
+        operations.apply_claim_file_corrections(request).await
     }
 
     pub async fn read_trajectory_bundle(
