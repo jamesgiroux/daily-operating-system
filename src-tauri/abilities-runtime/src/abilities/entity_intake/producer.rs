@@ -172,6 +172,10 @@ fn workspace_intake_error(error: WorkspaceIntakeError) -> AbilityError {
         WorkspaceIntakeError::PathTraversalAttempt | WorkspaceIntakeError::OutsideWorkspace => {
             hard_error("PathTraversalAttempt", "file_ref is outside the workspace")
         }
+        WorkspaceIntakeError::ManagedOutputRoot => hard_error(
+            "ManagedOutputRoot",
+            "file_ref points at DailyOS managed output, not source evidence",
+        ),
         WorkspaceIntakeError::InvalidSourceTypeSlug(value) => {
             hard_error("InvalidSourceType", value)
         }

@@ -39,6 +39,7 @@ where
     match subcommand {
         "watermarks" => Some(run_watermarks_cli()),
         "pairing" => Some(run_pairing_cli()),
+        "replica-refresh" => Some(run_replica_refresh_cli()),
         "all" => {
             let watermarks = run_watermarks_cli();
             println!();
@@ -48,7 +49,7 @@ where
         }
         other => {
             eprintln!(
-                "unknown doctor subcommand `{other}`; expected `watermarks`, `pairing`, or `all`"
+                "unknown doctor subcommand `{other}`; expected `watermarks`, `pairing`, `replica-refresh`, or `all`"
             );
             Some(2)
         }
@@ -102,6 +103,54 @@ fn run_pairing_cli() -> i32 {
         }
         1
     }
+}
+
+fn run_replica_refresh_cli() -> i32 {
+    match replica_refresh_for_doctor() {
+        Ok(report) => {
+            println!("dailyos doctor replica-refresh: ok");
+            println!("source_db={}", report.source_db_path.display());
+            println!("replica_db={}", report.replica_db_path.display());
+            println!(
+                "source_workspace={}",
+                report.source_workspace_path.display()
+            );
+            println!(
+                "replica_workspace={}",
+                report.replica_workspace_path.display()
+            );
+            println!("files_copied={}", report.files_copied);
+            println!("directories_created={}", report.directories_created);
+            0
+        }
+        Err(error) => {
+            eprintln!("dailyos doctor replica-refresh failed: {error}");
+            1
+        }
+    }
+}
+
+#[cfg(not(test))]
+fn replica_refresh_for_doctor(
+) -> Result<crate::services::replica_refresh::ReplicaRefreshReport, String> {
+    crate::services::replica_refresh::refresh_replica_from_live()
+}
+
+#[cfg(test)]
+static REPLICA_REFRESH_DOCTOR_TEST_RUNNER: std::sync::Mutex<
+    Option<fn() -> Result<crate::services::replica_refresh::ReplicaRefreshReport, String>>,
+> = std::sync::Mutex::new(None);
+
+#[cfg(test)]
+fn replica_refresh_for_doctor(
+) -> Result<crate::services::replica_refresh::ReplicaRefreshReport, String> {
+    if let Some(runner) = *REPLICA_REFRESH_DOCTOR_TEST_RUNNER
+        .lock()
+        .expect("replica refresh doctor test runner lock")
+    {
+        return runner();
+    }
+    crate::services::replica_refresh::refresh_replica_from_live()
 }
 
 pub fn run_watermark_doctor() -> Result<WatermarkDoctorReport, String> {
@@ -341,9 +390,38 @@ pub fn inspect_pairing() -> PairingDoctorReport {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::sync::atomic::{AtomicUsize, Ordering};
     use std::sync::Mutex;
 
     static HOME_ENV_LOCK: Mutex<()> = Mutex::new(());
+    static REPLICA_REFRESH_DISPATCH_COUNT: AtomicUsize = AtomicUsize::new(0);
+
+    struct ReplicaRefreshRunnerGuard;
+
+    impl ReplicaRefreshRunnerGuard {
+        fn install() -> Self {
+            REPLICA_REFRESH_DISPATCH_COUNT.store(0, Ordering::SeqCst);
+            *REPLICA_REFRESH_DOCTOR_TEST_RUNNER
+                .lock()
+                .expect("replica refresh test runner lock") = Some(failing_replica_refresh_runner);
+            Self
+        }
+    }
+
+    impl Drop for ReplicaRefreshRunnerGuard {
+        fn drop(&mut self) {
+            *REPLICA_REFRESH_DOCTOR_TEST_RUNNER
+                .lock()
+                .expect("replica refresh test runner lock") = None;
+            REPLICA_REFRESH_DISPATCH_COUNT.store(0, Ordering::SeqCst);
+        }
+    }
+
+    fn failing_replica_refresh_runner(
+    ) -> Result<crate::services::replica_refresh::ReplicaRefreshReport, String> {
+        REPLICA_REFRESH_DISPATCH_COUNT.fetch_add(1, Ordering::SeqCst);
+        Err("replica-refresh dispatch sentinel".to_string())
+    }
 
     #[test]
     fn clean_empty_watermark_schema_passes() {
@@ -351,6 +429,42 @@ mod tests {
         let db = ActionDb::open_at_unencrypted(dir.path().join("doctor.sqlite")).expect("db");
         let report = inspect_watermarks(&db).expect("inspect");
         assert!(report.is_clean(), "unexpected report: {report:?}");
+    }
+
+    #[test]
+    fn run_from_args_routes_replica_refresh_subcommand() {
+        let _runner = ReplicaRefreshRunnerGuard::install();
+
+        let code = run_from_args(
+            ["dailyos", "doctor", "replica-refresh"]
+                .into_iter()
+                .map(String::from),
+        );
+
+        assert_eq!(
+            code,
+            Some(1),
+            "dispatcher should return the replica-refresh runner failure"
+        );
+        assert_eq!(
+            REPLICA_REFRESH_DISPATCH_COUNT.load(Ordering::SeqCst),
+            1,
+            "dispatcher should invoke the replica-refresh runner exactly once"
+        );
+        assert_eq!(
+            run_from_args(
+                ["dailyos", "doctor", "replica-refresh-typo"]
+                    .into_iter()
+                    .map(String::from)
+            ),
+            Some(2),
+            "unknown subcommands should still use the unknown-command exit"
+        );
+        assert_eq!(
+            REPLICA_REFRESH_DISPATCH_COUNT.load(Ordering::SeqCst),
+            1,
+            "unknown subcommands must not invoke the replica-refresh runner"
+        );
     }
 
     #[test]

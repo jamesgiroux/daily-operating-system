@@ -51,6 +51,7 @@ pub enum EntityIntakeError {
     CategoryNotAllowed { allowed: Vec<String> },
     FileNotFound,
     PathTraversalAttempt,
+    ManagedOutputRoot,
     IngestionFailed { message: String },
 }
 

@@ -1728,6 +1728,17 @@ async fn run_v2_server() -> anyhow::Result<()> {
 
     let mut gateway = Gateway::new();
     gateway.set_taxonomy(Arc::clone(&catalog));
+
+    // The sidecar owns ONE writable connection for the process lifetime,
+    // threaded into every handler + the audit-outbox fallback via
+    // McpHandlerContext — replacing the per-handler / per-audit self-opens.
+    // The open lives behind the service boundary (handler_context, in
+    // services/) per ADR-0101; the same handle serves handler reads and the
+    // audit write, wrapped Arc<Mutex<…>> because Connection is !Sync and the
+    // gateway is shared as Arc<Gateway>. No second DbService.
+    let owned_conn = dailyos_lib::services::mcp_v2::handler_context::open_sidecar_connection()
+        .map_err(|e| anyhow::anyhow!("Failed to open MCP sidecar DB connection: {e}"))?;
+    gateway.set_connection(owned_conn);
     let signal_engine = Arc::new(dailyos_lib::signals::propagation::default_engine());
     register_v147_handlers(
         &mut gateway,

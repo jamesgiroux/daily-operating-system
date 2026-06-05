@@ -34,6 +34,9 @@ use sha2::{Digest, Sha256};
 /// (resolves to the fail-closed default in `db_mode()`).
 static DB_MODE: AtomicU8 = AtomicU8::new(0);
 
+#[cfg(test)]
+pub(crate) static DB_MODE_TEST_LOCK: std::sync::Mutex<()> = std::sync::Mutex::new(());
+
 /// Which database a process operates against. Process-wide, set once at bootstrap.
 /// Orthogonal to ADR-0104 `ExecutionMode` (request-scoped mutation-gating) — this
 /// is process-wide path-selection. Do not merge the two.
@@ -143,6 +146,25 @@ pub fn set_db_mode(mode: DbMode) {
     DB_MODE.store(mode.as_u8(), Ordering::Release);
 }
 
+fn explicit_db_mode_from_inputs<I, S>(args: I, env_value: Option<&str>) -> Option<DbMode>
+where
+    I: IntoIterator<Item = S>,
+    S: AsRef<str>,
+{
+    args.into_iter()
+        .find_map(|arg| DbMode::from_process_arg(arg.as_ref()))
+        .or_else(|| env_value.and_then(DbMode::from_env_value))
+}
+
+pub(crate) fn explicit_db_mode_from_process() -> Option<DbMode> {
+    let env_value = std::env::var("DAILYOS_DB_MODE").ok();
+    explicit_db_mode_from_inputs(std::env::args(), env_value.as_deref())
+}
+
+pub(crate) fn live_db_mode_explicitly_requested() -> bool {
+    explicit_db_mode_from_process() == Some(DbMode::Live)
+}
+
 /// Resolve DB mode from process inputs and set it when explicitly provided.
 ///
 /// CLI flags (`--live`, `--replica`, `--mock`) take precedence over
@@ -159,16 +181,6 @@ pub fn resolve_and_set_db_mode_from_process() {
 /// not inherit `db_mode()`'s release-build Live default.
 pub fn resolve_and_set_db_mode_from_process_or(default: DbMode) {
     set_db_mode(explicit_db_mode_from_process().unwrap_or(default));
-}
-
-pub fn explicit_db_mode_from_process() -> Option<DbMode> {
-    if let Some(mode) = std::env::args().find_map(|arg| DbMode::from_process_arg(&arg)) {
-        return Some(mode);
-    }
-
-    std::env::var("DAILYOS_DB_MODE")
-        .ok()
-        .and_then(|value| DbMode::from_env_value(&value))
 }
 
 /// Resolve the active DB mode. **Fail-closed default when unset:** non-release
@@ -375,6 +387,38 @@ pub(crate) fn local_db_keyed_audit_tag(
         components,
         key.as_hex().as_bytes(),
     ))
+}
+
+/// Key-derived audit tagger captured when a DB connection is opened.
+///
+/// MCP registered write paths use this to avoid calling [`LocalKeychain`] during
+/// a request, which can validate the key by reopening SQLite in the sidecar.
+#[derive(Clone)]
+pub(crate) struct LocalDbAuditTagger {
+    key: EncryptionKey,
+}
+
+impl LocalDbAuditTagger {
+    fn new(key: EncryptionKey) -> Self {
+        Self { key }
+    }
+
+    #[cfg(test)]
+    pub(crate) fn for_tests(secret: &str) -> Self {
+        Self {
+            key: EncryptionKey::from_hex(secret.to_string()),
+        }
+    }
+
+    pub(crate) fn tag(&self, tag_prefix: &str, domain: &str, components: &[&str]) -> String {
+        keyed_audit_tag(tag_prefix, domain, components, self.key.as_hex().as_bytes())
+    }
+}
+
+impl std::fmt::Debug for LocalDbAuditTagger {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str("LocalDbAuditTagger([REDACTED])")
+    }
 }
 
 pub(crate) fn local_db_workspace_graph_diagnostic_key_bytes() -> Result<[u8; 32], String> {
@@ -743,6 +787,13 @@ impl ActionDb {
         path: PathBuf,
         key_provider: Arc<dyn DbKeyProvider>,
     ) -> Result<Self, DbError> {
+        Self::open_resolved_path_with_key(path, key_provider).map(|(db, _key)| db)
+    }
+
+    fn open_resolved_path_with_key(
+        path: PathBuf,
+        key_provider: Arc<dyn DbKeyProvider>,
+    ) -> Result<(Self, EncryptionKey), DbError> {
         // structural prod-open deny — covers the svc.open_fresh_serialized
         // branch, which does not route through prepare_encrypted_connection.
         guard_path_for_mode(&path)?;
@@ -752,14 +803,16 @@ impl ActionDb {
             let encryption_key = key_provider
                 .get_or_create_key(&user)
                 .map_err(Self::map_key_error)?;
-            let conn = svc.open_fresh_serialized(path.clone(), encryption_key)?;
+            let conn = svc.open_fresh_serialized(path.clone(), encryption_key.clone())?;
             drop(rotation_lock);
             // Startup initialization already runs through the global DbService.
             // Fresh handles should not add best-effort writes outside that path.
-            return Ok(Self { conn });
+            return Ok((Self { conn }, encryption_key));
         }
 
-        Self::open_at(path, key_provider)
+        let (conn, encryption_key) = Self::open_encrypted_connection(path, key_provider)?;
+        drop(rotation_lock);
+        Ok((Self { conn }, encryption_key))
     }
 
     #[cfg(test)]
@@ -768,6 +821,14 @@ impl ActionDb {
         key_provider: Arc<dyn DbKeyProvider>,
     ) -> Result<Self, DbError> {
         Self::open_resolved_path(path, key_provider)
+    }
+
+    pub(crate) fn open_with_audit_tagger(
+        key_provider: Arc<dyn DbKeyProvider>,
+    ) -> Result<(Self, LocalDbAuditTagger), DbError> {
+        let path = Self::db_path()?;
+        let (db, key) = Self::open_resolved_path_with_key(path, key_provider)?;
+        Ok((db, LocalDbAuditTagger::new(key)))
     }
 
     #[cfg(test)]
@@ -1171,8 +1232,6 @@ pub mod test_utils {
 mod db_mode_tests {
     use super::*;
 
-    static DB_MODE_TEST_LOCK: std::sync::Mutex<()> = std::sync::Mutex::new(());
-
     struct ResetDbMode;
 
     impl Drop for ResetDbMode {
@@ -1209,6 +1268,20 @@ mod db_mode_tests {
             Err(err) => panic!("expected ProdOpenDenied, got {err:?}"),
             Ok(_) => panic!("non-Live mode must deny production DB read path"),
         }
+    }
+
+    #[test]
+    fn explicit_db_mode_inputs_prefer_cli_over_env() {
+        assert_eq!(
+            explicit_db_mode_from_inputs(["dailyos", "--replica"], Some("live")),
+            Some(DbMode::Replica)
+        );
+        assert_eq!(
+            explicit_db_mode_from_inputs(["dailyos"], Some("live")),
+            Some(DbMode::Live)
+        );
+        assert_eq!(explicit_db_mode_from_inputs(["dailyos"], Some("bad")), None);
+        assert_eq!(explicit_db_mode_from_inputs(["dailyos"], None), None);
     }
 
     #[test]

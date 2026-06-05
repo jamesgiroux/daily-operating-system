@@ -213,6 +213,8 @@ Section 5 originally said "feedback is the only write." v1.4.7 preserves the con
 
 All three writes route through approved `services::*` boundaries per ADR-0101. Notes and observations flow through the claim/source services; actions and action-status updates flow through `services::actions`. The MCP head still does not expose claim creation or direct edit, file generation, calendar mutation, message composition, or external-system writes. Submit-class corrections and lightweight action tracking are the only mutations.
 
+`dailyos.submit.claim_feedback` is the concrete ADR-0123 typed feedback carrier for MCP. It is not a fourth submit-class write and does not authorize claim creation, direct claim edit, file generation, calendar/message mutation, external writes, or free-form note inference. It may only target a server-issued `feedback_target_handle` from an MCP read and must route through the existing receipt/claim-feedback services with MCP attribution.
+
 ### §E. Displacement framing extended to W5 eval
 
 The displacement use case remains the governing design check: DailyOS should win for the user's working understanding, and broad-corpus systems should win for broad enterprise or web retrieval. v1.4.7 carries that distinction into DOS-481 rather than leaving it as prose.

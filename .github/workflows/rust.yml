@@ -57,6 +57,12 @@ jobs:
       - name: Create sidecar stub for Tauri externalBin validation
         run: bash src-tauri/scripts/build-mcp.sh --stub
 
+      - name: Check MCP handlers use request-scoped DB context
+        run: bash src-tauri/scripts/check_mcp_handler_no_self_open.sh
+
+      - name: Check MCP sidecar does not install a DbService
+        run: bash src-tauri/scripts/check_no_second_dbservice_in_mcp.sh
+
       - name: Run claim projection roundtrip regression
         run: cargo test --manifest-path src-tauri/Cargo.toml -p dailyos --test dos301_claim_projection_roundtrip_test
 

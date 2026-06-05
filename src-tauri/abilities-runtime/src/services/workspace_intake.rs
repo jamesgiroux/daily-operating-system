@@ -63,6 +63,7 @@ pub enum WorkspaceIntakeError {
     EntityNotFound,
     FileNotFound,
     PathTraversalAttempt,
+    ManagedOutputRoot,
     OutsideWorkspace,
     SymlinkRaced,
     FileTooLarge,

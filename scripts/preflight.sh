@@ -96,6 +96,12 @@ run_step "db mutator must_use" ./scripts/check_db_mutator_must_use.sh
 # 4a. file-backed DB opens stay behind guarded chokepoints
 run_step "db open guard allowlist" bash src-tauri/scripts/check_db_open_guard_allowlist.sh
 
+# 4a-bis. MCP handlers take DB access from McpHandlerContext, never self-open
+run_step "mcp handler no self-open" bash src-tauri/scripts/check_mcp_handler_no_self_open.sh
+
+# 4a-ter. MCP sidecar owns one connection — never a second DbService pool
+run_step "mcp no second dbservice" bash src-tauri/scripts/check_no_second_dbservice_in_mcp.sh
+
 # 4b. stakeholder graph writer signal helper
 run_step "stakeholder writer signal helper" ./scripts/check_stakeholder_writer_emits_signal.sh
 
