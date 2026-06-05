@@ -34,6 +34,9 @@ use sha2::{Digest, Sha256};
 /// (resolves to the fail-closed default in `db_mode()`).
 static DB_MODE: AtomicU8 = AtomicU8::new(0);
 
+#[cfg(test)]
+pub(crate) static DB_MODE_TEST_LOCK: std::sync::Mutex<()> = std::sync::Mutex::new(());
+
 /// Which database a process operates against. Process-wide, set once at bootstrap.
 /// Orthogonal to ADR-0104 `ExecutionMode` (request-scoped mutation-gating) — this
 /// is process-wide path-selection. Do not merge the two.
@@ -135,21 +138,33 @@ pub fn set_db_mode(mode: DbMode) {
     DB_MODE.store(mode.as_u8(), Ordering::Release);
 }
 
+fn explicit_db_mode_from_inputs<I, S>(args: I, env_value: Option<&str>) -> Option<DbMode>
+where
+    I: IntoIterator<Item = S>,
+    S: AsRef<str>,
+{
+    args.into_iter()
+        .find_map(|arg| DbMode::from_process_arg(arg.as_ref()))
+        .or_else(|| env_value.and_then(DbMode::from_env_value))
+}
+
+pub(crate) fn explicit_db_mode_from_process() -> Option<DbMode> {
+    let env_value = std::env::var("DAILYOS_DB_MODE").ok();
+    explicit_db_mode_from_inputs(std::env::args(), env_value.as_deref())
+}
+
+pub(crate) fn live_db_mode_explicitly_requested() -> bool {
+    explicit_db_mode_from_process() == Some(DbMode::Live)
+}
+
 /// Resolve DB mode from process inputs and set it when explicitly provided.
 ///
 /// CLI flags (`--live`, `--replica`, `--mock`) take precedence over
 /// `DAILYOS_DB_MODE=live|replica|mock`. If neither is present, leave DB_MODE
 /// unset so `db_mode()` keeps its fail-closed default.
 pub fn resolve_and_set_db_mode_from_process() {
-    if let Some(mode) = std::env::args().find_map(|arg| DbMode::from_process_arg(&arg)) {
+    if let Some(mode) = explicit_db_mode_from_process() {
         set_db_mode(mode);
-        return;
-    }
-
-    if let Ok(value) = std::env::var("DAILYOS_DB_MODE") {
-        if let Some(mode) = DbMode::from_env_value(&value) {
-            set_db_mode(mode);
-        }
     }
 }
 
@@ -1202,8 +1217,6 @@ pub mod test_utils {
 mod db_mode_tests {
     use super::*;
 
-    static DB_MODE_TEST_LOCK: std::sync::Mutex<()> = std::sync::Mutex::new(());
-
     struct ResetDbMode;
 
     impl Drop for ResetDbMode {
@@ -1240,6 +1253,20 @@ mod db_mode_tests {
             Err(err) => panic!("expected ProdOpenDenied, got {err:?}"),
             Ok(_) => panic!("non-Live mode must deny production DB read path"),
         }
+    }
+
+    #[test]
+    fn explicit_db_mode_inputs_prefer_cli_over_env() {
+        assert_eq!(
+            explicit_db_mode_from_inputs(["dailyos", "--replica"], Some("live")),
+            Some(DbMode::Replica)
+        );
+        assert_eq!(
+            explicit_db_mode_from_inputs(["dailyos"], Some("live")),
+            Some(DbMode::Live)
+        );
+        assert_eq!(explicit_db_mode_from_inputs(["dailyos"], Some("bad")), None);
+        assert_eq!(explicit_db_mode_from_inputs(["dailyos"], None), None);
     }
 
     fn create_encrypted_prod_db(path: &Path) {
