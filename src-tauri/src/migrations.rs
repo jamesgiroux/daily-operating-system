@@ -7549,6 +7549,8 @@ mod tests {
         for table_name in [
             "claim_file_projection_runs",
             "claim_file_projection_run_claims",
+            "claim_file_projection_path_bindings",
+            "claim_file_correction_apply_events",
         ] {
             let table_count: i64 = conn
                 .query_row(
@@ -7571,12 +7573,21 @@ mod tests {
         let membership_sql = sqlite_table_sql(&conn, "claim_file_projection_run_claims")
             .expect("read membership DDL");
         assert!(membership_sql.contains("PRIMARY KEY (run_id, claim_id)"));
+        let binding_sql = sqlite_table_sql(&conn, "claim_file_projection_path_bindings")
+            .expect("read path binding DDL");
+        assert!(binding_sql.contains("entity_subject_compact TEXT NOT NULL UNIQUE"));
+        let apply_sql = sqlite_table_sql(&conn, "claim_file_correction_apply_events")
+            .expect("read correction apply DDL");
+        assert!(apply_sql.contains("status IN ('claimed', 'applied', 'failed')"));
 
         for index_name in [
             "idx_claim_file_projection_runs_entity_status",
             "idx_claim_file_projection_runs_repair",
             "idx_claim_file_projection_run_claims_claim",
             "idx_claim_file_projection_run_claims_run_trust",
+            "idx_claim_file_projection_path_bindings_subject",
+            "idx_claim_file_correction_apply_claim_status",
+            "idx_claim_file_correction_apply_sidecar",
         ] {
             assert!(
                 index_exists(&conn, index_name).expect("query projection ledger index"),

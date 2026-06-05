@@ -5,6 +5,7 @@
 //! receipt-level feedback path.
 
 use std::collections::BTreeSet;
+use std::ffi::OsString;
 use std::fs;
 use std::io::{Read, Write};
 use std::path::{Component, Path, PathBuf};
@@ -13,7 +14,7 @@ use abilities_runtime::abilities::feedback::FeedbackAction;
 use abilities_runtime::abilities::provenance::subject::SubjectRef as ReceiptSubjectRef;
 use abilities_runtime::sensitivity::RenderActor;
 use abilities_runtime::types::{ClaimSensitivity, ClaimSubjectRef, IntelligenceClaim};
-use chrono::Utc;
+use chrono::{DateTime, Duration, Utc};
 use rusqlite::{params, OptionalExtension};
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
@@ -23,7 +24,8 @@ use crate::db::claim_invalidation::SubjectRef as InvalidationSubjectRef;
 use crate::db::ActionDb;
 use crate::services::claim_receipt::contracts::{ReceiptTarget, SurfaceContext};
 use crate::services::claim_receipt::feedback::{
-    submit_claim_feedback, ClaimFeedbackRequest, ClaimFeedbackResponse, IdempotencyCache,
+    submit_claim_feedback_for_claim_file_apply, ClaimFeedbackRequest, ClaimFeedbackResponse,
+    ClaimFileFeedbackApplyCommit, IdempotencyCache,
 };
 use crate::services::entity_intelligence::auth::{EnvelopeSet, EnvelopeView};
 use crate::services::workspace_ingestion::registry::CLAIM_FILE_PROJECTION_ROOT;
@@ -33,6 +35,7 @@ pub const CLAIM_FILE_PROJECTION_VERSION: u32 = 1;
 pub const CLAIM_FILE_SIDECAR_SCHEMA_VERSION: u32 = 1;
 pub const CLAIM_FILE_MARKDOWN_NAME: &str = "claims.md";
 pub const CLAIM_FILE_SIDECAR_NAME: &str = "claims.corrections.json";
+const CLAIM_FILE_CORRECTION_APPLY_LEASE_SECS: i64 = 300;
 
 #[derive(Debug, thiserror::Error)]
 pub enum ClaimFileError {
@@ -226,8 +229,38 @@ struct RenderBundle {
 #[derive(Debug, Clone)]
 struct ParsedCorrection {
     claim_id: String,
+    projected_claim_version: u64,
+    projected_identity_hash: String,
     action: FeedbackAction,
     metadata: Option<serde_json::Value>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+enum CorrectionApplyState {
+    Claimed,
+    AlreadyApplied,
+    InProgress,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+enum CorrectionFailureMarkState {
+    MarkedFailed,
+    AlreadyApplied,
+}
+
+struct CorrectionApplyRecord<'a> {
+    apply_key: &'a str,
+    sidecar_checksum: &'a str,
+    claim_id: &'a str,
+    projected_claim_version: u64,
+    projected_identity_hash: &'a str,
+    feedback_action: &'a str,
+    payload_hash: &'a str,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+struct CommittedProjectionRun {
+    run_id: String,
 }
 
 #[derive(Debug, Clone)]
@@ -306,13 +339,11 @@ async fn render_entity_claim_file_for_status(
     repaired_from_run_id: Option<String>,
 ) -> Result<ClaimFileProjectionResult, ClaimFileError> {
     let bundle = build_render_bundle(state, subject_ref_json).await?;
-    let markdown_path = projection_abs_path(&workspace_root, &bundle.markdown_rel_path)?;
-    let sidecar_path = projection_abs_path(&workspace_root, &bundle.sidecar_rel_path)?;
-
+    ensure_projection_path_binding_state(state, &bundle).await?;
     let write_result = write_projection_files(
         &workspace_root,
-        &markdown_path,
-        &sidecar_path,
+        &bundle.markdown_rel_path,
+        &bundle.sidecar_rel_path,
         &bundle.markdown,
         &bundle.sidecar_json,
     );
@@ -350,16 +381,15 @@ pub async fn apply_claim_file_corrections(
     actor_principal_id: String,
 ) -> Result<ClaimFileApplyResult, ClaimFileError> {
     let markdown_rel_path = validate_projection_relative_path(&markdown_rel_path)?;
-    let markdown_path = projection_abs_path(&workspace_root, &markdown_rel_path)?;
     let sidecar_rel_path = sidecar_path_for_markdown_rel(&markdown_rel_path)?;
-    let sidecar_path = projection_abs_path(&workspace_root, &sidecar_rel_path)?;
 
-    let markdown = read_stable_to_string(&markdown_path)?;
-    let sidecar_json = read_stable_to_string(&sidecar_path)?;
+    let markdown = read_stable_to_string(&workspace_root, &markdown_rel_path)?;
+    let sidecar_json = read_stable_to_string(&workspace_root, &sidecar_rel_path)?;
     let sidecar_checksum = sha256_hex(sidecar_json.as_bytes());
     let sidecar: ClaimFileSidecar = serde_json::from_str(&sidecar_json)?;
     verify_sidecar_contract(&sidecar)?;
     verify_sidecar_paths(&sidecar, &markdown_rel_path, &sidecar_rel_path)?;
+    validate_committed_sidecar_projection(state, &sidecar, &sidecar_checksum).await?;
 
     let corrections = match parse_markdown_corrections(&markdown, &sidecar, &sidecar_checksum) {
         Ok(corrections) => corrections,
@@ -374,7 +404,6 @@ pub async fn apply_claim_file_corrections(
             rerender: None,
         });
     }
-
     let claim_ids = sidecar
         .claims
         .iter()
@@ -388,6 +417,38 @@ pub async fn apply_claim_file_corrections(
     let mut failures = Vec::new();
 
     for correction in corrections {
+        let payload_hash = correction_payload_hash(&correction);
+        let apply_key =
+            correction_apply_idempotency_key(&sidecar_checksum, &correction, &payload_hash);
+        match claim_correction_apply(
+            state,
+            &apply_key,
+            &sidecar_checksum,
+            &correction,
+            &payload_hash,
+        )
+        .await?
+        {
+            CorrectionApplyState::AlreadyApplied => continue,
+            CorrectionApplyState::InProgress => {
+                failures.push(ClaimFileApplyFailure {
+                    claim_id: Some(correction.claim_id),
+                    error_class: "correction_apply_in_progress".to_string(),
+                    error_detail_hash: redacted_hash(&apply_key),
+                });
+                continue;
+            }
+            CorrectionApplyState::Claimed => {}
+        }
+        let current_failures =
+            current_projection_failures(state, &sidecar, std::slice::from_ref(&correction)).await?;
+        if let Some(failure) = current_failures.into_iter().next() {
+            match mark_correction_apply_failed(state, &apply_key, "stale_projection").await? {
+                CorrectionFailureMarkState::MarkedFailed => failures.push(failure),
+                CorrectionFailureMarkState::AlreadyApplied => continue,
+            }
+            continue;
+        }
         let target = receipt_target_for_claim(&sidecar, &correction.claim_id)?;
         let request = ClaimFeedbackRequest {
             target,
@@ -396,13 +457,34 @@ pub async fn apply_claim_file_corrections(
             metadata: correction.metadata,
             idempotency_key: None,
         };
-        match submit_claim_feedback(state, &set, &actor, &cache, request).await {
-            Ok(response) => responses.push(response),
-            Err(error) => failures.push(ClaimFileApplyFailure {
-                claim_id: Some(correction.claim_id),
-                error_class: "feedback_rejected".to_string(),
-                error_detail_hash: redacted_hash(&error.to_string()),
-            }),
+        match submit_claim_feedback_for_claim_file_apply(
+            state,
+            &set,
+            &actor,
+            &cache,
+            request,
+            ClaimFileFeedbackApplyCommit {
+                expected_claim_version: correction.projected_claim_version,
+                correction_apply_key: apply_key.clone(),
+            },
+        )
+        .await
+        {
+            Ok(response) => {
+                responses.push(response);
+            }
+            Err(error) => {
+                match mark_correction_apply_failed(state, &apply_key, &error.to_string()).await? {
+                    CorrectionFailureMarkState::MarkedFailed => {
+                        failures.push(ClaimFileApplyFailure {
+                            claim_id: Some(correction.claim_id),
+                            error_class: "feedback_rejected".to_string(),
+                            error_detail_hash: redacted_hash(&error.to_string()),
+                        });
+                    }
+                    CorrectionFailureMarkState::AlreadyApplied => continue,
+                }
+            }
         }
     }
 
@@ -461,14 +543,14 @@ fn build_render_bundle_db(db: &ActionDb, subject_ref_json: &str) -> Result<Rende
     })?;
     let entity_id = subject_id_for_path(&subject)
         .ok_or_else(|| "claim file projection subject requires an id".to_string())?;
-    let entity_slug = slug_segment(entity_id);
+    let entity_slug = projection_entity_slug(entity_id, &entity_subject_compact);
     let markdown_rel_path = PathBuf::from(CLAIM_FILE_PROJECTION_ROOT)
         .join(entity_kind)
-        .join(entity_slug)
+        .join(&entity_slug)
         .join(CLAIM_FILE_MARKDOWN_NAME);
     let sidecar_rel_path = PathBuf::from(CLAIM_FILE_PROJECTION_ROOT)
         .join(entity_kind)
-        .join(slug_segment(entity_id))
+        .join(entity_slug)
         .join(CLAIM_FILE_SIDECAR_NAME);
 
     let mut claims = load_claims_for_projection(db, subject_ref_json, entity_kind, entity_id)?;
@@ -883,6 +965,20 @@ async fn record_projection_run(
     Ok(())
 }
 
+async fn ensure_projection_path_binding_state(
+    state: &AppState,
+    bundle: &RenderBundle,
+) -> Result<(), ClaimFileError> {
+    let bundle = bundle.clone();
+    state
+        .db_write(move |db| {
+            let now = Utc::now().to_rfc3339();
+            ensure_projection_path_binding(db, &bundle, &now)
+        })
+        .await
+        .map_err(|error| ClaimFileError::Db(error.to_string()))
+}
+
 fn insert_projection_run(
     db: &ActionDb,
     run: &RenderBundle,
@@ -892,6 +988,7 @@ fn insert_projection_run(
     error_detail_hash: Option<&str>,
 ) -> Result<(), String> {
     let now = Utc::now().to_rfc3339();
+    ensure_projection_path_binding(db, run, &now)?;
     db.conn_ref()
         .execute(
             "INSERT INTO claim_file_projection_runs (
@@ -950,6 +1047,206 @@ fn insert_projection_run(
                 .map_err(|error| error.to_string())?;
         }
     }
+    Ok(())
+}
+
+async fn validate_committed_sidecar_projection(
+    state: &AppState,
+    sidecar: &ClaimFileSidecar,
+    sidecar_checksum: &str,
+) -> Result<CommittedProjectionRun, ClaimFileError> {
+    let sidecar = sidecar.clone();
+    let sidecar_checksum = sidecar_checksum.to_string();
+    state
+        .db_read(move |db| {
+            validate_committed_sidecar_projection_db(db, &sidecar, &sidecar_checksum)
+        })
+        .await
+        .map_err(|error| ClaimFileError::Db(error.to_string()))
+}
+
+fn validate_committed_sidecar_projection_db(
+    db: &ActionDb,
+    sidecar: &ClaimFileSidecar,
+    sidecar_checksum: &str,
+) -> Result<CommittedProjectionRun, String> {
+    let binding: Option<(String, String)> = db
+        .conn_ref()
+        .query_row(
+            "SELECT sidecar_rel_path, entity_subject_compact
+               FROM claim_file_projection_path_bindings
+              WHERE markdown_rel_path = ?1",
+            [&sidecar.markdown_rel_path],
+            |row| Ok((row.get(0)?, row.get(1)?)),
+        )
+        .optional()
+        .map_err(|error| error.to_string())?;
+    let Some((bound_sidecar_path, bound_subject)) = binding else {
+        return Err("projection path binding missing".to_string());
+    };
+    if bound_sidecar_path != sidecar.sidecar_rel_path
+        || bound_subject != sidecar.entity_subject_compact
+    {
+        return Err("projection path binding mismatch".to_string());
+    }
+
+    let run_id: Option<String> = db
+        .conn_ref()
+        .query_row(
+            "SELECT id
+               FROM claim_file_projection_runs
+              WHERE entity_subject_compact = ?1
+                AND markdown_rel_path = ?2
+                AND sidecar_rel_path = ?3
+                AND sidecar_checksum = ?4
+                AND projection_root = ?5
+                AND projection_version = ?6
+                AND sidecar_schema_version = ?7
+                AND status IN ('committed', 'repaired')
+              ORDER BY attempted_at DESC, id DESC
+              LIMIT 1",
+            params![
+                &sidecar.entity_subject_compact,
+                &sidecar.markdown_rel_path,
+                &sidecar.sidecar_rel_path,
+                sidecar_checksum,
+                CLAIM_FILE_PROJECTION_ROOT,
+                CLAIM_FILE_PROJECTION_VERSION,
+                CLAIM_FILE_SIDECAR_SCHEMA_VERSION,
+            ],
+            |row| row.get(0),
+        )
+        .optional()
+        .map_err(|error| error.to_string())?;
+    let Some(run_id) = run_id else {
+        return Err("committed projection run not found for sidecar".to_string());
+    };
+
+    let run_claim_count: i64 = db
+        .conn_ref()
+        .query_row(
+            "SELECT count(*)
+               FROM claim_file_projection_run_claims
+              WHERE run_id = ?1",
+            [&run_id],
+            |row| row.get(0),
+        )
+        .map_err(|error| error.to_string())?;
+    if run_claim_count != sidecar.claims.len() as i64 {
+        return Err("projection claim membership count mismatch".to_string());
+    }
+
+    for claim in &sidecar.claims {
+        if claim.semantic_identity.runtime_claim_id != claim.runtime_claim_id
+            || claim.semantic_identity.runtime_claim_version != claim.runtime_claim_version
+        {
+            return Err("sidecar claim identity/version mismatch".to_string());
+        }
+        let row: Option<(u64, String, String, String)> = db
+            .conn_ref()
+            .query_row(
+                "SELECT claim_version, semantic_identity_json, trust_band, sensitivity
+                   FROM claim_file_projection_run_claims
+                  WHERE run_id = ?1
+                    AND claim_id = ?2",
+                params![&run_id, &claim.runtime_claim_id],
+                |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?, row.get(3)?)),
+            )
+            .optional()
+            .map_err(|error| error.to_string())?;
+        let Some((claim_version, semantic_identity_json, trust_band, sensitivity)) = row else {
+            return Err("projection claim membership missing".to_string());
+        };
+        let semantic_identity: ClaimSemanticIdentityV1 =
+            serde_json::from_str(&semantic_identity_json).map_err(|error| error.to_string())?;
+        if claim_version != claim.runtime_claim_version
+            || semantic_identity != claim.semantic_identity
+            || trust_band != claim.trust_band
+            || sensitivity != claim.sensitivity
+        {
+            return Err("projection claim membership mismatch".to_string());
+        }
+    }
+
+    Ok(CommittedProjectionRun { run_id })
+}
+
+fn ensure_projection_path_binding(
+    db: &ActionDb,
+    run: &RenderBundle,
+    now: &str,
+) -> Result<(), String> {
+    let markdown_rel_path = path_to_slash_string(&run.markdown_rel_path);
+    let sidecar_rel_path = path_to_slash_string(&run.sidecar_rel_path);
+    let inserted = db
+        .conn_ref()
+        .execute(
+            "INSERT OR IGNORE INTO claim_file_projection_path_bindings (
+                markdown_rel_path, sidecar_rel_path, entity_subject_compact,
+                projection_root, created_at, updated_at
+             ) VALUES (?1, ?2, ?3, ?4, ?5, ?5)",
+            params![
+                &markdown_rel_path,
+                &sidecar_rel_path,
+                &run.entity_subject_compact,
+                CLAIM_FILE_PROJECTION_ROOT,
+                now,
+            ],
+        )
+        .map_err(|error| error.to_string())?;
+    if inserted == 1 {
+        return Ok(());
+    }
+
+    let mut stmt = db
+        .conn_ref()
+        .prepare(
+            "SELECT markdown_rel_path, sidecar_rel_path, entity_subject_compact
+               FROM claim_file_projection_path_bindings
+              WHERE markdown_rel_path = ?1
+                 OR sidecar_rel_path = ?2
+                 OR entity_subject_compact = ?3",
+        )
+        .map_err(|error| error.to_string())?;
+    let rows = stmt
+        .query_map(
+            params![
+                &markdown_rel_path,
+                &sidecar_rel_path,
+                &run.entity_subject_compact,
+            ],
+            |row| {
+                Ok((
+                    row.get::<_, String>(0)?,
+                    row.get::<_, String>(1)?,
+                    row.get::<_, String>(2)?,
+                ))
+            },
+        )
+        .map_err(|error| error.to_string())?;
+    let mut saw_matching_binding = false;
+    for row in rows {
+        let (existing_markdown, existing_sidecar, existing_subject) =
+            row.map_err(|error| error.to_string())?;
+        if existing_markdown != markdown_rel_path
+            || existing_sidecar != sidecar_rel_path
+            || existing_subject != run.entity_subject_compact
+        {
+            return Err("projection path collision".to_string());
+        }
+        saw_matching_binding = true;
+    }
+    if !saw_matching_binding {
+        return Err("projection path binding missing after insert".to_string());
+    }
+    db.conn_ref()
+        .execute(
+            "UPDATE claim_file_projection_path_bindings
+                SET updated_at = ?1
+              WHERE markdown_rel_path = ?2",
+            params![now, &markdown_rel_path],
+        )
+        .map_err(|error| error.to_string())?;
     Ok(())
 }
 
@@ -1053,6 +1350,10 @@ fn parse_markdown_corrections(
         }
         if let Some(value) = trimmed.strip_prefix("dailyos-claim-id:") {
             block.claim_id = Some(value.trim().to_string());
+        } else if let Some(value) = trimmed.strip_prefix("dailyos-claim-version:") {
+            block.version_header = Some(value.trim().to_string());
+        } else if let Some(value) = trimmed.strip_prefix("dailyos-identity-hash:") {
+            block.identity_hash = Some(value.trim().to_string());
         } else if let Some(value) = trimmed.strip_prefix("dailyos-sidecar-checksum:") {
             block.sidecar_checksum = Some(value.trim().to_string());
         } else if let Some(value) = trimmed.strip_prefix("dailyos-action:") {
@@ -1109,6 +1410,8 @@ fn parse_failure_error_class(error: &ClaimFileError) -> &'static str {
 #[derive(Debug, Default)]
 struct ParsedBlock {
     claim_id: Option<String>,
+    version_header: Option<String>,
+    identity_hash: Option<String>,
     sidecar_checksum: Option<String>,
     action: Option<String>,
     payload: Option<String>,
@@ -1136,6 +1439,26 @@ fn correction_from_block(
     if block_checksum != sidecar_checksum {
         return Err(ClaimFileError::BadRequest("sidecar_mismatch".to_string()));
     }
+    let projected_claim_version = block
+        .version_header
+        .ok_or_else(|| {
+            ClaimFileError::BadRequest("claim block missing dailyos-claim-version".to_string())
+        })?
+        .parse::<u64>()
+        .map_err(|_| ClaimFileError::BadRequest("invalid dailyos-claim-version".to_string()))?;
+    if projected_claim_version != claim.runtime_claim_version {
+        return Err(ClaimFileError::BadRequest(
+            "stale_projection_claim_version".to_string(),
+        ));
+    }
+    let projected_identity_hash = block.identity_hash.ok_or_else(|| {
+        ClaimFileError::BadRequest("claim block missing dailyos-identity-hash".to_string())
+    })?;
+    if projected_identity_hash != claim.semantic_identity.dedup_key_components_hash {
+        return Err(ClaimFileError::BadRequest(
+            "stale_projection_identity_hash".to_string(),
+        ));
+    }
     let action_raw = block.action.unwrap_or_else(|| "none".to_string());
     if action_raw == "none" {
         return Ok(None);
@@ -1144,9 +1467,284 @@ fn correction_from_block(
     let metadata = metadata_for_action(action, block.payload.as_deref(), claim)?;
     Ok(Some(ParsedCorrection {
         claim_id,
+        projected_claim_version,
+        projected_identity_hash,
         action,
         metadata,
     }))
+}
+
+async fn current_projection_failures(
+    state: &AppState,
+    sidecar: &ClaimFileSidecar,
+    corrections: &[ParsedCorrection],
+) -> Result<Vec<ClaimFileApplyFailure>, ClaimFileError> {
+    let sidecar = sidecar.clone();
+    let corrections = corrections.to_vec();
+    state
+        .db_read(move |db| current_projection_failures_db(db, &sidecar, &corrections))
+        .await
+        .map_err(|error| ClaimFileError::Db(error.to_string()))
+}
+
+fn current_projection_failures_db(
+    db: &ActionDb,
+    sidecar: &ClaimFileSidecar,
+    corrections: &[ParsedCorrection],
+) -> Result<Vec<ClaimFileApplyFailure>, String> {
+    let mut failures = Vec::new();
+    for correction in corrections {
+        let Some(projected_claim) = sidecar
+            .claims
+            .iter()
+            .find(|claim| claim.runtime_claim_id == correction.claim_id)
+        else {
+            failures.push(stale_projection_failure(
+                &correction.claim_id,
+                "sidecar_claim_missing",
+            ));
+            continue;
+        };
+        let Some(current_claim) =
+            crate::services::claims::load_claim_by_id(db.conn_ref(), &correction.claim_id)
+                .map_err(|error| error.to_string())?
+        else {
+            failures.push(stale_projection_failure(
+                &correction.claim_id,
+                "claim_missing",
+            ));
+            continue;
+        };
+        let current_identity = semantic_identity_for_claim(
+            &current_claim,
+            sidecar.entity_subject_ref.clone(),
+            sidecar.entity_subject_compact.clone(),
+        );
+        if current_claim.claim_version != correction.projected_claim_version
+            || current_claim.claim_version != projected_claim.runtime_claim_version
+            || current_identity.dedup_key_components_hash != correction.projected_identity_hash
+            || current_identity.dedup_key_components_hash
+                != projected_claim.semantic_identity.dedup_key_components_hash
+        {
+            failures.push(stale_projection_failure(
+                &correction.claim_id,
+                "current_claim_changed",
+            ));
+        }
+    }
+    Ok(failures)
+}
+
+fn stale_projection_failure(claim_id: &str, reason: &str) -> ClaimFileApplyFailure {
+    ClaimFileApplyFailure {
+        claim_id: Some(claim_id.to_string()),
+        error_class: "stale_projection".to_string(),
+        error_detail_hash: redacted_hash(reason),
+    }
+}
+
+fn correction_payload_hash(correction: &ParsedCorrection) -> String {
+    match correction.metadata.as_ref() {
+        Some(metadata) => sha256_hex(metadata.to_string().as_bytes()),
+        None => sha256_hex(b"null"),
+    }
+}
+
+fn correction_apply_idempotency_key(
+    sidecar_checksum: &str,
+    correction: &ParsedCorrection,
+    payload_hash: &str,
+) -> String {
+    let mut hasher = Sha256::new();
+    hasher.update(b"claim_file_correction_apply_v1");
+    hasher.update([0x1f]);
+    hasher.update(sidecar_checksum.as_bytes());
+    hasher.update([0x1f]);
+    hasher.update(correction.claim_id.as_bytes());
+    hasher.update([0x1f]);
+    hasher.update(correction.projected_claim_version.to_string().as_bytes());
+    hasher.update([0x1f]);
+    hasher.update(correction.projected_identity_hash.as_bytes());
+    hasher.update([0x1f]);
+    hasher.update(correction.action.as_str().as_bytes());
+    hasher.update([0x1f]);
+    hasher.update(payload_hash.as_bytes());
+    format!("{:x}", hasher.finalize())
+}
+
+async fn claim_correction_apply(
+    state: &AppState,
+    apply_key: &str,
+    sidecar_checksum: &str,
+    correction: &ParsedCorrection,
+    payload_hash: &str,
+) -> Result<CorrectionApplyState, ClaimFileError> {
+    let apply_key = apply_key.to_string();
+    let sidecar_checksum = sidecar_checksum.to_string();
+    let claim_id = correction.claim_id.clone();
+    let projected_claim_version = correction.projected_claim_version;
+    let projected_identity_hash = correction.projected_identity_hash.clone();
+    let feedback_action = correction.action.as_str().to_string();
+    let payload_hash = payload_hash.to_string();
+    state
+        .db_write(move |db| {
+            let record = CorrectionApplyRecord {
+                apply_key: &apply_key,
+                sidecar_checksum: &sidecar_checksum,
+                claim_id: &claim_id,
+                projected_claim_version,
+                projected_identity_hash: &projected_identity_hash,
+                feedback_action: &feedback_action,
+                payload_hash: &payload_hash,
+            };
+            claim_correction_apply_db(db, &record)
+        })
+        .await
+        .map_err(|error| ClaimFileError::Db(error.to_string()))
+}
+
+fn claim_correction_apply_db(
+    db: &ActionDb,
+    record: &CorrectionApplyRecord<'_>,
+) -> Result<CorrectionApplyState, String> {
+    let now = Utc::now();
+    let now_text = now.to_rfc3339();
+    let inserted = db
+        .conn_ref()
+        .execute(
+            "INSERT OR IGNORE INTO claim_file_correction_apply_events (
+                idempotency_key, sidecar_checksum, claim_id,
+                projected_claim_version, projected_identity_hash, feedback_action,
+                payload_hash, status, claimed_at, updated_at
+             ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, 'claimed', ?8, ?8)",
+            params![
+                record.apply_key,
+                record.sidecar_checksum,
+                record.claim_id,
+                record.projected_claim_version,
+                record.projected_identity_hash,
+                record.feedback_action,
+                record.payload_hash,
+                &now_text,
+            ],
+        )
+        .map_err(|error| error.to_string())?;
+    if inserted == 1 {
+        return Ok(CorrectionApplyState::Claimed);
+    }
+
+    let (status, claimed_at): (String, String) = db
+        .conn_ref()
+        .query_row(
+            "SELECT status, claimed_at
+              FROM claim_file_correction_apply_events
+              WHERE idempotency_key = ?1",
+            [record.apply_key],
+            |row| Ok((row.get(0)?, row.get(1)?)),
+        )
+        .optional()
+        .map_err(|error| error.to_string())?
+        .ok_or_else(|| "correction apply event missing after insert conflict".to_string())?;
+    match status.as_str() {
+        "applied" => Ok(CorrectionApplyState::AlreadyApplied),
+        "claimed" => {
+            if correction_apply_claim_expired(&claimed_at, now)? {
+                db.conn_ref()
+                    .execute(
+                        "UPDATE claim_file_correction_apply_events
+                            SET claimed_at = ?1,
+                                updated_at = ?1
+                          WHERE idempotency_key = ?2
+                            AND status = 'claimed'",
+                        params![&now_text, record.apply_key],
+                    )
+                    .map_err(|error| error.to_string())?;
+                Ok(CorrectionApplyState::Claimed)
+            } else {
+                Ok(CorrectionApplyState::InProgress)
+            }
+        }
+        "failed" => {
+            db.conn_ref()
+                .execute(
+                    "UPDATE claim_file_correction_apply_events
+                        SET status = 'claimed',
+                            error_detail_hash = NULL,
+                            failed_at = NULL,
+                            claimed_at = ?1,
+                            updated_at = ?1
+                      WHERE idempotency_key = ?2",
+                    params![&now_text, record.apply_key],
+                )
+                .map_err(|error| error.to_string())?;
+            Ok(CorrectionApplyState::Claimed)
+        }
+        other => Err(format!("unknown correction apply status `{other}`")),
+    }
+}
+
+async fn mark_correction_apply_failed(
+    state: &AppState,
+    apply_key: &str,
+    error_detail: &str,
+) -> Result<CorrectionFailureMarkState, ClaimFileError> {
+    let apply_key = apply_key.to_string();
+    let error_detail_hash = redacted_hash(error_detail);
+    state
+        .db_write(move |db| mark_correction_apply_failed_db(db, &apply_key, &error_detail_hash))
+        .await
+        .map_err(|error| ClaimFileError::Db(error.to_string()))
+}
+
+fn mark_correction_apply_failed_db(
+    db: &ActionDb,
+    apply_key: &str,
+    error_detail_hash: &str,
+) -> Result<CorrectionFailureMarkState, String> {
+    let now = Utc::now().to_rfc3339();
+    let updated = db
+        .conn_ref()
+        .execute(
+            "UPDATE claim_file_correction_apply_events
+                SET status = 'failed',
+                    error_detail_hash = ?1,
+                    failed_at = ?2,
+                    updated_at = ?2
+              WHERE idempotency_key = ?3
+                AND status = 'claimed'",
+            params![error_detail_hash, &now, apply_key],
+        )
+        .map_err(|error| error.to_string())?;
+    if updated == 1 {
+        return Ok(CorrectionFailureMarkState::MarkedFailed);
+    }
+
+    let status: Option<String> = db
+        .conn_ref()
+        .query_row(
+            "SELECT status
+               FROM claim_file_correction_apply_events
+              WHERE idempotency_key = ?1",
+            [apply_key],
+            |row| row.get(0),
+        )
+        .optional()
+        .map_err(|error| error.to_string())?;
+    match status.as_deref() {
+        Some("applied") => Ok(CorrectionFailureMarkState::AlreadyApplied),
+        Some("failed") => Ok(CorrectionFailureMarkState::MarkedFailed),
+        Some("claimed") => Err("correction apply event was not marked failed".to_string()),
+        Some(other) => Err(format!("unknown correction apply status `{other}`")),
+        None => Err("correction apply event missing while marking failed".to_string()),
+    }
+}
+
+fn correction_apply_claim_expired(claimed_at: &str, now: DateTime<Utc>) -> Result<bool, String> {
+    let claimed_at = DateTime::parse_from_rfc3339(claimed_at)
+        .map_err(|error| format!("invalid correction apply claimed_at: {error}"))?
+        .with_timezone(&Utc);
+    Ok(now.signed_duration_since(claimed_at)
+        > Duration::seconds(CLAIM_FILE_CORRECTION_APPLY_LEASE_SECS))
 }
 
 fn metadata_for_action(
@@ -1325,21 +1923,27 @@ fn verify_sidecar_contract(sidecar: &ClaimFileSidecar) -> Result<(), ClaimFileEr
     Ok(())
 }
 
+#[cfg(unix)]
 fn write_projection_files(
     workspace_root: &Path,
-    markdown_path: &Path,
-    sidecar_path: &Path,
+    markdown_rel_path: &Path,
+    sidecar_rel_path: &Path,
     markdown: &str,
     sidecar_json: &str,
 ) -> std::io::Result<()> {
-    let canonical_root = workspace_root.canonicalize()?;
-    create_projection_parent_dirs(&canonical_root, sidecar_path)?;
-    create_projection_parent_dirs(&canonical_root, markdown_path)?;
-    atomic_write_projection_file(sidecar_path, sidecar_json)?;
-    atomic_write_projection_file(markdown_path, markdown)?;
+    let markdown_rel_path = validate_projection_relative_path_for_io(markdown_rel_path)?;
+    let sidecar_rel_path = validate_projection_relative_path_for_io(sidecar_rel_path)?;
+    let root = open_workspace_root_dir(workspace_root)?;
+    let (sidecar_parent, sidecar_name) =
+        open_projection_parent_dir_at(&root, &sidecar_rel_path, true)?;
+    let (markdown_parent, markdown_name) =
+        open_projection_parent_dir_at(&root, &markdown_rel_path, true)?;
+    atomic_write_projection_file_at(&sidecar_parent, &sidecar_name, sidecar_json.as_bytes())?;
+    atomic_write_projection_file_at(&markdown_parent, &markdown_name, markdown.as_bytes())?;
     Ok(())
 }
 
+#[cfg(not(unix))]
 fn atomic_write_projection_file(path: &Path, content: &str) -> std::io::Result<()> {
     let parent = path.parent().ok_or_else(|| {
         std::io::Error::new(
@@ -1369,6 +1973,7 @@ fn atomic_write_projection_file(path: &Path, content: &str) -> std::io::Result<(
     write_result
 }
 
+#[cfg(not(unix))]
 fn write_projection_temp_file(path: &Path, content: &[u8]) -> std::io::Result<()> {
     let mut options = fs::OpenOptions::new();
     options.write(true).create_new(true);
@@ -1383,6 +1988,7 @@ fn write_projection_temp_file(path: &Path, content: &[u8]) -> std::io::Result<()
     Ok(())
 }
 
+#[cfg(not(unix))]
 fn create_projection_parent_dirs(canonical_root: &Path, file_path: &Path) -> std::io::Result<()> {
     let parent = file_path.parent().ok_or_else(|| {
         std::io::Error::new(
@@ -1416,6 +2022,247 @@ fn create_projection_parent_dirs(canonical_root: &Path, file_path: &Path) -> std
         }
     }
     Ok(())
+}
+
+#[cfg(not(unix))]
+fn write_projection_files(
+    workspace_root: &Path,
+    markdown_rel_path: &Path,
+    sidecar_rel_path: &Path,
+    markdown: &str,
+    sidecar_json: &str,
+) -> std::io::Result<()> {
+    let canonical_root = workspace_root.canonicalize()?;
+    let markdown_path = projection_abs_path_io(workspace_root, markdown_rel_path)?;
+    let sidecar_path = projection_abs_path_io(workspace_root, sidecar_rel_path)?;
+    create_projection_parent_dirs(&canonical_root, &sidecar_path)?;
+    create_projection_parent_dirs(&canonical_root, &markdown_path)?;
+    atomic_write_projection_file(&sidecar_path, sidecar_json)?;
+    atomic_write_projection_file(&markdown_path, markdown)?;
+    Ok(())
+}
+
+#[cfg(unix)]
+fn open_workspace_root_dir(workspace_root: &Path) -> std::io::Result<fs::File> {
+    use std::os::unix::fs::MetadataExt;
+
+    let requested_metadata = fs::symlink_metadata(workspace_root)?;
+    if requested_metadata.file_type().is_symlink() {
+        return Err(std::io::Error::new(
+            std::io::ErrorKind::InvalidInput,
+            "workspace root must not be a symlink",
+        ));
+    }
+    if !requested_metadata.is_dir() {
+        return Err(std::io::Error::new(
+            std::io::ErrorKind::InvalidInput,
+            "workspace root must be a directory",
+        ));
+    }
+    let canonical_root = workspace_root.canonicalize()?;
+    let canonical_metadata = fs::symlink_metadata(&canonical_root)?;
+    let file = open_dir_path(&canonical_root)?;
+    let opened_metadata = file.metadata()?;
+    let requested_matches_opened = requested_metadata.dev() == opened_metadata.dev()
+        && requested_metadata.ino() == opened_metadata.ino();
+    let canonical_matches_opened = canonical_metadata.dev() == opened_metadata.dev()
+        && canonical_metadata.ino() == opened_metadata.ino();
+    if !requested_matches_opened || !canonical_matches_opened {
+        return Err(std::io::Error::new(
+            std::io::ErrorKind::InvalidInput,
+            "workspace root changed while opening",
+        ));
+    }
+    Ok(file)
+}
+
+#[cfg(unix)]
+fn open_dir_path(path: &Path) -> std::io::Result<fs::File> {
+    use std::os::fd::FromRawFd;
+    use std::os::unix::ffi::OsStrExt;
+
+    let c_path = std::ffi::CString::new(path.as_os_str().as_bytes()).map_err(|_| {
+        std::io::Error::new(std::io::ErrorKind::InvalidInput, "path contains nul byte")
+    })?;
+    let fd = unsafe {
+        libc::open(
+            c_path.as_ptr(),
+            libc::O_RDONLY | libc::O_DIRECTORY | libc::O_CLOEXEC | libc::O_NOFOLLOW,
+        )
+    };
+    if fd < 0 {
+        return Err(std::io::Error::last_os_error());
+    }
+    Ok(unsafe { fs::File::from_raw_fd(fd) })
+}
+
+#[cfg(unix)]
+fn duplicate_dir_fd(fd: std::os::fd::RawFd) -> std::io::Result<fs::File> {
+    use std::os::fd::FromRawFd;
+
+    let duped = unsafe { libc::fcntl(fd, libc::F_DUPFD_CLOEXEC, 0) };
+    if duped < 0 {
+        return Err(std::io::Error::last_os_error());
+    }
+    Ok(unsafe { fs::File::from_raw_fd(duped) })
+}
+
+#[cfg(unix)]
+fn open_projection_parent_dir_at(
+    root: &fs::File,
+    rel_path: &Path,
+    create: bool,
+) -> std::io::Result<(fs::File, OsString)> {
+    use std::os::fd::{AsRawFd, FromRawFd};
+
+    let rel_path = validate_projection_relative_path_for_io(rel_path)?;
+    let file_name = rel_path.file_name().map(OsString::from).ok_or_else(|| {
+        std::io::Error::new(
+            std::io::ErrorKind::InvalidInput,
+            "projection path has no file name",
+        )
+    })?;
+    let parent = rel_path.parent().ok_or_else(|| {
+        std::io::Error::new(
+            std::io::ErrorKind::InvalidInput,
+            "projection path has no parent",
+        )
+    })?;
+    let mut dir = duplicate_dir_fd(root.as_raw_fd())?;
+    for component in parent.components() {
+        let Component::Normal(name) = component else {
+            return Err(std::io::Error::new(
+                std::io::ErrorKind::InvalidInput,
+                "non-normal projection parent component",
+            ));
+        };
+        let c_name = cstring_from_os(name)?;
+        let mut fd = unsafe {
+            libc::openat(
+                dir.as_raw_fd(),
+                c_name.as_ptr(),
+                libc::O_RDONLY | libc::O_DIRECTORY | libc::O_NOFOLLOW | libc::O_CLOEXEC,
+            )
+        };
+        if fd < 0 {
+            let open_error = std::io::Error::last_os_error();
+            if create && open_error.kind() == std::io::ErrorKind::NotFound {
+                let mkdir_result =
+                    unsafe { libc::mkdirat(dir.as_raw_fd(), c_name.as_ptr(), 0o700) };
+                if mkdir_result < 0 {
+                    let mkdir_error = std::io::Error::last_os_error();
+                    if mkdir_error.kind() != std::io::ErrorKind::AlreadyExists {
+                        return Err(mkdir_error);
+                    }
+                }
+                fd = unsafe {
+                    libc::openat(
+                        dir.as_raw_fd(),
+                        c_name.as_ptr(),
+                        libc::O_RDONLY | libc::O_DIRECTORY | libc::O_NOFOLLOW | libc::O_CLOEXEC,
+                    )
+                };
+            }
+        }
+        if fd < 0 {
+            return Err(map_no_follow_io_error(std::io::Error::last_os_error()));
+        }
+        let next = unsafe { fs::File::from_raw_fd(fd) };
+        let metadata = next.metadata()?;
+        if !metadata.is_dir() {
+            return Err(std::io::Error::new(
+                std::io::ErrorKind::InvalidInput,
+                "projection ancestor is not a directory",
+            ));
+        }
+        dir = next;
+    }
+    Ok((dir, file_name))
+}
+
+#[cfg(unix)]
+fn atomic_write_projection_file_at(
+    parent: &fs::File,
+    file_name: &std::ffi::OsStr,
+    content: &[u8],
+) -> std::io::Result<()> {
+    use std::os::fd::{AsRawFd, FromRawFd};
+
+    let final_name = cstring_from_os(file_name)?;
+    let tmp_name = OsString::from(format!(
+        ".{}.{}.tmp",
+        file_name.to_string_lossy(),
+        uuid::Uuid::new_v4()
+    ));
+    let tmp_name = cstring_from_os(&tmp_name)?;
+    let write_result = (|| {
+        let fd = unsafe {
+            libc::openat(
+                parent.as_raw_fd(),
+                tmp_name.as_ptr(),
+                libc::O_WRONLY | libc::O_CREAT | libc::O_EXCL | libc::O_NOFOLLOW | libc::O_CLOEXEC,
+                0o600,
+            )
+        };
+        if fd < 0 {
+            return Err(map_no_follow_io_error(std::io::Error::last_os_error()));
+        }
+        let mut file = unsafe { fs::File::from_raw_fd(fd) };
+        file.write_all(content)?;
+        file.sync_all()?;
+        drop(file);
+        let renamed = unsafe {
+            libc::renameat(
+                parent.as_raw_fd(),
+                tmp_name.as_ptr(),
+                parent.as_raw_fd(),
+                final_name.as_ptr(),
+            )
+        };
+        if renamed < 0 {
+            return Err(std::io::Error::last_os_error());
+        }
+        Ok(())
+    })();
+    if write_result.is_err() {
+        let _ = unsafe { libc::unlinkat(parent.as_raw_fd(), tmp_name.as_ptr(), 0) };
+    }
+    write_result
+}
+
+#[cfg(unix)]
+fn cstring_from_os(value: &std::ffi::OsStr) -> std::io::Result<std::ffi::CString> {
+    use std::os::unix::ffi::OsStrExt;
+
+    std::ffi::CString::new(value.as_bytes()).map_err(|_| {
+        std::io::Error::new(
+            std::io::ErrorKind::InvalidInput,
+            "projection path contains nul byte",
+        )
+    })
+}
+
+#[cfg(unix)]
+fn map_no_follow_io_error(error: std::io::Error) -> std::io::Error {
+    if error.raw_os_error() == Some(libc::ELOOP) {
+        std::io::Error::new(
+            std::io::ErrorKind::InvalidInput,
+            "projection path contains symlink",
+        )
+    } else {
+        error
+    }
+}
+
+fn validate_projection_relative_path_for_io(path: &Path) -> std::io::Result<PathBuf> {
+    validate_projection_relative_path(path)
+        .map_err(|error| std::io::Error::new(std::io::ErrorKind::InvalidInput, error.to_string()))
+}
+
+#[cfg(not(unix))]
+fn projection_abs_path_io(workspace_root: &Path, rel_path: &Path) -> std::io::Result<PathBuf> {
+    projection_abs_path(workspace_root, rel_path)
+        .map_err(|error| std::io::Error::new(std::io::ErrorKind::InvalidInput, error.to_string()))
 }
 
 fn validate_existing_projection_ancestors(
@@ -1475,8 +2322,9 @@ fn validate_projection_dir_metadata(
     Ok(())
 }
 
-fn read_stable_to_string(path: &Path) -> Result<String, ClaimFileError> {
-    let (mut file, before) = open_projection_file_no_follow(path)?;
+fn read_stable_to_string(workspace_root: &Path, rel_path: &Path) -> Result<String, ClaimFileError> {
+    let rel_path = validate_projection_relative_path(rel_path)?;
+    let (mut file, before) = open_projection_file_no_follow(workspace_root, &rel_path)?;
     let mut content = String::new();
     file.read_to_string(&mut content)?;
     let after = file.metadata()?;
@@ -1493,27 +2341,51 @@ fn read_stable_to_string(path: &Path) -> Result<String, ClaimFileError> {
 }
 
 #[cfg(unix)]
-fn open_projection_file_no_follow(path: &Path) -> Result<(fs::File, fs::Metadata), ClaimFileError> {
-    use std::os::unix::fs::OpenOptionsExt;
+fn open_projection_file_no_follow(
+    workspace_root: &Path,
+    rel_path: &Path,
+) -> Result<(fs::File, fs::Metadata), ClaimFileError> {
+    use std::os::fd::{AsRawFd, FromRawFd};
 
-    let file = fs::OpenOptions::new()
-        .read(true)
-        .custom_flags(libc::O_NOFOLLOW)
-        .open(path)
-        .map_err(|error| {
-            if error.raw_os_error() == Some(libc::ELOOP) {
-                ClaimFileError::PathRejected("projection file is a symlink".to_string())
+    let root = open_workspace_root_dir(workspace_root).map_err(ClaimFileError::Io)?;
+    let (parent, file_name) =
+        open_projection_parent_dir_at(&root, rel_path, false).map_err(|error| {
+            if error.raw_os_error() == Some(libc::ELOOP)
+                || error.kind() == std::io::ErrorKind::InvalidInput
+            {
+                ClaimFileError::PathRejected(error.to_string())
             } else {
                 ClaimFileError::Io(error)
             }
         })?;
+    let file_name = cstring_from_os(&file_name).map_err(ClaimFileError::Io)?;
+    let fd = unsafe {
+        libc::openat(
+            parent.as_raw_fd(),
+            file_name.as_ptr(),
+            libc::O_RDONLY | libc::O_NOFOLLOW | libc::O_CLOEXEC,
+        )
+    };
+    if fd < 0 {
+        let error = std::io::Error::last_os_error();
+        return Err(if error.raw_os_error() == Some(libc::ELOOP) {
+            ClaimFileError::PathRejected("projection file is a symlink".to_string())
+        } else {
+            ClaimFileError::Io(error)
+        });
+    }
+    let file = unsafe { fs::File::from_raw_fd(fd) };
     let metadata = file.metadata()?;
     validate_projection_file_metadata(&metadata)?;
     Ok((file, metadata))
 }
 
 #[cfg(not(unix))]
-fn open_projection_file_no_follow(path: &Path) -> Result<(fs::File, fs::Metadata), ClaimFileError> {
+fn open_projection_file_no_follow(
+    workspace_root: &Path,
+    rel_path: &Path,
+) -> Result<(fs::File, fs::Metadata), ClaimFileError> {
+    let path = projection_abs_path(workspace_root, rel_path)?;
     let before = fs::symlink_metadata(path)?;
     validate_projection_file_metadata(&before)?;
     let file = fs::File::open(path)?;
@@ -1677,6 +2549,12 @@ fn slug_segment(raw: &str) -> String {
     }
 }
 
+fn projection_entity_slug(raw_id: &str, entity_subject_compact: &str) -> String {
+    let display_slug = slug_segment(raw_id);
+    let identity_hash = sha256_hex(entity_subject_compact.as_bytes());
+    format!("{}-{}", display_slug, &identity_hash[..12])
+}
+
 fn trust_band_label(score: Option<f64>) -> &'static str {
     match score {
         Some(score) if score >= 0.75 => "likely_current",
@@ -1746,7 +2624,8 @@ mod tests {
     use super::*;
     use crate::db::test_utils::test_db;
     use crate::services::claims::{
-        commit_claim, record_claim_feedback, ClaimFeedbackInput, ClaimProposal, CommittedClaim,
+        commit_claim, record_claim_feedback, record_claim_feedback_for_claim_file_apply,
+        ClaimError, ClaimFeedbackInput, ClaimFileFeedbackApplyInput, ClaimProposal, CommittedClaim,
         TombstoneSpec,
     };
     use crate::services::context::{ExternalClients, FixedClock, SeedableRng, ServiceContext};
@@ -1955,6 +2834,8 @@ mod tests {
         let markdown = "\
 <!-- dailyos-claim-start -->
 dailyos-claim-id: claim-1
+dailyos-claim-version: 3
+dailyos-identity-hash: identity-hash-1
 dailyos-sidecar-checksum: checksum-1
 dailyos-action: wrong_source
 dailyos-payload: {}
@@ -1966,6 +2847,8 @@ dailyos-payload: {}
 
         assert_eq!(corrections.len(), 1);
         assert_eq!(corrections[0].action, FeedbackAction::WrongSource);
+        assert_eq!(corrections[0].projected_claim_version, 3);
+        assert_eq!(corrections[0].projected_identity_hash, "identity-hash-1");
         assert_eq!(
             corrections[0]
                 .metadata
@@ -1997,6 +2880,8 @@ dailyos-payload: {}
             let markdown = format!(
                 "<!-- dailyos-claim-start -->\n\
                  dailyos-claim-id: claim-1\n\
+                 dailyos-claim-version: 3\n\
+                 dailyos-identity-hash: identity-hash-1\n\
                  dailyos-sidecar-checksum: checksum-1\n\
                  dailyos-action: {slug}\n\
                  dailyos-payload: {payload}\n\
@@ -2012,11 +2897,43 @@ dailyos-payload: {}
     }
 
     #[test]
+    fn parser_rejects_stale_claim_version_and_identity_hash() {
+        let sidecar = fixture_sidecar();
+        let stale_version = "\
+<!-- dailyos-claim-start -->
+dailyos-claim-id: claim-1
+dailyos-claim-version: 2
+dailyos-identity-hash: identity-hash-1
+dailyos-sidecar-checksum: checksum-1
+dailyos-action: mark_false
+dailyos-payload: {}
+<!-- dailyos-claim-end -->
+";
+        let err = parse_markdown_corrections(stale_version, &sidecar, "checksum-1").unwrap_err();
+        assert!(err.to_string().contains("stale_projection_claim_version"));
+
+        let stale_identity = "\
+<!-- dailyos-claim-start -->
+dailyos-claim-id: claim-1
+dailyos-claim-version: 3
+dailyos-identity-hash: stale-identity
+dailyos-sidecar-checksum: checksum-1
+dailyos-action: mark_false
+dailyos-payload: {}
+<!-- dailyos-claim-end -->
+";
+        let err = parse_markdown_corrections(stale_identity, &sidecar, "checksum-1").unwrap_err();
+        assert!(err.to_string().contains("stale_projection_identity_hash"));
+    }
+
+    #[test]
     fn parser_rejects_ambiguous_unterminated_claim_block() {
         let sidecar = fixture_sidecar();
         let markdown = "\
 <!-- dailyos-claim-start -->
 dailyos-claim-id: claim-1
+dailyos-claim-version: 3
+dailyos-identity-hash: identity-hash-1
 dailyos-sidecar-checksum: checksum-1
 dailyos-action: mark_false
 dailyos-payload: {}
@@ -2033,6 +2950,8 @@ dailyos-payload: {}
         let markdown = "\
 <!-- dailyos-claim-start -->
 dailyos-claim-id: claim-1
+dailyos-claim-version: 3
+dailyos-identity-hash: identity-hash-1
 dailyos-sidecar-checksum: stale
 dailyos-action: mark_false
 dailyos-payload: {}
@@ -2050,6 +2969,8 @@ dailyos-payload: {}
         let markdown = "\
 <!-- dailyos-claim-start -->
 dailyos-claim-id: claim-1
+dailyos-claim-version: 3
+dailyos-identity-hash: identity-hash-1
 dailyos-sidecar-checksum: stale
 dailyos-action: mark_false
 dailyos-payload: {}
@@ -2074,6 +2995,8 @@ dailyos-payload: {}
         let markdown = "\
 <!-- dailyos-claim-start -->
 dailyos-claim-id: claim-1
+dailyos-claim-version: 3
+dailyos-identity-hash: identity-hash-1
 dailyos-sidecar-checksum: checksum-1
 dailyos-action: rewrite_claim
 dailyos-payload: {}
@@ -2098,6 +3021,8 @@ dailyos-payload: {}
         let markdown = "\
 <!-- dailyos-claim-start -->
 dailyos-claim-id: claim-1
+dailyos-claim-version: 3
+dailyos-identity-hash: identity-hash-1
 dailyos-sidecar-checksum: checksum-1
 dailyos-action: none
 dailyos-payload: {}
@@ -2146,6 +3071,20 @@ dailyos-action: mark_false\n\
         .is_err());
     }
 
+    #[test]
+    fn projection_entity_slug_disambiguates_colliding_display_slugs() {
+        assert_eq!(slug_segment("acct.example"), slug_segment("acct-example"));
+
+        let dotted =
+            projection_entity_slug("acct.example", r#"{"id":"acct.example","kind":"account"}"#);
+        let dashed =
+            projection_entity_slug("acct-example", r#"{"id":"acct-example","kind":"account"}"#);
+
+        assert_ne!(dotted, dashed);
+        assert!(dotted.starts_with("acct-example-"));
+        assert!(dashed.starts_with("acct-example-"));
+    }
+
     #[cfg(unix)]
     #[test]
     fn projection_abs_path_rejects_managed_root_symlink() {
@@ -2187,8 +3126,11 @@ dailyos-action: mark_false\n\
         )
         .expect("projection file symlink");
 
-        let err =
-            read_stable_to_string(&projection_dir.join(CLAIM_FILE_MARKDOWN_NAME)).unwrap_err();
+        let err = read_stable_to_string(
+            workspace.path(),
+            Path::new("_dailyos_claims/account/acct-1/claims.md"),
+        )
+        .unwrap_err();
 
         assert!(err.to_string().contains("symlink"));
     }
@@ -2211,10 +3153,70 @@ dailyos-action: mark_false\n\
         )
         .expect("projection file hardlink");
 
-        let err =
-            read_stable_to_string(&projection_dir.join(CLAIM_FILE_MARKDOWN_NAME)).unwrap_err();
+        let err = read_stable_to_string(
+            workspace.path(),
+            Path::new("_dailyos_claims/account/acct-1/claims.md"),
+        )
+        .unwrap_err();
 
         assert!(err.to_string().contains("hard links"));
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn write_projection_files_rejects_parent_symlink() {
+        let workspace = tempfile::tempdir().expect("workspace");
+        let outside = tempfile::tempdir().expect("outside");
+        let account_dir = workspace
+            .path()
+            .join(CLAIM_FILE_PROJECTION_ROOT)
+            .join("account");
+        std::fs::create_dir_all(&account_dir).expect("projection account dir");
+        std::os::unix::fs::symlink(outside.path(), account_dir.join("acct-1"))
+            .expect("parent symlink");
+
+        let err = write_projection_files(
+            workspace.path(),
+            Path::new("_dailyos_claims/account/acct-1/claims.md"),
+            Path::new("_dailyos_claims/account/acct-1/claims.corrections.json"),
+            "markdown",
+            "{}",
+        )
+        .unwrap_err();
+
+        assert!(
+            err.to_string().contains("symlink")
+                || err.to_string().contains("not a directory")
+                || err.to_string().contains("Not a directory")
+        );
+        assert!(
+            !outside.path().join(CLAIM_FILE_MARKDOWN_NAME).exists(),
+            "writer must not follow parent symlink outside the workspace"
+        );
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn write_projection_files_rejects_workspace_root_symlink() {
+        let outside = tempfile::tempdir().expect("outside");
+        let link_parent = tempfile::tempdir().expect("link parent");
+        let workspace_link = link_parent.path().join("workspace-link");
+        std::os::unix::fs::symlink(outside.path(), &workspace_link).expect("workspace symlink");
+
+        let err = write_projection_files(
+            &workspace_link,
+            Path::new("_dailyos_claims/account/acct-1/claims.md"),
+            Path::new("_dailyos_claims/account/acct-1/claims.corrections.json"),
+            "markdown",
+            "{}",
+        )
+        .unwrap_err();
+
+        assert!(err.to_string().contains("symlink"));
+        assert!(
+            !outside.path().join(CLAIM_FILE_PROJECTION_ROOT).exists(),
+            "writer must not anchor projection IO through a symlinked workspace root"
+        );
     }
 
     #[test]
@@ -2281,6 +3283,464 @@ dailyos-action: mark_false\n\
         assert_eq!(sidecar_claim.lifecycle.claim_state, "withdrawn");
         assert_eq!(sidecar_claim.lifecycle.surfacing_state, "dormant");
         assert_eq!(sidecar_claim.feedback_rows.len(), 1);
+    }
+
+    #[test]
+    fn current_projection_failures_rejects_claim_version_drift_after_render() {
+        let db = test_db();
+        let (clock, rng, external) = test_context_parts();
+        let ctx = test_live_context(&clock, &rng, &external);
+        let claim_id = inserted_claim_id(
+            commit_claim(&ctx, &db, fixture_claim_proposal("Version drift fixture"))
+                .expect("commit projection claim"),
+        );
+        let bundle = build_render_bundle_db(&db, r#"{"kind":"account","id":"acct-1"}"#)
+            .expect("build render bundle");
+        let edited_markdown = bundle
+            .markdown
+            .replace("dailyos-action: none", "dailyos-action: mark_false");
+        let corrections =
+            parse_markdown_corrections(&edited_markdown, &bundle.sidecar, &bundle.sidecar_checksum)
+                .expect("parse edited projection");
+        assert_eq!(corrections.len(), 1);
+
+        record_claim_feedback(
+            &ctx,
+            &db,
+            ClaimFeedbackInput {
+                claim_id: claim_id.clone(),
+                action: FeedbackAction::MarkOutdated,
+                actor: "user".to_string(),
+                actor_id: Some("user".to_string()),
+                payload_json: None,
+            },
+        )
+        .expect("record feedback after render");
+
+        let failures = current_projection_failures_db(&db, &bundle.sidecar, &corrections)
+            .expect("check current projection");
+
+        assert_eq!(failures.len(), 1);
+        assert_eq!(failures[0].claim_id.as_deref(), Some(claim_id.as_str()));
+        assert_eq!(failures[0].error_class, "stale_projection");
+    }
+
+    #[test]
+    fn correction_apply_ledger_replays_applied_reclaims_failed_and_leased_events() {
+        let db = test_db();
+        let (clock, rng, external) = test_context_parts();
+        let ctx = test_live_context(&clock, &rng, &external);
+        let claim_id = inserted_claim_id(
+            commit_claim(&ctx, &db, fixture_claim_proposal("Apply ledger fixture"))
+                .expect("commit projection claim"),
+        );
+        let correction = ParsedCorrection {
+            claim_id: claim_id.clone(),
+            projected_claim_version: 1,
+            projected_identity_hash: "identity-hash".to_string(),
+            action: FeedbackAction::ConfirmCurrent,
+            metadata: None,
+        };
+        let payload_hash = correction_payload_hash(&correction);
+        let apply_key =
+            correction_apply_idempotency_key("sidecar-checksum", &correction, &payload_hash);
+
+        assert_eq!(
+            claim_correction_apply_db(
+                &db,
+                &CorrectionApplyRecord {
+                    apply_key: &apply_key,
+                    sidecar_checksum: "sidecar-checksum",
+                    claim_id: &claim_id,
+                    projected_claim_version: correction.projected_claim_version,
+                    projected_identity_hash: &correction.projected_identity_hash,
+                    feedback_action: correction.action.as_str(),
+                    payload_hash: &payload_hash,
+                },
+            )
+            .expect("claim apply"),
+            CorrectionApplyState::Claimed
+        );
+        let feedback = record_claim_feedback_for_claim_file_apply(
+            &ctx,
+            &db,
+            ClaimFeedbackInput {
+                claim_id: claim_id.clone(),
+                action: FeedbackAction::ConfirmCurrent,
+                actor: "user".to_string(),
+                actor_id: Some("user".to_string()),
+                payload_json: None,
+            },
+            ClaimFileFeedbackApplyInput {
+                expected_claim_version: correction.projected_claim_version,
+                correction_apply_key: apply_key.clone(),
+            },
+        )
+        .expect("record feedback id");
+        let stored_feedback_id: Option<String> = db
+            .conn_ref()
+            .query_row(
+                "SELECT feedback_id
+                   FROM claim_file_correction_apply_events
+                  WHERE idempotency_key = ?1
+                    AND status = 'applied'",
+                [&apply_key],
+                |row| row.get(0),
+            )
+            .optional()
+            .expect("read applied feedback id");
+        assert_eq!(
+            stored_feedback_id.as_deref(),
+            Some(feedback.feedback_id.as_str())
+        );
+        assert_eq!(
+            claim_correction_apply_db(
+                &db,
+                &CorrectionApplyRecord {
+                    apply_key: &apply_key,
+                    sidecar_checksum: "sidecar-checksum",
+                    claim_id: &claim_id,
+                    projected_claim_version: correction.projected_claim_version,
+                    projected_identity_hash: &correction.projected_identity_hash,
+                    feedback_action: correction.action.as_str(),
+                    payload_hash: &payload_hash,
+                },
+            )
+            .expect("replay applied"),
+            CorrectionApplyState::AlreadyApplied
+        );
+
+        let failed_key = format!("{apply_key}-failed");
+        assert_eq!(
+            claim_correction_apply_db(
+                &db,
+                &CorrectionApplyRecord {
+                    apply_key: &failed_key,
+                    sidecar_checksum: "sidecar-checksum",
+                    claim_id: &claim_id,
+                    projected_claim_version: correction.projected_claim_version,
+                    projected_identity_hash: &correction.projected_identity_hash,
+                    feedback_action: correction.action.as_str(),
+                    payload_hash: &payload_hash,
+                },
+            )
+            .expect("claim failed apply"),
+            CorrectionApplyState::Claimed
+        );
+        mark_correction_apply_failed_db(&db, &failed_key, &redacted_hash("rerender failed"))
+            .expect("mark failed");
+        assert_eq!(
+            claim_correction_apply_db(
+                &db,
+                &CorrectionApplyRecord {
+                    apply_key: &failed_key,
+                    sidecar_checksum: "sidecar-checksum",
+                    claim_id: &claim_id,
+                    projected_claim_version: correction.projected_claim_version,
+                    projected_identity_hash: &correction.projected_identity_hash,
+                    feedback_action: correction.action.as_str(),
+                    payload_hash: &payload_hash,
+                },
+            )
+            .expect("reclaim failed"),
+            CorrectionApplyState::Claimed
+        );
+
+        let leased_key = format!("{apply_key}-leased");
+        assert_eq!(
+            claim_correction_apply_db(
+                &db,
+                &CorrectionApplyRecord {
+                    apply_key: &leased_key,
+                    sidecar_checksum: "sidecar-checksum",
+                    claim_id: &claim_id,
+                    projected_claim_version: correction.projected_claim_version,
+                    projected_identity_hash: &correction.projected_identity_hash,
+                    feedback_action: correction.action.as_str(),
+                    payload_hash: &payload_hash,
+                },
+            )
+            .expect("claim leased apply"),
+            CorrectionApplyState::Claimed
+        );
+        assert_eq!(
+            claim_correction_apply_db(
+                &db,
+                &CorrectionApplyRecord {
+                    apply_key: &leased_key,
+                    sidecar_checksum: "sidecar-checksum",
+                    claim_id: &claim_id,
+                    projected_claim_version: correction.projected_claim_version,
+                    projected_identity_hash: &correction.projected_identity_hash,
+                    feedback_action: correction.action.as_str(),
+                    payload_hash: &payload_hash,
+                },
+            )
+            .expect("fresh claim is in progress"),
+            CorrectionApplyState::InProgress
+        );
+        let expired_at = (Utc::now()
+            - Duration::seconds(CLAIM_FILE_CORRECTION_APPLY_LEASE_SECS + 1))
+        .to_rfc3339();
+        db.conn_ref()
+            .execute(
+                "UPDATE claim_file_correction_apply_events
+                    SET claimed_at = ?1,
+                        updated_at = ?1
+                  WHERE idempotency_key = ?2",
+                params![&expired_at, &leased_key],
+            )
+            .expect("age leased claim");
+        assert_eq!(
+            claim_correction_apply_db(
+                &db,
+                &CorrectionApplyRecord {
+                    apply_key: &leased_key,
+                    sidecar_checksum: "sidecar-checksum",
+                    claim_id: &claim_id,
+                    projected_claim_version: correction.projected_claim_version,
+                    projected_identity_hash: &correction.projected_identity_hash,
+                    feedback_action: correction.action.as_str(),
+                    payload_hash: &payload_hash,
+                },
+            )
+            .expect("expired claim is reclaimed"),
+            CorrectionApplyState::Claimed
+        );
+    }
+
+    #[test]
+    fn claim_file_feedback_apply_rejects_stale_expected_version_inside_writer_transaction() {
+        let db = test_db();
+        let (clock, rng, external) = test_context_parts();
+        let ctx = test_live_context(&clock, &rng, &external);
+        let claim_id = inserted_claim_id(
+            commit_claim(
+                &ctx,
+                &db,
+                fixture_claim_proposal("Atomic stale feedback fixture"),
+            )
+            .expect("commit projection claim"),
+        );
+        let correction = ParsedCorrection {
+            claim_id: claim_id.clone(),
+            projected_claim_version: 1,
+            projected_identity_hash: "identity-hash".to_string(),
+            action: FeedbackAction::ConfirmCurrent,
+            metadata: None,
+        };
+        let payload_hash = correction_payload_hash(&correction);
+        let apply_key =
+            correction_apply_idempotency_key("sidecar-checksum", &correction, &payload_hash);
+        assert_eq!(
+            claim_correction_apply_db(
+                &db,
+                &CorrectionApplyRecord {
+                    apply_key: &apply_key,
+                    sidecar_checksum: "sidecar-checksum",
+                    claim_id: &claim_id,
+                    projected_claim_version: correction.projected_claim_version,
+                    projected_identity_hash: &correction.projected_identity_hash,
+                    feedback_action: correction.action.as_str(),
+                    payload_hash: &payload_hash,
+                },
+            )
+            .expect("claim apply"),
+            CorrectionApplyState::Claimed
+        );
+        record_claim_feedback(
+            &ctx,
+            &db,
+            ClaimFeedbackInput {
+                claim_id: claim_id.clone(),
+                action: FeedbackAction::MarkOutdated,
+                actor: "user".to_string(),
+                actor_id: Some("user".to_string()),
+                payload_json: None,
+            },
+        )
+        .expect("bump claim version after projection");
+        let before_count: i64 = db
+            .conn_ref()
+            .query_row(
+                "SELECT count(*)
+                   FROM claim_feedback
+                  WHERE claim_id = ?1",
+                [&claim_id],
+                |row| row.get(0),
+            )
+            .expect("feedback count before stale apply");
+
+        let err = record_claim_feedback_for_claim_file_apply(
+            &ctx,
+            &db,
+            ClaimFeedbackInput {
+                claim_id: claim_id.clone(),
+                action: FeedbackAction::ConfirmCurrent,
+                actor: "user".to_string(),
+                actor_id: Some("user".to_string()),
+                payload_json: None,
+            },
+            ClaimFileFeedbackApplyInput {
+                expected_claim_version: 1,
+                correction_apply_key: apply_key.clone(),
+            },
+        )
+        .expect_err("stale projected version must reject inside the writer transaction");
+        assert!(matches!(
+            err,
+            ClaimError::StaleVersion {
+                claim_id: ref stale_claim_id,
+                expected: 1,
+                current: 2,
+            } if stale_claim_id == &claim_id
+        ));
+        let after_count: i64 = db
+            .conn_ref()
+            .query_row(
+                "SELECT count(*)
+                   FROM claim_feedback
+                  WHERE claim_id = ?1",
+                [&claim_id],
+                |row| row.get(0),
+            )
+            .expect("feedback count after stale apply");
+        assert_eq!(after_count, before_count);
+        let status: String = db
+            .conn_ref()
+            .query_row(
+                "SELECT status
+                   FROM claim_file_correction_apply_events
+                  WHERE idempotency_key = ?1",
+                [&apply_key],
+                |row| row.get(0),
+            )
+            .expect("read apply status");
+        assert_eq!(status, "claimed");
+    }
+
+    #[test]
+    fn resumed_expired_worker_does_not_overwrite_newer_applied_correction() {
+        let db = test_db();
+        let (clock, rng, external) = test_context_parts();
+        let ctx = test_live_context(&clock, &rng, &external);
+        let claim_id = inserted_claim_id(
+            commit_claim(
+                &ctx,
+                &db,
+                fixture_claim_proposal("Expired worker replay fixture"),
+            )
+            .expect("commit projection claim"),
+        );
+        let correction = ParsedCorrection {
+            claim_id: claim_id.clone(),
+            projected_claim_version: 1,
+            projected_identity_hash: "identity-hash".to_string(),
+            action: FeedbackAction::ConfirmCurrent,
+            metadata: None,
+        };
+        let payload_hash = correction_payload_hash(&correction);
+        let apply_key =
+            correction_apply_idempotency_key("sidecar-checksum", &correction, &payload_hash);
+        let record = CorrectionApplyRecord {
+            apply_key: &apply_key,
+            sidecar_checksum: "sidecar-checksum",
+            claim_id: &claim_id,
+            projected_claim_version: correction.projected_claim_version,
+            projected_identity_hash: &correction.projected_identity_hash,
+            feedback_action: correction.action.as_str(),
+            payload_hash: &payload_hash,
+        };
+
+        assert_eq!(
+            claim_correction_apply_db(&db, &record).expect("worker A claims correction"),
+            CorrectionApplyState::Claimed
+        );
+        let expired_at = (Utc::now()
+            - Duration::seconds(CLAIM_FILE_CORRECTION_APPLY_LEASE_SECS + 1))
+        .to_rfc3339();
+        db.conn_ref()
+            .execute(
+                "UPDATE claim_file_correction_apply_events
+                    SET claimed_at = ?1,
+                        updated_at = ?1
+                  WHERE idempotency_key = ?2",
+                params![&expired_at, &apply_key],
+            )
+            .expect("expire worker A lease");
+        assert_eq!(
+            claim_correction_apply_db(&db, &record).expect("worker B reclaims expired correction"),
+            CorrectionApplyState::Claimed
+        );
+        let applied = record_claim_feedback_for_claim_file_apply(
+            &ctx,
+            &db,
+            ClaimFeedbackInput {
+                claim_id: claim_id.clone(),
+                action: FeedbackAction::ConfirmCurrent,
+                actor: "user".to_string(),
+                actor_id: Some("user".to_string()),
+                payload_json: None,
+            },
+            ClaimFileFeedbackApplyInput {
+                expected_claim_version: 1,
+                correction_apply_key: apply_key.clone(),
+            },
+        )
+        .expect("worker B atomically applies no-op feedback");
+        let worker_a_err = record_claim_feedback_for_claim_file_apply(
+            &ctx,
+            &db,
+            ClaimFeedbackInput {
+                claim_id: claim_id.clone(),
+                action: FeedbackAction::ConfirmCurrent,
+                actor: "user".to_string(),
+                actor_id: Some("user".to_string()),
+                payload_json: None,
+            },
+            ClaimFileFeedbackApplyInput {
+                expected_claim_version: 1,
+                correction_apply_key: apply_key.clone(),
+            },
+        )
+        .expect_err("worker A cannot apply after worker B finalized the ledger");
+        assert!(
+            worker_a_err.to_string().contains("was not claimable"),
+            "unexpected worker A error: {worker_a_err}"
+        );
+
+        assert_eq!(
+            mark_correction_apply_failed_db(&db, &apply_key, &redacted_hash("worker A failed"))
+                .expect("worker A failure cleanup"),
+            CorrectionFailureMarkState::AlreadyApplied
+        );
+        let (status, feedback_id): (String, Option<String>) = db
+            .conn_ref()
+            .query_row(
+                "SELECT status, feedback_id
+                   FROM claim_file_correction_apply_events
+                  WHERE idempotency_key = ?1",
+                [&apply_key],
+                |row| Ok((row.get(0)?, row.get(1)?)),
+            )
+            .expect("read final apply row");
+        assert_eq!(status, "applied");
+        assert_eq!(feedback_id.as_deref(), Some(applied.feedback_id.as_str()));
+        assert_eq!(
+            claim_correction_apply_db(&db, &record).expect("future retry reads applied"),
+            CorrectionApplyState::AlreadyApplied
+        );
+        let feedback_count: i64 = db
+            .conn_ref()
+            .query_row(
+                "SELECT count(*)
+                   FROM claim_feedback
+                  WHERE claim_id = ?1",
+                [&claim_id],
+                |row| row.get(0),
+            )
+            .expect("count feedback rows");
+        assert_eq!(feedback_count, 1);
     }
 
     #[test]
@@ -2442,5 +3902,89 @@ dailyos-action: mark_false\n\
             Some(bundle.run_id.as_str())
         );
         assert!(repaired_membership_count > 0);
+    }
+
+    #[test]
+    fn projection_path_binding_rejects_same_path_for_different_subject() {
+        let db = test_db();
+        let (clock, rng, external) = test_context_parts();
+        let ctx = test_live_context(&clock, &rng, &external);
+        commit_claim(&ctx, &db, fixture_claim_proposal("Path binding fixture"))
+            .expect("commit projection claim");
+        let bundle = build_render_bundle_db(&db, r#"{"kind":"account","id":"acct-1"}"#)
+            .expect("build render bundle");
+
+        ensure_projection_path_binding(&db, &bundle, TEST_TS).expect("bind projection path");
+
+        let mut collision = bundle.clone();
+        collision.entity_subject_compact = r#"{"id":"acct-2","kind":"account"}"#.to_string();
+        let err = ensure_projection_path_binding(&db, &collision, TEST_TS)
+            .expect_err("same path must not bind a different subject");
+
+        assert!(err.contains("projection path collision"));
+    }
+
+    #[test]
+    fn committed_sidecar_validation_requires_recorded_run_and_claim_membership() {
+        let db = test_db();
+        let (clock, rng, external) = test_context_parts();
+        let ctx = test_live_context(&clock, &rng, &external);
+        commit_claim(
+            &ctx,
+            &db,
+            fixture_claim_proposal("Committed sidecar fixture"),
+        )
+        .expect("commit projection claim");
+        let bundle = build_render_bundle_db(&db, r#"{"kind":"account","id":"acct-1"}"#)
+            .expect("build render bundle");
+
+        ensure_projection_path_binding(&db, &bundle, TEST_TS).expect("bind projection path");
+        let err = validate_committed_sidecar_projection_db(
+            &db,
+            &bundle.sidecar,
+            &bundle.sidecar_checksum,
+        )
+        .expect_err("sidecar without a committed run must not apply");
+        assert!(err.contains("committed projection run not found"));
+
+        insert_projection_run(&db, &bundle, "committed", None, None, None)
+            .expect("record committed projection");
+        let committed = validate_committed_sidecar_projection_db(
+            &db,
+            &bundle.sidecar,
+            &bundle.sidecar_checksum,
+        )
+        .expect("validate committed sidecar");
+        assert_eq!(committed.run_id, bundle.run_id);
+
+        let mut tampered_membership = bundle.sidecar.clone();
+        tampered_membership.claims[0]
+            .semantic_identity
+            .dedup_key_components_hash
+            .push_str("-tampered");
+        let err = validate_committed_sidecar_projection_db(
+            &db,
+            &tampered_membership,
+            &bundle.sidecar_checksum,
+        )
+        .expect_err("sidecar claim identity tampering must not apply");
+        assert!(err.contains("projection claim membership mismatch"));
+
+        let mut tampered_paths = bundle.sidecar.clone();
+        tampered_paths.markdown_rel_path = "_dailyos_claims/account/acct-1/claims.md".to_string();
+        tampered_paths.sidecar_rel_path =
+            "_dailyos_claims/account/acct-1/claims.corrections.json".to_string();
+        let tampered_checksum = sha256_hex(
+            serde_json::to_string_pretty(&tampered_paths)
+                .unwrap()
+                .as_bytes(),
+        );
+        let err =
+            validate_committed_sidecar_projection_db(&db, &tampered_paths, &tampered_checksum)
+                .expect_err("recomputed sidecar path tampering must not match a committed run");
+        assert!(
+            err.contains("projection path binding missing")
+                || err.contains("committed projection run not found")
+        );
     }
 }

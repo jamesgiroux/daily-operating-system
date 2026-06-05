@@ -47,7 +47,10 @@ use abilities_runtime::types::{ClaimSensitivity, IntelligenceClaim};
 use crate::services::claim_receipt::auth::{can_surface_for, AuthError};
 use crate::services::claim_receipt::contracts::{ClaimReceipt, ReceiptTarget, SurfaceContext};
 use crate::services::claim_receipt::render::{render_receipt_for, RenderError};
-use crate::services::claims::{record_claim_feedback, ClaimError, ClaimFeedbackInput};
+use crate::services::claims::{
+    record_claim_feedback, record_claim_feedback_for_claim_file_apply, ClaimError,
+    ClaimFeedbackInput, ClaimFileFeedbackApplyInput,
+};
 use crate::services::entity_intelligence::auth::{
     validate_envelope_target, EnvelopeSet, TargetBindingError,
 };
@@ -97,6 +100,18 @@ pub struct ClaimFeedbackResponse {
     pub repair_queued: bool,
     pub sanitizer_warnings: Vec<SanitizerWarning>,
     pub replayed: bool,
+}
+
+#[derive(Debug, Clone)]
+pub struct ClaimFileFeedbackApplyCommit {
+    pub expected_claim_version: u64,
+    pub correction_apply_key: String,
+}
+
+#[derive(Debug, Clone)]
+enum FeedbackPersistence {
+    Default,
+    ClaimFileApply(ClaimFileFeedbackApplyCommit),
 }
 
 // ---------------------------------------------------------------------------
@@ -238,6 +253,44 @@ pub async fn submit_claim_feedback(
     cache: &IdempotencyCache,
     request: ClaimFeedbackRequest,
 ) -> Result<ClaimFeedbackResponse, FeedbackError> {
+    submit_claim_feedback_with_persistence(
+        state,
+        envelope_set,
+        actor,
+        cache,
+        request,
+        FeedbackPersistence::Default,
+    )
+    .await
+}
+
+pub async fn submit_claim_feedback_for_claim_file_apply(
+    state: &AppState,
+    envelope_set: &EnvelopeSet<'_>,
+    actor: &RenderActor,
+    cache: &IdempotencyCache,
+    request: ClaimFeedbackRequest,
+    apply: ClaimFileFeedbackApplyCommit,
+) -> Result<ClaimFeedbackResponse, FeedbackError> {
+    submit_claim_feedback_with_persistence(
+        state,
+        envelope_set,
+        actor,
+        cache,
+        request,
+        FeedbackPersistence::ClaimFileApply(apply),
+    )
+    .await
+}
+
+async fn submit_claim_feedback_with_persistence(
+    state: &AppState,
+    envelope_set: &EnvelopeSet<'_>,
+    actor: &RenderActor,
+    cache: &IdempotencyCache,
+    request: ClaimFeedbackRequest,
+    persistence: FeedbackPersistence,
+) -> Result<ClaimFeedbackResponse, FeedbackError> {
     // AC-8.2: caller-supplied idempotency keys are not accepted.
     if request.idempotency_key.is_some() {
         return Err(FeedbackError::CallerSuppliedIdempotencyKey);
@@ -354,7 +407,23 @@ pub async fn submit_claim_feedback(
             let external = crate::services::context::ExternalClients::default();
             let ctx = crate::services::context::ServiceContext::new_live(&clock, &rng, &external)
                 .with_actor("user");
-            record_claim_feedback(&ctx, db, input).map_err(|error| error.to_string())
+            match persistence {
+                FeedbackPersistence::Default => {
+                    record_claim_feedback(&ctx, db, input).map_err(|error| error.to_string())
+                }
+                FeedbackPersistence::ClaimFileApply(apply) => {
+                    record_claim_feedback_for_claim_file_apply(
+                        &ctx,
+                        db,
+                        input,
+                        ClaimFileFeedbackApplyInput {
+                            expected_claim_version: apply.expected_claim_version,
+                            correction_apply_key: apply.correction_apply_key,
+                        },
+                    )
+                    .map_err(|error| error.to_string())
+                }
+            }
         })
         .await
         .map_err(|message| FeedbackError::Storage(anyhow::anyhow!(message)))?;
