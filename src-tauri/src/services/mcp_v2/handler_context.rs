@@ -28,26 +28,32 @@
 //!
 //! ## Connection shape
 //!
-//! The owned connection is an [`ActionDb`] opened **writable** (`ActionDb::open`)
-//! so the same handle serves handler reads *and* the audit-outbox write
-//! (`audit.rs` needs only `&Connection` — verified `conn.execute`). `Connection`
-//! is `!Sync` and the `Gateway` is shared as `Arc<Gateway>` across the rmcp
-//! service, so the connection is wrapped in `Arc<Mutex<…>>` and locked per call
-//! — which *is* the single-writer discipline for the sidecar process.
+//! The owned connection is an [`ActionDb`] opened **writable** through
+//! `ActionDb::open_with_audit_tagger`, so the same startup key fetch also
+//! captures the audit tagger registered write paths need without re-entering
+//! [`LocalKeychain`] during a request. The same handle serves handler reads and
+//! the audit-outbox write (`audit.rs` needs only `&Connection` — verified
+//! `conn.execute`). `Connection` is `!Sync` and the `Gateway` is shared as
+//! `Arc<Gateway>` across the rmcp service, so the connection is wrapped in
+//! `Arc<Mutex<…>>` and locked per call — which *is* the single-writer discipline
+//! for the sidecar process.
 
 use std::sync::{Arc, Mutex};
 
-use crate::db::{ActionDb, DbError, LocalKeychain};
+use crate::db::{ActionDb, DbError, LocalDbAuditTagger, LocalKeychain};
 
 /// Open the sidecar's single owned connection.
 ///
-/// Lives in `services/` so the `ActionDb::open` call stays behind the ADR-0101
-/// service boundary — the sidecar binary calls this rather than opening a
-/// connection itself. Writable so the one handle serves both handler reads and
-/// the audit-outbox write.
-pub fn open_sidecar_connection() -> Result<OwnedConnection, DbError> {
-    let db = ActionDb::open(Arc::new(LocalKeychain::new()))?;
-    Ok(Arc::new(Mutex::new(db)))
+/// Lives in `services/` so the DB open stays behind the ADR-0101 service
+/// boundary — the sidecar binary calls this rather than opening a connection
+/// itself. Writable so the one handle serves both handler reads and the
+/// audit-outbox write.
+pub fn open_sidecar_connection() -> Result<OwnedSidecarConnection, DbError> {
+    let (db, audit_tagger) = ActionDb::open_with_audit_tagger(Arc::new(LocalKeychain::new()))?;
+    Ok(OwnedSidecarConnection {
+        connection: Arc::new(Mutex::new(db)),
+        audit_tagger: Arc::new(audit_tagger),
+    })
 }
 
 /// One process-lifetime DB connection, shared per-call across handlers.
@@ -57,6 +63,33 @@ pub fn open_sidecar_connection() -> Result<OwnedConnection, DbError> {
 /// per call serializes the sidecar's DB access through a single connection.
 pub type OwnedConnection = Arc<Mutex<ActionDb>>;
 
+/// Sidecar-owned DB capabilities captured at process startup.
+#[derive(Clone)]
+pub struct OwnedSidecarConnection {
+    connection: OwnedConnection,
+    audit_tagger: Arc<LocalDbAuditTagger>,
+}
+
+impl OwnedSidecarConnection {
+    #[cfg(test)]
+    pub(crate) fn for_tests(connection: OwnedConnection) -> Self {
+        Self {
+            connection,
+            audit_tagger: Arc::new(LocalDbAuditTagger::for_tests(
+                "mcp-owned-sidecar-test-audit-key",
+            )),
+        }
+    }
+
+    pub(crate) fn connection(&self) -> OwnedConnection {
+        Arc::clone(&self.connection)
+    }
+
+    pub(crate) fn audit_tagger(&self) -> Arc<LocalDbAuditTagger> {
+        Arc::clone(&self.audit_tagger)
+    }
+}
+
 /// Request-scoped dependency bundle handed to `McpToolHandler::invoke`.
 ///
 /// Constructed once per dispatch by the gateway, borrowing the gateway's one
@@ -65,6 +98,7 @@ pub type OwnedConnection = Arc<Mutex<ActionDb>>;
 #[derive(Clone)]
 pub struct McpHandlerContext {
     connection: Option<OwnedConnection>,
+    audit_tagger: Option<Arc<LocalDbAuditTagger>>,
 }
 
 impl McpHandlerContext {
@@ -72,6 +106,16 @@ impl McpHandlerContext {
     pub fn with_owned_connection(connection: OwnedConnection) -> Self {
         Self {
             connection: Some(connection),
+            audit_tagger: None,
+        }
+    }
+
+    /// Context backed by the sidecar's single owned connection and startup
+    /// audit tagger.
+    pub fn with_sidecar_connection(connection: OwnedSidecarConnection) -> Self {
+        Self {
+            connection: Some(connection.connection()),
+            audit_tagger: Some(connection.audit_tagger()),
         }
     }
 
@@ -82,7 +126,10 @@ impl McpHandlerContext {
     /// when [`Self::with_conn`] returns `None` — preserving existing behavior
     /// rather than failing closed mid-migration.
     pub fn without_connection() -> Self {
-        Self { connection: None }
+        Self {
+            connection: None,
+            audit_tagger: None,
+        }
     }
 
     /// Run `f` against the one owned connection, if this context carries one.
@@ -98,6 +145,16 @@ impl McpHandlerContext {
         Some(f(&guard))
     }
 
+    /// Clone the owned connection handle for request-scoped service adapters.
+    pub(crate) fn owned_connection(&self) -> Option<OwnedConnection> {
+        self.connection.as_ref().map(Arc::clone)
+    }
+
+    /// Clone the startup-captured audit tagger for request-scoped service adapters.
+    pub(crate) fn audit_tagger(&self) -> Option<Arc<LocalDbAuditTagger>> {
+        self.audit_tagger.as_ref().map(Arc::clone)
+    }
+
     /// Whether this context carries an owned connection.
     pub fn has_owned_connection(&self) -> bool {
         self.connection.is_some()
@@ -108,6 +165,7 @@ impl std::fmt::Debug for McpHandlerContext {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.debug_struct("McpHandlerContext")
             .field("has_owned_connection", &self.connection.is_some())
+            .field("has_audit_tagger", &self.audit_tagger.is_some())
             .finish()
     }
 }

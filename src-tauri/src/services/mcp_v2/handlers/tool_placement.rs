@@ -8,11 +8,17 @@
 //! `tokio::task::spawn_blocking` at the transport boundary, so
 //! `runtime.block_on(...)` on a captured handle is safe.
 
+use std::path::PathBuf;
 use std::sync::Arc;
 
 use abilities_runtime::abilities::registry::{AbilityRegistry, McpExposure};
 use abilities_runtime::abilities::tracer::NOOP_ABILITY_TRACER;
-use abilities_runtime::services::workspace_intake::WORKSPACE_PLACE_DOCUMENT_TOOL_NAME;
+use abilities_runtime::services::workspace_intake::{
+    PlacementError, PlacementInvocationContext, WorkspaceIntakeError, WorkspaceIntakeReceipt,
+    WorkspaceIntakeRequest, WorkspaceIntakeService, WorkspacePlaceDocumentReceipt,
+    WorkspacePlaceDocumentRequest, WORKSPACE_PLACE_DOCUMENT_TOOL_NAME,
+};
+use async_trait::async_trait;
 use serde_json::Value;
 
 use crate::bridges::types::{
@@ -20,13 +26,15 @@ use crate::bridges::types::{
     RequestScopedInvocation, BRIDGE_NOOP_INTELLIGENCE_PROVIDER,
 };
 use crate::bridges::{BridgeActor, BridgeSurface};
+use crate::db::LocalDbAuditTagger;
 use crate::services::context::{
     attach_live_workspace_readers_with_signal_engine, ClaimDismissalSurface, ExternalClients,
     ServiceContext, SystemClock, SystemRng,
 };
 use crate::services::mcp_v2::actor_policy::{project_actor, ToolGrant, ToolRateLimit};
 use crate::services::mcp_v2::contracts::{McpActor, McpToolHandler, ToolDescription, ToolError};
-use crate::services::mcp_v2::handler_context::McpHandlerContext;
+use crate::services::mcp_v2::handler_context::{McpHandlerContext, OwnedConnection};
+use crate::services::workspace_ingestion::workspace_intake_impl::place_document_sync_with_db_and_target_key;
 use crate::signals::propagation::PropagationEngine;
 
 const ABILITY_NAME: &str = "workspace_place_document";
@@ -115,6 +123,65 @@ impl PlacementHandler {
             Ok(mcp_safe_response(response.data))
         })
     }
+
+    fn invoke_with_mcp_context(
+        &self,
+        ctx: &McpHandlerContext,
+        actor: &McpActor,
+        params: Value,
+        workspace_root: PathBuf,
+    ) -> Result<Value, ToolError> {
+        let clock = SystemClock;
+        let rng = SystemRng;
+        let external = ExternalClients::default();
+        let base = ServiceContext::new_live(&clock, &rng, &external).with_actor(ACTOR_LABEL);
+        let services = match ctx.owned_connection() {
+            Some(connection) => {
+                let target_audit_key = ctx.audit_tagger().ok_or_else(|| ToolError::Internal {
+                    trace_id: "mcp_placement_missing_audit_tagger".to_string(),
+                })?;
+                base.with_workspace_intake(Arc::new(McpPlacementWorkspaceIntake {
+                    workspace_root,
+                    signal_engine: Arc::clone(&self.signal_engine),
+                    connection,
+                    target_audit_key: PlacementTargetAuditKey::Production(target_audit_key),
+                }))
+            }
+            None => attach_live_workspace_readers_with_signal_engine(
+                base,
+                Some(Arc::clone(&self.signal_engine)),
+            ),
+        };
+        self.invoke_with_services(actor, params, &services)
+    }
+
+    #[cfg(test)]
+    fn invoke_with_mcp_context_for_tests(
+        &self,
+        ctx: &McpHandlerContext,
+        actor: &McpActor,
+        params: Value,
+        workspace_root: PathBuf,
+        target_audit_secret: &'static str,
+    ) -> Result<Value, ToolError> {
+        let clock = SystemClock;
+        let rng = SystemRng;
+        let external = ExternalClients::default();
+        let base = ServiceContext::new_live(&clock, &rng, &external).with_actor(ACTOR_LABEL);
+        let services = match ctx.owned_connection() {
+            Some(connection) => base.with_workspace_intake(Arc::new(McpPlacementWorkspaceIntake {
+                workspace_root,
+                signal_engine: Arc::clone(&self.signal_engine),
+                connection,
+                target_audit_key: PlacementTargetAuditKey::TestSecret(target_audit_secret),
+            })),
+            None => attach_live_workspace_readers_with_signal_engine(
+                base,
+                Some(Arc::clone(&self.signal_engine)),
+            ),
+        };
+        self.invoke_with_services(actor, params, &services)
+    }
 }
 
 impl McpToolHandler for PlacementHandler {
@@ -124,23 +191,108 @@ impl McpToolHandler for PlacementHandler {
 
     fn invoke(
         &self,
-        _ctx: &McpHandlerContext,
+        ctx: &McpHandlerContext,
         actor: &McpActor,
         params: Value,
     ) -> Result<Value, ToolError> {
-        // Placement reaches the DB only through the abilities-runtime workspace
-        // readers (`attach_live_workspace_readers_with_signal_engine`), which
-        // live across the crate boundary and are covered by the bounded CI
-        // gate, not rewired here. No direct self-open to route through `ctx`.
-        let clock = SystemClock;
-        let rng = SystemRng;
-        let external = ExternalClients::default();
-        let services = attach_live_workspace_readers_with_signal_engine(
-            ServiceContext::new_live(&clock, &rng, &external).with_actor(ACTOR_LABEL),
-            Some(Arc::clone(&self.signal_engine)),
-        );
-        self.invoke_with_services(actor, params, &services)
+        self.invoke_with_mcp_context(ctx, actor, params, configured_workspace_root_or_empty())
     }
+}
+
+struct McpPlacementWorkspaceIntake {
+    workspace_root: PathBuf,
+    signal_engine: Arc<PropagationEngine>,
+    connection: OwnedConnection,
+    target_audit_key: PlacementTargetAuditKey,
+}
+
+#[derive(Clone)]
+enum PlacementTargetAuditKey {
+    Production(Arc<LocalDbAuditTagger>),
+    #[cfg(test)]
+    TestSecret(&'static str),
+}
+
+impl PlacementTargetAuditKey {
+    fn tag(&self, request: &WorkspacePlaceDocumentRequest) -> String {
+        match self {
+            Self::Production(tagger) => tagger.tag(
+                "target",
+                "workspace-placement-target-v1",
+                &[&request.entity.entity_type, &request.entity.entity_id],
+            ),
+            #[cfg(test)]
+            Self::TestSecret(secret) => crate::db::local_db_keyed_audit_tag_for_tests(
+                secret,
+                "target",
+                "workspace-placement-target-v1",
+                &[&request.entity.entity_type, &request.entity.entity_id],
+            ),
+        }
+    }
+}
+
+#[async_trait]
+impl WorkspaceIntakeService for McpPlacementWorkspaceIntake {
+    async fn ingest(
+        &self,
+        _ctx: &abilities_runtime::abilities::registry::AbilityContext<'_>,
+        _request: WorkspaceIntakeRequest,
+    ) -> Result<WorkspaceIntakeReceipt, WorkspaceIntakeError> {
+        Err(WorkspaceIntakeError::DbError(
+            "MCP placement adapter only implements document placement".to_string(),
+        ))
+    }
+
+    async fn place_document(
+        &self,
+        ctx: &abilities_runtime::abilities::registry::AbilityContext<'_>,
+        invocation: PlacementInvocationContext,
+        request: WorkspacePlaceDocumentRequest,
+    ) -> Result<WorkspacePlaceDocumentReceipt, PlacementError> {
+        ctx.services()
+            .check_mutation_allowed()
+            .map_err(|error| PlacementError::internal(error.to_string()))?;
+        let workspace_root = self.workspace_root.clone();
+        let signal_engine = Arc::clone(&self.signal_engine);
+        let connection = Arc::clone(&self.connection);
+        let ability_id = ctx.services().ability_id.map(str::to_string);
+        let target_audit_key = self.target_audit_key.clone();
+
+        tokio::task::spawn_blocking(move || {
+            let clock = SystemClock;
+            let rng = SystemRng;
+            let external = ExternalClients::default();
+            let mut service_ctx = ServiceContext::new_live(&clock, &rng, &external)
+                .with_actor("system:workspace_placement");
+            if let Some(ability_id) = ability_id.as_deref() {
+                service_ctx = service_ctx.with_ability_id(ability_id);
+            }
+            let guard = connection
+                .lock()
+                .unwrap_or_else(std::sync::PoisonError::into_inner);
+            let target_key = target_audit_key.tag(&request);
+            place_document_sync_with_db_and_target_key(
+                &service_ctx,
+                &guard,
+                &workspace_root,
+                Some(signal_engine.as_ref()),
+                invocation,
+                request,
+                target_key,
+            )
+        })
+        .await
+        .map_err(|error| {
+            PlacementError::internal(format!("workspace placement task failed: {error}"))
+        })?
+    }
+}
+
+fn configured_workspace_root_or_empty() -> PathBuf {
+    crate::state::load_config()
+        .map(|config| PathBuf::from(config.workspace_path))
+        .unwrap_or_default()
 }
 
 fn mcp_safe_response(mut value: Value) -> Value {
@@ -238,6 +390,7 @@ fn map_placement_ability_error(message: &str) -> ToolError {
 mod tests {
     use std::path::PathBuf;
     use std::sync::Arc;
+    use std::sync::Mutex as StdMutex;
 
     use abilities_runtime::services::workspace_intake::{
         PlacementError, PlacementErrorCode, PlacementInvocationContext, WorkspaceIntakeError,
@@ -260,6 +413,7 @@ mod tests {
     use crate::services::mcp_v2::contracts::{
         McpClientId, OpaqueConversationHandle, Scope, ScopedName, Side,
     };
+    use crate::services::mcp_v2::handler_context::McpHandlerContext;
     use crate::services::workspace_ingestion::graph::{
         diagnostic_key_for_tests, read_workspace_graph,
     };
@@ -386,24 +540,32 @@ mod tests {
     }
 
     fn placement_claim_params() -> Value {
+        placement_claim_params_for("acct_placement", "placement-handler-claim-fixture")
+    }
+
+    fn placement_claim_params_for(entity_id: &str, client_dedup_key: &str) -> Value {
         json!({
             "schema_version": 1,
             "entity": {
                 "entity_type": "account",
-                "entity_id": "acct_placement"
+                "entity_id": entity_id
             },
             "content_b64": "UGxhY2VtZW50IGdyYXBoIHZhbGlkYXRpb24gbm90ZS4=",
             "content_type": "text/markdown",
             "category": "notes",
-            "client_dedup_key": "placement-handler-claim-fixture",
+            "client_dedup_key": client_dedup_key,
             "dry_run": false
         })
     }
 
     fn seed_account(conn: &Connection) {
+        seed_account_with_id(conn, "acct_placement");
+    }
+
+    fn seed_account_with_id(conn: &Connection, account_id: &str) {
         ActionDb::from_conn(conn)
             .upsert_account(&DbAccount {
-                id: "acct_placement".to_string(),
+                id: account_id.to_string(),
                 name: "Placement Account".to_string(),
                 tracker_path: Some("Accounts/Placement Account".to_string()),
                 updated_at: Utc::now().to_rfc3339(),
@@ -612,6 +774,84 @@ mod tests {
             .expect("placement graph entity");
         assert_eq!(entity.file_links.len(), 1);
         assert_eq!(entity.claim_summary.total, 1);
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn placement_handler_registered_dry_run_uses_owned_context_connection() {
+        let runtime = tokio::runtime::Runtime::new().expect("runtime");
+        let db_dir = tempfile::tempdir().expect("db dir");
+        let db_path = db_dir.path().join("owned-placement.db");
+        let seed_db = ActionDb::open_at_unencrypted(db_path.clone()).expect("seed db");
+        seed_account_with_id(seed_db.conn_ref(), "acct_owned_context_placement");
+        drop(seed_db);
+
+        let owned_db = ActionDb::open_at_unencrypted(db_path).expect("owned context db");
+        let ctx = McpHandlerContext::with_owned_connection(Arc::new(StdMutex::new(owned_db)));
+        let workspace = tempfile::tempdir().expect("workspace");
+        let workspace_root = workspace.path().canonicalize().expect("workspace root");
+        let handler = PlacementHandler::new(
+            description(),
+            AbilityRegistry::global_checked().expect("registry"),
+            runtime.handle().clone(),
+            Arc::new(PropagationEngine::new()),
+        );
+        let mut params = placement_claim_params_for(
+            "acct_owned_context_placement",
+            "owned-context-placement-fixture",
+        );
+        params["dry_run"] = Value::Bool(true);
+
+        let result = handler
+            .invoke_with_mcp_context_for_tests(
+                &ctx,
+                &actor(),
+                params,
+                workspace_root,
+                "owned-context-placement-audit-key",
+            )
+            .expect("placement succeeds through owned connection");
+
+        assert_eq!(result["entity_id"], "acct_owned_context_placement");
+        assert_eq!(result["dry_run"], true);
+        assert_eq!(
+            result["mutation_cursor"]["kind"],
+            "workspace_placement_preview"
+        );
+        let (rate_count, audit_count) = ctx
+            .with_conn(|db| {
+                let rate_count = db
+                    .conn_ref()
+                    .query_row(
+                        "SELECT COUNT(*)
+                         FROM workspace_placement_rate_ledger
+                         WHERE actor_id = 'test-client'
+                           AND tool_name = ?1",
+                        params![TOOL_NAME],
+                        |row| row.get::<_, i64>(0),
+                    )
+                    .expect("placement rate count");
+                let audit_count = db
+                    .conn_ref()
+                    .query_row(
+                        "SELECT COUNT(*)
+                         FROM workspace_placement_attempt_audit
+                         WHERE actor_id = 'test-client'
+                           AND tool_name = ?1
+                           AND dry_run = 1
+                           AND outcome = 'succeeded'",
+                        params![TOOL_NAME],
+                        |row| row.get::<_, i64>(0),
+                    )
+                    .expect("placement audit count");
+                (rate_count, audit_count)
+            })
+            .expect("owned connection available");
+        assert_eq!(
+            (rate_count, audit_count),
+            (1, 1),
+            "registered handler must read and write placement state through the owned context DB"
+        );
     }
 
     #[test]

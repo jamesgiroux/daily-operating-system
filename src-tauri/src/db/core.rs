@@ -359,6 +359,38 @@ pub(crate) fn local_db_keyed_audit_tag(
     ))
 }
 
+/// Key-derived audit tagger captured when a DB connection is opened.
+///
+/// MCP registered write paths use this to avoid calling [`LocalKeychain`] during
+/// a request, which can validate the key by reopening SQLite in the sidecar.
+#[derive(Clone)]
+pub(crate) struct LocalDbAuditTagger {
+    key: EncryptionKey,
+}
+
+impl LocalDbAuditTagger {
+    fn new(key: EncryptionKey) -> Self {
+        Self { key }
+    }
+
+    #[cfg(test)]
+    pub(crate) fn for_tests(secret: &str) -> Self {
+        Self {
+            key: EncryptionKey::from_hex(secret.to_string()),
+        }
+    }
+
+    pub(crate) fn tag(&self, tag_prefix: &str, domain: &str, components: &[&str]) -> String {
+        keyed_audit_tag(tag_prefix, domain, components, self.key.as_hex().as_bytes())
+    }
+}
+
+impl std::fmt::Debug for LocalDbAuditTagger {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str("LocalDbAuditTagger([REDACTED])")
+    }
+}
+
 pub(crate) fn local_db_workspace_graph_diagnostic_key_bytes() -> Result<[u8; 32], String> {
     let db_path = ActionDb::db_path_public().map_err(|e| e.to_string())?;
     let provider = LocalKeychain::new();
@@ -471,11 +503,7 @@ impl ActionDb {
         // budget_violations counter surfaces routine contention. The 250 ms
         // AC threshold is captured by the separate `_over_250ms` rollup below.
         let gate_wait_ms = gate_started.elapsed().as_millis();
-        crate::latency::record_latency(
-            "action_db.write_transaction_gate_wait",
-            gate_wait_ms,
-            100,
-        );
+        crate::latency::record_latency("action_db.write_transaction_gate_wait", gate_wait_ms, 100);
         // Dedicated rollup for the AC4 threshold (zero gate-waits > 250 ms at
         // user-active times). Records only when above the threshold so the
         // rollup's sample count IS the violation count.
@@ -729,6 +757,13 @@ impl ActionDb {
         path: PathBuf,
         key_provider: Arc<dyn DbKeyProvider>,
     ) -> Result<Self, DbError> {
+        Self::open_resolved_path_with_key(path, key_provider).map(|(db, _key)| db)
+    }
+
+    fn open_resolved_path_with_key(
+        path: PathBuf,
+        key_provider: Arc<dyn DbKeyProvider>,
+    ) -> Result<(Self, EncryptionKey), DbError> {
         // structural prod-open deny — covers the svc.open_fresh_serialized
         // branch, which does not route through prepare_encrypted_connection.
         guard_path_for_mode(&path)?;
@@ -738,14 +773,16 @@ impl ActionDb {
             let encryption_key = key_provider
                 .get_or_create_key(&user)
                 .map_err(Self::map_key_error)?;
-            let conn = svc.open_fresh_serialized(path.clone(), encryption_key)?;
+            let conn = svc.open_fresh_serialized(path.clone(), encryption_key.clone())?;
             drop(rotation_lock);
             // Startup initialization already runs through the global DbService.
             // Fresh handles should not add best-effort writes outside that path.
-            return Ok(Self { conn });
+            return Ok((Self { conn }, encryption_key));
         }
 
-        Self::open_at(path, key_provider)
+        let (conn, encryption_key) = Self::open_encrypted_connection(path, key_provider)?;
+        drop(rotation_lock);
+        Ok((Self { conn }, encryption_key))
     }
 
     #[cfg(test)]
@@ -754,6 +791,14 @@ impl ActionDb {
         key_provider: Arc<dyn DbKeyProvider>,
     ) -> Result<Self, DbError> {
         Self::open_resolved_path(path, key_provider)
+    }
+
+    pub(crate) fn open_with_audit_tagger(
+        key_provider: Arc<dyn DbKeyProvider>,
+    ) -> Result<(Self, LocalDbAuditTagger), DbError> {
+        let path = Self::db_path()?;
+        let (db, key) = Self::open_resolved_path_with_key(path, key_provider)?;
+        Ok((db, LocalDbAuditTagger::new(key)))
     }
 
     #[cfg(test)]

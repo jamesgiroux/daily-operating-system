@@ -160,8 +160,8 @@ pub(crate) fn ingest_sync(
         .map(parse_category)
         .transpose()?;
 
-    // mcp-self-open-allowed: handler-reachable intake adapter fallback; indirect workspace write routing is outside this direct MCP handler pass.
-    let db = ActionDb::open(Arc::new(LocalKeychain::new())) // mcp-self-open-allowed: handler-reachable intake adapter fallback
+    // mcp-self-open-allowed: non-MCP workspace intake fallback; registered MCP tools inject the request-owned ActionDb.
+    let db = ActionDb::open(Arc::new(LocalKeychain::new())) // mcp-self-open-allowed: non-MCP workspace intake fallback
         .map_err(|e| WorkspaceIntakeError::DbError(e.to_string()))?;
     let conn = db.conn_ref();
 
@@ -339,6 +339,54 @@ fn place_document_sync(
     invocation: PlacementInvocationContext,
     req: WorkspacePlaceDocumentRequest,
 ) -> Result<WorkspacePlaceDocumentReceipt, PlacementError> {
+    // mcp-self-open-allowed: non-MCP workspace intake fallback; registered MCP placement injects the request-owned ActionDb.
+    let db = ActionDb::open(Arc::new(LocalKeychain::new())) // mcp-self-open-allowed: non-MCP workspace intake fallback
+        .map_err(|e| PlacementError::internal(e.to_string()))?;
+    place_document_sync_with_db(
+        ctx,
+        &db,
+        &workspace_root,
+        signal_engine.as_deref(),
+        invocation,
+        req,
+    )
+}
+
+pub(crate) fn place_document_sync_with_db(
+    ctx: &ServiceContext<'_>,
+    db: &ActionDb,
+    workspace_root: &Path,
+    signal_engine: Option<&crate::signals::propagation::PropagationEngine>,
+    invocation: PlacementInvocationContext,
+    req: WorkspacePlaceDocumentRequest,
+) -> Result<WorkspacePlaceDocumentReceipt, PlacementError> {
+    let target_key = crate::db::local_db_keyed_audit_tag(
+        // mcp-self-open-allowed: non-MCP workspace intake fallback
+        "target",
+        "workspace-placement-target-v1",
+        &[&req.entity.entity_type, &req.entity.entity_id],
+    )
+    .map_err(PlacementError::internal)?;
+    place_document_sync_with_db_and_target_key(
+        ctx,
+        db,
+        workspace_root,
+        signal_engine,
+        invocation,
+        req,
+        target_key,
+    )
+}
+
+pub(crate) fn place_document_sync_with_db_and_target_key(
+    ctx: &ServiceContext<'_>,
+    db: &ActionDb,
+    workspace_root: &Path,
+    signal_engine: Option<&crate::signals::propagation::PropagationEngine>,
+    invocation: PlacementInvocationContext,
+    req: WorkspacePlaceDocumentRequest,
+    target_key: String,
+) -> Result<WorkspacePlaceDocumentReceipt, PlacementError> {
     if workspace_root.as_os_str().is_empty() {
         return Err(PlacementError::internal("workspace root is not configured"));
     }
@@ -349,16 +397,7 @@ fn place_document_sync(
         ));
     }
 
-    // mcp-self-open-allowed: handler-reachable placement adapter fallback; indirect workspace write routing is outside this direct MCP handler pass.
-    let db = ActionDb::open(Arc::new(LocalKeychain::new())) // mcp-self-open-allowed: handler-reachable placement adapter fallback
-        .map_err(|e| PlacementError::internal(e.to_string()))?;
     let conn = db.conn_ref();
-    let target_key = crate::db::local_db_keyed_audit_tag(
-        "target",
-        "workspace-placement-target-v1",
-        &[&req.entity.entity_type, &req.entity.entity_id],
-    )
-    .map_err(PlacementError::internal)?;
     let category_audit_slug = category_slug_for_audit(&req);
     if let Err(error) = reserve_placement_rate(conn, &invocation, ctx.clock.now()) {
         write_attempt_audit(
@@ -374,9 +413,9 @@ fn place_document_sync(
     }
     let outcome = place_document_after_rate(
         ctx,
-        &db,
-        &workspace_root,
-        signal_engine.as_deref(),
+        db,
+        workspace_root,
+        signal_engine,
         &invocation,
         &req,
         target_key.as_str(),

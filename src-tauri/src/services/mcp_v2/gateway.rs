@@ -23,7 +23,9 @@ use super::contracts::{
     McpActor, McpClientId, McpToolHandler, McpToolRequestEnvelope, McpToolResponseEnvelope,
     McpToolResult, OpaqueConversationHandle, Scope, ScopedName, Side, ToolError,
 };
-use super::handler_context::{McpHandlerContext, OwnedConnection};
+#[cfg(test)]
+use super::handler_context::OwnedConnection;
+use super::handler_context::{McpHandlerContext, OwnedSidecarConnection};
 
 // ---------------------------------------------------------------------------
 // Constants
@@ -156,7 +158,7 @@ pub struct Gateway {
     /// that has not adopted owned-connection threading; handlers then fall back
     /// to their prior self-open behavior. Built once in the sidecar serve path
     /// via [`Self::set_connection`].
-    connection: Option<OwnedConnection>,
+    connection: Option<OwnedSidecarConnection>,
 }
 
 impl Gateway {
@@ -181,8 +183,13 @@ impl Gateway {
     /// Install the single process-lifetime DB connection the sidecar threads
     /// into every handler. Called once by `run_v2_server` before serving.
     /// Replaces the per-handler / per-audit self-opens.
-    pub fn set_connection(&mut self, connection: OwnedConnection) {
+    pub fn set_connection(&mut self, connection: OwnedSidecarConnection) {
         self.connection = Some(connection);
+    }
+
+    #[cfg(test)]
+    pub fn set_connection_for_tests(&mut self, connection: OwnedConnection) {
+        self.connection = Some(OwnedSidecarConnection::for_tests(connection));
     }
 
     pub fn register(&mut self, handler: Arc<dyn McpToolHandler>) {
@@ -553,7 +560,7 @@ impl Gateway {
         // instead of letting it self-open. `None` preserves the prior
         // self-open fallback for tests / unadopted paths.
         let ctx = match self.connection.as_ref() {
-            Some(connection) => McpHandlerContext::with_owned_connection(connection.clone()),
+            Some(connection) => McpHandlerContext::with_sidecar_connection(connection.clone()),
             None => McpHandlerContext::without_connection(),
         };
         let invocation = handler.invoke(&ctx, &wire_actor, envelope.params.clone());
@@ -600,7 +607,8 @@ impl Gateway {
                 // keeps the in-app try_global / self-open chain.
                 let audit_result = match self.connection.as_ref() {
                     Some(owned) => {
-                        let guard = owned
+                        let connection = owned.connection();
+                        let guard = connection
                             .lock()
                             .unwrap_or_else(std::sync::PoisonError::into_inner);
                         audit::write_with_conn(
@@ -1005,7 +1013,7 @@ mod tests {
         let tool_name = "dailyos.read.gateway_context_probe";
 
         let mut gateway = Gateway::new();
-        gateway.set_connection(Arc::clone(&owned));
+        gateway.set_connection_for_tests(Arc::clone(&owned));
         gateway.register(Arc::new(RecordingContextHandler::new(
             tool_name,
             Arc::clone(&connection_pointers),
