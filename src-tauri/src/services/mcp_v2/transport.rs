@@ -11,9 +11,10 @@
 //! - **Identity**: server-owned at process startup. Local stdio callers cannot
 //!   override the MCP client id.
 //! - **Per-call flow**: standard MCP clients send normal `{ name, arguments }`
-//!   shape; the transport strips hidden `_dailyos.conversationHandle`, builds a
-//!   [`McpToolRequestEnvelope`], and calls [`Gateway::handle_tool_call`].
-//!   `_dailyos` is NOT exposed in public `tools/list` `input_schema`.
+//!   shape; public tool schemas advertise optional `_dailyos.conversationHandle`
+//!   so schema-following hosts can echo continuity metadata. The transport strips
+//!   that metadata, builds a [`McpToolRequestEnvelope`], and calls
+//!   [`Gateway::handle_tool_call`].
 //! - **Trust model**: local stdio is inside the OS-user boundary. Authorization
 //!   is the server-side manifest + exposure + rate-limit path in the gateway.
 
@@ -93,10 +94,10 @@ impl V2ServerHandler {
     }
 }
 
-/// Build a JSON Schema fragment from a `ToolDescription`'s parameter
-/// list. Per L0 AC-6, `_dailyos` is NOT advertised — clients send normal
-/// handler params plus the hidden `_dailyos.conversationHandle` carrier only
-/// after a prior response minted one.
+/// Build a gateway-owned JSON Schema wrapper around a `ToolDescription`'s
+/// handler parameters. `_dailyos` is transport metadata, not handler input:
+/// it is advertised so schema-following hosts can echo continuity handles,
+/// then stripped before handler/ability validation.
 fn build_input_schema(desc: &ToolDescription) -> JsonObject {
     let mut properties = serde_json::Map::new();
     let mut required = Vec::new();
@@ -106,6 +107,7 @@ fn build_input_schema(desc: &ToolDescription) -> JsonObject {
             required.push(serde_json::Value::String(param.name.clone()));
         }
     }
+    properties.insert("_dailyos".into(), dailyos_metadata_schema());
     let mut schema = serde_json::Map::new();
     schema.insert("type".into(), serde_json::Value::String("object".into()));
     schema.insert("properties".into(), serde_json::Value::Object(properties));
@@ -117,9 +119,25 @@ fn build_input_schema(desc: &ToolDescription) -> JsonObject {
     schema
 }
 
+fn dailyos_metadata_schema() -> serde_json::Value {
+    serde_json::json!({
+        "type": "object",
+        "description": "Reserved DailyOS transport metadata. Only echo dailyos.conversationHandle from a prior successful response.",
+        "additionalProperties": false,
+        "properties": {
+            "conversationHandle": {
+                "type": "string",
+                "minLength": 1,
+                "description": "Server-minted DailyOS continuity handle from the previous response envelope."
+            }
+        },
+        "required": ["conversationHandle"]
+    })
+}
+
 fn tool_from_description(desc: &ToolDescription) -> Tool {
     let description = format!(
-        "{}\n\nWhen to call:\n{}\n\nWhen NOT to call:\n{}",
+        "{}\n\nWhen to call:\n{}\n\nWhen NOT to call:\n{}\n\nResponse envelope:\nSuccessful responses are JSON text with shape {{\"dailyos\":{{\"conversationHandle\":\"...\"}},\"result\":<typed tool result>}}. Echo only the returned handle as arguments._dailyos.conversationHandle on follow-up calls.",
         desc.summary.trim(),
         desc.when_to_call.trim(),
         desc.when_not_to_call.trim(),
@@ -273,6 +291,7 @@ impl ServerHandler for V2ServerHandler {
 fn unwrap_response(env: McpToolResponseEnvelope) -> Result<CallToolResult, ErrorData> {
     match env.result {
         McpToolResult::Ok { value } => {
+            reject_reserved_result_metadata(&value)?;
             let response = serde_json::json!({
                 "dailyos": {
                     "conversationHandle": env.conversation_handle.as_str(),
@@ -283,6 +302,26 @@ fn unwrap_response(env: McpToolResponseEnvelope) -> Result<CallToolResult, Error
             Ok(CallToolResult::success(vec![Content::text(text)]))
         }
         McpToolResult::Error { error } => Err(tool_error_to_mcp_error(error)),
+    }
+}
+
+fn reject_reserved_result_metadata(value: &serde_json::Value) -> Result<(), ErrorData> {
+    if contains_reserved_dailyos_key(value) {
+        return Err(ErrorData::internal_error(
+            "mcp_v2 handler returned reserved _dailyos result field",
+            None,
+        ));
+    }
+    Ok(())
+}
+
+fn contains_reserved_dailyos_key(value: &serde_json::Value) -> bool {
+    match value {
+        serde_json::Value::Object(object) => object
+            .iter()
+            .any(|(key, nested)| key == "_dailyos" || contains_reserved_dailyos_key(nested)),
+        serde_json::Value::Array(items) => items.iter().any(contains_reserved_dailyos_key),
+        _ => false,
     }
 }
 
@@ -399,7 +438,14 @@ fn tool_error_to_mcp_error(err: ToolError) -> ErrorData {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::services::mcp_v2::actor_policy::ToolRateLimit;
     use crate::services::mcp_v2::contracts::{ParamSchema, ParamSpec, ReturnSpec, Scope, Side};
+    use crate::services::mcp_v2::handlers::tool_account_status::present_account_status_response;
+    use crate::services::mcp_v2::local_runtime::LocalConversationStore;
+    use crate::services::mcp_v2::taxonomy::TaxonomyError;
+    use abilities_runtime::abilities::registry::McpExposure;
+    use serde_json::json;
+    use std::borrow::Cow;
 
     fn fake_desc(name: &str) -> ToolDescription {
         ToolDescription {
@@ -423,8 +469,197 @@ mod tests {
         }
     }
 
+    #[derive(Clone)]
+    struct SingleToolCatalog {
+        description: ToolDescription,
+    }
+
+    impl TaxonomyCatalog for SingleToolCatalog {
+        fn validate_against_handlers(
+            &self,
+            _handlers: &[&dyn crate::services::mcp_v2::contracts::McpToolHandler],
+        ) -> Result<(), TaxonomyError> {
+            Ok(())
+        }
+
+        fn validate_catalog_against_handlers(
+            &self,
+            _handlers: &[&dyn crate::services::mcp_v2::contracts::McpToolHandler],
+        ) -> Vec<ScopedName> {
+            Vec::new()
+        }
+
+        fn side_for(&self, tool_name: &ScopedName) -> Option<Side> {
+            (tool_name == &self.description.name).then_some(self.description.side)
+        }
+
+        fn description_for(&self, tool_name: &ScopedName) -> Option<&ToolDescription> {
+            (tool_name == &self.description.name).then_some(&self.description)
+        }
+
+        fn iter_names(&self) -> Box<dyn Iterator<Item = &ScopedName> + '_> {
+            Box::new(std::iter::once(&self.description.name))
+        }
+    }
+
+    struct RecordingHandler {
+        description: ToolDescription,
+        invocations: Arc<Mutex<Vec<serde_json::Value>>>,
+    }
+
+    impl crate::services::mcp_v2::contracts::McpToolHandler for RecordingHandler {
+        fn description(&self) -> &ToolDescription {
+            &self.description
+        }
+
+        fn invoke(
+            &self,
+            actor: &crate::services::mcp_v2::contracts::McpActor,
+            params: serde_json::Value,
+        ) -> Result<serde_json::Value, ToolError> {
+            self.invocations.lock().push(params);
+            let crate::services::mcp_v2::contracts::McpActor::Client {
+                conversation_handle,
+                ..
+            } = actor;
+            Ok(json!({
+                "status": "ok",
+                "actorConversationHandle": conversation_handle.as_ref().map(|handle| handle.as_str()),
+            }))
+        }
+    }
+
+    fn local_stdio_grant(tool_name: &ScopedName) -> ToolGrant {
+        ToolGrant {
+            tool_name: tool_name.clone(),
+            scopes_granted: Vec::new(),
+            exposure: McpExposure::Invocable,
+            rate_limit: ToolRateLimit {
+                max_calls: 600,
+                window_seconds: 60,
+            },
+        }
+    }
+
+    fn request_context() -> RequestContext<RoleServer> {
+        let (peer, _rx) = rmcp::service::Peer::<RoleServer>::new(
+            Arc::new(rmcp::service::AtomicU32RequestIdProvider::default()),
+            rmcp::model::ClientInfo::default(),
+        );
+        RequestContext {
+            ct: Default::default(),
+            id: rmcp::model::RequestId::Number(1),
+            peer,
+        }
+    }
+
+    fn assert_schema_accepts(schema: &JsonObject, value: &serde_json::Value) {
+        validate_schema_subset(&serde_json::Value::Object(schema.clone()), value)
+            .expect("schema accepts value");
+    }
+
+    fn assert_schema_rejects(schema: &JsonObject, value: &serde_json::Value) {
+        validate_schema_subset(&serde_json::Value::Object(schema.clone()), value)
+            .expect_err("schema rejects value");
+    }
+
+    fn validate_schema_subset(
+        schema: &serde_json::Value,
+        value: &serde_json::Value,
+    ) -> Result<(), String> {
+        match schema.get("type").and_then(serde_json::Value::as_str) {
+            Some("object") => validate_object_schema_subset(schema, value),
+            Some("string") => validate_string_schema_subset(schema, value),
+            Some(other) => Err(format!("unsupported schema type: {other}")),
+            None => Ok(()),
+        }
+    }
+
+    fn validate_object_schema_subset(
+        schema: &serde_json::Value,
+        value: &serde_json::Value,
+    ) -> Result<(), String> {
+        let object = value
+            .as_object()
+            .ok_or_else(|| "expected object value".to_string())?;
+        let properties = schema
+            .get("properties")
+            .and_then(serde_json::Value::as_object)
+            .ok_or_else(|| "object schema missing properties".to_string())?;
+
+        for required in schema
+            .get("required")
+            .and_then(serde_json::Value::as_array)
+            .into_iter()
+            .flatten()
+            .filter_map(serde_json::Value::as_str)
+        {
+            if !object.contains_key(required) {
+                return Err(format!("missing required property: {required}"));
+            }
+        }
+
+        if schema
+            .get("additionalProperties")
+            .and_then(serde_json::Value::as_bool)
+            == Some(false)
+        {
+            for key in object.keys() {
+                if !properties.contains_key(key) {
+                    return Err(format!("unexpected property: {key}"));
+                }
+            }
+        }
+
+        for (key, nested_value) in object {
+            if let Some(nested_schema) = properties.get(key) {
+                validate_schema_subset(nested_schema, nested_value)?;
+            }
+        }
+        Ok(())
+    }
+
+    fn validate_string_schema_subset(
+        schema: &serde_json::Value,
+        value: &serde_json::Value,
+    ) -> Result<(), String> {
+        let text = value
+            .as_str()
+            .ok_or_else(|| "expected string value".to_string())?;
+        if let Some(min_length) = schema.get("minLength").and_then(serde_json::Value::as_u64) {
+            if text.len() < min_length as usize {
+                return Err(format!("string shorter than minLength {min_length}"));
+            }
+        }
+        Ok(())
+    }
+
+    async fn call_tool_json(
+        handler: &V2ServerHandler,
+        name: &'static str,
+        arguments: serde_json::Value,
+    ) -> serde_json::Value {
+        let arguments = arguments
+            .as_object()
+            .cloned()
+            .expect("test arguments are object");
+        let result = handler
+            .call_tool(
+                CallToolRequestParam {
+                    name: Cow::Borrowed(name),
+                    arguments: Some(arguments),
+                },
+                request_context(),
+            )
+            .await
+            .expect("call_tool succeeds");
+
+        serde_json::from_str(result.content[0].as_text().unwrap().text.as_str())
+            .expect("response content is JSON text")
+    }
+
     #[test]
-    fn input_schema_excludes_dailyos_keys_per_l0_ac6() {
+    fn input_schema_advertises_reserved_dailyos_conversation_handle() {
         let desc = fake_desc("dailyos.read.account_status");
         let schema = build_input_schema(&desc);
         let props = schema
@@ -432,14 +667,106 @@ mod tests {
             .and_then(|v| v.as_object())
             .expect("properties present");
         assert!(props.contains_key("subject"), "handler params present");
-        assert!(
-            !props.contains_key("_dailyos"),
-            "no `_dailyos` in public input_schema: keys={:?}",
-            props.keys().collect::<Vec<_>>(),
+        let dailyos = props
+            .get("_dailyos")
+            .and_then(|value| value.as_object())
+            .expect("reserved metadata schema present");
+        assert_eq!(dailyos.get("additionalProperties"), Some(&json!(false)));
+        let dailyos_props = dailyos
+            .get("properties")
+            .and_then(|value| value.as_object())
+            .expect("metadata properties present");
+        assert!(dailyos_props.contains_key("conversationHandle"));
+        assert_eq!(
+            dailyos.get("required"),
+            Some(&json!(["conversationHandle"]))
         );
         assert_eq!(
             schema.get("additionalProperties"),
             Some(&serde_json::Value::Bool(false)),
+        );
+    }
+
+    #[tokio::test]
+    async fn tools_list_schema_validates_echo_then_call_tool_strips_metadata() {
+        let tool_name = "dailyos.read.account_status";
+        let description = fake_desc(tool_name);
+        let invocations = Arc::new(Mutex::new(Vec::new()));
+        let conversation_dir = tempfile::tempdir().expect("conversation tempdir");
+        let mut gateway = Gateway::new().with_local_conversation_store_for_tests(
+            LocalConversationStore::new(conversation_dir.path().join("handles.json")),
+        );
+        gateway.register(Arc::new(RecordingHandler {
+            description: description.clone(),
+            invocations: invocations.clone(),
+        }));
+        let handler = V2ServerHandler::from_local_stdio(
+            Arc::new(gateway),
+            Arc::new(SingleToolCatalog {
+                description: description.clone(),
+            }),
+            vec![local_stdio_grant(&description.name)],
+            McpClientId::new("local-client-a"),
+        );
+
+        let tools = handler
+            .list_tools(None, request_context())
+            .await
+            .expect("tools/list succeeds");
+        let tool = tools
+            .tools
+            .iter()
+            .find(|tool| tool.name.as_ref() == tool_name)
+            .expect("registered tool listed");
+        let schema = tool.input_schema.as_ref();
+
+        let first_arguments = json!({ "subject": "Example Account" });
+        assert_schema_accepts(schema, &first_arguments);
+        assert_schema_rejects(
+            schema,
+            &json!({
+                "subject": "Example Account",
+                "conversation_id": "caller-controlled"
+            }),
+        );
+        let first_payload = call_tool_json(&handler, tool_name, first_arguments).await;
+        let minted_handle = first_payload["dailyos"]["conversationHandle"]
+            .as_str()
+            .expect("first response mints handle")
+            .to_string();
+
+        let follow_up_arguments = json!({
+            "subject": "Example Account",
+            "_dailyos": { "conversationHandle": minted_handle }
+        });
+        assert_schema_accepts(schema, &follow_up_arguments);
+        assert_schema_rejects(
+            schema,
+            &json!({
+                "subject": "Example Account",
+                "_dailyos": {
+                    "conversationHandle": first_payload["dailyos"]["conversationHandle"],
+                    "clientId": "caller-controlled"
+                }
+            }),
+        );
+        let second_payload = call_tool_json(&handler, tool_name, follow_up_arguments).await;
+
+        assert_eq!(
+            second_payload["dailyos"]["conversationHandle"],
+            first_payload["dailyos"]["conversationHandle"]
+        );
+        assert_eq!(
+            second_payload["result"]["actorConversationHandle"],
+            first_payload["dailyos"]["conversationHandle"]
+        );
+        assert_eq!(
+            *invocations.lock(),
+            vec![
+                json!({ "subject": "Example Account" }),
+                json!({ "subject": "Example Account" }),
+            ],
+            "`_dailyos` must be stripped before handler/ability params"
         );
     }
 
@@ -451,6 +778,8 @@ mod tests {
         assert!(description.contains("test summary"));
         assert!(description.contains("When to call:\ntest when"));
         assert!(description.contains("When NOT to call:\ntest when not"));
+        assert!(description.contains("Response envelope:"));
+        assert!(description.contains("arguments._dailyos.conversationHandle"));
     }
 
     #[test]
@@ -567,11 +896,50 @@ mod tests {
     }
 
     #[test]
-    fn unwrap_response_includes_conversation_handle_envelope() {
+    fn unwrap_response_preserves_account_status_projection_envelope() {
+        let account_status = present_account_status_response(
+            "account_01",
+            json!({
+                "schemaVersion": 2,
+                "subject": {
+                    "kind": "account",
+                    "id": "account_01",
+                    "displayLabel": "Account 01"
+                },
+                "facts": { "items": [{
+                    "claimId": "claim_01",
+                    "text": "Account 01 has a current onboarding plan.",
+                    "claimType": "account_status",
+                    "trustBand": "likely_current",
+                    "sensitivity": "internal",
+                    "provenance": { "sourceIds": ["source_01"] }
+                }] },
+                "openLoops": { "items": [] },
+                "relationships": { "items": [] },
+                "touchpoints": { "items": [] },
+                "recordEntries": { "items": [] },
+                "trust": {
+                    "aggregateBand": "likely_current",
+                    "sectionCaveats": {}
+                },
+                "sensitivity": "internal",
+                "provenance": {
+                    "sources": [{
+                        "id": "source_01",
+                        "label": "Workspace note",
+                        "sourceType": "workspace_file",
+                        "redacted": false
+                    }],
+                    "redactionApplied": false
+                },
+                "sections": {}
+            }),
+        );
+
         let result = unwrap_response(McpToolResponseEnvelope {
             conversation_handle: OpaqueConversationHandle::new("local-stdio-abc"),
             result: McpToolResult::Ok {
-                value: serde_json::json!({ "status": "active" }),
+                value: account_status,
             },
         })
         .expect("success result");
@@ -579,6 +947,34 @@ mod tests {
         let payload: serde_json::Value =
             serde_json::from_str(result.content[0].as_text().unwrap().text.as_str()).unwrap();
         assert_eq!(payload["dailyos"]["conversationHandle"], "local-stdio-abc");
-        assert_eq!(payload["result"]["status"], "active");
+        assert_eq!(payload["result"]["toolName"], "dailyos.read.account_status");
+        assert_eq!(
+            payload["result"]["trust"]["aggregateBand"],
+            "likely_current"
+        );
+        assert_eq!(payload["result"]["sensitivity"], "internal");
+        assert_eq!(
+            payload["result"]["provenance"]["rawClaimIdsIncluded"],
+            false
+        );
+        assert!(payload["result"].get("_dailyos").is_none());
+    }
+
+    #[test]
+    fn unwrap_response_rejects_reserved_dailyos_result_metadata() {
+        let err = unwrap_response(McpToolResponseEnvelope {
+            conversation_handle: OpaqueConversationHandle::new("local-stdio-abc"),
+            result: McpToolResult::Ok {
+                value: serde_json::json!({
+                    "status": "active",
+                    "nested": [{
+                        "_dailyos": { "conversationHandle": "forged" }
+                    }]
+                }),
+            },
+        })
+        .expect_err("reserved result metadata rejected");
+
+        assert_eq!(err.code, ErrorCode::INTERNAL_ERROR);
     }
 }

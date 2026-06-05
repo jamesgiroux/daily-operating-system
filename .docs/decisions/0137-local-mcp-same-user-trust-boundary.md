@@ -1,9 +1,10 @@
 # ADR-0137: Local MCP same-user trust boundary
 
-**Status:** Accepted  
-**Date:** 2026-06-05  
-**Supersedes:** local-stdio portions of [ADR-0102](0102-abilities-as-runtime-contract.md) §C and [ADR-0128](0128-headless-dailyos-mcp-as-product-surface.md) §F  
-**Preserves:** [ADR-0102](0102-abilities-as-runtime-contract.md) §A/B/D/E/G, [ADR-0128](0128-headless-dailyos-mcp-as-product-surface.md) §C/D
+**Status:** Accepted
+**Date:** 2026-06-05
+**Supersedes:** local-stdio portions of [ADR-0102](0102-abilities-as-runtime-contract.md) §C and [ADR-0128](0128-headless-dailyos-mcp-as-product-surface.md) §F
+**Amends:** [ADR-0111](0111-surface-independent-ability-invocation.md) MCP tool-registration schema publishing for local stdio v2 transport metadata
+**Preserves:** [ADR-0102](0102-abilities-as-runtime-contract.md) §A/B/D/E/G, [ADR-0128](0128-headless-dailyos-mcp-as-product-surface.md) §C/D, [ADR-0105](0105-provenance-as-first-class-output.md) and [ADR-0108](0108-provenance-rendering-and-privacy.md) output/provenance obligations
 
 ## Context
 
@@ -16,7 +17,9 @@ In that topology, HMAC/pairing/presence-nonce/scope-grant state duplicates the o
 For local stdio MCP only, DailyOS retires the ADR-0102 pairing/HMAC/presence-nonce/scope-manifest/rate-limit requirement and replaces it with a server-owned local runtime:
 
 - **Identity is server-owned.** The local MCP server loads or creates a stable opaque `McpClientId` in the macOS Keychain. `DAILYOS_MCP_CLIENT_ID` and caller-provided client ids are not accepted.
-- **Caller assertions are rejected.** Tool params may not carry `_dailyos`, `clientId`, `actor`, `scope(s)`, `grantedScopes`, `conversationId`, `side`, or `sensitivity`. Hidden transport metadata is stripped before handler dispatch.
+- **Caller assertions are rejected.** Tool params may not carry `clientId`, `actor`, `scope(s)`, `grantedScopes`, `conversationId`, `side`, or `sensitivity`. The only caller-echoed DailyOS transport metadata is `arguments._dailyos.conversationHandle`, advertised in public v2 `tools/list` schemas so schema-following hosts can preserve continuity. `_dailyos` is stripped before handler/ability validation, is not part of `AbilityDescriptor.input_schema`, and cannot carry actor, client, scope, side, sensitivity, raw conversation id, or arbitrary authority.
+- **MCP schemas are gateway-owned wrappers.** For local stdio v2, the public MCP input schema is the handler/ability schema plus the optional reserved `_dailyos.conversationHandle` wrapper. Handler and ability validation still see only typed handler params.
+- **Response envelopes preserve typed output.** Successful local stdio v2 responses are JSON text envelopes with `dailyos.conversationHandle` and `result`. The `result` remains the actor-filtered ability/tool output with provenance, trust rendering, attribution, and sensitivity filtering intact. If a future `provenanceHandle` detail path is used instead of inline provenance/trust fields, that detail tool must be exposed and callable through canonical v2 local stdio `tools/list`; legacy v1-only detail tools do not satisfy this ADR.
 - **Exposure is local-stdio-specific.** Read tools may be invocable. `Side::Write` tools are non-invocable over local stdio. `Side::SubmitCorrection` is invocable only for the ADR-0128 submit trio when those handlers are actually registered; W2 does not create placeholder submit handlers.
 - **Conversation continuity remains ADR-0102 §D.** The local store uses a server-minted `OpaqueConversationHandle`, 24-hour sliding expiry, transparent remint after expiry or missing non-revoked state, and dedicated failure for revoked or cross-client handles.
 - **Audit privacy remains mandatory.** Read audit rows store keyed HMAC-SHA256 digests over canonical JSON for params and responses, never raw payloads. Write/submit audit continues to sanitize payload keys. Digest-key failure fails closed.
