@@ -8,13 +8,12 @@
 //!
 //! - **Scope**: local-to-local same-machine only. Trust boundary is
 //!   "same user on this machine." No remote MCP transport in v1.4.7.
-//! - **Identity**: env-asserted at process startup (`DAILYOS_MCP_CLIENT_ID`).
-//!   The gateway treats the asserted id as scope/audit attribution in the
-//!   same-user local trust model.
+//! - **Identity**: server-owned at process startup. Local stdio callers cannot
+//!   override the MCP client id.
 //! - **Per-call flow**: standard MCP clients send normal `{ name, arguments }`
-//!   shape; the transport builds a [`McpToolRequestEnvelope`] and calls
-//!   [`Gateway::handle_tool_call`]. `_dailyos_*` keys are NOT exposed in public
-//!   `tools/list` `input_schema`.
+//!   shape; the transport strips hidden `_dailyos.conversationHandle`, builds a
+//!   [`McpToolRequestEnvelope`], and calls [`Gateway::handle_tool_call`].
+//!   `_dailyos` is NOT exposed in public `tools/list` `input_schema`.
 //! - **Trust model**: local stdio is inside the OS-user boundary. Authorization
 //!   is the server-side manifest + exposure + rate-limit path in the gateway.
 
@@ -34,8 +33,8 @@ use rusqlite::Connection;
 use super::actor_policy::ToolGrant;
 use super::auth;
 use super::contracts::{
-    McpClientId, McpToolRequestEnvelope, McpToolResponseEnvelope, McpToolResult, ScopedName,
-    ToolDescription, ToolError,
+    McpClientId, McpToolRequestEnvelope, McpToolResponseEnvelope, McpToolResult,
+    OpaqueConversationHandle, ScopedName, ToolDescription, ToolError,
 };
 use super::gateway::Gateway;
 use super::taxonomy::TaxonomyCatalog;
@@ -95,8 +94,9 @@ impl V2ServerHandler {
 }
 
 /// Build a JSON Schema fragment from a `ToolDescription`'s parameter
-/// list. Per L0 AC-6, `_dailyos_*` keys are NOT advertised — clients
-/// send normal handler params only.
+/// list. Per L0 AC-6, `_dailyos` is NOT advertised — clients send normal
+/// handler params plus the hidden `_dailyos.conversationHandle` carrier only
+/// after a prior response minted one.
 fn build_input_schema(desc: &ToolDescription) -> JsonObject {
     let mut properties = serde_json::Map::new();
     let mut required = Vec::new();
@@ -218,10 +218,12 @@ impl ServerHandler for V2ServerHandler {
         // Per L0 AC-2: receive normal MCP `{ name, arguments }` shape;
         // transport builds the envelope consumed by the authorization gateway.
         let tool_name = ScopedName::new(request.name.to_string());
-        let params = serde_json::Value::Object(request.arguments.unwrap_or_default());
+        let mut arguments = request.arguments.unwrap_or_default();
+        let conversation_handle = extract_dailyos_metadata(&mut arguments)?;
+        let params = serde_json::Value::Object(arguments);
 
         let envelope = McpToolRequestEnvelope {
-            conversation_handle: None,
+            conversation_handle,
             tool_name,
             params,
         };
@@ -271,11 +273,50 @@ impl ServerHandler for V2ServerHandler {
 fn unwrap_response(env: McpToolResponseEnvelope) -> Result<CallToolResult, ErrorData> {
     match env.result {
         McpToolResult::Ok { value } => {
-            let text = serde_json::to_string(&value).unwrap_or_else(|_| "{}".to_string());
+            let response = serde_json::json!({
+                "dailyos": {
+                    "conversationHandle": env.conversation_handle.as_str(),
+                },
+                "result": value,
+            });
+            let text = serde_json::to_string(&response).unwrap_or_else(|_| "{}".to_string());
             Ok(CallToolResult::success(vec![Content::text(text)]))
         }
         McpToolResult::Error { error } => Err(tool_error_to_mcp_error(error)),
     }
+}
+
+fn extract_dailyos_metadata(
+    arguments: &mut JsonObject,
+) -> Result<Option<OpaqueConversationHandle>, ErrorData> {
+    let Some(metadata) = arguments.remove("_dailyos") else {
+        return Ok(None);
+    };
+    let Some(metadata) = metadata.as_object() else {
+        return Err(dailyos_metadata_error("metadata_object_required"));
+    };
+    if metadata.len() != 1 || !metadata.contains_key("conversationHandle") {
+        return Err(dailyos_metadata_error("unsupported_metadata_fields"));
+    }
+    let Some(handle) = metadata
+        .get("conversationHandle")
+        .and_then(serde_json::Value::as_str)
+        .map(str::trim)
+        .filter(|handle| !handle.is_empty())
+    else {
+        return Err(dailyos_metadata_error("conversation_handle_required"));
+    };
+    Ok(Some(OpaqueConversationHandle::new(handle.to_string())))
+}
+
+fn dailyos_metadata_error(reason: &str) -> ErrorData {
+    ErrorData::invalid_params(
+        "DailyOS metadata is malformed".to_string(),
+        Some(serde_json::json!({
+            "kind": "bad_dailyos_metadata",
+            "reason": reason,
+        })),
+    )
 }
 
 /// Per L0 AC-3 closed-matrix mapping from `ToolError` to `rmcp::ErrorData`.
@@ -392,8 +433,8 @@ mod tests {
             .expect("properties present");
         assert!(props.contains_key("subject"), "handler params present");
         assert!(
-            !props.keys().any(|k| k.starts_with("_dailyos_")),
-            "no `_dailyos_*` in public input_schema: keys={:?}",
+            !props.contains_key("_dailyos"),
+            "no `_dailyos` in public input_schema: keys={:?}",
             props.keys().collect::<Vec<_>>(),
         );
         assert_eq!(
@@ -484,5 +525,60 @@ mod tests {
         let data = err.data.as_ref().expect("data present");
         assert_eq!(data["kind"], "internal");
         assert_eq!(data["trace_id"], "trace-abc123");
+    }
+
+    #[test]
+    fn extract_dailyos_metadata_strips_conversation_handle() {
+        let mut arguments = serde_json::json!({
+            "subject": "Example Account",
+            "_dailyos": {
+                "conversationHandle": "local-stdio-abc"
+            }
+        })
+        .as_object()
+        .cloned()
+        .unwrap();
+
+        let handle = extract_dailyos_metadata(&mut arguments)
+            .expect("metadata valid")
+            .expect("handle present");
+
+        assert_eq!(handle.as_str(), "local-stdio-abc");
+        assert!(!arguments.contains_key("_dailyos"));
+        assert_eq!(arguments["subject"], "Example Account");
+    }
+
+    #[test]
+    fn extract_dailyos_metadata_rejects_actor_assertions() {
+        let mut arguments = serde_json::json!({
+            "_dailyos": {
+                "conversationHandle": "local-stdio-abc",
+                "clientId": "caller-controlled"
+            }
+        })
+        .as_object()
+        .cloned()
+        .unwrap();
+
+        let err = extract_dailyos_metadata(&mut arguments).expect_err("metadata rejected");
+        let data = err.data.as_ref().expect("error data");
+        assert_eq!(data["kind"], "bad_dailyos_metadata");
+        assert_eq!(data["reason"], "unsupported_metadata_fields");
+    }
+
+    #[test]
+    fn unwrap_response_includes_conversation_handle_envelope() {
+        let result = unwrap_response(McpToolResponseEnvelope {
+            conversation_handle: OpaqueConversationHandle::new("local-stdio-abc"),
+            result: McpToolResult::Ok {
+                value: serde_json::json!({ "status": "active" }),
+            },
+        })
+        .expect("success result");
+
+        let payload: serde_json::Value =
+            serde_json::from_str(result.content[0].as_text().unwrap().text.as_str()).unwrap();
+        assert_eq!(payload["dailyos"]["conversationHandle"], "local-stdio-abc");
+        assert_eq!(payload["result"]["status"], "active");
     }
 }
