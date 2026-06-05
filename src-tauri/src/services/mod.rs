@@ -48,6 +48,7 @@ pub mod mutations;
 pub mod people;
 pub mod projection_signing;
 pub mod projects;
+pub mod rebuild;
 pub mod recommendations;
 pub mod reports;
 pub mod runtime_evidence_backfill;

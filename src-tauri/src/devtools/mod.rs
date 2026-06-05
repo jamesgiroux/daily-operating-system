@@ -23,6 +23,9 @@
 //! Claim file projection ledgers follow the same rule: they are service-owned
 //! operational receipts produced by claim-file render/apply abilities, not
 //! static mock fixture data.
+//! Rebuild correction replay journals follow the same rule: they are
+//! service-owned recovery receipts produced by rebuild replay, not static mock
+//! fixture data or user-facing demo content.
 //! Composition layout overlays are also not statically seeded: they are local
 //! presentation preferences produced through `services::composition_layout`,
 //! not intelligence substrate or demo content.

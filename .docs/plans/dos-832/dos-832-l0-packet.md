@@ -28,7 +28,7 @@
 - SQLCipher retirement is an ADR-0092 amendment path, not ADR-0136.
 - There is no in-place decrypt/sentinel migration in DOS-831.
 - Existing encrypted-looking active DBs fail loud into storage-health/rebuild guidance.
-- Current schema head is v276; next free slot is v277.
+- At L0 drafting, current schema head was v276 and the next free slot was v277. The stacked L1 implementation now sits above W3's v280/v281 claim-file projection migrations, so DOS-832 replay journal schema uses v282.
 - Writer-priority lane language is stale; ADR-0133 owns FIFO writer/gate responsibility.
 
 **Authority precondition:** DOS-832 implementation does not begin from the stale local wave-plan text. Before L1, either DOS-831 PR #434 (or an equivalent wave-plan/ADR correction) is merged into the branch, or this packet remains a draft and the first L1 task is to rebase/apply those authority corrections. A packet note pointing at an unavailable PR is not sufficient for shipping implementation.
@@ -107,7 +107,7 @@ The rebuild path creates a fresh database at schema head, then replays canonical
 The intended phases:
 
 1. **Plan:** resolve workspace root, DB mode, target DB path, existing DB health, and source inventory. Produce a PII-safe summary using handles/counts/reason codes.
-2. **Fresh schema:** create or open the target rebuild DB and run migrations to head (`v276` on current `dev`; reserve `v277+` only if L1 adds rebuild-run schema).
+2. **Fresh schema:** create or open the target rebuild DB and run migrations to head (`v276` on current `dev` at L0; v281 after W3 stacking; reserve `v282+` if L1 adds rebuild-run schema after W3).
 3. **Canonical entity seed:** run the existing entity JSON sync for `Accounts`, `Projects`, and `People` through `WorkspaceSourceRegistry::open_validated` or a rebuild-owned bounded-open helper with the same traversal, symlink, race, workspace-escape, size, and hardlink protections, while preserving the fact that this is only the entity seed layer.
 4. **Source registration:** reuse/extend `workspace_backfill` to register workspace files and entity links. It remains privacy-aware and resumable.
 5. **Source ingestion:** run the workspace ingestion pipeline over registered eligible files. Claims must enter through `commit_claim` with `DataSource::WorkspaceFile`, `source_ref`, `source_asof`, `observed_at`, temporal scope, sensitivity, and provenance intact.
@@ -122,7 +122,7 @@ Implementation shape:
 - Existing entity JSON read paths in `accounts`, `projects`, `people`, `entity_io`, and `db_backup` are either bypassed by the rebuild reader or refactored behind the bounded-open helper for rebuild use. L1 must include a static/code-review proof that rebuild cannot ingest account/project/person JSON from symlinks, outside-workspace paths, race-swapped files, oversize inputs, or hardlinks rejected by `open_validated`.
 - Rebuild orchestration, source registration, ingestion, re-enrichment, correction replay, cutover, queue pause/drain/resume, verification, and failure/rollback phases emit ADR-0120 `InvocationRecord`s. Rebuild/replay run state stores or correlates `invocation_id` / `caused_by_invocation_id` where the row answers "what invocation caused this."
 - Pause/drain background intelligence queues before Live replacement or long writer-exclusive phases, then resume or requeue pending work. Rebuild cannot race normal startup/background writers.
-- Add durable rebuild/replay run state if the existing `workspace_backfill_runs` tables are insufficient. If new schema is required, reserve from v277 upward and update the wave plan after DOS-831's corrections merge.
+- Add durable rebuild/replay run state if the existing `workspace_backfill_runs` tables are insufficient. If new schema is required, reserve from the next free slot above the stacked schema head and update the wave plan after DOS-831's corrections merge.
 
 ### §2.2 Canonical Inputs
 
@@ -360,7 +360,7 @@ Approval requires unanimous pass or explicit L6 decision on any residual release
 | `/codex challenge` | APPROVE | Final rerun approved after verifying debug trace, Live cutover reopen-path coverage, ADR-0120 observability, ADR-0094/0098 audit events, entity seed trust boundary, correction replay, source-time determinism, and release gates. Evidence: `CODEX_DOS832_FINAL2_ERR=/tmp/codex-dos832-final2-err-EJJPzG`; tokens used: 710,957. |
 | `ce-security-lens-reviewer` | APPROVE | Approved after entity JSON seed reads were bound to the workspace trust boundary, cutover gates covered DB/service reopen paths, and sidecar/export audit/security obligations were explicit. |
 | `ce-feasibility-reviewer` | APPROVE | Approved after process-wide cutover gate, scoped reopen token, queue pause/drain/resume semantics, service ownership, and current-code reopen paths were named. |
-| `ce-data-migrations-reviewer` | APPROVE | Approved schema/data-integrity posture: fresh-schema replay, v277+ reservation only if new run state is required, no raw claim copy, replay idempotency, and invocation correlation where applicable. |
+| `ce-data-migrations-reviewer` | APPROVE | Approved schema/data-integrity posture: fresh-schema replay, next-free-slot reservation only if new run state is required, no raw claim copy, replay idempotency, and invocation correlation where applicable. |
 | `ce-learnings-researcher` | APPROVE | Confirmed prior substrate is represented: ADR-0120, ADR-0094/0098, ADR-0048, ADR-0107/0098, ADR-0123/0126/0131, ADR-0133, ADR-0110, and documented claim-producer/runtime trust audit and DB lock-storm learnings. |
 
 Cycle notes:

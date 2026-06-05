@@ -30,7 +30,8 @@ use crate::services::workspace_ingestion::registry::CLAIM_FILE_PROJECTION_ROOT;
 use crate::state::AppState;
 
 pub const CLAIM_FILE_PROJECTION_VERSION: u32 = 1;
-pub const CLAIM_FILE_SIDECAR_SCHEMA_VERSION: u32 = 1;
+pub const CLAIM_FILE_LEGACY_SIDECAR_SCHEMA_VERSION: u32 = 1;
+pub const CLAIM_FILE_SIDECAR_SCHEMA_VERSION: u32 = 2;
 pub const CLAIM_FILE_MARKDOWN_NAME: &str = "claims.md";
 pub const CLAIM_FILE_SIDECAR_NAME: &str = "claims.corrections.json";
 
@@ -106,6 +107,7 @@ pub struct ClaimFileClaim {
     pub provenance_summary: ClaimFileProvenanceSummary,
     pub feedback_rows: Vec<ClaimFileFeedbackRow>,
     pub contradiction_edges: Vec<ClaimFileContradictionEdge>,
+    pub superseded_by_semantic_identity: Option<ClaimSemanticIdentityV1>,
     pub replay_status: ClaimFileReplayStatus,
 }
 
@@ -143,6 +145,8 @@ pub struct ClaimFileProvenanceSummary {
 #[derive(Debug, Clone, Serialize, Deserialize, JsonSchema, PartialEq, Eq)]
 #[serde(rename_all = "camelCase")]
 pub struct ClaimFileFeedbackRow {
+    #[serde(default)]
+    pub feedback_id: String,
     pub action: String,
     pub actor: String,
     pub actor_id: Option<String>,
@@ -179,7 +183,9 @@ pub struct ClaimFileContradictionEdge {
     pub reconciliation_note: Option<String>,
     pub reconciled_at: Option<String>,
     pub winner_runtime_claim_id: Option<String>,
+    pub winner_semantic_identity: Option<ClaimSemanticIdentityV1>,
     pub merged_runtime_claim_id: Option<String>,
+    pub merged_semantic_identity: Option<ClaimSemanticIdentityV1>,
     pub replay_status: ClaimFileReplayStatus,
 }
 
@@ -506,12 +512,18 @@ fn claim_file_claim(db: &ActionDb, claim: &IntelligenceClaim) -> Result<ClaimFil
         },
         feedback_rows: load_feedback_rows(db, &claim.id)?,
         contradiction_edges: load_contradiction_edges(db, &claim.id)?,
+        superseded_by_semantic_identity: claim
+            .superseded_by
+            .as_deref()
+            .map(|claim_id| semantic_identity_for_claim_id(db, claim_id))
+            .transpose()?
+            .flatten(),
         replay_status: projected_replay_status(),
         semantic_identity,
     })
 }
 
-fn semantic_identity_for_loaded_claim(
+pub(crate) fn semantic_identity_for_loaded_claim(
     claim: &IntelligenceClaim,
 ) -> Result<ClaimSemanticIdentityV1, String> {
     let subject_value: serde_json::Value =
@@ -591,7 +603,7 @@ fn load_feedback_rows(db: &ActionDb, claim_id: &str) -> Result<Vec<ClaimFileFeed
     let mut stmt = db
         .conn_ref()
         .prepare(
-            "SELECT feedback_type, actor, actor_id, payload_json, submitted_at, applied_at
+            "SELECT id, feedback_type, actor, actor_id, payload_json, submitted_at, applied_at
              FROM claim_feedback
              WHERE claim_id = ?1
              ORDER BY submitted_at ASC, id ASC",
@@ -599,16 +611,17 @@ fn load_feedback_rows(db: &ActionDb, claim_id: &str) -> Result<Vec<ClaimFileFeed
         .map_err(|error| error.to_string())?;
     let rows = stmt
         .query_map(params![claim_id], |row| {
-            let payload_raw: Option<String> = row.get(3)?;
+            let payload_raw: Option<String> = row.get(4)?;
             Ok(ClaimFileFeedbackRow {
-                action: row.get(0)?,
-                actor: row.get(1)?,
-                actor_id: row.get(2)?,
+                feedback_id: row.get(0)?,
+                action: row.get(1)?,
+                actor: row.get(2)?,
+                actor_id: row.get(3)?,
                 payload_json: payload_raw
                     .as_deref()
                     .and_then(|raw| serde_json::from_str(raw).ok()),
-                submitted_at: row.get(4)?,
-                applied_at: row.get(5)?,
+                submitted_at: row.get(5)?,
+                applied_at: row.get(6)?,
             })
         })
         .map_err(|error| error.to_string())?;
@@ -656,6 +669,18 @@ fn load_contradiction_edges(
         let primary_semantic_identity = semantic_identity_for_claim_id(db, &row.primary_claim_id)?;
         let contradicting_semantic_identity =
             semantic_identity_for_claim_id(db, &row.contradicting_claim_id)?;
+        let winner_semantic_identity = row
+            .winner_claim_id
+            .as_deref()
+            .map(|claim_id| semantic_identity_for_claim_id(db, claim_id))
+            .transpose()?
+            .flatten();
+        let merged_semantic_identity = row
+            .merged_claim_id
+            .as_deref()
+            .map(|claim_id| semantic_identity_for_claim_id(db, claim_id))
+            .transpose()?
+            .flatten();
         out.push(ClaimFileContradictionEdge {
             edge_id: row.edge_id,
             branch_kind: row.branch_kind,
@@ -673,7 +698,9 @@ fn load_contradiction_edges(
             reconciliation_note: row.reconciliation_note,
             reconciled_at: row.reconciled_at,
             winner_runtime_claim_id: row.winner_claim_id,
+            winner_semantic_identity,
             merged_runtime_claim_id: row.merged_claim_id,
+            merged_semantic_identity,
             replay_status: projected_replay_status(),
         });
     }
@@ -1120,7 +1147,10 @@ fn verify_sidecar_paths(
 }
 
 fn verify_sidecar_contract(sidecar: &ClaimFileSidecar) -> Result<(), ClaimFileError> {
-    if sidecar.schema_version != CLAIM_FILE_SIDECAR_SCHEMA_VERSION {
+    if !matches!(
+        sidecar.schema_version,
+        CLAIM_FILE_LEGACY_SIDECAR_SCHEMA_VERSION | CLAIM_FILE_SIDECAR_SCHEMA_VERSION
+    ) {
         return Err(ClaimFileError::BadRequest(
             "unsupported sidecar schema_version".to_string(),
         ));
@@ -1457,7 +1487,7 @@ fn sensitivity_label(sensitivity: &ClaimSensitivity) -> String {
         .unwrap_or_else(|| format!("{sensitivity:?}").to_ascii_lowercase())
 }
 
-fn source_content_hash_for_claim(claim: &IntelligenceClaim) -> String {
+pub(crate) fn source_content_hash_for_claim(claim: &IntelligenceClaim) -> String {
     let mut hasher = Sha256::new();
     hasher.update(claim.data_source.as_bytes());
     hasher.update([0x1f]);
@@ -1572,6 +1602,7 @@ mod tests {
                 },
                 feedback_rows: Vec::new(),
                 contradiction_edges: Vec::new(),
+                superseded_by_semantic_identity: None,
                 replay_status: projected_replay_status(),
             }],
         }
@@ -1671,11 +1702,21 @@ mod tests {
 
     #[test]
     fn sidecar_serialization_round_trips_contract_fields() {
-        let sidecar = fixture_sidecar();
+        let mut sidecar = fixture_sidecar();
+        sidecar.claims[0].feedback_rows.push(ClaimFileFeedbackRow {
+            feedback_id: "feedback-1".to_string(),
+            action: "cannot_verify".to_string(),
+            actor: "user".to_string(),
+            actor_id: Some("user-fixture".to_string()),
+            payload_json: None,
+            submitted_at: TEST_TS.to_string(),
+            applied_at: None,
+        });
         let json = serde_json::to_string_pretty(&sidecar).expect("serialize sidecar");
         let decoded: ClaimFileSidecar = serde_json::from_str(&json).expect("decode sidecar");
 
         assert_eq!(decoded.schema_version, CLAIM_FILE_SIDECAR_SCHEMA_VERSION);
+        assert_eq!(CLAIM_FILE_SIDECAR_SCHEMA_VERSION, 2);
         assert_eq!(decoded.projection_version, CLAIM_FILE_PROJECTION_VERSION);
         assert_eq!(
             decoded.claims[0].semantic_identity.identity_kind,
@@ -1684,7 +1725,39 @@ mod tests {
         assert_eq!(decoded.claims[0].runtime_claim_id, "claim-1");
         assert_eq!(decoded.claims[0].lifecycle.claim_state, "active");
         assert_eq!(decoded.claims[0].replay_status.status, "projected");
+        assert_eq!(decoded.claims[0].feedback_rows[0].feedback_id, "feedback-1");
+        assert!(json.contains("\"feedbackId\""));
         assert!(decoded.claims[0].contradiction_edges.is_empty());
+    }
+
+    #[test]
+    fn legacy_v1_sidecar_deserializes_without_feedback_id() {
+        let mut sidecar = fixture_sidecar();
+        sidecar.schema_version = CLAIM_FILE_LEGACY_SIDECAR_SCHEMA_VERSION;
+        sidecar.claims[0].feedback_rows.push(ClaimFileFeedbackRow {
+            feedback_id: String::new(),
+            action: "cannot_verify".to_string(),
+            actor: "user".to_string(),
+            actor_id: Some("user-fixture".to_string()),
+            payload_json: None,
+            submitted_at: TEST_TS.to_string(),
+            applied_at: None,
+        });
+        let mut json = serde_json::to_value(&sidecar).expect("serialize sidecar");
+        let feedback = json
+            .pointer_mut("/claims/0/feedbackRows/0")
+            .and_then(serde_json::Value::as_object_mut)
+            .expect("feedback object");
+        feedback.remove("feedbackId");
+        let decoded: ClaimFileSidecar =
+            serde_json::from_value(json).expect("decode legacy sidecar");
+
+        assert_eq!(
+            decoded.schema_version,
+            CLAIM_FILE_LEGACY_SIDECAR_SCHEMA_VERSION
+        );
+        assert_eq!(decoded.claims[0].feedback_rows[0].feedback_id, "");
+        verify_sidecar_contract(&decoded).expect("v1 sidecar remains readable");
     }
 
     #[test]
@@ -1951,7 +2024,7 @@ dailyos-action: mark_false\n\
             )
             .expect("commit feedback-bearing claim"),
         );
-        record_claim_feedback(
+        let feedback_outcome = record_claim_feedback(
             &ctx,
             &db,
             ClaimFeedbackInput {
@@ -1997,6 +2070,13 @@ dailyos-action: mark_false\n\
         assert_eq!(sidecar_claim.lifecycle.claim_state, "withdrawn");
         assert_eq!(sidecar_claim.lifecycle.surfacing_state, "dormant");
         assert_eq!(sidecar_claim.feedback_rows.len(), 1);
+        assert_eq!(
+            sidecar_claim.feedback_rows[0].feedback_id,
+            feedback_outcome.feedback_id
+        );
+        let json = serde_json::to_string(&sidecar_claim).expect("serialize sidecar claim");
+        assert!(json.contains("\"feedbackId\""));
+        assert!(json.contains(&feedback_outcome.feedback_id));
     }
 
     #[test]

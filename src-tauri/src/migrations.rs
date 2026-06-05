@@ -1128,6 +1128,13 @@ const MIGRATIONS: &[Migration] = &[
         version: 281,
         sql: include_str!("migrations/281_claim_file_projection_run_claims.sql"),
     },
+    // v1.4.9 DOS-832 — correction replay idempotency journal. This is
+    // intentionally above W3's v280/v281 head so databases that already
+    // applied DOS-628 still receive the replay schema.
+    Migration::Fn {
+        version: 282,
+        apply: migrate_v282_dos_832_rebuild_replay_journal,
+    },
 ];
 
 const V155_SHADOW_TRUST_VERSION: i64 = 1_401_003;
@@ -2954,6 +2961,14 @@ fn migrate_v271_recommendation_surfacing(conn: &Connection) -> Result<(), Migrat
         conn,
         include_str!("migrations/271_recommendation_surfacing.sql"),
         "v1.4.6 W2-A recommendation surfacing policy and decision audit",
+    )
+}
+
+fn migrate_v282_dos_832_rebuild_replay_journal(conn: &Connection) -> Result<(), MigrationError> {
+    apply_idempotent_sql_migration(
+        conn,
+        include_str!("migrations/282_dos_832_rebuild_replay_journal.sql"),
+        "v1.4.9 DOS-832 rebuild replay journal",
     )
 }
 
@@ -7588,6 +7603,95 @@ mod tests {
             current_version(&conn).expect("current version") >= 281,
             "schema version is at least v281"
         );
+    }
+
+    #[test]
+    fn migration_282_applies_rebuild_replay_journal_after_w3_v281() {
+        let conn = mem_db();
+        run_migrations(&conn).expect("build current schema");
+        conn.execute_batch(
+            "DROP INDEX IF EXISTS idx_claim_feedback_replay_event;
+             DROP INDEX IF EXISTS idx_rebuild_replay_events_run_status;
+             DROP INDEX IF EXISTS idx_rebuild_replay_events_resolved_claim;
+             DROP TABLE IF EXISTS rebuild_correction_replay_events;
+             ALTER TABLE claim_feedback DROP COLUMN replay_event_id;
+             DELETE FROM schema_version WHERE version >= 282;
+             INSERT OR IGNORE INTO schema_version (version) VALUES (281);",
+        )
+        .expect("simulate W3-at-v281 database before DOS-832");
+        assert_eq!(current_version(&conn).expect("current version"), 281);
+        assert!(!table_columns(&conn, "claim_feedback")
+            .expect("claim_feedback columns")
+            .contains("replay_event_id"));
+
+        let applied = run_migrations(&conn).expect("apply DOS-832 v282");
+
+        assert!(applied >= 1, "v282 migration should apply");
+        assert!(
+            current_version(&conn).expect("current version") >= 282,
+            "schema version is at least v282"
+        );
+        assert!(table_columns(&conn, "claim_feedback")
+            .expect("claim_feedback columns")
+            .contains("replay_event_id"));
+        assert!(table_columns(&conn, "rebuild_correction_replay_events")
+            .expect("replay event columns")
+            .contains("feedback_content_hash"));
+        assert!(
+            table_exists(&conn, "rebuild_correction_replay_events").expect("replay table exists")
+        );
+        for index_name in [
+            "idx_claim_feedback_replay_event",
+            "idx_rebuild_replay_events_run_status",
+            "idx_rebuild_replay_events_resolved_claim",
+        ] {
+            assert!(
+                index_exists(&conn, index_name).expect("query replay index"),
+                "{index_name} exists"
+            );
+        }
+    }
+
+    #[test]
+    fn migration_282_repairs_replay_journal_content_hash_gap() {
+        let conn = mem_db();
+        run_migrations(&conn).expect("build current schema");
+        conn.execute_batch(
+            "ALTER TABLE rebuild_correction_replay_events DROP COLUMN feedback_content_hash;
+             INSERT INTO rebuild_correction_replay_events (
+                sidecar_event_id, run_id, sidecar_schema_version, source_runtime_claim_id,
+                resolved_claim_id, action, status, reason_code, reason_detail_hash,
+                semantic_identity_hash, applied_feedback_id, attempt_count, claimed_at,
+                applied_at, updated_at
+             ) VALUES (
+                'legacy-event', 'run-1', 2, 'runtime-claim-1', 'claim-1',
+                'cannot_verify', 'claimed', NULL, NULL, 'semantic-hash', NULL,
+                1, '2026-06-05T12:00:00Z', NULL, '2026-06-05T12:00:00Z'
+             );
+             DELETE FROM schema_version WHERE version >= 282;
+             INSERT OR IGNORE INTO schema_version (version) VALUES (281);",
+        )
+        .expect("simulate partial v282 replay journal");
+        assert_eq!(current_version(&conn).expect("current version"), 281);
+        assert!(!table_columns(&conn, "rebuild_correction_replay_events")
+            .expect("replay columns")
+            .contains("feedback_content_hash"));
+
+        run_migrations(&conn).expect("repair v282 replay journal");
+
+        assert!(table_columns(&conn, "rebuild_correction_replay_events")
+            .expect("replay columns")
+            .contains("feedback_content_hash"));
+        let content_hash: String = conn
+            .query_row(
+                "SELECT feedback_content_hash
+                 FROM rebuild_correction_replay_events
+                 WHERE sidecar_event_id = 'legacy-event'",
+                [],
+                |row| row.get(0),
+            )
+            .expect("read repaired content hash");
+        assert_eq!(content_hash, "legacy-v282-unset");
     }
 
     #[test]
