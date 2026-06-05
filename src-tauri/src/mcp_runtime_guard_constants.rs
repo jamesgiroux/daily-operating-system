@@ -4,3 +4,4 @@ pub const MCP_LAUNCHER_NAME: &str = "dailyos-mcp-launcher";
 pub const MCP_SERVER_NAME: &str = "dailyos-mcp";
 pub const MCP_BUNDLE_PROVENANCE_SCHEMA_VERSION: u32 = 1;
 pub const MCP_LAUNCHER_MANIFEST_SCHEMA_VERSION: u32 = 1;
+pub const DAILYOS_APP_BUNDLE_IDENTIFIER: &str = "com.dailyos.desktop";

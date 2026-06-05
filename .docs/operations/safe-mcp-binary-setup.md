@@ -30,8 +30,8 @@ Configure through DailyOS Settings or the integration service, not by hand-editi
 
 - verifies bundled or dev build provenance;
 - rejects stub provenance and zero-byte sidecars;
-- copies the verified launcher to `~/.dailyos/mcp/dailyos-mcp-launcher`;
-- writes `~/.dailyos/mcp/dailyos-mcp-manifest.json`;
+- copies the verified launcher into a private `~/.dailyos/mcp/runtime-*` generation;
+- writes that generation's `dailyos-mcp-manifest.json`;
 - sets Claude's `mcpServers.dailyos.command` to the app-managed launcher with `--manifest`.
 
 The launcher revalidates the manifest, bundled provenance, file paths, executable bits, SHA-256 hashes, and MCP runtime self-check before it starts `dailyos-mcp`.
@@ -55,7 +55,9 @@ Expected shape:
 After configuring Claude Desktop through DailyOS, the managed launcher check should succeed:
 
 ```bash
-~/.dailyos/mcp/dailyos-mcp-launcher --manifest ~/.dailyos/mcp/dailyos-mcp-manifest.json --check
+jq -r '.mcpServers.dailyos.command, (.mcpServers.dailyos.args | join(" "))' \
+  ~/Library/Application\ Support/Claude/claude_desktop_config.json
+# Then run the printed command with its --manifest argument plus --check.
 ```
 
 If status reports an unsafe legacy config, rerun the DailyOS Claude Desktop configuration action and restart Claude Desktop.

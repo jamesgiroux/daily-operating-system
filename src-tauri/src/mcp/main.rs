@@ -1692,15 +1692,17 @@ fn main() -> anyhow::Result<()> {
 }
 
 fn print_self_check_json() -> anyhow::Result<()> {
+    dailyos_lib::db::resolve_and_set_db_mode_from_process_or(dailyos_lib::db::DbMode::Replica);
+    let resolved_db_mode = dailyos_lib::db::db_mode();
     let executable_path = std::env::current_exe()
         .ok()
         .map(|path| path.to_string_lossy().to_string());
     let payload = serde_json::json!({
         "guardEpoch": MCP_RUNTIME_GUARD_EPOCH,
         "buildSha": env!("BUILD_GIT_SHA"),
-        "defaultDbMode": MCP_NO_ENV_DEFAULT_DB_MODE,
+        "defaultDbMode": resolved_db_mode.as_str(),
         "executablePath": executable_path,
-        "runtimeContainsDbModeGuard": true,
+        "runtimeContainsDbModeGuard": resolved_db_mode.as_str() == MCP_NO_ENV_DEFAULT_DB_MODE,
         "dbOpened": false
     });
     println!("{}", serde_json::to_string(&payload)?);

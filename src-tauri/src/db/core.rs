@@ -48,6 +48,14 @@ pub enum DbMode {
 }
 
 impl DbMode {
+    pub const fn as_str(self) -> &'static str {
+        match self {
+            DbMode::Live => "live",
+            DbMode::Replica => "replica",
+            DbMode::Mock => "mock",
+        }
+    }
+
     fn as_u8(self) -> u8 {
         match self {
             DbMode::Live => 1,
