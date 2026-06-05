@@ -28,7 +28,7 @@
 - SQLCipher retirement is an ADR-0092 amendment path, not ADR-0136.
 - There is no in-place decrypt/sentinel migration in DOS-831.
 - Existing encrypted-looking active DBs fail loud into storage-health/rebuild guidance.
-- Current schema head is v276; next free slot is v277.
+- At L0 drafting, current schema head was v276 and the next free slot was v277. The stacked L1 implementation now sits above W3's v280/v281 claim-file projection migrations, so DOS-832 replay journal schema uses v282.
 - Writer-priority lane language is stale; ADR-0133 owns FIFO writer/gate responsibility.
 
 **Authority precondition:** DOS-832 implementation does not begin from the stale local wave-plan text. Before L1, either DOS-831 PR #434 (or an equivalent wave-plan/ADR correction) is merged into the branch, or this packet remains a draft and the first L1 task is to rebase/apply those authority corrections. A packet note pointing at an unavailable PR is not sufficient for shipping implementation.
@@ -107,7 +107,7 @@ The rebuild path creates a fresh database at schema head, then replays canonical
 The intended phases:
 
 1. **Plan:** resolve workspace root, DB mode, target DB path, existing DB health, and source inventory. Produce a PII-safe summary using handles/counts/reason codes.
-2. **Fresh schema:** create or open the target rebuild DB and run migrations to head (`v276` on current `dev`; reserve `v277+` only if L1 adds rebuild-run schema).
+2. **Fresh schema:** create or open the target rebuild DB and run migrations to head (`v276` on current `dev` at L0; v281 after W3 stacking; reserve `v282+` if L1 adds rebuild-run schema after W3).
 3. **Canonical entity seed:** run the existing entity JSON sync for `Accounts`, `Projects`, and `People` through `WorkspaceSourceRegistry::open_validated` or a rebuild-owned bounded-open helper with the same traversal, symlink, race, workspace-escape, size, and hardlink protections, while preserving the fact that this is only the entity seed layer.
 4. **Source registration:** reuse/extend `workspace_backfill` to register workspace files and entity links. It remains privacy-aware and resumable.
 5. **Source ingestion:** run the workspace ingestion pipeline over registered eligible files. Claims must enter through `commit_claim` with `DataSource::WorkspaceFile`, `source_ref`, `source_asof`, `observed_at`, temporal scope, sensitivity, and provenance intact.
@@ -367,6 +367,7 @@ Approval requires unanimous pass or explicit L6 decision on any residual release
 | `/codex challenge` | APPROVE | Re-review blockers were interprocess cutover lock, degraded source-time semantics, replay coverage/anchor gate, crash-consistent cutover manifest/startup recovery, lock transition, WAL checkpoint owner, and structured replay payload. Cycle 4 passed. |
 | `ce-security-lens-reviewer` | APPROVE | Approved entity JSON seed trust boundary, cutover gates, sidecar/export audit/security obligations, and DOS-831/DOS-628 gates across re-review cycles. |
 | `ce-feasibility-reviewer` | APPROVE | Re-review blockers were implementable invocation-correlation adapter, minimum sidecar contract, worker-control registry, concrete producer matrix, and named source-time resolver. Cycle 4 passed. |
+| `ce-data-migrations-reviewer` | APPROVE | Approved schema/data-integrity posture: fresh-schema replay, next-free-slot reservation only if new run state is required, no raw claim copy, replay idempotency, and invocation correlation where applicable. |
 | `ce-learnings-researcher` | APPROVE | Confirmed prior substrate is represented: ADR-0120, ADR-0094/0098, ADR-0048, ADR-0107/0098, ADR-0123/0126/0131, ADR-0133, ADR-0110, and documented claim-producer/runtime trust audit and DB lock-storm learnings. |
 
 Cycle notes:

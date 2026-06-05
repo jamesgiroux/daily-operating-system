@@ -236,6 +236,12 @@ pub struct ClaimFeedbackInput {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
+pub struct ClaimFeedbackReplayInput {
+    pub feedback: ClaimFeedbackInput,
+    pub replay_event_id: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
 pub struct ClaimFeedbackOutcome {
     pub feedback_id: String,
     pub claim_id: String,
@@ -5562,6 +5568,64 @@ fn validate_feedback_actor(actor: &str) -> Result<(), ClaimError> {
     }
 }
 
+pub(crate) fn claim_feedback_replay_content_hash(
+    action: FeedbackAction,
+    actor: &str,
+    actor_id: Option<&str>,
+    payload_json: Option<&str>,
+) -> Result<String, ClaimError> {
+    let canonical_payload = payload_json
+        .map(|payload| {
+            serde_json::from_str::<serde_json::Value>(payload)
+                .map_err(|error| {
+                    ClaimError::InvalidFeedback(format!("payload_json must be valid JSON: {error}"))
+                })
+                .map(|value| canonical_json_string(&value))
+        })
+        .transpose()?;
+    let mut hasher = Sha256::new();
+    update_hash_part(&mut hasher, Some(action.as_str()));
+    update_hash_part(&mut hasher, Some(actor));
+    update_hash_part(&mut hasher, actor_id);
+    update_hash_part(&mut hasher, canonical_payload.as_deref());
+    Ok(format!("{:x}", hasher.finalize()))
+}
+
+fn update_hash_part(hasher: &mut Sha256, value: Option<&str>) {
+    match value {
+        Some(value) => {
+            hasher.update(b"1:");
+            hasher.update(value.len().to_string().as_bytes());
+            hasher.update(b":");
+            hasher.update(value.as_bytes());
+        }
+        None => hasher.update(b"0:"),
+    }
+    hasher.update([0x1f]);
+}
+
+fn canonical_json_string(value: &serde_json::Value) -> String {
+    serde_json::to_string(&canonical_json_value(value)).expect("canonical JSON serializes")
+}
+
+fn canonical_json_value(value: &serde_json::Value) -> serde_json::Value {
+    match value {
+        serde_json::Value::Array(items) => {
+            serde_json::Value::Array(items.iter().map(canonical_json_value).collect())
+        }
+        serde_json::Value::Object(map) => {
+            let mut entries = map.iter().collect::<Vec<_>>();
+            entries.sort_by_key(|(key, _)| *key);
+            let mut out = serde_json::Map::new();
+            for (key, value) in entries {
+                out.insert(key.clone(), canonical_json_value(value));
+            }
+            serde_json::Value::Object(out)
+        }
+        other => other.clone(),
+    }
+}
+
 fn validate_feedback_payload(
     input: &ClaimFeedbackInput,
     metadata: &ClaimFeedbackMetadata,
@@ -7197,12 +7261,17 @@ struct ClaimFeedbackWriteOutcome {
     verification_state_after: String,
 }
 
+enum ClaimFeedbackWriteResult {
+    Written(ClaimFeedbackWriteOutcome),
+    ExistingReplay(ClaimFeedbackOutcome),
+}
+
 pub fn record_claim_feedback(
     ctx: &ServiceContext<'_>,
     db: &ActionDb,
     input: ClaimFeedbackInput,
 ) -> Result<ClaimFeedbackOutcome, ClaimError> {
-    record_claim_feedback_with_apply_commit(ctx, db, input, None)
+    record_claim_feedback_inner(ctx, db, input, None, None)
 }
 
 pub fn record_claim_feedback_for_claim_file_apply(
@@ -7211,20 +7280,41 @@ pub fn record_claim_feedback_for_claim_file_apply(
     input: ClaimFeedbackInput,
     apply: ClaimFileFeedbackApplyInput,
 ) -> Result<ClaimFeedbackOutcome, ClaimError> {
-    record_claim_feedback_with_apply_commit(ctx, db, input, Some(apply))
+    record_claim_feedback_inner(ctx, db, input, Some(apply), None)
 }
 
-fn record_claim_feedback_with_apply_commit(
+pub fn record_claim_feedback_replay(
+    ctx: &ServiceContext<'_>,
+    db: &ActionDb,
+    input: ClaimFeedbackReplayInput,
+) -> Result<ClaimFeedbackOutcome, ClaimError> {
+    let replay_event_id = input.replay_event_id.trim();
+    if replay_event_id.is_empty() {
+        return Err(ClaimError::InvalidFeedback(
+            "replay_event_id is required for correction replay".to_string(),
+        ));
+    }
+    record_claim_feedback_inner(ctx, db, input.feedback, None, Some(replay_event_id.to_string()))
+}
+
+fn record_claim_feedback_inner(
     ctx: &ServiceContext<'_>,
     db: &ActionDb,
     input: ClaimFeedbackInput,
     claim_file_apply: Option<ClaimFileFeedbackApplyInput>,
+    replay_event_id: Option<String>,
 ) -> Result<ClaimFeedbackOutcome, ClaimError> {
     ctx.check_mutation_allowed()
         .map_err(|e| ClaimError::Mode(e.to_string()))?;
 
     let metadata = feedback_semantics(input.action);
     validate_feedback_payload(&input, &metadata)?;
+
+    if let Some(replay_event_id) = replay_event_id.as_deref() {
+        if let Some(outcome) = existing_feedback_replay_outcome(db, &input, replay_event_id)? {
+            return Ok(outcome);
+        }
+    }
 
     // Feedback mutates assertion-relevant columns on intelligence_claims
     // (verification_state, lifecycle). Reserve a MutationGuard so the
@@ -7253,21 +7343,51 @@ fn record_claim_feedback_with_apply_commit(
         let verification_state_before = enum_to_db(&claim.verification_state)?;
 
         let feedback_id = uuid::Uuid::new_v4().to_string();
-        tx.conn_ref().execute(
-            "INSERT INTO claim_feedback (
-                id, claim_id, feedback_type, actor, actor_id, payload_json,
-                submitted_at, applied_at
-             ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, NULL)",
-            params![
-                &feedback_id,
-                &input.claim_id,
-                input.action.as_str(),
-                &input.actor,
-                input.actor_id.as_deref(),
-                input.payload_json.as_deref(),
-                &now,
-            ],
-        )?;
+        if let Some(replay_event_id) = replay_event_id.as_deref() {
+            let inserted = tx.conn_ref().execute(
+                "INSERT OR IGNORE INTO claim_feedback (
+                    id, claim_id, feedback_type, actor, actor_id, payload_json,
+                    submitted_at, applied_at, replay_event_id
+                 ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, NULL, ?8)",
+                params![
+                    &feedback_id,
+                    &input.claim_id,
+                    input.action.as_str(),
+                    &input.actor,
+                    input.actor_id.as_deref(),
+                    input.payload_json.as_deref(),
+                    &now,
+                    replay_event_id,
+                ],
+            )?;
+            if inserted == 0 {
+                mark_mutation_attempt_committed_noop(tx, mutation_guard.attempt(), &now)?;
+                let outcome =
+                    existing_feedback_replay_outcome_conn(tx.conn_ref(), &input, replay_event_id)?
+                        .ok_or_else(|| {
+                            ClaimError::InvalidFeedback(format!(
+                                "replay_event_id insert collided without readable feedback row: {replay_event_id}"
+                            ))
+                        })?;
+                return Ok(ClaimFeedbackWriteResult::ExistingReplay(outcome));
+            }
+        } else {
+            tx.conn_ref().execute(
+                "INSERT INTO claim_feedback (
+                    id, claim_id, feedback_type, actor, actor_id, payload_json,
+                    submitted_at, applied_at
+                 ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, NULL)",
+                params![
+                    &feedback_id,
+                    &input.claim_id,
+                    input.action.as_str(),
+                    &input.actor,
+                    input.actor_id.as_deref(),
+                    input.payload_json.as_deref(),
+                    &now,
+                ],
+            )?;
+        }
 
         let (new_verification_state, verification_reason, needs_user_decision_at) =
             verification_update_for_feedback(&claim, input.action, &now);
@@ -7403,26 +7523,112 @@ fn record_claim_feedback_with_apply_commit(
         }
         let verification_state_after = enum_to_db(&new_verification_state)?;
 
-        Ok(ClaimFeedbackWriteOutcome {
-            outcome: ClaimFeedbackOutcome {
-                feedback_id,
-                claim_id: input.claim_id.clone(),
-                action: input.action,
-                new_verification_state,
-                applied_at_pending: true,
-                repair_job_id,
+        Ok(ClaimFeedbackWriteResult::Written(
+            ClaimFeedbackWriteOutcome {
+                outcome: ClaimFeedbackOutcome {
+                    feedback_id,
+                    claim_id: input.claim_id.clone(),
+                    action: input.action,
+                    new_verification_state,
+                    applied_at_pending: true,
+                    repair_job_id,
+                },
+                signal_entity_type,
+                signal_entity_id,
+                verification_state_before,
+                verification_state_after,
             },
-            signal_entity_type,
-            signal_entity_id,
-            verification_state_before,
-            verification_state_after,
-        })
+        ))
     })?;
 
     mutation_guard.mark_completed();
-    emit_claim_feedback_signals(ctx, db, &write);
+    match write {
+        ClaimFeedbackWriteResult::ExistingReplay(outcome) => Ok(outcome),
+        ClaimFeedbackWriteResult::Written(write) => {
+            emit_claim_feedback_signals(ctx, db, &write);
+            Ok(write.outcome)
+        }
+    }
+}
 
-    Ok(write.outcome)
+fn existing_feedback_replay_outcome(
+    db: &ActionDb,
+    input: &ClaimFeedbackInput,
+    replay_event_id: &str,
+) -> Result<Option<ClaimFeedbackOutcome>, ClaimError> {
+    existing_feedback_replay_outcome_conn(db.conn_ref(), input, replay_event_id)
+}
+
+fn existing_feedback_replay_outcome_conn(
+    conn: &Connection,
+    input: &ClaimFeedbackInput,
+    replay_event_id: &str,
+) -> Result<Option<ClaimFeedbackOutcome>, ClaimError> {
+    let existing = conn
+        .query_row(
+            "SELECT id, claim_id, feedback_type, actor, actor_id, payload_json
+             FROM claim_feedback
+             WHERE replay_event_id = ?1",
+            params![replay_event_id],
+            |row| {
+                Ok((
+                    row.get::<_, String>(0)?,
+                    row.get::<_, String>(1)?,
+                    row.get::<_, String>(2)?,
+                    row.get::<_, String>(3)?,
+                    row.get::<_, Option<String>>(4)?,
+                    row.get::<_, Option<String>>(5)?,
+                ))
+            },
+        )
+        .optional()?;
+    let Some((feedback_id, claim_id, feedback_type, actor, actor_id, payload_json)) = existing
+    else {
+        return Ok(None);
+    };
+    if claim_id != input.claim_id || feedback_type != input.action.as_str() {
+        return Err(ClaimError::InvalidFeedback(format!(
+            "replay_event_id already applied to different feedback target: {replay_event_id}"
+        )));
+    }
+    let existing_content_hash = claim_feedback_replay_content_hash(
+        input.action,
+        &actor,
+        actor_id.as_deref(),
+        payload_json.as_deref(),
+    )?;
+    let input_content_hash = claim_feedback_replay_content_hash(
+        input.action,
+        &input.actor,
+        input.actor_id.as_deref(),
+        input.payload_json.as_deref(),
+    )?;
+    if existing_content_hash != input_content_hash {
+        return Err(ClaimError::InvalidFeedback(format!(
+            "replay_event_id already applied with different feedback content: {replay_event_id}"
+        )));
+    }
+    let claim = load_claim_by_id(conn, &claim_id)?
+        .ok_or_else(|| ClaimError::UnknownClaimId(claim_id.clone()))?;
+    let repair_job_id = conn
+        .query_row(
+            "SELECT id
+             FROM claim_repair_job
+             WHERE feedback_id = ?1
+             ORDER BY created_at DESC, id DESC
+             LIMIT 1",
+            params![&feedback_id],
+            |row| row.get::<_, String>(0),
+        )
+        .optional()?;
+    Ok(Some(ClaimFeedbackOutcome {
+        feedback_id,
+        claim_id,
+        action: input.action,
+        new_verification_state: claim.verification_state,
+        applied_at_pending: false,
+        repair_job_id,
+    }))
 }
 
 pub fn targeted_repair_claim_generation_budget(ability_id: &str) -> Option<ClaimGenerationBudget> {
@@ -16683,6 +16889,209 @@ mod tests {
         let (_, _, _, _, _, raw_signal_count) =
             first_invalidation_job(&db, TARGETED_REPAIR_OPERATION);
         assert_eq!(raw_signal_count, 2);
+    }
+
+    #[test]
+    fn record_claim_feedback_replay_event_is_idempotent() {
+        let db = test_db();
+        seed_account(&db);
+        let (clock, rng, external) = ctx_parts();
+        let ctx = live_ctx(&clock, &rng, &external);
+        let claim_id =
+            inserted_claim_id(commit_claim(&ctx, &db, proposal("Risk replay event")).unwrap());
+        let replay_event_id = "replay-event-idempotent-1";
+
+        let first = record_claim_feedback_replay(
+            &ctx,
+            &db,
+            ClaimFeedbackReplayInput {
+                feedback: feedback_input(&claim_id, FeedbackAction::CannotVerify),
+                replay_event_id: replay_event_id.to_string(),
+            },
+        )
+        .unwrap();
+        let second = record_claim_feedback_replay(
+            &ctx,
+            &db,
+            ClaimFeedbackReplayInput {
+                feedback: feedback_input(&claim_id, FeedbackAction::CannotVerify),
+                replay_event_id: replay_event_id.to_string(),
+            },
+        )
+        .unwrap();
+
+        assert_eq!(second.feedback_id, first.feedback_id);
+        assert_eq!(second.claim_id, first.claim_id);
+        assert_eq!(second.action, FeedbackAction::CannotVerify);
+        assert!(first.applied_at_pending);
+        assert!(!second.applied_at_pending);
+        let feedback_count: i64 = db
+            .conn_ref()
+            .query_row(
+                "SELECT count(*) FROM claim_feedback WHERE replay_event_id = ?1",
+                params![replay_event_id],
+                |row| row.get(0),
+            )
+            .unwrap();
+        assert_eq!(feedback_count, 1);
+        assert_eq!(repair_job_count(&db, &claim_id), 1);
+        assert_eq!(signal_count(&db, "claim_feedback_recorded"), 1);
+    }
+
+    #[test]
+    fn record_claim_feedback_replay_event_rejects_retarget() {
+        let db = test_db();
+        seed_account(&db);
+        let (clock, rng, external) = ctx_parts();
+        let ctx = live_ctx(&clock, &rng, &external);
+        let first_claim_id = inserted_claim_id(
+            commit_claim(&ctx, &db, proposal("Risk replay first target")).unwrap(),
+        );
+        let mut second_proposal = proposal("Risk replay second target");
+        second_proposal.field_path = Some("health.other_risk".to_string());
+        let second_claim_id = inserted_claim_id(commit_claim(&ctx, &db, second_proposal).unwrap());
+        let replay_event_id = "replay-event-retarget-1";
+
+        record_claim_feedback_replay(
+            &ctx,
+            &db,
+            ClaimFeedbackReplayInput {
+                feedback: feedback_input(&first_claim_id, FeedbackAction::CannotVerify),
+                replay_event_id: replay_event_id.to_string(),
+            },
+        )
+        .unwrap();
+
+        let err = record_claim_feedback_replay(
+            &ctx,
+            &db,
+            ClaimFeedbackReplayInput {
+                feedback: feedback_input(&second_claim_id, FeedbackAction::CannotVerify),
+                replay_event_id: replay_event_id.to_string(),
+            },
+        )
+        .expect_err("replay event must not retarget a different claim");
+
+        assert!(
+            matches!(err, ClaimError::InvalidFeedback(message) if message.contains("already applied to different feedback target"))
+        );
+        let feedback_count: i64 = db
+            .conn_ref()
+            .query_row(
+                "SELECT count(*) FROM claim_feedback WHERE replay_event_id = ?1",
+                params![replay_event_id],
+                |row| row.get(0),
+            )
+            .unwrap();
+        assert_eq!(feedback_count, 1);
+        assert_eq!(repair_job_count(&db, &second_claim_id), 0);
+        assert_eq!(signal_count(&db, "claim_feedback_recorded"), 1);
+    }
+
+    #[test]
+    fn record_claim_feedback_replay_event_rejects_content_change() {
+        let db = test_db();
+        seed_account(&db);
+        let (clock, rng, external) = ctx_parts();
+        let ctx = live_ctx(&clock, &rng, &external);
+        let claim_id =
+            inserted_claim_id(commit_claim(&ctx, &db, proposal("Risk replay payload")).unwrap());
+        let replay_event_id = "replay-event-content-1";
+        let mut first = feedback_input(&claim_id, FeedbackAction::NeedsNuance);
+        first.payload_json = Some(
+            serde_json::json!({ "corrected_text": "Risk is limited to the pilot group" })
+                .to_string(),
+        );
+        let mut second = feedback_input(&claim_id, FeedbackAction::NeedsNuance);
+        second.payload_json = Some(
+            serde_json::json!({ "corrected_text": "Risk is limited to the renewal window" })
+                .to_string(),
+        );
+
+        record_claim_feedback_replay(
+            &ctx,
+            &db,
+            ClaimFeedbackReplayInput {
+                feedback: first,
+                replay_event_id: replay_event_id.to_string(),
+            },
+        )
+        .unwrap();
+        let err = record_claim_feedback_replay(
+            &ctx,
+            &db,
+            ClaimFeedbackReplayInput {
+                feedback: second,
+                replay_event_id: replay_event_id.to_string(),
+            },
+        )
+        .expect_err("same replay event must not hide changed payload");
+
+        assert!(
+            matches!(err, ClaimError::InvalidFeedback(message) if message.contains("different feedback content"))
+        );
+        let feedback_count: i64 = db
+            .conn_ref()
+            .query_row(
+                "SELECT count(*) FROM claim_feedback WHERE replay_event_id = ?1",
+                params![replay_event_id],
+                |row| row.get(0),
+            )
+            .unwrap();
+        assert_eq!(feedback_count, 1);
+        assert_eq!(signal_count(&db, "claim_feedback_recorded"), 1);
+    }
+
+    #[test]
+    fn record_claim_feedback_replay_event_race_collision_re_reads_existing_row() {
+        let db = test_db();
+        seed_account(&db);
+        let (clock, rng, external) = ctx_parts();
+        let ctx = live_ctx(&clock, &rng, &external);
+        let claim_id =
+            inserted_claim_id(commit_claim(&ctx, &db, proposal("Risk replay race")).unwrap());
+        db.conn_ref()
+            .execute_batch(
+                "CREATE TRIGGER claim_feedback_replay_race
+                 BEFORE INSERT ON claim_feedback
+                 WHEN NEW.replay_event_id = 'replay-event-race-1'
+                   AND NEW.id != 'feedback-race-existing'
+                 BEGIN
+                   INSERT INTO claim_feedback (
+                     id, claim_id, feedback_type, actor, actor_id, payload_json,
+                     submitted_at, applied_at, replay_event_id
+                   ) VALUES (
+                     'feedback-race-existing', NEW.claim_id, NEW.feedback_type,
+                     NEW.actor, NEW.actor_id, NEW.payload_json, NEW.submitted_at,
+                     NULL, NEW.replay_event_id
+                   );
+                 END;",
+            )
+            .unwrap();
+
+        let outcome = record_claim_feedback_replay(
+            &ctx,
+            &db,
+            ClaimFeedbackReplayInput {
+                feedback: feedback_input(&claim_id, FeedbackAction::CannotVerify),
+                replay_event_id: "replay-event-race-1".to_string(),
+            },
+        )
+        .unwrap();
+
+        assert_eq!(outcome.feedback_id, "feedback-race-existing");
+        assert!(!outcome.applied_at_pending);
+        let feedback_count: i64 = db
+            .conn_ref()
+            .query_row(
+                "SELECT count(*) FROM claim_feedback WHERE replay_event_id = 'replay-event-race-1'",
+                [],
+                |row| row.get(0),
+            )
+            .unwrap();
+        assert_eq!(feedback_count, 1);
+        assert_eq!(signal_count(&db, "claim_feedback_recorded"), 0);
+        assert_eq!(repair_job_count(&db, &claim_id), 0);
     }
 
     #[test]
