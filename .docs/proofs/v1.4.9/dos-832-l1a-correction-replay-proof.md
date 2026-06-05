@@ -14,11 +14,12 @@ The branch proves the correction-replay core that DOS-832 can honestly validate 
 - W3 sidecar feedback rows now carry a stable `feedbackId` replay key.
 - Legacy v1 sidecars without `feedbackId` replay through a deterministic derived key so old sidecars remain readable without pretending they had durable source IDs.
 - DOS-832 resolves sidecar entries by rebuild-stable semantic identity, not old runtime claim UUID.
-- v2 replay requires source-content hash provenance before mutation.
+- v2 replay requires the sidecar source identity hash before mutation. This hash binds `data_source`, `source_ref`, and `item_hash`; it is not proof of the full projection-file contents.
 - Replay claims the stable sidecar event in a durable journal before calling the claim feedback service.
 - Feedback replay goes through `services::claims`, not raw `claim_feedback` inserts.
 - Re-running the replay does not duplicate feedback rows.
-- Same event ID with changed feedback content is rejected.
+- Replay preserves the original sidecar feedback `submitted_at` rather than rewriting it to rebuild time.
+- Same event ID with changed feedback content or `submitted_at` is rejected.
 - Missing stable replay IDs are rejected before mutation.
 - Duplicate stable replay IDs are rejected before mutation.
 - Unsupported sidecar schema versions are rejected before mutation.
@@ -54,7 +55,7 @@ The runtime report returns `plainSqliteRecoveryProven: false` and `liveCutoverPr
   - `orphan_missing`
   - `orphan_ambiguous`
   - `failed`
-- Journal rows persist a canonical feedback-content hash so replay can reject event-ID reuse with changed feedback content.
+- Journal rows persist a canonical feedback-content hash, including `submitted_at`, so replay can reject event-ID reuse with changed feedback content or historical feedback time.
 - Registered v282 through the idempotent multi-statement migration helper so schema-version record gaps can retry without duplicate-column failure.
 - v282 includes an explicit idempotent repair for partial old-shape journal tables missing `feedback_content_hash`.
 - Bumped claim-file sidecar schema version to `2` because stable `feedbackId` is now part of the replay contract.
@@ -69,7 +70,7 @@ The runtime report returns `plainSqliteRecoveryProven: false` and `liveCutoverPr
 ## Intelligence Loop Check
 
 1. **Claim model:** Replay does not create display-only data. It targets regenerated claim rows and writes typed claim feedback through the claim service.
-2. **Provenance + trust:** Sidecar semantic identity retains subject, claim type, field path, source ref, source-asof, observed-at, and source-content hash for matching. Replay requires the regenerated claim to match those provenance fields before applying feedback. Trust movement remains owned by the claim feedback writer and repair queue.
+2. **Provenance + trust:** Sidecar semantic identity retains subject, claim type, field path, source ref, source-asof, observed-at, and source identity hash for matching. Replay requires the regenerated claim to match those provenance fields before applying feedback. Trust movement remains owned by the claim feedback writer and repair queue.
 3. **Signals + invalidation:** Replay uses the same `record_claim_feedback` path, so existing feedback signals, version events, invalidation bumps, and repair-job coalescing remain active.
 4. **Runtime + surfaces:** The L1a helper is service-owned and callable by future rebuild orchestration. It does not expose a user-visible surface yet.
 5. **Feedback loop:** User feedback rows replay as typed `FeedbackAction` events with existing claim-service behavior; duplicates are suppressed by stable event ID.
@@ -82,7 +83,7 @@ Commands run from the DOS-832 worktree:
 src-tauri/scripts/check_migrations_transactional.sh
 cargo test --manifest-path src-tauri/Cargo.toml services::rebuild --lib -- --nocapture
 cargo test --manifest-path src-tauri/Cargo.toml services::claim_files --lib -- --nocapture
-cargo test --manifest-path src-tauri/Cargo.toml record_claim_feedback --lib -- --nocapture
+cargo test --manifest-path src-tauri/Cargo.toml record_claim_feedback_replay --lib -- --nocapture
 cargo test --manifest-path src-tauri/Cargo.toml migration_282 --lib -- --nocapture
 cargo fmt --manifest-path src-tauri/Cargo.toml
 cargo clippy --manifest-path src-tauri/Cargo.toml -- -D warnings
@@ -95,15 +96,16 @@ git diff --check
 Results:
 
 - Migration wrapper check: passed.
-- Focused DOS-832 replay tests: 18 passed.
+- Focused DOS-832 replay tests: 19 passed.
 - Claim-file tests: 18 passed.
-- Claim feedback tests: 23 passed.
+- Claim feedback replay tests: 5 passed.
 - v282 migration regressions: 2 passed.
 - Clippy: passed with `-D warnings`.
-- Full Rust lib suite: 3181 passed, 0 failed, 11 ignored.
+- Full Rust lib suite: 3183 passed, 0 failed, 11 ignored.
 - Full Cargo suite: passed, including integration tests and doc tests.
 - TypeScript: passed.
 - Diff hygiene: passed.
+- Focused remediation re-review: adversarial reviewer PASS; data-migration reviewer PASS.
 - Note: full Cargo emitted two pre-existing unused-import warnings in `tests/dos567_fixture_backfill_and_composition_versions.rs`; `cargo clippy -- -D warnings` passed.
 
 ## L2 Inputs
