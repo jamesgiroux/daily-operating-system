@@ -7,7 +7,7 @@
 
 use std::collections::HashSet;
 
-use chrono::Utc;
+use chrono::{DateTime, Utc};
 use rusqlite::{params, OptionalExtension};
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
@@ -262,6 +262,7 @@ fn validate_replay_sidecar(sidecar: &ClaimFileSidecar) -> Result<(), RebuildErro
             ));
         }
         for (feedback_index, feedback) in claim.feedback_rows.iter().enumerate() {
+            validate_feedback_submitted_at(&feedback.submitted_at)?;
             if sidecar.schema_version == CLAIM_FILE_SIDECAR_SCHEMA_VERSION
                 && feedback.feedback_id.trim().is_empty()
             {
@@ -334,8 +335,23 @@ fn feedback_content_hash(
         &feedback.actor,
         feedback.actor_id.as_deref(),
         payload_json,
+        &feedback.submitted_at,
     )
     .map_err(|error| RebuildError::InvalidSidecar(error.to_string()))
+}
+
+fn validate_feedback_submitted_at(submitted_at: &str) -> Result<(), RebuildError> {
+    if submitted_at.trim().is_empty() {
+        return Err(RebuildError::InvalidSidecar(
+            "sidecar feedback row missing submitted_at".to_string(),
+        ));
+    }
+    DateTime::parse_from_rfc3339(submitted_at.trim()).map_err(|error| {
+        RebuildError::InvalidSidecar(format!(
+            "sidecar feedback row submitted_at must be RFC3339: {error}"
+        ))
+    })?;
+    Ok(())
 }
 
 fn replay_feedback_event(
@@ -388,6 +404,7 @@ fn replay_feedback_event(
                 payload_json,
             },
             replay_event_id: feedback.event_id.to_string(),
+            submitted_at: feedback.row.submitted_at.clone(),
         },
     ) {
         Ok(outcome) => outcome,
@@ -831,6 +848,7 @@ mod tests {
     use abilities_runtime::types::{ClaimSensitivity, TemporalScope};
 
     const TS: &str = "2026-06-05T12:00:00Z";
+    const REPLAYED_FEEDBACK_TS: &str = "2026-05-01T08:30:00Z";
     const SUBJECT: &str = r#"{"kind":"account","id":"acct-1"}"#;
 
     fn ctx_parts() -> (FixedClock, SeedableRng, ExternalClients) {
@@ -974,6 +992,16 @@ mod tests {
             .expect("count replay journal")
     }
 
+    fn feedback_submitted_at_for_replay(db: &ActionDb, replay_event_id: &str) -> String {
+        db.conn_ref()
+            .query_row(
+                "SELECT submitted_at FROM claim_feedback WHERE replay_event_id = ?1",
+                params![replay_event_id],
+                |row| row.get(0),
+            )
+            .expect("read replay feedback submitted_at")
+    }
+
     fn replay_journal_status_and_reason(
         db: &ActionDb,
         replay_event_id: &str,
@@ -1036,12 +1064,13 @@ mod tests {
             commit_claim(&ctx, &db, proposal("Renewal risk is elevated"))
                 .expect("commit fresh claim"),
         );
-        let sidecar = sidecar_for_claim(
+        let mut sidecar = sidecar_for_claim(
             &db,
             &fresh_claim_id,
             "old-runtime-claim-id",
             "old-feedback-1",
         );
+        sidecar.claims[0].feedback_rows[0].submitted_at = REPLAYED_FEEDBACK_TS.to_string();
 
         let report = replay_claim_file_sidecar_corrections(&ctx, &db, "run-1", &sidecar)
             .expect("replay sidecar");
@@ -1058,6 +1087,10 @@ mod tests {
             Some(fresh_claim_id.as_str())
         );
         assert_eq!(feedback_count_for_replay(&db, "old-feedback-1"), 1);
+        assert_eq!(
+            feedback_submitted_at_for_replay(&db, "old-feedback-1"),
+            REPLAYED_FEEDBACK_TS
+        );
         let (verification_state, claim_version) =
             claim_verification_state_and_version(&db, &fresh_claim_id);
         assert_eq!(verification_state, "contested");
@@ -1181,6 +1214,40 @@ mod tests {
             matches!(err, RebuildError::InvalidSidecar(message) if message.contains("feedback content"))
         );
         assert_eq!(feedback_count_for_replay(&db, "payload-event"), 1);
+    }
+
+    #[test]
+    fn dos832_replay_rejects_same_event_id_with_changed_submitted_at() {
+        let db = test_db();
+        let (clock, rng, external) = ctx_parts();
+        let ctx = ServiceContext::test_live(&clock, &rng, &external);
+        seed_account(&db);
+        let fresh_claim_id = inserted_claim_id(
+            commit_claim(&ctx, &db, proposal("Renewal risk is elevated"))
+                .expect("commit fresh claim"),
+        );
+        let mut first_sidecar = sidecar_for_claim(
+            &db,
+            &fresh_claim_id,
+            "old-runtime-claim-id",
+            "submitted-at-event",
+        );
+        first_sidecar.claims[0].feedback_rows[0].submitted_at = REPLAYED_FEEDBACK_TS.to_string();
+        replay_claim_file_sidecar_corrections(&ctx, &db, "run-1", &first_sidecar)
+            .expect("first replay");
+
+        let mut second_sidecar = first_sidecar;
+        second_sidecar.claims[0].feedback_rows[0].submitted_at = "2026-05-02T08:30:00Z".to_string();
+        let err = replay_claim_file_sidecar_corrections(&ctx, &db, "run-2", &second_sidecar)
+            .expect_err("same replay id must not hide changed submitted_at");
+
+        assert!(
+            matches!(err, RebuildError::InvalidSidecar(message) if message.contains("feedback content"))
+        );
+        assert_eq!(
+            feedback_submitted_at_for_replay(&db, "submitted-at-event"),
+            REPLAYED_FEEDBACK_TS
+        );
     }
 
     #[test]

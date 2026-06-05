@@ -239,6 +239,7 @@ pub struct ClaimFeedbackInput {
 pub struct ClaimFeedbackReplayInput {
     pub feedback: ClaimFeedbackInput,
     pub replay_event_id: String,
+    pub submitted_at: String,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
@@ -255,6 +256,12 @@ pub struct ClaimFeedbackOutcome {
 pub struct ClaimFileFeedbackApplyInput {
     pub expected_claim_version: u64,
     pub correction_apply_key: String,
+}
+
+#[derive(Debug, Clone)]
+struct ClaimFeedbackReplayWrite {
+    event_id: String,
+    submitted_at: String,
 }
 
 /// Claim-generation contract boundary.
@@ -5573,7 +5580,9 @@ pub(crate) fn claim_feedback_replay_content_hash(
     actor: &str,
     actor_id: Option<&str>,
     payload_json: Option<&str>,
+    submitted_at: &str,
 ) -> Result<String, ClaimError> {
+    let submitted_at = normalize_replay_submitted_at(submitted_at)?;
     let canonical_payload = payload_json
         .map(|payload| {
             serde_json::from_str::<serde_json::Value>(payload)
@@ -5587,8 +5596,22 @@ pub(crate) fn claim_feedback_replay_content_hash(
     update_hash_part(&mut hasher, Some(action.as_str()));
     update_hash_part(&mut hasher, Some(actor));
     update_hash_part(&mut hasher, actor_id);
+    update_hash_part(&mut hasher, Some(&submitted_at));
     update_hash_part(&mut hasher, canonical_payload.as_deref());
     Ok(format!("{:x}", hasher.finalize()))
+}
+
+fn normalize_replay_submitted_at(value: &str) -> Result<String, ClaimError> {
+    let submitted_at = value.trim();
+    if submitted_at.is_empty() {
+        return Err(ClaimError::InvalidFeedback(
+            "replay submitted_at is required for correction replay".to_string(),
+        ));
+    }
+    DateTime::parse_from_rfc3339(submitted_at).map_err(|error| {
+        ClaimError::InvalidFeedback(format!("replay submitted_at must be RFC3339: {error}"))
+    })?;
+    Ok(submitted_at.to_string())
 }
 
 fn update_hash_part(hasher: &mut Sha256, value: Option<&str>) {
@@ -7294,7 +7317,11 @@ pub fn record_claim_feedback_replay(
             "replay_event_id is required for correction replay".to_string(),
         ));
     }
-    record_claim_feedback_inner(ctx, db, input.feedback, None, Some(replay_event_id.to_string()))
+    let replay = ClaimFeedbackReplayWrite {
+        event_id: replay_event_id.to_string(),
+        submitted_at: normalize_replay_submitted_at(&input.submitted_at)?,
+    };
+    record_claim_feedback_inner(ctx, db, input.feedback, None, Some(replay))
 }
 
 fn record_claim_feedback_inner(
@@ -7302,7 +7329,7 @@ fn record_claim_feedback_inner(
     db: &ActionDb,
     input: ClaimFeedbackInput,
     claim_file_apply: Option<ClaimFileFeedbackApplyInput>,
-    replay_event_id: Option<String>,
+    replay: Option<ClaimFeedbackReplayWrite>,
 ) -> Result<ClaimFeedbackOutcome, ClaimError> {
     ctx.check_mutation_allowed()
         .map_err(|e| ClaimError::Mode(e.to_string()))?;
@@ -7310,8 +7337,8 @@ fn record_claim_feedback_inner(
     let metadata = feedback_semantics(input.action);
     validate_feedback_payload(&input, &metadata)?;
 
-    if let Some(replay_event_id) = replay_event_id.as_deref() {
-        if let Some(outcome) = existing_feedback_replay_outcome(db, &input, replay_event_id)? {
+    if let Some(replay) = replay.as_ref() {
+        if let Some(outcome) = existing_feedback_replay_outcome(db, &input, replay)? {
             return Ok(outcome);
         }
     }
@@ -7324,6 +7351,9 @@ fn record_claim_feedback_inner(
 
     let write = with_claim_transaction(db, |tx| {
         let now = ctx.clock.now().to_rfc3339();
+        let feedback_effect_at = replay
+            .as_ref()
+            .map_or(now.as_str(), |replay| replay.submitted_at.as_str());
         let claim = load_claim_by_id(tx.conn_ref(), &input.claim_id)?
             .ok_or_else(|| ClaimError::UnknownClaimId(input.claim_id.clone()))?;
         if let Some(apply) = claim_file_apply.as_ref() {
@@ -7343,7 +7373,7 @@ fn record_claim_feedback_inner(
         let verification_state_before = enum_to_db(&claim.verification_state)?;
 
         let feedback_id = uuid::Uuid::new_v4().to_string();
-        if let Some(replay_event_id) = replay_event_id.as_deref() {
+        if let Some(replay) = replay.as_ref() {
             let inserted = tx.conn_ref().execute(
                 "INSERT OR IGNORE INTO claim_feedback (
                     id, claim_id, feedback_type, actor, actor_id, payload_json,
@@ -7356,19 +7386,19 @@ fn record_claim_feedback_inner(
                     &input.actor,
                     input.actor_id.as_deref(),
                     input.payload_json.as_deref(),
-                    &now,
-                    replay_event_id,
+                    &replay.submitted_at,
+                    &replay.event_id,
                 ],
             )?;
             if inserted == 0 {
                 mark_mutation_attempt_committed_noop(tx, mutation_guard.attempt(), &now)?;
-                let outcome =
-                    existing_feedback_replay_outcome_conn(tx.conn_ref(), &input, replay_event_id)?
-                        .ok_or_else(|| {
-                            ClaimError::InvalidFeedback(format!(
-                                "replay_event_id insert collided without readable feedback row: {replay_event_id}"
-                            ))
-                        })?;
+                let outcome = existing_feedback_replay_outcome_conn(tx.conn_ref(), &input, replay)?
+                    .ok_or_else(|| {
+                        ClaimError::InvalidFeedback(format!(
+                            "replay_event_id insert collided without readable feedback row: {}",
+                            replay.event_id
+                        ))
+                    })?;
                 return Ok(ClaimFeedbackWriteResult::ExistingReplay(outcome));
             }
         } else {
@@ -7390,7 +7420,7 @@ fn record_claim_feedback_inner(
         }
 
         let (new_verification_state, verification_reason, needs_user_decision_at) =
-            verification_update_for_feedback(&claim, input.action, &now);
+            verification_update_for_feedback(&claim, input.action, feedback_effect_at);
         let lifecycle_update = lifecycle_update_for_feedback(&claim, input.action, metadata.render);
         let lifecycle_changed = lifecycle_update != LifecycleUpdate::from_claim(&claim);
         let verification_changed = new_verification_state != claim.verification_state
@@ -7464,7 +7494,7 @@ fn record_claim_feedback_inner(
             ClaimState::Tombstoned | ClaimState::Withdrawn
         ) || lifecycle_update.surfacing_state == SurfacingState::Dormant
         {
-            mark_claim_edges_tombstoned(tx, &input.claim_id, &now)?;
+            mark_claim_edges_tombstoned(tx, &input.claim_id, feedback_effect_at)?;
         }
 
         // Bump claim_version + emit version_events when feedback actually
@@ -7554,22 +7584,22 @@ fn record_claim_feedback_inner(
 fn existing_feedback_replay_outcome(
     db: &ActionDb,
     input: &ClaimFeedbackInput,
-    replay_event_id: &str,
+    replay: &ClaimFeedbackReplayWrite,
 ) -> Result<Option<ClaimFeedbackOutcome>, ClaimError> {
-    existing_feedback_replay_outcome_conn(db.conn_ref(), input, replay_event_id)
+    existing_feedback_replay_outcome_conn(db.conn_ref(), input, replay)
 }
 
 fn existing_feedback_replay_outcome_conn(
     conn: &Connection,
     input: &ClaimFeedbackInput,
-    replay_event_id: &str,
+    replay: &ClaimFeedbackReplayWrite,
 ) -> Result<Option<ClaimFeedbackOutcome>, ClaimError> {
     let existing = conn
         .query_row(
-            "SELECT id, claim_id, feedback_type, actor, actor_id, payload_json
+            "SELECT id, claim_id, feedback_type, actor, actor_id, payload_json, submitted_at
              FROM claim_feedback
              WHERE replay_event_id = ?1",
-            params![replay_event_id],
+            params![&replay.event_id],
             |row| {
                 Ok((
                     row.get::<_, String>(0)?,
@@ -7578,17 +7608,20 @@ fn existing_feedback_replay_outcome_conn(
                     row.get::<_, String>(3)?,
                     row.get::<_, Option<String>>(4)?,
                     row.get::<_, Option<String>>(5)?,
+                    row.get::<_, String>(6)?,
                 ))
             },
         )
         .optional()?;
-    let Some((feedback_id, claim_id, feedback_type, actor, actor_id, payload_json)) = existing
+    let Some((feedback_id, claim_id, feedback_type, actor, actor_id, payload_json, submitted_at)) =
+        existing
     else {
         return Ok(None);
     };
     if claim_id != input.claim_id || feedback_type != input.action.as_str() {
         return Err(ClaimError::InvalidFeedback(format!(
-            "replay_event_id already applied to different feedback target: {replay_event_id}"
+            "replay_event_id already applied to different feedback target: {}",
+            replay.event_id
         )));
     }
     let existing_content_hash = claim_feedback_replay_content_hash(
@@ -7596,16 +7629,19 @@ fn existing_feedback_replay_outcome_conn(
         &actor,
         actor_id.as_deref(),
         payload_json.as_deref(),
+        &submitted_at,
     )?;
     let input_content_hash = claim_feedback_replay_content_hash(
         input.action,
         &input.actor,
         input.actor_id.as_deref(),
         input.payload_json.as_deref(),
+        &replay.submitted_at,
     )?;
     if existing_content_hash != input_content_hash {
         return Err(ClaimError::InvalidFeedback(format!(
-            "replay_event_id already applied with different feedback content: {replay_event_id}"
+            "replay_event_id already applied with different feedback content: {}",
+            replay.event_id
         )));
     }
     let claim = load_claim_by_id(conn, &claim_id)?
@@ -11454,6 +11490,7 @@ mod tests {
     use crate::services::context::{ExternalClients, FixedClock, SeedableRng};
 
     const TS: &str = "2026-05-02T12:00:00+00:00";
+    const REPLAY_TS: &str = "2026-04-01T09:15:00+00:00";
     const SUBJECT: &str = r#"{"kind":"account","id":"acct-1"}"#;
 
     fn register_canonical_embedding_fixtures() {
@@ -13552,6 +13589,17 @@ mod tests {
             actor: "user".to_string(),
             actor_id: Some("user-fixture".to_string()),
             payload_json: feedback_payload_for(action),
+        }
+    }
+
+    fn replay_input(
+        feedback: ClaimFeedbackInput,
+        replay_event_id: &str,
+    ) -> ClaimFeedbackReplayInput {
+        ClaimFeedbackReplayInput {
+            feedback,
+            replay_event_id: replay_event_id.to_string(),
+            submitted_at: REPLAY_TS.to_string(),
         }
     }
 
@@ -16904,19 +16952,19 @@ mod tests {
         let first = record_claim_feedback_replay(
             &ctx,
             &db,
-            ClaimFeedbackReplayInput {
-                feedback: feedback_input(&claim_id, FeedbackAction::CannotVerify),
-                replay_event_id: replay_event_id.to_string(),
-            },
+            replay_input(
+                feedback_input(&claim_id, FeedbackAction::CannotVerify),
+                replay_event_id,
+            ),
         )
         .unwrap();
         let second = record_claim_feedback_replay(
             &ctx,
             &db,
-            ClaimFeedbackReplayInput {
-                feedback: feedback_input(&claim_id, FeedbackAction::CannotVerify),
-                replay_event_id: replay_event_id.to_string(),
-            },
+            replay_input(
+                feedback_input(&claim_id, FeedbackAction::CannotVerify),
+                replay_event_id,
+            ),
         )
         .unwrap();
 
@@ -16934,6 +16982,15 @@ mod tests {
             )
             .unwrap();
         assert_eq!(feedback_count, 1);
+        let submitted_at: String = db
+            .conn_ref()
+            .query_row(
+                "SELECT submitted_at FROM claim_feedback WHERE replay_event_id = ?1",
+                params![replay_event_id],
+                |row| row.get(0),
+            )
+            .unwrap();
+        assert_eq!(submitted_at, REPLAY_TS);
         assert_eq!(repair_job_count(&db, &claim_id), 1);
         assert_eq!(signal_count(&db, "claim_feedback_recorded"), 1);
     }
@@ -16955,20 +17012,20 @@ mod tests {
         record_claim_feedback_replay(
             &ctx,
             &db,
-            ClaimFeedbackReplayInput {
-                feedback: feedback_input(&first_claim_id, FeedbackAction::CannotVerify),
-                replay_event_id: replay_event_id.to_string(),
-            },
+            replay_input(
+                feedback_input(&first_claim_id, FeedbackAction::CannotVerify),
+                replay_event_id,
+            ),
         )
         .unwrap();
 
         let err = record_claim_feedback_replay(
             &ctx,
             &db,
-            ClaimFeedbackReplayInput {
-                feedback: feedback_input(&second_claim_id, FeedbackAction::CannotVerify),
-                replay_event_id: replay_event_id.to_string(),
-            },
+            replay_input(
+                feedback_input(&second_claim_id, FeedbackAction::CannotVerify),
+                replay_event_id,
+            ),
         )
         .expect_err("replay event must not retarget a different claim");
 
@@ -17008,24 +17065,9 @@ mod tests {
                 .to_string(),
         );
 
-        record_claim_feedback_replay(
-            &ctx,
-            &db,
-            ClaimFeedbackReplayInput {
-                feedback: first,
-                replay_event_id: replay_event_id.to_string(),
-            },
-        )
-        .unwrap();
-        let err = record_claim_feedback_replay(
-            &ctx,
-            &db,
-            ClaimFeedbackReplayInput {
-                feedback: second,
-                replay_event_id: replay_event_id.to_string(),
-            },
-        )
-        .expect_err("same replay event must not hide changed payload");
+        record_claim_feedback_replay(&ctx, &db, replay_input(first, replay_event_id)).unwrap();
+        let err = record_claim_feedback_replay(&ctx, &db, replay_input(second, replay_event_id))
+            .expect_err("same replay event must not hide changed payload");
 
         assert!(
             matches!(err, ClaimError::InvalidFeedback(message) if message.contains("different feedback content"))
@@ -17040,6 +17082,48 @@ mod tests {
             .unwrap();
         assert_eq!(feedback_count, 1);
         assert_eq!(signal_count(&db, "claim_feedback_recorded"), 1);
+    }
+
+    #[test]
+    fn record_claim_feedback_replay_event_rejects_submitted_at_change() {
+        let db = test_db();
+        seed_account(&db);
+        let (clock, rng, external) = ctx_parts();
+        let ctx = live_ctx(&clock, &rng, &external);
+        let claim_id =
+            inserted_claim_id(commit_claim(&ctx, &db, proposal("Risk replay timestamp")).unwrap());
+        let replay_event_id = "replay-event-submitted-at-1";
+
+        record_claim_feedback_replay(
+            &ctx,
+            &db,
+            replay_input(
+                feedback_input(&claim_id, FeedbackAction::CannotVerify),
+                replay_event_id,
+            ),
+        )
+        .unwrap();
+        let mut changed_timestamp = replay_input(
+            feedback_input(&claim_id, FeedbackAction::CannotVerify),
+            replay_event_id,
+        );
+        changed_timestamp.submitted_at = "2026-04-02T09:15:00+00:00".to_string();
+
+        let err = record_claim_feedback_replay(&ctx, &db, changed_timestamp)
+            .expect_err("same replay event must not hide changed submitted_at");
+
+        assert!(
+            matches!(err, ClaimError::InvalidFeedback(message) if message.contains("different feedback content"))
+        );
+        let submitted_at: String = db
+            .conn_ref()
+            .query_row(
+                "SELECT submitted_at FROM claim_feedback WHERE replay_event_id = ?1",
+                params![replay_event_id],
+                |row| row.get(0),
+            )
+            .unwrap();
+        assert_eq!(submitted_at, REPLAY_TS);
     }
 
     #[test]
@@ -17072,10 +17156,10 @@ mod tests {
         let outcome = record_claim_feedback_replay(
             &ctx,
             &db,
-            ClaimFeedbackReplayInput {
-                feedback: feedback_input(&claim_id, FeedbackAction::CannotVerify),
-                replay_event_id: "replay-event-race-1".to_string(),
-            },
+            replay_input(
+                feedback_input(&claim_id, FeedbackAction::CannotVerify),
+                "replay-event-race-1",
+            ),
         )
         .unwrap();
 
