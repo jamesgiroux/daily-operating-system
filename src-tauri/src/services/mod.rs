@@ -6,6 +6,7 @@ pub mod account_fact_claims;
 pub mod accounts;
 pub mod action_claims;
 pub mod actions;
+pub mod claim_files;
 pub mod claim_receipt;
 pub mod claim_review_queue;
 pub mod claims;

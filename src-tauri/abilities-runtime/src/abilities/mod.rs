@@ -2,6 +2,7 @@
 
 pub mod account_overview;
 pub mod action_detail;
+pub mod claim_files;
 pub mod claim_receipt;
 pub mod claims;
 pub mod composition;
