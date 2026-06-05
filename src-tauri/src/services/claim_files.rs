@@ -6,7 +6,7 @@
 
 use std::collections::BTreeSet;
 use std::fs;
-use std::io::Read;
+use std::io::{Read, Write};
 use std::path::{Component, Path, PathBuf};
 
 use abilities_runtime::abilities::feedback::FeedbackAction;
@@ -14,7 +14,7 @@ use abilities_runtime::abilities::provenance::subject::SubjectRef as ReceiptSubj
 use abilities_runtime::sensitivity::RenderActor;
 use abilities_runtime::types::{ClaimSensitivity, ClaimSubjectRef, IntelligenceClaim};
 use chrono::Utc;
-use rusqlite::params;
+use rusqlite::{params, OptionalExtension};
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
@@ -61,6 +61,21 @@ pub struct ClaimFileProjectionResult {
     pub claim_count: usize,
     pub markdown_checksum: String,
     pub sidecar_checksum: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, JsonSchema, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub struct ClaimFileProjectionChangeStatus {
+    pub entity_subject_compact: String,
+    pub current_claim_watermark: String,
+    pub markdown_rel_path: String,
+    pub sidecar_rel_path: String,
+    pub latest_run_id: Option<String>,
+    pub latest_run_status: Option<String>,
+    pub latest_claim_watermark: Option<String>,
+    pub latest_attempted_at: Option<String>,
+    pub needs_repair: bool,
+    pub repair_reasons: Vec<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
@@ -122,6 +137,7 @@ pub struct ClaimSemanticIdentityV1 {
     pub dedup_key_components_hash: String,
     pub source_ref: Option<String>,
     pub data_source: String,
+    pub actor: String,
     pub observed_at: String,
     pub source_asof: Option<String>,
     pub source_content_hash: Option<String>,
@@ -219,6 +235,16 @@ struct FileEnvelope {
     claim_ids: BTreeSet<String>,
 }
 
+#[derive(Debug, Clone, PartialEq, Eq)]
+struct ProjectionRunSummary {
+    run_id: String,
+    status: String,
+    claim_watermark: String,
+    markdown_rel_path: String,
+    sidecar_rel_path: String,
+    attempted_at: String,
+}
+
 impl EnvelopeView for FileEnvelope {
     fn ability(&self) -> &str {
         "claim_file_projection"
@@ -238,6 +264,47 @@ pub async fn render_entity_claim_file(
     workspace_root: PathBuf,
     subject_ref_json: String,
 ) -> Result<ClaimFileProjectionResult, ClaimFileError> {
+    render_entity_claim_file_for_status(state, workspace_root, subject_ref_json, None).await
+}
+
+pub async fn detect_entity_claim_file_changes(
+    state: &AppState,
+    subject_ref_json: String,
+) -> Result<ClaimFileProjectionChangeStatus, ClaimFileError> {
+    let status = state
+        .db_read(move |db| {
+            let bundle = build_render_bundle_db(db, &subject_ref_json)?;
+            projection_change_status_for_bundle(db, &bundle)
+        })
+        .await
+        .map_err(|error| ClaimFileError::Db(error.to_string()))?;
+    Ok(status)
+}
+
+pub async fn repair_claim_file_projection(
+    state: &AppState,
+    workspace_root: PathBuf,
+    subject_ref_json: String,
+) -> Result<ClaimFileProjectionResult, ClaimFileError> {
+    let status = detect_entity_claim_file_changes(state, subject_ref_json.clone()).await?;
+    let repaired_from_run_id = status
+        .latest_run_id
+        .filter(|_| status.latest_run_status.as_deref() == Some("failed"));
+    render_entity_claim_file_for_status(
+        state,
+        workspace_root,
+        subject_ref_json,
+        repaired_from_run_id,
+    )
+    .await
+}
+
+async fn render_entity_claim_file_for_status(
+    state: &AppState,
+    workspace_root: PathBuf,
+    subject_ref_json: String,
+    repaired_from_run_id: Option<String>,
+) -> Result<ClaimFileProjectionResult, ClaimFileError> {
     let bundle = build_render_bundle(state, subject_ref_json).await?;
     let markdown_path = projection_abs_path(&workspace_root, &bundle.markdown_rel_path)?;
     let sidecar_path = projection_abs_path(&workspace_root, &bundle.sidecar_rel_path)?;
@@ -249,7 +316,21 @@ pub async fn render_entity_claim_file(
         &bundle.markdown,
         &bundle.sidecar_json,
     );
-    record_projection_run(state, &bundle, write_result.as_ref().err()).await?;
+    let status = if write_result.is_err() {
+        "failed"
+    } else if repaired_from_run_id.is_some() {
+        "repaired"
+    } else {
+        "committed"
+    };
+    record_projection_run(
+        state,
+        &bundle,
+        status,
+        repaired_from_run_id,
+        write_result.as_ref().err(),
+    )
+    .await?;
     write_result?;
 
     Ok(ClaimFileProjectionResult {
@@ -280,7 +361,10 @@ pub async fn apply_claim_file_corrections(
     verify_sidecar_contract(&sidecar)?;
     verify_sidecar_paths(&sidecar, &markdown_rel_path, &sidecar_rel_path)?;
 
-    let corrections = parse_markdown_corrections(&markdown, &sidecar, &sidecar_checksum)?;
+    let corrections = match parse_markdown_corrections(&markdown, &sidecar, &sidecar_checksum) {
+        Ok(corrections) => corrections,
+        Err(error) => return Ok(parse_failure_apply_result(sidecar.claims.len(), error)),
+    };
     if corrections.is_empty() {
         return Ok(ClaimFileApplyResult {
             applied_count: 0,
@@ -556,7 +640,8 @@ fn semantic_identity_for_claim(
         .item_hash
         .clone()
         .unwrap_or_else(|| sha256_hex(claim.text.as_bytes()));
-    let identity_kind = if claim.claim_type == "user_note" {
+    let is_user_note = claim.claim_type == "user_note";
+    let identity_kind = if is_user_note {
         "user_note_v1"
     } else {
         "claim_dedup_v1"
@@ -566,6 +651,15 @@ fn semantic_identity_for_claim(
         "{}\u{1f}{}\u{1f}{}\u{1f}{}",
         item_hash, subject_ref_compact, claim.claim_type, field_path_component
     );
+    let dedup_key_components_hash = if is_user_note {
+        crate::services::claims::compute_user_note_dedup_key(
+            &subject_ref_compact,
+            &claim.actor,
+            &claim.observed_at,
+        )
+    } else {
+        sha256_hex(components.as_bytes())
+    };
     ClaimSemanticIdentityV1 {
         identity_version: 1,
         identity_kind: identity_kind.to_string(),
@@ -574,9 +668,10 @@ fn semantic_identity_for_claim(
         subject_ref,
         claim_type: claim.claim_type.clone(),
         field_path: claim.field_path.clone(),
-        dedup_key_components_hash: sha256_hex(components.as_bytes()),
+        dedup_key_components_hash,
         source_ref: claim.source_ref.clone(),
         data_source: claim.data_source.clone(),
+        actor: claim.actor.clone(),
         observed_at: claim.observed_at.clone(),
         source_asof: claim.source_asof.clone(),
         source_content_hash: Some(source_content_hash_for_claim(claim)),
@@ -764,22 +859,21 @@ fn render_markdown(sidecar: &ClaimFileSidecar, sidecar_checksum: &str) -> String
 async fn record_projection_run(
     state: &AppState,
     bundle: &RenderBundle,
+    status: &str,
+    repaired_from_run_id: Option<String>,
     write_error: Option<&std::io::Error>,
 ) -> Result<(), ClaimFileError> {
     let run = bundle.clone();
-    let status = if write_error.is_some() {
-        "failed".to_string()
-    } else {
-        "committed".to_string()
-    };
     let error_class = write_error.map(|error| error.kind().to_string());
     let error_detail_hash = write_error.map(|error| redacted_hash(&error.to_string()));
+    let status = status.to_string();
     state
         .db_write(move |db| {
             insert_projection_run(
                 db,
                 &run,
                 &status,
+                repaired_from_run_id.as_deref(),
                 error_class.as_deref(),
                 error_detail_hash.as_deref(),
             )
@@ -793,6 +887,7 @@ fn insert_projection_run(
     db: &ActionDb,
     run: &RenderBundle,
     status: &str,
+    repaired_from_run_id: Option<&str>,
     error_class: Option<&str>,
     error_detail_hash: Option<&str>,
 ) -> Result<(), String> {
@@ -804,8 +899,9 @@ fn insert_projection_run(
                 markdown_rel_path, sidecar_rel_path, projection_version,
                 sidecar_schema_version, entity_claim_invalidation_version,
                 claim_watermark, markdown_checksum, sidecar_checksum, status,
-                error_class, error_detail_hash, attempted_at, succeeded_at, created_at, updated_at
-             ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?16, ?17, ?16, ?16)",
+                error_class, error_detail_hash, attempted_at, succeeded_at,
+                repaired_from_run_id, created_at, updated_at
+             ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?16, ?17, ?18, ?16, ?16)",
             params![
                 &run.run_id,
                 &run.subject_ref_json,
@@ -823,11 +919,16 @@ fn insert_projection_run(
                 error_class,
                 error_detail_hash,
                 &now,
-                if status == "committed" { Some(now.as_str()) } else { None },
+                if matches!(status, "committed" | "repaired") {
+                    Some(now.as_str())
+                } else {
+                    None
+                },
+                repaired_from_run_id,
             ],
         )
         .map_err(|error| error.to_string())?;
-    if status == "committed" {
+    if matches!(status, "committed" | "repaired") {
         for claim in &run.sidecar.claims {
             let semantic_identity_json = serde_json::to_string(&claim.semantic_identity)
                 .map_err(|error| error.to_string())?;
@@ -850,6 +951,64 @@ fn insert_projection_run(
         }
     }
     Ok(())
+}
+
+fn projection_change_status_for_bundle(
+    db: &ActionDb,
+    bundle: &RenderBundle,
+) -> Result<ClaimFileProjectionChangeStatus, String> {
+    let latest = latest_projection_run(db, &bundle.entity_subject_compact)?;
+    let mut repair_reasons = Vec::new();
+    if let Some(latest) = &latest {
+        if latest.status == "failed" {
+            repair_reasons.push("previous_projection_failed".to_string());
+        }
+        if latest.claim_watermark != bundle.claim_watermark {
+            repair_reasons.push("claim_watermark_changed".to_string());
+        }
+    } else {
+        repair_reasons.push("missing_projection".to_string());
+    }
+
+    Ok(ClaimFileProjectionChangeStatus {
+        entity_subject_compact: bundle.entity_subject_compact.clone(),
+        current_claim_watermark: bundle.claim_watermark.clone(),
+        markdown_rel_path: path_to_slash_string(&bundle.markdown_rel_path),
+        sidecar_rel_path: path_to_slash_string(&bundle.sidecar_rel_path),
+        latest_run_id: latest.as_ref().map(|run| run.run_id.clone()),
+        latest_run_status: latest.as_ref().map(|run| run.status.clone()),
+        latest_claim_watermark: latest.as_ref().map(|run| run.claim_watermark.clone()),
+        latest_attempted_at: latest.as_ref().map(|run| run.attempted_at.clone()),
+        needs_repair: !repair_reasons.is_empty(),
+        repair_reasons,
+    })
+}
+
+fn latest_projection_run(
+    db: &ActionDb,
+    entity_subject_compact: &str,
+) -> Result<Option<ProjectionRunSummary>, String> {
+    db.conn_ref()
+        .query_row(
+            "SELECT id, status, claim_watermark, markdown_rel_path, sidecar_rel_path, attempted_at
+               FROM claim_file_projection_runs
+              WHERE entity_subject_compact = ?1
+              ORDER BY attempted_at DESC, created_at DESC, id DESC
+              LIMIT 1",
+            [entity_subject_compact],
+            |row| {
+                Ok(ProjectionRunSummary {
+                    run_id: row.get(0)?,
+                    status: row.get(1)?,
+                    claim_watermark: row.get(2)?,
+                    markdown_rel_path: row.get(3)?,
+                    sidecar_rel_path: row.get(4)?,
+                    attempted_at: row.get(5)?,
+                })
+            },
+        )
+        .optional()
+        .map_err(|error| error.to_string())
 }
 
 fn parse_markdown_corrections(
@@ -912,6 +1071,39 @@ fn parse_markdown_corrections(
         ));
     }
     Ok(corrections)
+}
+
+fn parse_failure_apply_result(skipped_count: usize, error: ClaimFileError) -> ClaimFileApplyResult {
+    let error_class = parse_failure_error_class(&error).to_string();
+    let error_detail_hash = redacted_hash(&error.to_string());
+    ClaimFileApplyResult {
+        applied_count: 0,
+        skipped_count,
+        failures: vec![ClaimFileApplyFailure {
+            claim_id: None,
+            error_class,
+            error_detail_hash,
+        }],
+        responses: Vec::new(),
+        rerender: None,
+    }
+}
+
+fn parse_failure_error_class(error: &ClaimFileError) -> &'static str {
+    let message = error.to_string();
+    if message.contains("sidecar_mismatch") {
+        "sidecar_mismatch"
+    } else if message.contains("unsupported file feedback action") {
+        "unsupported_action"
+    } else if message.contains("unterminated claim block") {
+        "parse_unterminated_block"
+    } else if message.contains("nested claim block") {
+        "parse_nested_block"
+    } else if message.contains("not present in sidecar") {
+        "unknown_claim"
+    } else {
+        "parse_failed"
+    }
 }
 
 #[derive(Debug, Default)]
@@ -1143,8 +1335,51 @@ fn write_projection_files(
     let canonical_root = workspace_root.canonicalize()?;
     create_projection_parent_dirs(&canonical_root, sidecar_path)?;
     create_projection_parent_dirs(&canonical_root, markdown_path)?;
-    crate::util::atomic_write_str(sidecar_path, sidecar_json)?;
-    crate::util::atomic_write_str(markdown_path, markdown)?;
+    atomic_write_projection_file(sidecar_path, sidecar_json)?;
+    atomic_write_projection_file(markdown_path, markdown)?;
+    Ok(())
+}
+
+fn atomic_write_projection_file(path: &Path, content: &str) -> std::io::Result<()> {
+    let parent = path.parent().ok_or_else(|| {
+        std::io::Error::new(
+            std::io::ErrorKind::InvalidInput,
+            "projection path has no parent",
+        )
+    })?;
+    let file_name = path.file_name().ok_or_else(|| {
+        std::io::Error::new(
+            std::io::ErrorKind::InvalidInput,
+            "projection path has no file name",
+        )
+    })?;
+    let tmp_name = format!(
+        ".{}.{}.tmp",
+        file_name.to_string_lossy(),
+        uuid::Uuid::new_v4()
+    );
+    let tmp_path = parent.join(tmp_name);
+    let write_result = write_projection_temp_file(&tmp_path, content.as_bytes())
+        .and_then(|()| fs::rename(&tmp_path, path));
+    if write_result.is_err() {
+        match fs::remove_file(&tmp_path) {
+            Ok(()) | Err(_) => {}
+        }
+    }
+    write_result
+}
+
+fn write_projection_temp_file(path: &Path, content: &[u8]) -> std::io::Result<()> {
+    let mut options = fs::OpenOptions::new();
+    options.write(true).create_new(true);
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::OpenOptionsExt;
+        options.mode(0o600).custom_flags(libc::O_NOFOLLOW);
+    }
+    let mut file = options.open(path)?;
+    file.write_all(content)?;
+    file.sync_all()?;
     Ok(())
 }
 
@@ -1541,6 +1776,7 @@ mod tests {
                     dedup_key_components_hash: "identity-hash-1".to_string(),
                     source_ref: Some("fixture://source-1".to_string()),
                     data_source: "unit_test".to_string(),
+                    actor: "agent:test".to_string(),
                     observed_at: "2026-06-02T12:00:00Z".to_string(),
                     source_asof: Some("2026-06-02T12:00:00Z".to_string()),
                     source_content_hash: Some("abcdef0123456789".to_string()),
@@ -1809,6 +2045,54 @@ dailyos-payload: {}
     }
 
     #[test]
+    fn apply_parse_failure_reports_sidecar_mismatch_artifact_without_responses() {
+        let sidecar = fixture_sidecar();
+        let markdown = "\
+<!-- dailyos-claim-start -->
+dailyos-claim-id: claim-1
+dailyos-sidecar-checksum: stale
+dailyos-action: mark_false
+dailyos-payload: {}
+<!-- dailyos-claim-end -->
+";
+        let error = parse_markdown_corrections(markdown, &sidecar, "current")
+            .expect_err("sidecar mismatch should fail parsing");
+        let result = parse_failure_apply_result(sidecar.claims.len(), error);
+
+        assert_eq!(result.applied_count, 0);
+        assert_eq!(result.skipped_count, sidecar.claims.len());
+        assert!(result.responses.is_empty());
+        assert!(result.rerender.is_none());
+        assert_eq!(result.failures.len(), 1);
+        assert_eq!(result.failures[0].claim_id, None);
+        assert_eq!(result.failures[0].error_class, "sidecar_mismatch");
+    }
+
+    #[test]
+    fn apply_parse_failure_reports_unsupported_action_artifact_without_responses() {
+        let sidecar = fixture_sidecar();
+        let markdown = "\
+<!-- dailyos-claim-start -->
+dailyos-claim-id: claim-1
+dailyos-sidecar-checksum: checksum-1
+dailyos-action: rewrite_claim
+dailyos-payload: {}
+<!-- dailyos-claim-end -->
+";
+        let error = parse_markdown_corrections(markdown, &sidecar, "checksum-1")
+            .expect_err("unsupported action should fail parsing");
+        let result = parse_failure_apply_result(sidecar.claims.len(), error);
+
+        assert_eq!(result.applied_count, 0);
+        assert_eq!(result.skipped_count, sidecar.claims.len());
+        assert!(result.responses.is_empty());
+        assert!(result.rerender.is_none());
+        assert_eq!(result.failures.len(), 1);
+        assert_eq!(result.failures[0].claim_id, None);
+        assert_eq!(result.failures[0].error_class, "unsupported_action");
+    }
+
+    #[test]
     fn parser_ignores_directive_like_text_after_claim_block_header() {
         let sidecar = fixture_sidecar();
         let markdown = "\
@@ -2059,7 +2343,8 @@ dailyos-action: mark_false\n\
 
     #[test]
     fn user_note_identity_uses_user_note_kind() {
-        let claim = fixture_intelligence_claim("user_note", None, Some("note-hash-1"));
+        let mut claim = fixture_intelligence_claim("user_note", None, Some("note-hash-1"));
+        claim.actor = "user:fixture".to_string();
         let identity = semantic_identity_for_claim(
             &claim,
             serde_json::json!({"kind": "account", "id": "acct-1"}),
@@ -2067,6 +2352,95 @@ dailyos-action: mark_false\n\
         );
 
         assert_eq!(identity.identity_kind, "user_note_v1");
+        assert_eq!(identity.actor, "user:fixture");
         assert_eq!(identity.item_hash, "note-hash-1");
+        assert_eq!(
+            identity.dedup_key_components_hash,
+            crate::services::claims::compute_user_note_dedup_key(
+                &identity.subject_ref_compact,
+                "user:fixture",
+                TEST_TS
+            )
+        );
+    }
+
+    #[test]
+    fn projection_change_status_detects_failed_run_and_repaired_success() {
+        let db = test_db();
+        let (clock, rng, external) = test_context_parts();
+        let ctx = test_live_context(&clock, &rng, &external);
+        commit_claim(
+            &ctx,
+            &db,
+            fixture_claim_proposal("Claim file repair fixture"),
+        )
+        .expect("commit projection claim");
+        let subject_ref_json = r#"{"kind":"account","id":"acct-1"}"#;
+        let bundle = build_render_bundle_db(&db, subject_ref_json).expect("build render bundle");
+
+        insert_projection_run(
+            &db,
+            &bundle,
+            "failed",
+            None,
+            Some("PermissionDenied"),
+            Some("redacted-error-hash"),
+        )
+        .expect("insert failed projection run");
+        let failed_status =
+            projection_change_status_for_bundle(&db, &bundle).expect("read failed status");
+
+        assert!(failed_status.needs_repair);
+        assert_eq!(failed_status.latest_run_status.as_deref(), Some("failed"));
+        assert!(failed_status
+            .repair_reasons
+            .contains(&"previous_projection_failed".to_string()));
+
+        let repaired_bundle = RenderBundle {
+            run_id: "zz-repaired-run".to_string(),
+            ..bundle.clone()
+        };
+        insert_projection_run(
+            &db,
+            &repaired_bundle,
+            "repaired",
+            Some(&bundle.run_id),
+            None,
+            None,
+        )
+        .expect("insert repaired projection run");
+        let repaired_status = projection_change_status_for_bundle(&db, &repaired_bundle)
+            .expect("read repaired status");
+        let repaired_from_run_id: Option<String> = db
+            .conn_ref()
+            .query_row(
+                "SELECT repaired_from_run_id
+                   FROM claim_file_projection_runs
+                  WHERE id = ?1",
+                [&repaired_bundle.run_id],
+                |row| row.get(0),
+            )
+            .expect("read repaired link");
+        let repaired_membership_count: i64 = db
+            .conn_ref()
+            .query_row(
+                "SELECT count(*)
+                   FROM claim_file_projection_run_claims
+                  WHERE run_id = ?1",
+                [&repaired_bundle.run_id],
+                |row| row.get(0),
+            )
+            .expect("read repaired membership");
+
+        assert!(!repaired_status.needs_repair);
+        assert_eq!(
+            repaired_status.latest_run_status.as_deref(),
+            Some("repaired")
+        );
+        assert_eq!(
+            repaired_from_run_id.as_deref(),
+            Some(bundle.run_id.as_str())
+        );
+        assert!(repaired_membership_count > 0);
     }
 }

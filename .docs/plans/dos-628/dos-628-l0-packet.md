@@ -1,6 +1,6 @@
 # DOS-628 L0 Packet -- Claims To Editable Readable Files
 
-> Status: L0-approved locally after K-in, feasibility, security, adversarial document review, and Codex challenge.
+> Status: L0-approved locally after cycle review: K-in PASS, feasibility PASS, security PASS, adversarial/Codex challenge PASS.
 > Issue: DOS-628.
 > Wave: v1.4.9 W3 -- Claims -> editable readable files.
 > Branch: `codex/v1.4.9-w3-dos628`.
@@ -21,6 +21,8 @@ The user outcome is the first leg of the v1.4.9 north star: a user can correct a
 ## 1. Trust Topology
 
 Topology is `local-to-local single-user` for the app/file path. The user edits files in their own workspace on the same machine. Do not add multi-actor gates, app/file scope grants, or principal differentiation to this path.
+
+The W3 abilities for this slice are therefore `Actor::User` only. `SurfaceClient` and MCP client invocation are not accepted for `render_entity_claim_file` or `apply_claim_file_corrections`; those surfaces must continue to consume canonical claim abilities rather than projected local files.
 
 The safety requirements that still apply:
 
@@ -109,7 +111,7 @@ The sidecar is the authoritative rebuild input for correction replay. It must in
 - `schema_version`.
 - `projection_version`.
 - Entity subject reference.
-- Stable claim semantic identity: `item_hash`, compact subject identity, `claim_type`, and `field_path`, matching the `compute_dedup_key` shape.
+- Stable claim semantic identity: `item_hash`, compact subject identity, `claim_type`, and `field_path`, matching the `compute_dedup_key` shape for non-user-note claims, plus `actor` where user-note replay depends on actor identity.
 - Runtime claim id and claim version as debugging aids only, never as the replay key.
 - `source_ref`, `observed_at`, and `source_asof` where available for non-unique tie-breaks.
 - Feedback rows as typed `FeedbackAction` plus actor, actor id when available, payload JSON, submitted/applied timestamps.
@@ -132,8 +134,9 @@ The sidecar identity is `ClaimSemanticIdentityV1`:
 - `subject_ref`: the structured `SubjectRef` serialized canonically for validation and diagnostics.
 - `claim_type`: exact canonical claim type string.
 - `field_path`: exact canonical field path string; `null` in the sidecar maps to the empty fourth component in `compute_dedup_key`.
-- `dedup_key_components_hash`: SHA-256 over the four canonical components for content-redacted logs.
+- `dedup_key_components_hash`: SHA-256 over the four canonical components for non-`UserNote` claims; for `UserNote`, the value is the existing `compute_user_note_dedup_key(subject_ref_compact, actor, observed_at)` replay key.
 - `source_ref`, `data_source`, `observed_at`, `source_asof`, and `source_content_hash` where present.
+- `actor`: exact canonical claim actor, required for `UserNote` replay identity and retained for diagnostics on other claim kinds.
 - `runtime_claim_id` and `runtime_claim_version`: diagnostics only, never the replay key.
 - `claim_state`: active/dormant/withdrawn/tombstoned/superseded plus supersession target identity when present.
 
@@ -163,8 +166,9 @@ Minimum ledger schema:
 - `status` is constrained to `committed`, `failed`, or `repaired`.
 - `projection_root` is constrained to the managed projection root named in D8.
 - `claim_watermark` is a SHA-256 over sorted `claim_id:claim_version` entries plus the per-entity invalidation version. It is the repair/re-render trigger, not a trust input.
-- `sidecar_checksum` is SHA-256 over canonical JSON serialization of the sidecar. The markdown block points to this checksum; apply refuses mismatched markdown/sidecar pairs and records `sidecar_mismatch`.
+- `sidecar_checksum` is SHA-256 over canonical JSON serialization of the sidecar. The markdown block points to this checksum; apply refuses mismatched markdown/sidecar pairs and returns a redacted `sidecar_mismatch` apply-failure artifact without writing feedback rows.
 - Repair worklist query is `status = 'failed' OR current_claim_watermark != claim_watermark`, ordered by `attempted_at`, bounded by service-owned batch size.
+- The service surface must expose `detect_entity_claim_file_changes(subject)` to compare the current entity claim watermark against the latest ledger run, and `repair_claim_file_projection(subject)` to idempotently re-render through the same projection writer. A successful repair of a failed run records a `repaired` run linked by `repaired_from_run_id`; stale or missing projections produce a normal committed render.
 
 Projection repair must be idempotent. A failed projection must not abort the authoritative claim feedback write that caused it.
 
@@ -204,6 +208,7 @@ Required shape:
 - Relative paths only. No user-supplied absolute output root in the first slice.
 - Apply commands canonicalize paths and require them to remain under `_dailyos_claims`.
 - Projection files may be user-edited locally, but source ingestion treats them as managed output, not evidence.
+- Existing projection files must never be read or written through symlinks or hardlinks. Apply reads must use non-following opens plus metadata validation that rejects multi-link files. Projection writes must use a new temp file in the managed directory with exclusive create and no-follow semantics before atomic rename; they must not truncate through an existing path.
 
 Required source-ingestion fence:
 
@@ -221,7 +226,7 @@ Add the main implementation under `src-tauri/src/services/claim_files/` or equiv
 Proposed service responsibilities:
 
 - `render_entity_claim_file(subject)`: reads canonical claims and writes readable markdown plus sidecar.
-- `detect_entity_claim_file_changes(subject/path)`: compares file/sidecar/projection ledger.
+- `detect_entity_claim_file_changes(subject)`: compares the current claim watermark to the latest projection ledger row and reports failed, stale, or missing projection state.
 - `parse_claim_file_corrections(path, sidecar)`: maps structured editable blocks to typed correction candidates.
 - `apply_claim_file_corrections(corrections)`: builds file-surface feedback envelopes and calls `submit_claim_feedback` with `Actor::User`.
 - `repair_claim_file_projection(subject)`: retries failed projection/sidecar writes idempotently.
@@ -309,7 +314,7 @@ A correction that tombstones/withdraws/supersedes a claim is represented in the 
 
 ### AC9 -- Path Boundary
 
-Projection and apply paths reject files outside the configured workspace root, symlink escapes, `..` traversal, malformed entity slugs, and any path outside `_dailyos_claims`.
+Projection and apply paths reject files outside the configured workspace root, symlink escapes, hardlinked projection files, `..` traversal, malformed entity slugs, and any path outside `_dailyos_claims`.
 
 ### AC10 -- Sensitivity And MCP Carve-Out
 
@@ -340,15 +345,18 @@ Workspace ingestion does not ingest `_dailyos_claims/**/*.md` or sidecar files a
 Unit tests:
 
 - Semantic identity generation matches `compute_dedup_key` components.
-- `UserNote` identity uses the existing user-note identity kind and never falls back to runtime UUID.
+- `UserNote` identity includes actor and matches `compute_user_note_dedup_key(subject_ref_compact, actor, observed_at)`; it never falls back to runtime UUID.
 - Subject-ref compacting is deterministic across JSON key order.
 - Markdown parser ignores arbitrary prose and only reads bounded claim edit blocks.
+- Unsupported actions, ambiguous blocks, and `sidecar_mismatch` return redacted apply-failure artifacts and do not write feedback rows.
 - Each supported edit maps to the correct `FeedbackAction`.
 - Per-action metadata validation failures leave DB unchanged.
 - `WrongSource` goes through receipt validation and rejects mismatched `source_content_hash`.
 - `WrongSubject` uses `corrected_subject_ref`; receipt validation forwards it to targeted repair/replay and rejects malformed subject refs.
 - Sidecar serialization/deserialization round-trips all required fields.
-- Path validator rejects traversal and symlink escapes.
+- Path validator rejects traversal, symlink escapes, and hardlinked projection files.
+- Projection writer uses exclusive no-follow temp-file creation and atomic rename rather than truncating through existing paths.
+- Projection ledger tests cover failed-run detection, repaired-run linkage, and repaired-run claim membership.
 - Workspace backfill and explicit workspace intake reject `_dailyos_claims` projected markdown and sidecars as managed output.
 - Redacted logging tests assert raw claim/correction text is absent.
 
@@ -394,7 +402,15 @@ Required local L0 reviewers:
 - Add security lens because W3 touches filesystem paths, prompt-injection boundaries, sensitivity policy, and claim write paths.
 - Add adversarial document review because this packet resolves stale issue text into a safer contract and gates DOS-832.
 
-Codex challenge cycle 1 returned `CHANGES_REQUIRED` on two blockers: `_dailyos_claims` exclusion covered backfill but not explicit workspace intake, and `WrongSubject` metadata did not line up between receipt validation and targeted repair. Both were folded into D2, D8, AC15, and the test plan. Codex challenge cycle 2 returned `APPROVE` with no blocking findings.
+Cycle 1 local L0 results:
+
+- K-in: PASS. Prior substrate reviewed: `claim-producers-require-runtime-wide-trust-audit`, ADR-0123 typed claim feedback, ADR-0126 memory substrate invariants, ADR-0113 first-class claim sources, ADR-0105/0108 provenance and privacy, ADR-0125 claim anatomy/sensitivity, ADR-0093 prompt-injection hardening, ADR-0101 service boundary enforcement, ADR-0080/0115 signals, ADR-0048 three-tier data model, migration slot convention, and K-in grep-substrate guidance.
+- Security lens: BLOCKED. The packet did not explicitly require hardlink rejection or no-follow exclusive projection writes. Remediation: D8, AC9, and the test plan now require hardlink rejection, stable no-follow reads, and exclusive no-follow temp-file writes before atomic rename.
+- Feasibility reviewer: BLOCKED. User-note identity omitted actor, projection repair was only a ledger record, and claim-file abilities admitted `SurfaceClient` despite the user-only write path. Remediation: D4 now requires actor-based user-note identity; D5/Service Boundary require detect/repair surfaces; Trust Topology states User-only abilities.
+- Adversarial document reviewer: BLOCKED. Same user-note identity and SurfaceClient topology blockers. The reviewer also flagged `v276_action_claim_version.sql`; local diff verification shows `v276` is already present in `public/dev`, while W3 adds only reserved slots `v280` and `v281`.
+- Adversarial document reviewer cycle 2: BLOCKED. Parser/mapping failures still returned top-level request errors instead of the packet-required apply-failure artifact. Remediation: apply now converts parser failures into redacted `ClaimFileApplyFailure` results with no feedback responses, no rerender, and no canonical writes; tests cover `sidecar_mismatch` and unsupported actions.
+
+- Adversarial document reviewer cycle 2 follow-up: PASS after parser/mapping failures were converted into redacted apply-failure artifacts. W3 L0 is approved locally with unanimous reviewer pass.
 
 ## 9. Resolved L0 Decisions
 

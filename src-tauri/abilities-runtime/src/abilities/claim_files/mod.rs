@@ -6,8 +6,7 @@ pub use contracts::{
     ApplyClaimFileCorrectionsInput, ClaimFileApplyFailure, ClaimFileApplyRequest,
     ClaimFileApplyResult, ClaimFileOperationError, ClaimFileProjectionResult,
     ClaimFileRenderRequest, RenderEntityClaimFileInput, APPLY_CLAIM_FILE_CORRECTIONS_ABILITY_NAME,
-    CLAIM_FILES_SCHEMA_VERSION, CLAIM_FILE_APPLY_SCOPE, CLAIM_FILE_RENDER_SCOPE,
-    RENDER_ENTITY_CLAIM_FILE_ABILITY_NAME,
+    CLAIM_FILES_SCHEMA_VERSION, RENDER_ENTITY_CLAIM_FILE_ABILITY_NAME,
 };
 
 use dailyos_abilities_macro::ability;
@@ -16,7 +15,7 @@ use crate::abilities::provenance::{
     AbilityExecutionMode, AbilityVersion, FieldAttribution, FieldPath, ProvenanceBuilder,
     ProvenanceBuilderConfig, SchemaVersion, SubjectAttribution, SubjectRef,
 };
-use crate::abilities::registry::{Actor, SurfaceScope};
+use crate::abilities::registry::Actor;
 use crate::abilities::{
     AbilityCategory, AbilityContext, AbilityError, AbilityErrorKind, AbilityResult,
 };
@@ -28,11 +27,10 @@ use crate::types::{subject_ref_from_json, ClaimSubjectRef};
     category = Maintenance,
     version = "1.0.0",
     schema_version = 1,
-    allowed_actors = [User, SurfaceClient],
+    allowed_actors = [User],
     allowed_modes = [Live],
     requires_confirmation = false,
     may_publish = true,
-    required_scopes = ["write.claim_files"],
     mcp_exposure = None,
     client_side_executable = false,
     mutates = [claim_file_projection_runs, claim_file_projection_run_claims],
@@ -44,7 +42,7 @@ pub async fn render_entity_claim_file(
     ctx: &AbilityContext<'_>,
     input: RenderEntityClaimFileInput,
 ) -> AbilityResult<ClaimFileProjectionResult> {
-    authorize(ctx, CLAIM_FILE_RENDER_SCOPE)?;
+    authorize_user(ctx)?;
     validate_schema_version(input.schema_version, RENDER_ENTITY_CLAIM_FILE_ABILITY_NAME)?;
     ctx.services()
         .check_mutation_allowed()
@@ -72,11 +70,10 @@ pub async fn render_entity_claim_file(
     category = Maintenance,
     version = "1.0.0",
     schema_version = 1,
-    allowed_actors = [User, SurfaceClient],
+    allowed_actors = [User],
     allowed_modes = [Live],
     requires_confirmation = false,
     may_publish = false,
-    required_scopes = ["submit.claim_file_corrections"],
     mcp_exposure = None,
     client_side_executable = false,
     mutates = [intelligence_claims, claim_feedback, claim_file_projection_runs, claim_file_projection_run_claims],
@@ -88,7 +85,7 @@ pub async fn apply_claim_file_corrections(
     ctx: &AbilityContext<'_>,
     input: ApplyClaimFileCorrectionsInput,
 ) -> AbilityResult<ClaimFileApplyResult> {
-    let actor_principal_id = authorize(ctx, CLAIM_FILE_APPLY_SCOPE)?;
+    let actor_principal_id = authorize_user(ctx)?;
     validate_schema_version(
         input.schema_version,
         APPLY_CLAIM_FILE_CORRECTIONS_ABILITY_NAME,
@@ -116,15 +113,9 @@ pub async fn apply_claim_file_corrections(
     )
 }
 
-fn authorize(ctx: &AbilityContext<'_>, required_scope: &str) -> Result<String, AbilityError> {
+fn authorize_user(ctx: &AbilityContext<'_>) -> Result<String, AbilityError> {
     match &ctx.actor {
         Actor::User => Ok("user".to_string()),
-        Actor::SurfaceClient { instance, scopes } => {
-            if !scopes.contains(&SurfaceScope::new(required_scope)) {
-                return Err(permission_denied(&format!("{required_scope}_required")));
-            }
-            Ok(format!("surface_client:{}", instance.as_str()))
-        }
         _ => Err(permission_denied("actor_not_allowed")),
     }
 }
@@ -299,6 +290,16 @@ mod tests {
         assert_eq!(apply.policy.mcp_exposure, McpExposure::None);
         assert!(render.policy.allowed_actors.contains(&ActorKind::User));
         assert!(apply.policy.allowed_actors.contains(&ActorKind::User));
+        assert!(!render
+            .policy
+            .allowed_actors
+            .contains(&ActorKind::SurfaceClient));
+        assert!(!apply
+            .policy
+            .allowed_actors
+            .contains(&ActorKind::SurfaceClient));
+        assert!(render.policy.required_scopes.is_empty());
+        assert!(apply.policy.required_scopes.is_empty());
     }
 
     #[test]

@@ -6,8 +6,6 @@ use serde::{Deserialize, Serialize};
 pub const RENDER_ENTITY_CLAIM_FILE_ABILITY_NAME: &str = "render_entity_claim_file";
 pub const APPLY_CLAIM_FILE_CORRECTIONS_ABILITY_NAME: &str = "apply_claim_file_corrections";
 pub const CLAIM_FILES_SCHEMA_VERSION: u32 = 1;
-pub const CLAIM_FILE_RENDER_SCOPE: &str = "write.claim_files";
-pub const CLAIM_FILE_APPLY_SCOPE: &str = "submit.claim_file_corrections";
 
 #[derive(Debug, Clone, Serialize, Deserialize, JsonSchema, PartialEq)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]

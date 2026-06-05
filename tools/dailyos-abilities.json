@@ -8,12 +8,9 @@
       "annotations": {},
       "wp_permission": "none",
       "allowed_actors": [
-        "user",
-        "surface_client"
+        "user"
       ],
-      "required_scopes": [
-        "submit.claim_file_corrections"
-      ],
+      "required_scopes": [],
       "mcp_exposure": "none",
       "client_side_executable": false,
       "idempotency_class": "side_effect",
@@ -469,12 +466,9 @@
       "annotations": {},
       "wp_permission": "none",
       "allowed_actors": [
-        "user",
-        "surface_client"
+        "user"
       ],
-      "required_scopes": [
-        "write.claim_files"
-      ],
+      "required_scopes": [],
       "mcp_exposure": "none",
       "client_side_executable": false,
       "idempotency_class": "side_effect",
