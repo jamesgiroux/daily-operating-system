@@ -51,6 +51,14 @@ pub enum DbMode {
 }
 
 impl DbMode {
+    pub const fn as_str(self) -> &'static str {
+        match self {
+            DbMode::Live => "live",
+            DbMode::Replica => "replica",
+            DbMode::Mock => "mock",
+        }
+    }
+
     fn as_u8(self) -> u8 {
         match self {
             DbMode::Live => 1,
@@ -166,6 +174,13 @@ pub fn resolve_and_set_db_mode_from_process() {
     if let Some(mode) = explicit_db_mode_from_process() {
         set_db_mode(mode);
     }
+}
+
+/// Resolve DB mode from process inputs, falling back to a caller-owned default,
+/// and set the process-wide mode. Use for binaries whose no-env behavior must
+/// not inherit `db_mode()`'s release-build Live default.
+pub fn resolve_and_set_db_mode_from_process_or(default: DbMode) {
+    set_db_mode(explicit_db_mode_from_process().unwrap_or(default));
 }
 
 /// Resolve the active DB mode. **Fail-closed default when unset:** non-release
@@ -1267,6 +1282,21 @@ mod db_mode_tests {
         );
         assert_eq!(explicit_db_mode_from_inputs(["dailyos"], Some("bad")), None);
         assert_eq!(explicit_db_mode_from_inputs(["dailyos"], None), None);
+    }
+
+    #[test]
+    fn explicit_process_default_sets_replica_when_no_mode_is_supplied() {
+        let _lock = DB_MODE_TEST_LOCK.lock().expect("db mode test lock");
+        let _reset = ResetDbMode;
+        let previous = std::env::var_os("DAILYOS_DB_MODE");
+        std::env::remove_var("DAILYOS_DB_MODE");
+
+        resolve_and_set_db_mode_from_process_or(DbMode::Replica);
+
+        assert_eq!(db_mode(), DbMode::Replica);
+        if let Some(previous) = previous {
+            std::env::set_var("DAILYOS_DB_MODE", previous);
+        }
     }
 
     fn create_encrypted_prod_db(path: &Path) {

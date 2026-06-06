@@ -91,10 +91,12 @@ Run these BEFORE build verification. CI runs `pnpm audit --audit-level high` and
 
 - [ ] `pnpm install` — clean install succeeds with no warnings
 - [ ] `pnpm build` — frontend builds without errors or TypeScript failures
-- [ ] `pnpm build:mcp` — MCP sidecar binary builds and lands in `src-tauri/binaries/`
+- [ ] `pnpm build:mcp` — MCP server, guarded launcher, and non-stub bundle provenance build and land in `src-tauri/binaries/`
 - [ ] `pnpm tauri build --target aarch64-apple-darwin` — full app bundle succeeds
 - [ ] DMG opens and installs to `/Applications` cleanly
-- [ ] Verify `DailyOS.app/Contents/MacOS/` contains both `dailyos` and `dailyos-mcp`
+- [ ] Verify `DailyOS.app/Contents/MacOS/` contains `dailyos`, `dailyos-mcp`, and `dailyos-mcp-launcher`
+- [ ] Verify `DailyOS.app/Contents/Resources/binaries/` contains `dailyos-mcp-bundle-*.provenance.json` with `stub: false`
+- [ ] Verify `dailyos-mcp --self-check-json` reports `defaultDbMode: "replica"` and `dbOpened: false`
 - [ ] App launches from `/Applications` (not from build directory)
 
 ## 6. Rust Backend

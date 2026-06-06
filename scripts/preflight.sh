@@ -84,13 +84,8 @@ if [ "$SKIP_FRONTEND" -eq 0 ]; then require_tool pnpm; fi
 # 1. OAuth secret scan (matches workflow line 54 exactly)
 run_step "OAuth secret scan" bash -c '! rg -n "GOCSPX-[A-Za-z0-9_-]+" --glob "!target/**" --glob "!node_modules/**" --glob "!.git/**" --glob "!_archive/**" .'
 
-# 2. Tauri externalBin sidecar stub (matches workflow lines 60-65)
-run_step "Tauri externalBin sidecar stub" bash -c '
-    mkdir -p src-tauri/binaries
-    TARGET=$(rustc -vV | awk "/^host:/ { print \$2 }")
-    touch "src-tauri/binaries/dailyos-mcp-$TARGET"
-    touch src-tauri/build.rs
-'
+# 2. Tauri externalBin sidecar stubs (matches workflow stub setup)
+run_step "Tauri externalBin sidecar stubs" bash src-tauri/scripts/build-mcp.sh --stub
 
 # 3. Service-layer boundary
 run_step "service-layer boundary" ./scripts/check_service_layer_boundary.sh

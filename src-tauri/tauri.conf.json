@@ -30,8 +30,8 @@
     "active": true,
     "targets": "all",
     "createUpdaterArtifacts": true,
-    "externalBin": ["binaries/dailyos-mcp"],
-    "resources": ["resources/plugins/*"],
+    "externalBin": ["binaries/dailyos-mcp", "binaries/dailyos-mcp-launcher"],
+    "resources": ["resources/plugins/*", "binaries/*.provenance.json"],
     "icon": [
       "icons/32x32.png",
       "icons/128x128.png",

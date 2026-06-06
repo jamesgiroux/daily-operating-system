@@ -89,6 +89,8 @@ pub mod intelligence;
 pub mod json_loader;
 mod latency;
 pub mod linear;
+pub mod mcp_launcher_contract;
+pub mod mcp_runtime_guard_constants;
 pub mod meeting_prep_queue;
 mod migrations;
 mod notification;
@@ -295,6 +297,30 @@ async fn maybe_spawn_runtime_evidence_backfill(
     });
 }
 
+fn schedule_claude_desktop_mcp_startup_refresh() {
+    tauri::async_runtime::spawn_blocking(|| {
+        let clock = crate::services::context::SystemClock;
+        let rng = crate::services::context::SystemRng;
+        let ext = crate::services::context::ExternalClients::default();
+        let ctx = crate::services::context::ServiceContext::new_live(&clock, &rng, &ext)
+            .with_actor("system:mcp_config_refresh");
+        match crate::services::integrations::refresh_existing_claude_desktop_configuration(&ctx) {
+            Ok(Some(result)) => {
+                log::info!(
+                    "Refreshed existing Claude Desktop MCP registration at {:?}",
+                    result.binary_path
+                );
+            }
+            Ok(None) => {
+                log::debug!("Claude Desktop MCP startup refresh skipped: no managed DailyOS entry");
+            }
+            Err(error) => {
+                log::warn!("Claude Desktop MCP startup refresh failed: {error}");
+            }
+        }
+    });
+}
+
 async fn run_db_service_startup_tasks(init_state: Arc<AppState>) {
     let background_workers_disabled = crate::pty::background_workers_disabled();
     maybe_spawn_runtime_evidence_backfill(&init_state, background_workers_disabled).await;
@@ -464,6 +490,8 @@ pub fn run() {
                     db::hardening::harden_data_directory(&dailyos_dir);
                 }
             }
+
+            schedule_claude_desktop_mcp_startup_refresh();
 
             // One-time migration: move Gravatar API key from config.json to Keychain
             gravatar::keychain::migrate_from_config(&state);

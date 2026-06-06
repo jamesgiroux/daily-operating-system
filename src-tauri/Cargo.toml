@@ -141,6 +141,12 @@ name = "dailyos-mcp"
 path = "src/mcp/main.rs"
 required-features = ["mcp"]
 
+[[bin]]
+# Internal Cargo target name avoids colliding with Tauri's externalBin output.
+# build-mcp.sh copies this binary to dailyos-mcp-launcher-$TARGET_TRIPLE.
+name = "dailyos-mcp-launcher-bin"
+path = "src/mcp/launcher.rs"
+
 # post-migration reconcile + repair binary. Reads
 # scripts/reconcile_ghost_resurrection.sql and runs it against the
 # workspace DB. Skeleton form: detects whether intelligence_claims

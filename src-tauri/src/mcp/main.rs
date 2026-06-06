@@ -29,6 +29,9 @@ use dailyos_lib::bridges::tauri::TauriAbilityBridge;
 use dailyos_lib::bridges::{BridgeSurfaceError, McpSessionId};
 use dailyos_lib::db::ActionDb;
 use dailyos_lib::embeddings::EmbeddingModel;
+use dailyos_lib::mcp_runtime_guard_constants::{
+    MCP_NO_ENV_DEFAULT_DB_MODE, MCP_RUNTIME_GUARD_EPOCH,
+};
 use dailyos_lib::services::mcp_v2::handlers::tool_account_status::present_account_status_response_with_context;
 use dailyos_lib::services::mcp_v2::{
     actor_policy::{ToolGrant, ToolRateLimit},
@@ -1676,12 +1679,34 @@ fn account_status_has_assessment_content(value: &serde_json::Value) -> bool {
 // =============================================================================
 
 fn main() -> anyhow::Result<()> {
-    dailyos_lib::db::resolve_and_set_db_mode_from_process();
+    if std::env::args().any(|arg| arg == "--self-check-json") {
+        return print_self_check_json();
+    }
+
+    dailyos_lib::db::resolve_and_set_db_mode_from_process_or(dailyos_lib::db::DbMode::Replica);
 
     tokio::runtime::Builder::new_multi_thread()
         .enable_all()
         .build()?
         .block_on(async_main())
+}
+
+fn print_self_check_json() -> anyhow::Result<()> {
+    dailyos_lib::db::resolve_and_set_db_mode_from_process_or(dailyos_lib::db::DbMode::Replica);
+    let resolved_db_mode = dailyos_lib::db::db_mode();
+    let executable_path = std::env::current_exe()
+        .ok()
+        .map(|path| path.to_string_lossy().to_string());
+    let payload = serde_json::json!({
+        "guardEpoch": MCP_RUNTIME_GUARD_EPOCH,
+        "buildSha": env!("BUILD_GIT_SHA"),
+        "defaultDbMode": resolved_db_mode.as_str(),
+        "executablePath": executable_path,
+        "runtimeContainsDbModeGuard": resolved_db_mode.as_str() == MCP_NO_ENV_DEFAULT_DB_MODE,
+        "dbOpened": false
+    });
+    println!("{}", serde_json::to_string(&payload)?);
+    Ok(())
 }
 
 async fn async_main() -> anyhow::Result<()> {
