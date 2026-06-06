@@ -514,6 +514,7 @@ mod tests {
 
         fn invoke(
             &self,
+            _ctx: &crate::services::mcp_v2::handler_context::McpHandlerContext,
             actor: &crate::services::mcp_v2::contracts::McpActor,
             params: serde_json::Value,
         ) -> Result<serde_json::Value, ToolError> {

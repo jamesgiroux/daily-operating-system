@@ -53,6 +53,13 @@ use crate::entity::EntityType;
 /// only, max 32 chars, must start with a letter, allows digits/underscore/hyphen.
 /// Per L0 V1.3 §6.
 pub const SLUG_REGEX: &str = r"^[a-z][a-z0-9_-]{0,31}$";
+pub const CLAIM_FILE_PROJECTION_ROOT: &str = "_dailyos_claims";
+
+pub fn is_claim_file_projection_root_path(path: &Path) -> bool {
+    path.components().next().is_some_and(|component| {
+        component.as_os_str() == std::ffi::OsStr::new(CLAIM_FILE_PROJECTION_ROOT)
+    })
+}
 
 /// Validation error: caller-provided category is not registered for the entity type.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -214,6 +221,9 @@ impl WorkspaceSourceRegistry {
                     return Err(RejectionReason::PathTraversalAttempt);
                 }
             }
+            if !path.is_absolute() && is_claim_file_projection_root_path(path) {
+                return Err(RejectionReason::ManagedOutputRoot);
+            }
 
             // Resolve the input path relative to workspace_root if it's relative.
             let candidate = if path.is_absolute() {
@@ -226,6 +236,13 @@ impl WorkspaceSourceRegistry {
             let canonical_root = workspace_root
                 .canonicalize()
                 .map_err(|_| RejectionReason::OutsideWorkspace)?;
+            for lexical_root in [workspace_root, canonical_root.as_path()] {
+                if let Ok(relative_path) = candidate.strip_prefix(lexical_root) {
+                    if is_claim_file_projection_root_path(relative_path) {
+                        return Err(RejectionReason::ManagedOutputRoot);
+                    }
+                }
+            }
             let canonical_path = match candidate.canonicalize() {
                 Ok(p) => p,
                 Err(e) => {
@@ -241,6 +258,11 @@ impl WorkspaceSourceRegistry {
             }
             if !canonical_path.starts_with(&canonical_root) {
                 return Err(RejectionReason::OutsideWorkspace);
+            }
+            if let Ok(relative_path) = canonical_path.strip_prefix(&canonical_root) {
+                if is_claim_file_projection_root_path(relative_path) {
+                    return Err(RejectionReason::ManagedOutputRoot);
+                }
             }
 
             // Step 3: lstat canonical_path; record (dev, ino) + check cross-device.
@@ -907,6 +929,56 @@ mod tests {
         )
         .expect_err("ADS colon");
         assert!(matches!(err, RejectionReason::PathTraversalAttempt));
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn open_validated_rejects_claim_file_projection_root_before_open() {
+        let ws = make_workspace();
+        let projected = ws.path().join(CLAIM_FILE_PROJECTION_ROOT).join("account");
+        fs::create_dir_all(&projected).expect("mkdir");
+        fs::write(projected.join("claims.md"), b"managed output").expect("write projection");
+
+        let err = WorkspaceSourceRegistry::open_validated(
+            ws.path(),
+            std::path::Path::new("_dailyos_claims/account/claims.md"),
+        )
+        .expect_err("managed projection root");
+        assert!(matches!(err, RejectionReason::ManagedOutputRoot));
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn open_validated_rejects_claim_file_projection_root_before_symlink_resolution() {
+        let ws = make_workspace();
+        let accounts = ws.path().join("Accounts");
+        fs::create_dir_all(&accounts).expect("mkdir accounts");
+        fs::write(accounts.join("claims.md"), b"source through managed alias").expect("write file");
+        std::os::unix::fs::symlink(&accounts, ws.path().join(CLAIM_FILE_PROJECTION_ROOT))
+            .expect("symlink managed root");
+
+        let err = WorkspaceSourceRegistry::open_validated(
+            ws.path(),
+            std::path::Path::new("_dailyos_claims/claims.md"),
+        )
+        .expect_err("managed projection root must be lexical, not canonical");
+
+        assert!(matches!(err, RejectionReason::ManagedOutputRoot));
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn open_validated_still_accepts_inbox_root() {
+        let ws = make_workspace();
+        let inbox = ws.path().join("_inbox");
+        fs::create_dir_all(&inbox).expect("mkdir");
+        fs::write(inbox.join("source.md"), b"inbox source").expect("write inbox");
+
+        WorkspaceSourceRegistry::open_validated(
+            ws.path(),
+            std::path::Path::new("_inbox/source.md"),
+        )
+        .expect("_inbox remains source-intake eligible");
     }
 
     #[cfg(unix)]

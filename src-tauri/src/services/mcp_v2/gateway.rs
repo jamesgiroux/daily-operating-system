@@ -23,6 +23,9 @@ use super::contracts::{
     McpActor, McpClientId, McpToolHandler, McpToolRequestEnvelope, McpToolResponseEnvelope,
     McpToolResult, OpaqueConversationHandle, Scope, ScopedName, Side, ToolError,
 };
+#[cfg(test)]
+use super::handler_context::OwnedConnection;
+use super::handler_context::{McpHandlerContext, OwnedSidecarConnection};
 use super::local_runtime::{LocalConversationStore, LocalRuntimeError};
 
 // ---------------------------------------------------------------------------
@@ -153,6 +156,11 @@ pub struct Gateway {
     emitter: Arc<dyn SignalEmitter>,
     taxonomy: Option<Arc<dyn super::taxonomy::TaxonomyCatalog>>,
     local_conversations: LocalConversationStore,
+    /// The sidecar's single owned DB connection. `None` in tests and any path
+    /// that has not adopted owned-connection threading; handlers then fall back
+    /// to their prior self-open behavior. Built once in the sidecar serve path
+    /// via [`Self::set_connection`].
+    connection: Option<OwnedSidecarConnection>,
 }
 
 impl Gateway {
@@ -162,6 +170,7 @@ impl Gateway {
             emitter: Arc::new(StderrSignalEmitter),
             taxonomy: None,
             local_conversations: LocalConversationStore::default(),
+            connection: None,
         }
     }
 
@@ -171,6 +180,7 @@ impl Gateway {
             emitter,
             taxonomy: None,
             local_conversations: LocalConversationStore::default(),
+            connection: None,
         }
     }
 
@@ -181,6 +191,18 @@ impl Gateway {
     ) -> Self {
         self.local_conversations = store;
         self
+    }
+
+    /// Install the single process-lifetime DB connection the sidecar threads
+    /// into every handler. Called once by `run_v2_server` before serving.
+    /// Replaces the per-handler / per-audit self-opens.
+    pub fn set_connection(&mut self, connection: OwnedSidecarConnection) {
+        self.connection = Some(connection);
+    }
+
+    #[cfg(test)]
+    pub fn set_connection_for_tests(&mut self, connection: OwnedConnection) {
+        self.connection = Some(OwnedSidecarConnection::for_tests(connection));
     }
 
     pub fn register(&mut self, handler: Arc<dyn McpToolHandler>) {
@@ -515,7 +537,14 @@ impl Gateway {
             tool_name: envelope.tool_name.clone(),
             granted_scopes: grant.scopes_granted.clone(),
         };
-        let invocation = handler.invoke(&wire_actor, envelope.params.clone());
+        // Hand the handler the sidecar's one owned connection when installed,
+        // instead of letting it self-open. `None` preserves the prior
+        // self-open fallback for tests / unadopted paths.
+        let ctx = match self.connection.as_ref() {
+            Some(connection) => McpHandlerContext::with_sidecar_connection(connection.clone()),
+            None => McpHandlerContext::without_connection(),
+        };
+        let invocation = handler.invoke(&ctx, &wire_actor, envelope.params.clone());
         let side = handler.description().side;
 
         let result = match invocation {
@@ -554,9 +583,29 @@ impl Gateway {
                     Some(&value),
                     mutation_cursor.as_ref(),
                 );
-                if let Err(err) =
-                    audit::write(&runtime_actor, "mcp.tool_invoked", audit_detail, None, side)
-                {
+                // Route the audit-outbox fallback through the one owned
+                // connection when the sidecar installed it; otherwise `None`
+                // keeps the in-app try_global / self-open chain.
+                let audit_result = match self.connection.as_ref() {
+                    Some(owned) => {
+                        let connection = owned.connection();
+                        let guard = connection
+                            .lock()
+                            .unwrap_or_else(std::sync::PoisonError::into_inner);
+                        audit::write_with_conn(
+                            &runtime_actor,
+                            "mcp.tool_invoked",
+                            audit_detail,
+                            None,
+                            side,
+                            Some(&guard),
+                        )
+                    }
+                    None => {
+                        audit::write(&runtime_actor, "mcp.tool_invoked", audit_detail, None, side)
+                    }
+                };
+                if let Err(err) = audit_result {
                     if matches!(err, audit::AuditError::DoubleFailure { .. }) {
                         emit_double_failure_alert();
                         return Dispatched {
@@ -928,8 +977,10 @@ mod tests {
     //! helpers that don't need DB state.
 
     use super::*;
+    use crate::db::ActionDb;
     use crate::services::mcp_v2::actor_policy::ToolRateLimit;
     use crate::services::mcp_v2::contracts::{ParamSchema, ParamSpec, ReturnSpec, ToolDescription};
+    use std::sync::Mutex;
 
     fn test_description(name: &str, side: Side, scopes: Vec<Scope>) -> ToolDescription {
         ToolDescription {
@@ -964,10 +1015,62 @@ mod tests {
 
         fn invoke(
             &self,
+            _ctx: &McpHandlerContext,
             _actor: &McpActor,
             _params: serde_json::Value,
         ) -> Result<serde_json::Value, ToolError> {
             Ok(json!({ "status": "ok" }))
+        }
+    }
+
+    struct RecordingContextHandler {
+        description: ToolDescription,
+        connection_pointers: Arc<Mutex<Vec<usize>>>,
+    }
+
+    impl RecordingContextHandler {
+        fn new(tool_name: &str, connection_pointers: Arc<Mutex<Vec<usize>>>) -> Self {
+            Self {
+                description: ToolDescription {
+                    name: ScopedName::new(tool_name),
+                    summary: "record context connection".to_string(),
+                    when_to_call: "test only".to_string(),
+                    when_not_to_call: "never outside tests".to_string(),
+                    side: Side::Read,
+                    parameters: Vec::new(),
+                    returns: ReturnSpec {
+                        schema: ParamSchema(json!({ "type": "object" })),
+                        description: "test payload".to_string(),
+                    },
+                    examples: Vec::new(),
+                    scopes_required: vec![Scope::new(tool_name)],
+                },
+                connection_pointers,
+            }
+        }
+    }
+
+    impl McpToolHandler for RecordingContextHandler {
+        fn description(&self) -> &ToolDescription {
+            &self.description
+        }
+
+        fn invoke(
+            &self,
+            ctx: &McpHandlerContext,
+            _actor: &McpActor,
+            _params: serde_json::Value,
+        ) -> Result<serde_json::Value, ToolError> {
+            let pointer = ctx
+                .with_conn(|db| db.conn_ref() as *const rusqlite::Connection as usize)
+                .ok_or_else(|| ToolError::Internal {
+                    trace_id: "missing_owned_context_connection".to_string(),
+                })?;
+            self.connection_pointers
+                .lock()
+                .expect("connection pointer lock")
+                .push(pointer);
+            Ok(json!({ "connectionPointer": pointer }))
         }
     }
 
@@ -1000,12 +1103,23 @@ mod tests {
         }
     }
 
-    fn envelope(name: &str, params: serde_json::Value) -> McpToolRequestEnvelope {
+    fn recording_grant(tool_name: &str) -> ToolGrant {
+        grant(
+            tool_name,
+            abilities_runtime::abilities::registry::McpExposure::Invocable,
+        )
+    }
+
+    fn envelope_with_params(name: &str, params: serde_json::Value) -> McpToolRequestEnvelope {
         McpToolRequestEnvelope {
             conversation_handle: None,
             tool_name: ScopedName::new(name),
             params,
         }
+    }
+
+    fn envelope(name: &str) -> McpToolRequestEnvelope {
+        envelope_with_params(name, json!({}))
     }
 
     #[test]
@@ -1015,7 +1129,7 @@ mod tests {
             gateway_with_stub(tool_name, Side::Write, vec![Scope::new(tool_name)]);
         let response = gateway.handle_local_stdio_tool_call(
             &McpClientId::new("client-a"),
-            envelope(tool_name, json!({})),
+            envelope(tool_name),
             &[grant(
                 tool_name,
                 abilities_runtime::abilities::registry::McpExposure::None,
@@ -1038,7 +1152,7 @@ mod tests {
         let (gateway, _dir) = gateway_with_stub(tool_name, Side::Read, vec![Scope::new(tool_name)]);
         let response = gateway.handle_local_stdio_tool_call(
             &McpClientId::new("client-a"),
-            envelope(
+            envelope_with_params(
                 tool_name,
                 json!({
                     "subject": "Example Account",
@@ -1069,7 +1183,7 @@ mod tests {
             || {
                 gateway.handle_local_stdio_tool_call(
                     &McpClientId::new("client-a"),
-                    envelope(tool_name, json!({ "subject": "Example Account" })),
+                    envelope_with_params(tool_name, json!({ "subject": "Example Account" })),
                     &[grant(
                         tool_name,
                         abilities_runtime::abilities::registry::McpExposure::Invocable,
@@ -1112,6 +1226,55 @@ mod tests {
             Scope::new("dailyos.read.portfolio_attention"),
         ];
         assert!(scope_is_subset(&required, &granted));
+    }
+
+    #[test]
+    fn local_stdio_dispatch_reuses_gateway_owned_connection_across_calls() {
+        let dir = tempfile::tempdir().expect("tempdir");
+        let path = dir.path().join("gateway-owned.db");
+        let owned = Arc::new(Mutex::new(
+            ActionDb::open_at_unencrypted(path).expect("owned gateway db"),
+        ));
+        let connection_pointers = Arc::new(Mutex::new(Vec::new()));
+        let tool_name = "dailyos.read.gateway_context_probe";
+
+        let mut gateway = Gateway::new();
+        gateway.set_connection_for_tests(Arc::clone(&owned));
+        gateway.register(Arc::new(RecordingContextHandler::new(
+            tool_name,
+            Arc::clone(&connection_pointers),
+        )));
+
+        let client_id = McpClientId::new("local-stdio-test");
+        let grants = vec![recording_grant(tool_name)];
+
+        for _ in 0..2 {
+            let response = gateway.handle_local_stdio_tool_call(
+                &client_id,
+                envelope(tool_name),
+                grants.as_slice(),
+            );
+            assert!(
+                matches!(response.result, McpToolResult::Ok { .. }),
+                "probe handler must dispatch through the owned context"
+            );
+        }
+
+        let pointers = connection_pointers.lock().expect("connection pointer lock");
+        assert_eq!(
+            pointers.len(),
+            2,
+            "two dispatches should invoke the handler twice"
+        );
+        assert_eq!(
+            pointers[0], pointers[1],
+            "gateway dispatch must thread the same owned DB connection into every call"
+        );
+        assert_eq!(
+            Arc::strong_count(&owned),
+            2,
+            "gateway plus test should share one owned connection, not clone per dispatch"
+        );
     }
 
     #[test]

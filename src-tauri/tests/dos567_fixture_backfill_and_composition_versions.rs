@@ -1,9 +1,5 @@
 use chrono::{TimeZone, Utc};
-use dailyos_lib::abilities::composition::{
-    AbilityRef, Composition, CompositionDocId, CompositionKind, CompositionMetadata,
-    CompositionVersion,
-};
-use dailyos_lib::abilities::provenance::SchemaVersion;
+use dailyos_lib::abilities::composition::{Composition, CompositionDocId, CompositionVersion};
 use dailyos_lib::db::claims::{ClaimSensitivity, TemporalScope};
 use dailyos_lib::db::ActionDb;
 use dailyos_lib::doctor::inspect_watermarks;

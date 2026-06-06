@@ -15,6 +15,7 @@ pub mod audit;
 pub mod auth;
 pub mod contracts;
 pub mod gateway;
+pub mod handler_context;
 pub mod handlers;
 pub mod local_runtime;
 pub mod runtime_projection;

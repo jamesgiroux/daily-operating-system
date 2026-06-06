@@ -322,8 +322,15 @@ pub enum McpToolResult {
 pub trait McpToolHandler: Send + Sync {
     fn description(&self) -> &ToolDescription;
 
+    /// Invoke the tool against the request-scoped [`McpHandlerContext`].
+    ///
+    /// `ctx` carries the sidecar's single owned DB connection. Handlers obtain
+    /// DB access via `ctx.with_conn(..)` rather than opening their own
+    /// `ActionDb`. When `ctx` has no owned connection (tests / unadopted
+    /// paths), handlers fall back to their prior self-open.
     fn invoke(
         &self,
+        ctx: &super::handler_context::McpHandlerContext,
         actor: &McpActor,
         params: serde_json::Value,
     ) -> Result<serde_json::Value, ToolError>;

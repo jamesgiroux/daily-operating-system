@@ -1118,6 +1118,16 @@ const MIGRATIONS: &[Migration] = &[
         version: 276,
         sql: include_str!("migrations/276_action_claim_version.sql"),
     },
+    // v1.4.9 W3 — readable claim-file projection ledger.
+    Migration::Sql {
+        version: 280,
+        sql: include_str!("migrations/280_claim_file_projection_runs.sql"),
+    },
+    // v1.4.9 W3 — per-run projected claim membership.
+    Migration::Sql {
+        version: 281,
+        sql: include_str!("migrations/281_claim_file_projection_run_claims.sql"),
+    },
 ];
 
 const V155_SHADOW_TRUST_VERSION: i64 = 1_401_003;
@@ -7528,6 +7538,66 @@ mod tests {
         assert!(
             current_version(&conn).expect("current version") >= 272,
             "schema version is at least v272"
+        );
+    }
+
+    #[test]
+    fn migration_280_and_281_create_claim_file_projection_ledger() {
+        let conn = mem_db();
+        run_migrations(&conn).expect("build current schema");
+
+        for table_name in [
+            "claim_file_projection_runs",
+            "claim_file_projection_run_claims",
+            "claim_file_projection_path_bindings",
+            "claim_file_correction_apply_events",
+        ] {
+            let table_count: i64 = conn
+                .query_row(
+                    "SELECT count(*)
+                       FROM sqlite_master
+                      WHERE type = 'table'
+                        AND name = ?1",
+                    [table_name],
+                    |row| row.get(0),
+                )
+                .expect("query claim file projection ledger table");
+            assert_eq!(table_count, 1, "{table_name} exists");
+        }
+
+        let runs_sql =
+            sqlite_table_sql(&conn, "claim_file_projection_runs").expect("read runs DDL");
+        assert!(runs_sql.contains("projection_root = '_dailyos_claims'"));
+        assert!(runs_sql.contains("status IN ('committed', 'failed', 'repaired')"));
+
+        let membership_sql = sqlite_table_sql(&conn, "claim_file_projection_run_claims")
+            .expect("read membership DDL");
+        assert!(membership_sql.contains("PRIMARY KEY (run_id, claim_id)"));
+        let binding_sql = sqlite_table_sql(&conn, "claim_file_projection_path_bindings")
+            .expect("read path binding DDL");
+        assert!(binding_sql.contains("entity_subject_compact TEXT NOT NULL UNIQUE"));
+        let apply_sql = sqlite_table_sql(&conn, "claim_file_correction_apply_events")
+            .expect("read correction apply DDL");
+        assert!(apply_sql.contains("status IN ('claimed', 'applied', 'failed')"));
+
+        for index_name in [
+            "idx_claim_file_projection_runs_entity_status",
+            "idx_claim_file_projection_runs_repair",
+            "idx_claim_file_projection_run_claims_claim",
+            "idx_claim_file_projection_run_claims_run_trust",
+            "idx_claim_file_projection_path_bindings_subject",
+            "idx_claim_file_correction_apply_claim_status",
+            "idx_claim_file_correction_apply_sidecar",
+        ] {
+            assert!(
+                index_exists(&conn, index_name).expect("query projection ledger index"),
+                "{index_name} exists"
+            );
+        }
+
+        assert!(
+            current_version(&conn).expect("current version") >= 281,
+            "schema version is at least v281"
         );
     }
 

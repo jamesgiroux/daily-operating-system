@@ -9,7 +9,8 @@
 //!    (`claim_receipt::auth::can_surface_for`). `Actor::Agent` collapses to
 //!    deny at every surface in v1.4.4 (AC-8.13).
 //! 3. Validates per-action metadata against the ADR-0123 §1 variant field
-//!    schema verbatim — `WrongSubject.corrected_to`, `WrongSource.source_content_hash`
+//!    schema plus the claim-file canonical bridge — `WrongSubject.corrected_subject_ref`
+//!    (with legacy `corrected_to` accepted), `WrongSource.source_content_hash`
 //!    (ADR-0131 canonicalization, NOT an index), `NeedsNuance.corrected_text`,
 //!    `CannotVerify.note`, `SurfaceInappropriate.surface`, `NotRelevantHere.invocation_id`
 //!    (AC-8.10 / AC-8.11).
@@ -39,14 +40,17 @@ use sha2::{Digest, Sha256};
 
 use abilities_runtime::abilities::feedback::FeedbackAction;
 use abilities_runtime::abilities::provenance::field::FieldPath;
-use abilities_runtime::abilities::provenance::subject::SubjectRef;
+use abilities_runtime::abilities::provenance::subject::SubjectRef as ReceiptSubjectRef;
 use abilities_runtime::sensitivity::{RenderActor, RenderSurface};
 use abilities_runtime::types::{ClaimSensitivity, IntelligenceClaim};
 
 use crate::services::claim_receipt::auth::{can_surface_for, AuthError};
 use crate::services::claim_receipt::contracts::{ClaimReceipt, ReceiptTarget, SurfaceContext};
 use crate::services::claim_receipt::render::{render_receipt_for, RenderError};
-use crate::services::claims::{record_claim_feedback, ClaimError, ClaimFeedbackInput};
+use crate::services::claims::{
+    record_claim_feedback, record_claim_feedback_for_claim_file_apply, ClaimError,
+    ClaimFeedbackInput, ClaimFileFeedbackApplyInput,
+};
 use crate::services::entity_intelligence::auth::{
     validate_envelope_target, EnvelopeSet, TargetBindingError,
 };
@@ -96,6 +100,18 @@ pub struct ClaimFeedbackResponse {
     pub repair_queued: bool,
     pub sanitizer_warnings: Vec<SanitizerWarning>,
     pub replayed: bool,
+}
+
+#[derive(Debug, Clone)]
+pub struct ClaimFileFeedbackApplyCommit {
+    pub expected_claim_version: u64,
+    pub correction_apply_key: String,
+}
+
+#[derive(Debug, Clone)]
+enum FeedbackPersistence {
+    Default,
+    ClaimFileApply(ClaimFileFeedbackApplyCommit),
 }
 
 // ---------------------------------------------------------------------------
@@ -237,6 +253,44 @@ pub async fn submit_claim_feedback(
     cache: &IdempotencyCache,
     request: ClaimFeedbackRequest,
 ) -> Result<ClaimFeedbackResponse, FeedbackError> {
+    submit_claim_feedback_with_persistence(
+        state,
+        envelope_set,
+        actor,
+        cache,
+        request,
+        FeedbackPersistence::Default,
+    )
+    .await
+}
+
+pub async fn submit_claim_feedback_for_claim_file_apply(
+    state: &AppState,
+    envelope_set: &EnvelopeSet<'_>,
+    actor: &RenderActor,
+    cache: &IdempotencyCache,
+    request: ClaimFeedbackRequest,
+    apply: ClaimFileFeedbackApplyCommit,
+) -> Result<ClaimFeedbackResponse, FeedbackError> {
+    submit_claim_feedback_with_persistence(
+        state,
+        envelope_set,
+        actor,
+        cache,
+        request,
+        FeedbackPersistence::ClaimFileApply(apply),
+    )
+    .await
+}
+
+async fn submit_claim_feedback_with_persistence(
+    state: &AppState,
+    envelope_set: &EnvelopeSet<'_>,
+    actor: &RenderActor,
+    cache: &IdempotencyCache,
+    request: ClaimFeedbackRequest,
+    persistence: FeedbackPersistence,
+) -> Result<ClaimFeedbackResponse, FeedbackError> {
     // AC-8.2: caller-supplied idempotency keys are not accepted.
     if request.idempotency_key.is_some() {
         return Err(FeedbackError::CallerSuppliedIdempotencyKey);
@@ -353,7 +407,23 @@ pub async fn submit_claim_feedback(
             let external = crate::services::context::ExternalClients::default();
             let ctx = crate::services::context::ServiceContext::new_live(&clock, &rng, &external)
                 .with_actor("user");
-            record_claim_feedback(&ctx, db, input).map_err(|error| error.to_string())
+            match persistence {
+                FeedbackPersistence::Default => {
+                    record_claim_feedback(&ctx, db, input).map_err(|error| error.to_string())
+                }
+                FeedbackPersistence::ClaimFileApply(apply) => {
+                    record_claim_feedback_for_claim_file_apply(
+                        &ctx,
+                        db,
+                        input,
+                        ClaimFileFeedbackApplyInput {
+                            expected_claim_version: apply.expected_claim_version,
+                            correction_apply_key: apply.correction_apply_key,
+                        },
+                    )
+                    .map_err(|error| error.to_string())
+                }
+            }
         })
         .await
         .map_err(|message| FeedbackError::Storage(anyhow::anyhow!(message)))?;
@@ -495,16 +565,28 @@ fn validate_and_sanitize_metadata(
             // No required metadata. Optional fields accepted as-is.
         }
         FeedbackAction::WrongSubject => {
-            // Optional `corrected_to: SubjectRef`. ADR-0123 §1 verbatim name.
-            if let Some(value) = sanitized_metadata
-                .as_ref()
-                .and_then(|m| m.get("corrected_to"))
-            {
-                serde_json::from_value::<SubjectRef>(value.clone()).map_err(|error| {
-                    FeedbackError::BadRequest(format!(
-                        "wrong_subject.corrected_to must decode as SubjectRef: {error}"
-                    ))
+            if let Some(metadata) = sanitized_metadata.as_mut() {
+                let obj = metadata.as_object_mut().ok_or_else(|| {
+                    FeedbackError::BadRequest(
+                        "wrong_subject metadata must be a JSON object".to_string(),
+                    )
                 })?;
+                let canonical = obj
+                    .get("corrected_subject_ref")
+                    .map(normalize_wrong_subject_ref)
+                    .transpose()?;
+                let legacy = obj
+                    .get("corrected_to")
+                    .map(normalize_wrong_subject_ref)
+                    .transpose()?;
+                if canonical.is_some() && legacy.is_some() && canonical != legacy {
+                    return Err(FeedbackError::BadRequest(
+                        "wrong_subject corrected_to and corrected_subject_ref disagree".to_string(),
+                    ));
+                }
+                if let Some(value) = canonical.or(legacy) {
+                    obj.insert("corrected_subject_ref".to_string(), value);
+                }
             }
         }
         FeedbackAction::WrongSource => {
@@ -644,7 +726,7 @@ fn validate_and_sanitize_metadata(
                 )
             })?;
             // Deep-decode to enforce the SubjectRef shape per ADR-0125.
-            serde_json::from_value::<SubjectRef>(target_value).map_err(|error| {
+            serde_json::from_value::<ReceiptSubjectRef>(target_value).map_err(|error| {
                 FeedbackError::BadRequest(format!(
                     "merge_intent.merge_target must decode as SubjectRef: {error}"
                 ))
@@ -684,12 +766,67 @@ fn validate_and_sanitize_metadata(
     })
 }
 
+fn normalize_wrong_subject_ref(
+    value: &serde_json::Value,
+) -> Result<serde_json::Value, FeedbackError> {
+    let materialized = if let Some(raw) = value.as_str() {
+        serde_json::from_str::<serde_json::Value>(raw).map_err(|error| {
+            FeedbackError::BadRequest(format!(
+                "wrong_subject.corrected_subject_ref string must contain JSON SubjectRef: {error}"
+            ))
+        })?
+    } else {
+        value.clone()
+    };
+    if crate::services::claims::subject_ref_from_json(&materialized).is_ok() {
+        return Ok(materialized);
+    }
+    let receipt_subject =
+        serde_json::from_value::<ReceiptSubjectRef>(materialized).map_err(|error| {
+            FeedbackError::BadRequest(format!(
+                "wrong_subject.corrected_subject_ref must decode as SubjectRef: {error}"
+            ))
+        })?;
+    let normalized = receipt_subject_ref_to_claim_json(&receipt_subject)?;
+    crate::services::claims::subject_ref_from_json(&normalized).map_err(|error| {
+        FeedbackError::BadRequest(format!(
+            "wrong_subject.corrected_subject_ref must decode as claim SubjectRef: {error}"
+        ))
+    })?;
+    Ok(normalized)
+}
+
+fn receipt_subject_ref_to_claim_json(
+    subject: &ReceiptSubjectRef,
+) -> Result<serde_json::Value, FeedbackError> {
+    Ok(match subject {
+        ReceiptSubjectRef::Account(id) => serde_json::json!({"kind": "account", "id": id}),
+        ReceiptSubjectRef::Project(id) => serde_json::json!({"kind": "project", "id": id}),
+        ReceiptSubjectRef::Person(id) => serde_json::json!({"kind": "person", "id": id}),
+        ReceiptSubjectRef::Action(id) => serde_json::json!({"kind": "action", "id": id}),
+        ReceiptSubjectRef::Meeting(id) => serde_json::json!({"kind": "meeting", "id": id}),
+        ReceiptSubjectRef::Global => serde_json::json!({"kind": "global"}),
+        ReceiptSubjectRef::Multi(subjects) => {
+            let subjects = subjects
+                .iter()
+                .map(receipt_subject_ref_to_claim_json)
+                .collect::<Result<Vec<_>, _>>()?;
+            serde_json::json!({"kind": "multi", "subjects": subjects})
+        }
+        ReceiptSubjectRef::User(_) | ReceiptSubjectRef::Unknown => {
+            return Err(FeedbackError::BadRequest(
+                "wrong_subject.corrected_subject_ref must target a claim subject".to_string(),
+            ));
+        }
+    })
+}
+
 fn allowed_keys_for(action: FeedbackAction) -> &'static [&'static str] {
     match action {
         FeedbackAction::ConfirmCurrent => &[],
         FeedbackAction::MarkOutdated => &["last_known_true_at"],
         FeedbackAction::MarkFalse => &["corrected_value"],
-        FeedbackAction::WrongSubject => &["corrected_to"],
+        FeedbackAction::WrongSubject => &["corrected_to", "corrected_subject_ref"],
         FeedbackAction::WrongSource => &["source_content_hash", "source_index"],
         FeedbackAction::CannotVerify => &["note"],
         FeedbackAction::NeedsNuance => &["corrected_text"],
@@ -956,7 +1093,7 @@ mod tests {
     fn claim_target(id: &str) -> ReceiptTarget {
         ReceiptTarget::Claim {
             claim_id: id.to_string(),
-            subject: SubjectRef::Account("acct-1".to_string()),
+            subject: ReceiptSubjectRef::Account("acct-1".to_string()),
             field_path: Some("health.risk".to_string()),
         }
     }
@@ -976,14 +1113,33 @@ mod tests {
             validate_and_sanitize_metadata(action, None).expect("no metadata required");
         }
 
-        // WrongSubject: optional corrected_to.
+        // WrongSubject: optional corrected_subject_ref; legacy corrected_to bridges to it.
         validate_and_sanitize_metadata(FeedbackAction::WrongSubject, None)
             .expect("wrong_subject metadata is optional");
-        validate_and_sanitize_metadata(
+        let canonical_wrong_subject = validate_and_sanitize_metadata(
+            FeedbackAction::WrongSubject,
+            Some(&serde_json::json!({"corrected_subject_ref": {"account": "acct-2"}})),
+        )
+        .expect("wrong_subject with corrected_subject_ref");
+        assert_eq!(
+            canonical_wrong_subject
+                .metadata
+                .as_ref()
+                .and_then(|metadata| metadata.get("corrected_subject_ref")),
+            Some(&serde_json::json!({"kind": "account", "id": "acct-2"}))
+        );
+        let legacy_wrong_subject = validate_and_sanitize_metadata(
             FeedbackAction::WrongSubject,
             Some(&serde_json::json!({"corrected_to": {"account": "acct-2"}})),
         )
-        .expect("wrong_subject with corrected_to");
+        .expect("wrong_subject with legacy corrected_to");
+        assert_eq!(
+            legacy_wrong_subject
+                .metadata
+                .as_ref()
+                .and_then(|metadata| metadata.get("corrected_subject_ref")),
+            Some(&serde_json::json!({"kind": "account", "id": "acct-2"}))
+        );
 
         // WrongSource: required source_content_hash (ADR-0123 §1 verbatim).
         let err = validate_and_sanitize_metadata(FeedbackAction::WrongSource, None).unwrap_err();
@@ -1126,7 +1282,7 @@ mod tests {
 
     #[test]
     fn rejects_intended_subject_ref_alias_for_wrong_subject() {
-        // ADR-0123 §1 verbatim: the field is corrected_to, not intended_subject_ref.
+        // Claim-file feedback canonicalizes on corrected_subject_ref; do not accept aliases.
         let err = validate_and_sanitize_metadata(
             FeedbackAction::WrongSubject,
             Some(&serde_json::json!({"intended_subject_ref": {"account": "acct-2"}})),
@@ -1135,6 +1291,19 @@ mod tests {
         assert!(
             matches!(err, FeedbackError::BadRequest(message) if message.contains("intended_subject_ref"))
         );
+    }
+
+    #[test]
+    fn rejects_disagreeing_wrong_subject_aliases() {
+        let err = validate_and_sanitize_metadata(
+            FeedbackAction::WrongSubject,
+            Some(&serde_json::json!({
+                "corrected_to": {"account": "acct-2"},
+                "corrected_subject_ref": {"account": "acct-3"}
+            })),
+        )
+        .unwrap_err();
+        assert!(matches!(err, FeedbackError::BadRequest(message) if message.contains("disagree")));
     }
 
     #[test]

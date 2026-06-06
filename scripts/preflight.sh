@@ -84,13 +84,8 @@ if [ "$SKIP_FRONTEND" -eq 0 ]; then require_tool pnpm; fi
 # 1. OAuth secret scan (matches workflow line 54 exactly)
 run_step "OAuth secret scan" bash -c '! rg -n "GOCSPX-[A-Za-z0-9_-]+" --glob "!target/**" --glob "!node_modules/**" --glob "!.git/**" --glob "!_archive/**" .'
 
-# 2. Tauri externalBin sidecar stub (matches workflow lines 60-65)
-run_step "Tauri externalBin sidecar stub" bash -c '
-    mkdir -p src-tauri/binaries
-    TARGET=$(rustc -vV | awk "/^host:/ { print \$2 }")
-    touch "src-tauri/binaries/dailyos-mcp-$TARGET"
-    touch src-tauri/build.rs
-'
+# 2. Tauri externalBin sidecar stubs (matches workflow stub setup)
+run_step "Tauri externalBin sidecar stubs" bash src-tauri/scripts/build-mcp.sh --stub
 
 # 3. Service-layer boundary
 run_step "service-layer boundary" ./scripts/check_service_layer_boundary.sh
@@ -100,6 +95,12 @@ run_step "db mutator must_use" ./scripts/check_db_mutator_must_use.sh
 
 # 4a. file-backed DB opens stay behind guarded chokepoints
 run_step "db open guard allowlist" bash src-tauri/scripts/check_db_open_guard_allowlist.sh
+
+# 4a-bis. MCP handlers take DB access from McpHandlerContext, never self-open
+run_step "mcp handler no self-open" bash src-tauri/scripts/check_mcp_handler_no_self_open.sh
+
+# 4a-ter. MCP sidecar owns one connection — never a second DbService pool
+run_step "mcp no second dbservice" bash src-tauri/scripts/check_no_second_dbservice_in_mcp.sh
 
 # 4b. stakeholder graph writer signal helper
 run_step "stakeholder writer signal helper" ./scripts/check_stakeholder_writer_emits_signal.sh

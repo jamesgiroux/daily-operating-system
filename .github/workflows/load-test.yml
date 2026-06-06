@@ -34,10 +34,7 @@ jobs:
           workspaces: src-tauri
 
       - name: Create sidecar stub for Tauri externalBin validation
-        run: |
-          mkdir -p src-tauri/binaries
-          TARGET=$(rustc -vV | awk '/^host:/ { print $2 }')
-          touch "src-tauri/binaries/dailyos-mcp-$TARGET"
+        run: bash src-tauri/scripts/build-mcp.sh --stub
 
       - name: Run DOS-237 load test
         run: cargo test --manifest-path src-tauri/Cargo.toml -p dailyos --features load-test --test dos237_load_test -- --nocapture

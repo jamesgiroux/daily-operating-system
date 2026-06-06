@@ -245,6 +245,12 @@ pub struct ClaimFeedbackOutcome {
     pub repair_job_id: Option<String>,
 }
 
+#[derive(Debug, Clone)]
+pub struct ClaimFileFeedbackApplyInput {
+    pub expected_claim_version: u64,
+    pub correction_apply_key: String,
+}
+
 /// Claim-generation contract boundary.
 ///
 /// Implementation note: this cites and accepts the W0-A enrichment refactor
@@ -7196,6 +7202,24 @@ pub fn record_claim_feedback(
     db: &ActionDb,
     input: ClaimFeedbackInput,
 ) -> Result<ClaimFeedbackOutcome, ClaimError> {
+    record_claim_feedback_with_apply_commit(ctx, db, input, None)
+}
+
+pub fn record_claim_feedback_for_claim_file_apply(
+    ctx: &ServiceContext<'_>,
+    db: &ActionDb,
+    input: ClaimFeedbackInput,
+    apply: ClaimFileFeedbackApplyInput,
+) -> Result<ClaimFeedbackOutcome, ClaimError> {
+    record_claim_feedback_with_apply_commit(ctx, db, input, Some(apply))
+}
+
+fn record_claim_feedback_with_apply_commit(
+    ctx: &ServiceContext<'_>,
+    db: &ActionDb,
+    input: ClaimFeedbackInput,
+    claim_file_apply: Option<ClaimFileFeedbackApplyInput>,
+) -> Result<ClaimFeedbackOutcome, ClaimError> {
     ctx.check_mutation_allowed()
         .map_err(|e| ClaimError::Mode(e.to_string()))?;
 
@@ -7212,6 +7236,15 @@ pub fn record_claim_feedback(
         let now = ctx.clock.now().to_rfc3339();
         let claim = load_claim_by_id(tx.conn_ref(), &input.claim_id)?
             .ok_or_else(|| ClaimError::UnknownClaimId(input.claim_id.clone()))?;
+        if let Some(apply) = claim_file_apply.as_ref() {
+            if claim.claim_version != apply.expected_claim_version {
+                return Err(ClaimError::StaleVersion {
+                    claim_id: input.claim_id.clone(),
+                    expected: apply.expected_claim_version,
+                    current: claim.claim_version,
+                });
+            }
+        }
         validate_feedback_actor(&input.actor)?;
         let metadata = feedback_metadata_for_claim(&claim, &input, metadata.clone())?;
         let subject_value: serde_json::Value = serde_json::from_str(&claim.subject_ref)?;
@@ -7350,6 +7383,24 @@ pub fn record_claim_feedback(
         bump_invalidation_for_claim_id(tx, &input.claim_id)?;
         let repair_job_id =
             targeted_repair_enqueue_job(ctx, tx, &claim, &feedback_id, metadata.repair)?;
+        if let Some(apply) = claim_file_apply.as_ref() {
+            let updated = tx.conn_ref().execute(
+                "UPDATE claim_file_correction_apply_events
+                    SET status = 'applied',
+                        feedback_id = ?1,
+                        applied_at = ?2,
+                        updated_at = ?2
+                  WHERE idempotency_key = ?3
+                    AND status = 'claimed'",
+                params![&feedback_id, &now, &apply.correction_apply_key],
+            )?;
+            if updated != 1 {
+                return Err(ClaimError::Transaction(format!(
+                    "claim file correction apply event {} was not claimable",
+                    apply.correction_apply_key
+                )));
+            }
+        }
         let verification_state_after = enum_to_db(&new_verification_state)?;
 
         Ok(ClaimFeedbackWriteOutcome {

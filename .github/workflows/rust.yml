@@ -55,11 +55,13 @@ jobs:
             macos-cargo-v2-
 
       - name: Create sidecar stub for Tauri externalBin validation
-        run: |
-          mkdir -p src-tauri/binaries
-          TARGET=$(rustc -vV | awk '/^host:/ { print $2 }')
-          touch "src-tauri/binaries/dailyos-mcp-$TARGET"
-          touch src-tauri/build.rs
+        run: bash src-tauri/scripts/build-mcp.sh --stub
+
+      - name: Check MCP handlers use request-scoped DB context
+        run: bash src-tauri/scripts/check_mcp_handler_no_self_open.sh
+
+      - name: Check MCP sidecar does not install a DbService
+        run: bash src-tauri/scripts/check_no_second_dbservice_in_mcp.sh
 
       - name: Run claim projection roundtrip regression
         run: cargo test --manifest-path src-tauri/Cargo.toml -p dailyos --test dos301_claim_projection_roundtrip_test

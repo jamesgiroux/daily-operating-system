@@ -32,7 +32,7 @@ use crate::services::workspace_ingestion::pipeline::{
     file_id_from_identity, EntityRef, DEFAULT_MAX_FILE_BYTES,
 };
 use crate::services::workspace_ingestion::registry::{
-    WorkspaceCategoryRegistry, WorkspaceSourceRegistry,
+    is_claim_file_projection_root_path, WorkspaceCategoryRegistry, WorkspaceSourceRegistry,
 };
 use crate::services::workspace_ingestion::signals::WorkspaceSignalEmitter;
 use crate::signals::propagation::{default_engine, PropagationEngine};
@@ -478,6 +478,9 @@ fn eligibility_skip_reason(relative_path: &Path) -> Option<&'static str> {
     if root == "Internal" {
         return Some("internal_path");
     }
+    if is_claim_file_projection_root_path(relative_path) {
+        return Some("managed_output_root");
+    }
     if root.starts_with('_') && root != "_inbox" {
         return Some("managed_root");
     }
@@ -528,6 +531,9 @@ fn candidate_from_relative_path(
     .map_err(|reason| match reason {
         crate::services::workspace_ingestion::contracts::RejectionReason::PathTraversalAttempt => {
             "path_traversal_attempt".to_string()
+        }
+        crate::services::workspace_ingestion::contracts::RejectionReason::ManagedOutputRoot => {
+            "managed_output_root".to_string()
         }
         crate::services::workspace_ingestion::contracts::RejectionReason::SymlinkRefused => {
             "symlink_refused".to_string()
@@ -1498,11 +1504,19 @@ mod tests {
         let temp = TempDir::new().expect("temp");
         seed_account(db.conn_ref(), temp.path());
         std::fs::create_dir_all(temp.path().join("_archive")).expect("managed root");
+        std::fs::create_dir_all(temp.path().join("_dailyos_claims/account/example"))
+            .expect("claim projection root");
         let account_notes = temp.path().join("Accounts/ExampleCo/notes");
 
         std::fs::write(account_notes.join(".hidden.md"), "hidden").expect("hidden file");
         std::fs::write(temp.path().join("_archive/source.md"), "managed root")
             .expect("managed root file");
+        std::fs::write(
+            temp.path()
+                .join("_dailyos_claims/account/example/claims.md"),
+            "claim projection",
+        )
+        .expect("claim projection markdown");
         std::fs::write(temp.path().join("CLAUDE.md"), "managed").expect("managed file");
         std::fs::write(account_notes.join("dashboard.json"), "{}").expect("generated file");
         std::fs::write(account_notes.join("archive.zip"), "unsupported").expect("unsupported file");
@@ -1542,6 +1556,7 @@ mod tests {
         for (reason, expected_count) in [
             ("hidden_path", 1),
             ("managed_root", 1),
+            ("managed_output_root", 1),
             ("managed_file", 1),
             ("generated_file", 1),
             ("unsupported_format", 1),

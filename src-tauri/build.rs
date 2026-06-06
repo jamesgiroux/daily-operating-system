@@ -1,14 +1,30 @@
 use std::env;
 use std::fs;
+use std::io::Write;
 use std::path::{Path, PathBuf};
-use std::process::Command;
+use std::process::{Command, Stdio};
 
 #[path = "src/observability/aggregate_metric/lint.rs"]
 mod aggregate_metric_lint;
 
+const MCP_GUARD_SOURCE_PATHS: &[&str] = &[
+    "build.rs",
+    "Cargo.lock",
+    "Cargo.toml",
+    "scripts/build-mcp.sh",
+    "src/db/core.rs",
+    "src/mcp/main.rs",
+    "src/mcp/launcher.rs",
+    "src/mcp_launcher_contract.rs",
+    "src/mcp_runtime_guard_constants.rs",
+    "src/services/integrations.rs",
+];
+
 fn main() {
     emit_suite_p_bench_cfg();
     emit_build_git_sha();
+    emit_build_target_triple();
+    emit_apple_team_id();
     validate_operations_contract();
     validate_aggregate_metric_contract();
     tauri_build::build()
@@ -30,6 +46,7 @@ fn emit_build_git_sha() {
     let manifest_dir =
         PathBuf::from(env::var("CARGO_MANIFEST_DIR").expect("CARGO_MANIFEST_DIR is set by Cargo"));
     watch_git_head(&manifest_dir);
+    watch_mcp_guard_sources(&manifest_dir);
 
     let dailyos_build_sha = env_sha("DAILYOS_BUILD_SHA");
     let github_sha = env_sha("GITHUB_SHA");
@@ -39,7 +56,7 @@ fn emit_build_git_sha() {
     let sha = match (dailyos_build_sha, github_sha, git_rev_parse_head) {
         (Some(value), _, _) => value,
         (None, Some(value), _) => value,
-        (None, None, Some(value)) => value,
+        (None, None, Some(value)) => build_git_id(&manifest_dir, &value),
         (None, None, None) if release_gate_enabled => {
             panic!(
                 "BUILD_GIT_SHA cannot be determined. Set DAILYOS_BUILD_SHA, GITHUB_SHA, or run inside a git checkout. For source-only local builds, set DAILYOS_BUILD_SHA=dev-unknown."
@@ -50,8 +67,50 @@ fn emit_build_git_sha() {
     println!("cargo:rustc-env=BUILD_GIT_SHA={sha}");
 }
 
+fn emit_build_target_triple() {
+    println!("cargo:rerun-if-env-changed=TARGET");
+    let target = env::var("TARGET").unwrap_or_else(|_| "unknown".to_string());
+    println!("cargo:rustc-env=BUILD_TARGET_TRIPLE={target}");
+}
+
+fn emit_apple_team_id() {
+    println!("cargo:rerun-if-env-changed=DAILYOS_APPLE_TEAM_ID");
+    println!("cargo:rerun-if-env-changed=APPLE_SIGNING_IDENTITY");
+    if let Some(team_id) = env::var("DAILYOS_APPLE_TEAM_ID")
+        .ok()
+        .filter(|value| !value.trim().is_empty())
+        .or_else(|| {
+            env::var("APPLE_SIGNING_IDENTITY")
+                .ok()
+                .and_then(|identity| parse_apple_team_id(&identity))
+        })
+    {
+        println!("cargo:rustc-env=DAILYOS_APPLE_TEAM_ID={team_id}");
+    }
+}
+
+fn parse_apple_team_id(identity: &str) -> Option<String> {
+    let open = identity.rfind('(')?;
+    let close = identity[open + 1..].find(')')? + open + 1;
+    let team_id = identity[open + 1..close].trim();
+    if team_id.is_empty() {
+        None
+    } else {
+        Some(team_id.to_string())
+    }
+}
+
 fn env_sha(name: &str) -> Option<String> {
     env::var(name).ok().filter(|value| !value.trim().is_empty())
+}
+
+fn watch_mcp_guard_sources(manifest_dir: &Path) {
+    for relative_path in MCP_GUARD_SOURCE_PATHS {
+        println!(
+            "cargo:rerun-if-changed={}",
+            manifest_dir.join(relative_path).display()
+        );
+    }
 }
 
 fn git_sha(manifest_dir: &Path) -> Option<String> {
@@ -71,6 +130,96 @@ fn git_sha(manifest_dir: &Path) -> Option<String> {
         .ok()
         .map(|value| value.trim().to_string())
         .filter(|value| !value.is_empty())
+}
+
+fn build_git_id(manifest_dir: &Path, head: &str) -> String {
+    match dirty_mcp_guard_digest(manifest_dir) {
+        Some(digest) => format!("{head}+dirty.{}", &digest[..12.min(digest.len())]),
+        None => head.to_string(),
+    }
+}
+
+fn dirty_mcp_guard_digest(manifest_dir: &Path) -> Option<String> {
+    let diff_output = Command::new("git")
+        .arg("-C")
+        .arg(manifest_dir)
+        .arg("diff")
+        .arg("--binary")
+        .arg("HEAD")
+        .arg("--")
+        .args(MCP_GUARD_SOURCE_PATHS)
+        .output()
+        .ok()?;
+    if !diff_output.status.success() {
+        return None;
+    }
+
+    let mut digest_input = diff_output.stdout;
+    append_untracked_mcp_guard_sources(manifest_dir, &mut digest_input);
+    if digest_input.is_empty() {
+        return None;
+    }
+
+    let mut hash = Command::new("git")
+        .arg("-C")
+        .arg(manifest_dir)
+        .arg("hash-object")
+        .arg("--stdin")
+        .stdin(Stdio::piped())
+        .stdout(Stdio::piped())
+        .spawn()
+        .ok()?;
+    hash.stdin.take()?.write_all(&digest_input).ok()?;
+    let output = hash.wait_with_output().ok()?;
+    if !output.status.success() {
+        return None;
+    }
+    String::from_utf8(output.stdout)
+        .ok()
+        .map(|value| value.trim().to_string())
+        .filter(|value| !value.is_empty())
+}
+
+fn append_untracked_mcp_guard_sources(manifest_dir: &Path, digest_input: &mut Vec<u8>) {
+    let Ok(output) = Command::new("git")
+        .arg("-C")
+        .arg(manifest_dir)
+        .arg("ls-files")
+        .arg("--others")
+        .arg("--exclude-standard")
+        .arg("-z")
+        .arg("--")
+        .args(MCP_GUARD_SOURCE_PATHS)
+        .output()
+    else {
+        return;
+    };
+    if !output.status.success() || output.stdout.is_empty() {
+        return;
+    }
+
+    let mut paths: Vec<String> = output
+        .stdout
+        .split(|byte| *byte == 0)
+        .filter(|path| !path.is_empty())
+        .map(|path| String::from_utf8_lossy(path).to_string())
+        .collect();
+    paths.sort();
+
+    for relative_path in paths {
+        let full_path = manifest_dir.join(&relative_path);
+        if !full_path.is_file() {
+            continue;
+        }
+        let Ok(contents) = fs::read(&full_path) else {
+            continue;
+        };
+        digest_input.extend_from_slice(b"\n-- DAILYOS UNTRACKED MCP GUARD SOURCE --\n");
+        digest_input.extend_from_slice(relative_path.as_bytes());
+        digest_input.push(b'\n');
+        digest_input.extend_from_slice(&contents);
+        digest_input.push(b'\n');
+    }
 }
 
 fn watch_git_head(manifest_dir: &Path) {
