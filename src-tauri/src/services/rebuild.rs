@@ -2270,8 +2270,9 @@ mod tests {
         sidecar.claims[0].feedback_rows[0].submitted_at = REPLAYED_FEEDBACK_TS.to_string();
         let checksum = authorize_sidecar(&db, &sidecar);
 
+        let user_ctx = ServiceContext::test_live(&clock, &rng, &external).with_actor("user:test");
         record_claim_feedback(
-            &ctx,
+            &user_ctx,
             &db,
             ClaimFeedbackInput {
                 claim_id: fresh_claim_id.clone(),
