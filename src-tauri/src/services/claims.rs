@@ -19,7 +19,7 @@ use std::cell::Cell;
 use std::collections::{HashMap, HashSet, VecDeque};
 use std::sync::{Arc, OnceLock};
 
-use chrono::{DateTime, Duration, NaiveDateTime, Utc};
+use chrono::{DateTime, Duration, NaiveDateTime, SecondsFormat, Utc};
 use parking_lot::Mutex;
 use regex::Regex;
 use rusqlite::{params, Connection, OptionalExtension, Params};
@@ -5601,17 +5601,19 @@ pub(crate) fn claim_feedback_replay_content_hash(
     Ok(format!("{:x}", hasher.finalize()))
 }
 
-fn normalize_replay_submitted_at(value: &str) -> Result<String, ClaimError> {
+pub(crate) fn normalize_replay_submitted_at(value: &str) -> Result<String, ClaimError> {
     let submitted_at = value.trim();
     if submitted_at.is_empty() {
         return Err(ClaimError::InvalidFeedback(
             "replay submitted_at is required for correction replay".to_string(),
         ));
     }
-    DateTime::parse_from_rfc3339(submitted_at).map_err(|error| {
+    let parsed = DateTime::parse_from_rfc3339(submitted_at).map_err(|error| {
         ClaimError::InvalidFeedback(format!("replay submitted_at must be RFC3339: {error}"))
     })?;
-    Ok(submitted_at.to_string())
+    Ok(parsed
+        .with_timezone(&Utc)
+        .to_rfc3339_opts(SecondsFormat::AutoSi, true))
 }
 
 fn update_hash_part(hasher: &mut Sha256, value: Option<&str>) {
@@ -6038,6 +6040,7 @@ struct ClaimVersionEventWrite<'a> {
     event_kind: VersionEventKind,
     now: &'a str,
     actor_kind: VersionActorKind,
+    correction_event_log_id: Option<&'a str>,
 }
 
 /// Reason string written into `version_events.reason` for a `claim.write_rejected`
@@ -6136,7 +6139,7 @@ fn finish_claim_version_event_tx(
             current_version: event.current_version,
             reason: None,
             scope_redacted: false,
-            correction_event_log_id: None,
+            correction_event_log_id: event.correction_event_log_id,
             mutation_id: Some(&attempt.mutation_id),
             created_at: event.now,
             actor_kind: event.actor_kind,
@@ -6591,6 +6594,7 @@ where
                     event_kind: VersionEventKind::ClaimSuperseded,
                     now: &now,
                     actor_kind,
+                    correction_event_log_id: None,
                 },
             )?;
             return Ok(CommittedClaim::Inserted { claim });
@@ -6662,6 +6666,7 @@ where
                         event_kind: VersionEventKind::ClaimUpdated,
                         now: &now,
                         actor_kind,
+                        correction_event_log_id: None,
                     },
                 )?;
                 return Ok(CommittedClaim::Reinforced {
@@ -6729,6 +6734,7 @@ where
                                 event_kind: VersionEventKind::ClaimUpdated,
                                 now: &now,
                                 actor_kind,
+                                correction_event_log_id: None,
                             },
                         )?;
                         return Ok(CommittedClaim::Reinforced {
@@ -6860,6 +6866,7 @@ where
                         event_kind: VersionEventKind::ClaimConflictDetected,
                         now: &now,
                         actor_kind,
+                        correction_event_log_id: None,
                     },
                 )?;
 
@@ -6948,6 +6955,7 @@ where
                         event_kind: VersionEventKind::ClaimUpdated,
                         now: &now,
                         actor_kind,
+                        correction_event_log_id: None,
                     },
                 )?;
                 return Ok(CommittedClaim::Inserted { claim });
@@ -7044,6 +7052,7 @@ where
                 event_kind,
                 now: &now,
                 actor_kind,
+                correction_event_log_id: None,
             },
         )?;
 
@@ -7201,6 +7210,7 @@ pub fn withdraw_claim(
                     event_kind: VersionEventKind::ClaimTombstoned,
                     now: &now,
                     actor_kind,
+                    correction_event_log_id: None,
                 },
             )?;
         } else {
@@ -7311,17 +7321,41 @@ pub fn record_claim_feedback_replay(
     db: &ActionDb,
     input: ClaimFeedbackReplayInput,
 ) -> Result<ClaimFeedbackOutcome, ClaimError> {
+    let replay = prepare_claim_feedback_replay(&input)?;
+    record_claim_feedback_inner(ctx, db, input.feedback, None, Some(replay))
+}
+
+pub(crate) fn recorded_claim_feedback_replay_outcome(
+    db: &ActionDb,
+    input: &ClaimFeedbackReplayInput,
+) -> Result<Option<ClaimFeedbackOutcome>, ClaimError> {
+    let replay = prepare_claim_feedback_replay(input)?;
+    existing_feedback_replay_outcome(db, &input.feedback, &replay)
+}
+
+fn prepare_claim_feedback_replay(
+    input: &ClaimFeedbackReplayInput,
+) -> Result<ClaimFeedbackReplayWrite, ClaimError> {
+    validate_replay_actor_id(input.feedback.actor_id.as_deref())?;
     let replay_event_id = input.replay_event_id.trim();
     if replay_event_id.is_empty() {
         return Err(ClaimError::InvalidFeedback(
             "replay_event_id is required for correction replay".to_string(),
         ));
     }
-    let replay = ClaimFeedbackReplayWrite {
+    Ok(ClaimFeedbackReplayWrite {
         event_id: replay_event_id.to_string(),
         submitted_at: normalize_replay_submitted_at(&input.submitted_at)?,
-    };
-    record_claim_feedback_inner(ctx, db, input.feedback, None, Some(replay))
+    })
+}
+
+fn validate_replay_actor_id(actor_id: Option<&str>) -> Result<(), ClaimError> {
+    if actor_id.is_some_and(|actor_id| !actor_id.trim().is_empty()) {
+        return Ok(());
+    }
+    Err(ClaimError::InvalidActor(
+        "replay feedback requires stable actor_id".to_string(),
+    ))
 }
 
 fn record_claim_feedback_inner(
@@ -7339,6 +7373,7 @@ fn record_claim_feedback_inner(
 
     if let Some(replay) = replay.as_ref() {
         if let Some(outcome) = existing_feedback_replay_outcome(db, &input, replay)? {
+            repair_claim_feedback_recorded_signal(ctx, db, &outcome.feedback_id)?;
             return Ok(outcome);
         }
     }
@@ -7524,6 +7559,7 @@ fn record_claim_feedback_inner(
                     event_kind,
                     now: &now,
                     actor_kind: version_actor_kind,
+                    correction_event_log_id: replay.as_ref().map(|replay| replay.event_id.as_str()),
                 },
             )?;
         } else {
@@ -7553,29 +7589,33 @@ fn record_claim_feedback_inner(
         }
         let verification_state_after = enum_to_db(&new_verification_state)?;
 
-        Ok(ClaimFeedbackWriteResult::Written(
-            ClaimFeedbackWriteOutcome {
-                outcome: ClaimFeedbackOutcome {
-                    feedback_id,
-                    claim_id: input.claim_id.clone(),
-                    action: input.action,
-                    new_verification_state,
-                    applied_at_pending: true,
-                    repair_job_id,
-                },
-                signal_entity_type,
-                signal_entity_id,
-                verification_state_before,
-                verification_state_after,
+        let write_outcome = ClaimFeedbackWriteOutcome {
+            outcome: ClaimFeedbackOutcome {
+                feedback_id,
+                claim_id: input.claim_id.clone(),
+                action: input.action,
+                new_verification_state,
+                applied_at_pending: true,
+                repair_job_id,
             },
-        ))
+            signal_entity_type,
+            signal_entity_id,
+            verification_state_before,
+            verification_state_after,
+        };
+        persist_claim_feedback_signals(ctx, tx, &write_outcome)?;
+
+        Ok(ClaimFeedbackWriteResult::Written(write_outcome))
     })?;
 
     mutation_guard.mark_completed();
     match write {
-        ClaimFeedbackWriteResult::ExistingReplay(outcome) => Ok(outcome),
+        ClaimFeedbackWriteResult::ExistingReplay(outcome) => {
+            repair_claim_feedback_recorded_signal(ctx, db, &outcome.feedback_id)?;
+            Ok(outcome)
+        }
         ClaimFeedbackWriteResult::Written(write) => {
-            emit_claim_feedback_signals(ctx, db, &write);
+            emit_claim_feedback_event_bridge(&write);
             Ok(write.outcome)
         }
     }
@@ -9466,11 +9506,37 @@ fn signal_target_for_claim(subject: &SubjectRef, claim_id: &str) -> (String, Str
     }
 }
 
-fn emit_claim_feedback_signals(
+fn claim_feedback_recorded_signal_key(feedback_id: &str) -> String {
+    format!("claim-feedback:{feedback_id}:recorded")
+}
+
+fn claim_feedback_recorded_signal_exists(
+    db: &ActionDb,
+    signal_key: &str,
+) -> Result<bool, ClaimError> {
+    let signal_id = crate::signals::bus::signal_id_for_idempotency(
+        crate::signals::bus::SignalIdempotency::Key(signal_key),
+    )?;
+    Ok(db
+        .conn_ref()
+        .query_row(
+            "SELECT 1 FROM signal_events WHERE id = ?1",
+            params![&signal_id],
+            |_| Ok(()),
+        )
+        .optional()?
+        .is_some())
+}
+
+fn claim_feedback_verification_signal_key(feedback_id: &str) -> String {
+    format!("claim-feedback:{feedback_id}:verification-state-changed")
+}
+
+fn persist_claim_feedback_signals(
     ctx: &ServiceContext<'_>,
     db: &ActionDb,
     write: &ClaimFeedbackWriteOutcome,
-) {
+) -> Result<(), ClaimError> {
     let payload = serde_json::json!({
         "action": write.outcome.action.as_str(),
         "claim_id": &write.outcome.claim_id,
@@ -9479,24 +9545,18 @@ fn emit_claim_feedback_signals(
     })
     .to_string();
 
-    if let Err(e) = crate::services::signals::emit(
+    crate::services::signals::emit_once_for_key(
         ctx,
         db,
+        &claim_feedback_recorded_signal_key(&write.outcome.feedback_id),
         &write.signal_entity_type,
         &write.signal_entity_id,
         "claim_feedback_recorded",
         "user_feedback",
         Some(&payload),
         0.9,
-    ) {
-        log::warn!(
-            "post-commit signal emission failed; \
-             repair_target=signals_engine \
-             signal_type=claim_feedback_recorded \
-             claim_id={}: {e}",
-            write.outcome.claim_id
-        );
-    }
+    )
+    .map_err(ClaimError::Transaction)?;
 
     if write.verification_state_before != write.verification_state_after {
         let payload = serde_json::json!({
@@ -9504,29 +9564,25 @@ fn emit_claim_feedback_signals(
             "to": &write.verification_state_after,
         })
         .to_string();
-        if let Err(e) = crate::services::signals::emit(
+        crate::services::signals::emit_once_for_key(
             ctx,
             db,
+            &claim_feedback_verification_signal_key(&write.outcome.feedback_id),
             &write.signal_entity_type,
             &write.signal_entity_id,
             "claim_verification_state_changed",
             "user_feedback",
             Some(&payload),
             0.9,
-        ) {
-            log::warn!(
-                "post-commit signal emission failed; \
-                 repair_target=signals_engine \
-                 signal_type=claim_verification_state_changed \
-                 claim_id={}: {e}",
-                write.outcome.claim_id
-            );
-        }
+        )
+        .map_err(ClaimError::Transaction)?;
+    }
 
-        // Bridge the signal to the
-        // `claim_receipt:invalidated` Tauri event so `useClaimReceiptSubscription`
-        // can re-fetch its receipt projection. Best-effort: the bridge is a
-        // no-op in test / headless contexts.
+    Ok(())
+}
+
+fn emit_claim_feedback_event_bridge(write: &ClaimFeedbackWriteOutcome) {
+    if write.verification_state_before != write.verification_state_after {
         crate::services::claim_receipt::event_bridge::emit_claim_receipt_invalidated(
             "claim_verification_state_changed",
             &write.outcome.claim_id,
@@ -9534,6 +9590,63 @@ fn emit_claim_feedback_signals(
             Some(&write.verification_state_after),
         );
     }
+}
+
+pub(crate) fn repair_claim_feedback_recorded_signal(
+    ctx: &ServiceContext<'_>,
+    db: &ActionDb,
+    feedback_id: &str,
+) -> Result<(), ClaimError> {
+    let signal_key = claim_feedback_recorded_signal_key(feedback_id);
+    if claim_feedback_recorded_signal_exists(db, &signal_key)? {
+        return Ok(());
+    }
+    let Some((claim_id, action, verification_state, subject_ref)) =
+        feedback_signal_repair_row(db, feedback_id)?
+    else {
+        return Ok(());
+    };
+    let subject_value: serde_json::Value = serde_json::from_str(&subject_ref)?;
+    let subject = subject_ref_from_json(&subject_value)?;
+    let (signal_entity_type, signal_entity_id) = signal_target_for_claim(&subject, &claim_id);
+    let payload = serde_json::json!({
+        "action": action,
+        "claim_id": claim_id,
+        "verification_state_before": verification_state,
+        "verification_state_after": verification_state,
+        "recovered": true,
+    })
+    .to_string();
+    crate::services::signals::emit_once_for_key(
+        ctx,
+        db,
+        &signal_key,
+        &signal_entity_type,
+        &signal_entity_id,
+        "claim_feedback_recorded",
+        "user_feedback",
+        Some(&payload),
+        0.9,
+    )
+    .map_err(ClaimError::Transaction)?;
+    Ok(())
+}
+
+fn feedback_signal_repair_row(
+    db: &ActionDb,
+    feedback_id: &str,
+) -> Result<Option<(String, String, String, String)>, ClaimError> {
+    db.conn_ref()
+        .query_row(
+            "SELECT f.claim_id, f.feedback_type, c.verification_state, c.subject_ref
+               FROM claim_feedback f
+               JOIN intelligence_claims c ON c.id = f.claim_id
+              WHERE f.id = ?1",
+            params![feedback_id],
+            |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?, row.get(3)?)),
+        )
+        .optional()
+        .map_err(ClaimError::Rusqlite)
 }
 
 // ---------------------------------------------------------------------------
@@ -10743,6 +10856,7 @@ fn withdraw_claim_ids_for_source_purge_in_tx(
                 event_kind: VersionEventKind::ClaimTombstoned,
                 now: &now,
                 actor_kind,
+                correction_event_log_id: None,
             },
         )?;
         withdrawn += 1;
@@ -11491,6 +11605,7 @@ mod tests {
 
     const TS: &str = "2026-05-02T12:00:00+00:00";
     const REPLAY_TS: &str = "2026-04-01T09:15:00+00:00";
+    const REPLAY_TS_CANONICAL: &str = "2026-04-01T09:15:00Z";
     const SUBJECT: &str = r#"{"kind":"account","id":"acct-1"}"#;
 
     fn register_canonical_embedding_fixtures() {
@@ -16990,9 +17105,31 @@ mod tests {
                 |row| row.get(0),
             )
             .unwrap();
-        assert_eq!(submitted_at, REPLAY_TS);
+        assert_eq!(submitted_at, REPLAY_TS_CANONICAL);
         assert_eq!(repair_job_count(&db, &claim_id), 1);
         assert_eq!(signal_count(&db, "claim_feedback_recorded"), 1);
+    }
+
+    #[test]
+    fn record_claim_feedback_replay_event_rejects_blank_actor_id() {
+        let db = test_db();
+        seed_account(&db);
+        let (clock, rng, external) = ctx_parts();
+        let ctx = live_ctx(&clock, &rng, &external);
+        let claim_id =
+            inserted_claim_id(commit_claim(&ctx, &db, proposal("Risk replay actor")).unwrap());
+        let mut input = replay_input(
+            feedback_input(&claim_id, FeedbackAction::CannotVerify),
+            "replay-event-blank-actor",
+        );
+        input.feedback.actor_id = Some("   ".to_string());
+
+        let err = record_claim_feedback_replay(&ctx, &db, input)
+            .expect_err("blank actor_id must fail replay provenance");
+
+        assert!(
+            matches!(err, ClaimError::InvalidActor(message) if message.contains("stable actor_id"))
+        );
     }
 
     #[test]
@@ -17123,7 +17260,7 @@ mod tests {
                 |row| row.get(0),
             )
             .unwrap();
-        assert_eq!(submitted_at, REPLAY_TS);
+        assert_eq!(submitted_at, REPLAY_TS_CANONICAL);
     }
 
     #[test]
@@ -17174,7 +17311,7 @@ mod tests {
             )
             .unwrap();
         assert_eq!(feedback_count, 1);
-        assert_eq!(signal_count(&db, "claim_feedback_recorded"), 0);
+        assert_eq!(signal_count(&db, "claim_feedback_recorded"), 1);
         assert_eq!(repair_job_count(&db, &claim_id), 0);
     }
 
