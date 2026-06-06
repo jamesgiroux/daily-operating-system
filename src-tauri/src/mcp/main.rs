@@ -35,7 +35,7 @@ use dailyos_lib::mcp_runtime_guard_constants::{
 use dailyos_lib::services::mcp_v2::handlers::tool_account_status::present_account_status_response_with_context;
 use dailyos_lib::services::mcp_v2::{
     actor_policy::{ToolGrant, ToolRateLimit},
-    contracts::{McpClientId as V2McpClientId, ScopedName},
+    contracts::{ScopedName, Side},
     gateway::Gateway,
     handlers::registration::register_v147_handlers,
     taxonomy::{TaxonomyCatalog, YamlTaxonomyCatalog},
@@ -48,9 +48,8 @@ use dailyos_lib::services::sensitivity::{
 use dailyos_lib::state::load_config;
 use dailyos_lib::types::Config;
 
-const DEFAULT_LOCAL_MCP_CLIENT_ID: &str = "dailyos-local-stdio";
-const DAILYOS_MCP_CLIENT_ID_ENV: &str = "DAILYOS_MCP_CLIENT_ID";
 const DAILYOS_MCP_LEGACY_V1_ENV: &str = "DAILYOS_MCP_LEGACY_V1";
+const DAILYOS_MCP_LEGACY_V1_UNSAFE_DEV_ENV: &str = "DAILYOS_MCP_LEGACY_V1_UNSAFE_DEV";
 
 // =============================================================================
 // Server State
@@ -1759,7 +1758,9 @@ async fn run_v2_server() -> anyhow::Result<()> {
         );
     }
 
-    let client_id = local_v2_client_id();
+    let client_id =
+        dailyos_lib::services::mcp_v2::local_runtime::get_or_create_local_client_id()
+            .map_err(|e| anyhow::anyhow!("Failed to load local MCP client identity: {e}"))?;
     let grants = local_stdio_grants_for_registered_tools(&registered_tools, catalog.as_ref())?;
 
     let server = V2ServerHandler::from_local_stdio(Arc::new(gateway), catalog, grants, client_id);
@@ -1768,15 +1769,6 @@ async fn run_v2_server() -> anyhow::Result<()> {
 
     drop(embedding_model);
     Ok(())
-}
-
-fn local_v2_client_id() -> V2McpClientId {
-    let configured = std::env::var(DAILYOS_MCP_CLIENT_ID_ENV)
-        .ok()
-        .map(|value| value.trim().to_string())
-        .filter(|value| !value.is_empty())
-        .unwrap_or_else(|| DEFAULT_LOCAL_MCP_CLIENT_ID.to_string());
-    V2McpClientId::new(configured)
 }
 
 fn local_stdio_grants_for_registered_tools(
@@ -1792,7 +1784,7 @@ fn local_stdio_grants_for_registered_tools(
             Ok(ToolGrant {
                 tool_name: tool_name.clone(),
                 scopes_granted: desc.scopes_required.clone(),
-                exposure: McpExposure::Invocable,
+                exposure: local_stdio_exposure_for(desc.side, tool_name),
                 rate_limit: ToolRateLimit {
                     max_calls: 600,
                     window_seconds: 60,
@@ -1802,7 +1794,32 @@ fn local_stdio_grants_for_registered_tools(
         .collect()
 }
 
+fn local_stdio_exposure_for(side: Side, tool_name: &ScopedName) -> McpExposure {
+    match side {
+        Side::Read => McpExposure::Invocable,
+        Side::SubmitCorrection if local_stdio_submit_correction_allowed(tool_name) => {
+            McpExposure::Invocable
+        }
+        Side::SubmitCorrection | Side::Write => McpExposure::None,
+    }
+}
+
+fn local_stdio_submit_correction_allowed(tool_name: &ScopedName) -> bool {
+    matches!(
+        tool_name.as_str(),
+        "dailyos.submit.note" | "dailyos.submit.action" | "dailyos.submit.action_status"
+    )
+}
+
 async fn run_legacy_v1_server() -> anyhow::Result<()> {
+    if !cfg!(debug_assertions)
+        || std::env::var(DAILYOS_MCP_LEGACY_V1_UNSAFE_DEV_ENV).as_deref() != Ok("1")
+    {
+        anyhow::bail!(
+            "legacy MCP v1 is disabled for production local stdio; unset {DAILYOS_MCP_LEGACY_V1_ENV} to run MCP v2"
+        );
+    }
+
     let config =
         load_config().map_err(|e| anyhow::anyhow!("Failed to load DailyOS config: {e}"))?;
 
@@ -1996,6 +2013,28 @@ mod tests {
     fn tool_result_json(result: &CallToolResult) -> serde_json::Value {
         let text = result.content[0].as_text().unwrap().text.as_str();
         serde_json::from_str(text).unwrap()
+    }
+
+    #[test]
+    fn local_stdio_exposure_keeps_write_handlers_non_invocable() {
+        assert!(matches!(
+            local_stdio_exposure_for(Side::Read, &ScopedName::new("dailyos.read.account_status")),
+            McpExposure::Invocable
+        ));
+        assert!(matches!(
+            local_stdio_exposure_for(
+                Side::SubmitCorrection,
+                &ScopedName::new("dailyos.submit.note")
+            ),
+            McpExposure::Invocable
+        ));
+        assert!(matches!(
+            local_stdio_exposure_for(
+                Side::Write,
+                &ScopedName::new("dailyos.write.place_document")
+            ),
+            McpExposure::None
+        ));
     }
 
     #[test]

@@ -1,9 +1,9 @@
 # DOS-832 L0 Packet — First-Class Rebuild From Canonical Workspace Inputs
 
-**Version:** v1.4.9 · W1b storage hardening  
-**Issue:** [DOS-832](https://linear.app/a8c/issue/DOS-832)  
-**Author date:** 2026-06-03  
-**Tier:** Tier 3 (markdown-only)  
+**Version:** v1.4.9 · W1b storage hardening
+**Issue:** [DOS-832](https://linear.app/a8c/issue/DOS-832)
+**Author date:** 2026-06-03
+**Tier:** Tier 3 (markdown-only)
 **Scope tier:** Wave-coupled substrate. L0 requires `/codex challenge` or a project-approved equivalent, `ce-feasibility-reviewer`, `ce-security-lens-reviewer`, and mandatory K-in. Local adversarial document review may harden the draft, but it does not make the packet L0-approved on its own.
 **Status:** L0 approved on 2026-06-05 CDT after local re-review cycles reached unanimous pass on the current packet text.
 

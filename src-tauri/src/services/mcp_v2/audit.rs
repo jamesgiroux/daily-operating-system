@@ -2,9 +2,9 @@
 //!
 //! This module is intentionally a thin MCP-specific layer over
 //! [`crate::audit_log::AuditLogger::append_with_actor`]. It owns the MCP
-//! success-row privacy contract: read-class tools persist plaintext detail in
-//! the encrypted audit substrate; write-class tools drop top-level payload
-//! fields before append.
+//! success-row privacy contract: read-class tools persist keyed digests for
+//! request/response payloads; write-class tools drop top-level payload fields
+//! before append.
 
 use std::sync::Arc;
 
@@ -17,6 +17,7 @@ use abilities_runtime::abilities::registry::Actor;
 use crate::audit_log::{AuditError as AuditLogError, AuditFields, AuditLogger};
 
 use super::contracts::Side;
+use super::local_runtime;
 
 pub const PARAM_PAYLOAD_KEYS: &[&str] = &["params", "parameters"];
 pub const RESPONSE_PAYLOAD_KEYS: &[&str] = &["response", "response_or_error", "result"];
@@ -35,14 +36,16 @@ pub enum AuditError {
         append_error: String,
         outbox_error: String,
     },
+    #[error("audit detail digest failed: {0}")]
+    Digest(String),
 }
 
 /// Write an MCP success-row audit event.
 ///
-/// Read-side abilities keep their top-level `params` and `response` fields in
-/// plaintext. Write and submit-correction abilities remove the keys named in
-/// [`PARAM_PAYLOAD_KEYS`] and [`RESPONSE_PAYLOAD_KEYS`]. Actor attribution is
-/// always inserted or preserved.
+/// Read-side abilities replace their top-level `params` and `response` fields
+/// with keyed digests. Write and submit-correction abilities remove the keys
+/// named in [`PARAM_PAYLOAD_KEYS`] and [`RESPONSE_PAYLOAD_KEYS`]. Actor
+/// attribution is always inserted or preserved.
 pub fn write(
     actor: &Actor,
     event: &str,
@@ -65,7 +68,7 @@ pub fn write_with_conn(
     side: Side,
     owned_conn: Option<&crate::db::ActionDb>,
 ) -> Result<(), AuditError> {
-    let detail_with_attribution = detail_with_attribution(actor, detail, side);
+    let detail_with_attribution = detail_with_attribution(actor, detail, side)?;
 
     let mut fields = AuditFields::new("security", detail_with_attribution.clone());
     if let Some(id) = request_id.clone() {
@@ -93,13 +96,13 @@ pub fn write_with_conn(
     }
 }
 
-fn detail_with_attribution(actor: &Actor, detail: Value, side: Side) -> Value {
+fn detail_with_attribution(actor: &Actor, detail: Value, side: Side) -> Result<Value, AuditError> {
     let mut detail = match side {
-        Side::Read => object_detail(detail),
+        Side::Read => digest_payload_detail(detail)?,
         Side::Write | Side::SubmitCorrection => sanitize_detail(detail),
     };
     add_actor_attribution(actor, &mut detail);
-    Value::Object(detail)
+    Ok(Value::Object(detail))
 }
 
 fn object_detail(detail: Value) -> Map<String, Value> {
@@ -119,6 +122,26 @@ fn sanitize_detail(detail: Value) -> Map<String, Value> {
         map.remove(key);
     }
     map
+}
+
+fn digest_payload_detail(detail: Value) -> Result<Map<String, Value>, AuditError> {
+    let mut map = object_detail(detail);
+    for key in PARAM_PAYLOAD_KEYS
+        .iter()
+        .chain(RESPONSE_PAYLOAD_KEYS.iter())
+        .copied()
+    {
+        if let Some(payload) = map.remove(key) {
+            let digest = local_runtime::digest_json_value_hex(&payload)
+                .map_err(|error| AuditError::Digest(error.to_string()))?;
+            map.insert(format!("{key}_digest"), Value::String(digest));
+            map.insert(
+                format!("{key}_digest_algorithm"),
+                Value::String(local_runtime::AUDIT_DIGEST_ALGORITHM.to_string()),
+            );
+        }
+    }
+    Ok(map)
 }
 
 fn add_actor_attribution(actor: &Actor, detail: &mut Map<String, Value>) {
@@ -248,16 +271,24 @@ mod tests {
     }
 
     #[test]
-    fn read_detail_keeps_plaintext_payloads() {
-        let detail = json!({
-            "tool_name": "dailyos.read.account_status",
-            "params": { "subject": "Acme" },
-            "response": { "status": "active" }
+    fn read_detail_persists_keyed_payload_digests() {
+        local_runtime::with_audit_digest_key_for_tests([9_u8; 32], || {
+            let detail = json!({
+                "tool_name": "dailyos.read.account_status",
+                "params": { "subject": "Acme" },
+                "response": { "status": "active" }
+            });
+            let out = detail_with_attribution(&actor(), detail, Side::Read).unwrap();
+            assert!(out.get("params").is_none());
+            assert!(out.get("response").is_none());
+            assert_eq!(out["params_digest"].as_str().unwrap().len(), 64);
+            assert_eq!(out["response_digest"].as_str().unwrap().len(), 64);
+            assert_eq!(
+                out["params_digest_algorithm"],
+                local_runtime::AUDIT_DIGEST_ALGORITHM
+            );
+            assert_eq!(out["client_id"], "client-a");
         });
-        let out = detail_with_attribution(&actor(), detail, Side::Read);
-        assert_eq!(out["params"]["subject"], "Acme");
-        assert_eq!(out["response"]["status"], "active");
-        assert_eq!(out["client_id"], "client-a");
     }
 
     #[test]
@@ -268,7 +299,7 @@ mod tests {
             "response": { "note_id": "note-1" },
             "mutation_cursor": { "note_id": "note-1" }
         });
-        let out = detail_with_attribution(&actor(), detail, Side::SubmitCorrection);
+        let out = detail_with_attribution(&actor(), detail, Side::SubmitCorrection).unwrap();
         assert!(out.get("params").is_none());
         assert!(out.get("response").is_none());
         assert_eq!(out["mutation_cursor"]["note_id"], "note-1");

@@ -430,7 +430,7 @@ fn configure_claude_desktop_with_resolved_runtime(
         validate_existing_launcher(paths, &managed_launcher, &manifest_path)
             .map_err(|error| (error, true))?;
 
-        run_before_config_publish_hook();
+        run_before_config_publish_hook(&config_path);
         let mut publish_config =
             read_claude_config_or_empty_if_missing(&config_path).map_err(|error| {
                 (
@@ -517,32 +517,49 @@ fn managed_configs_match(left: &ExistingManagedConfig, right: &ExistingManagedCo
 }
 
 #[cfg(test)]
-type BeforeConfigPublishHook = Box<dyn FnOnce() + Send + 'static>;
+struct BeforeConfigPublishHook {
+    config_path: PathBuf,
+    hook: Box<dyn FnOnce() + Send + 'static>,
+}
 
 #[cfg(test)]
 static BEFORE_CONFIG_PUBLISH_HOOK: std::sync::Mutex<Option<BeforeConfigPublishHook>> =
     std::sync::Mutex::new(None);
 
 #[cfg(test)]
-fn set_before_config_publish_hook(hook: BeforeConfigPublishHook) {
-    *BEFORE_CONFIG_PUBLISH_HOOK
+fn set_before_config_publish_hook(config_path: PathBuf, hook: Box<dyn FnOnce() + Send + 'static>) {
+    let mut pending = BEFORE_CONFIG_PUBLISH_HOOK
         .lock()
-        .expect("before config publish hook lock") = Some(hook);
+        .expect("before config publish hook lock");
+    assert!(
+        pending.is_none(),
+        "before config publish hook should not leak between tests"
+    );
+    *pending = Some(BeforeConfigPublishHook { config_path, hook });
 }
 
 #[cfg(test)]
-fn run_before_config_publish_hook() {
-    let hook = BEFORE_CONFIG_PUBLISH_HOOK
-        .lock()
-        .expect("before config publish hook lock")
-        .take();
-    if let Some(hook) = hook {
-        hook();
+fn run_before_config_publish_hook(config_path: &Path) {
+    let pending = {
+        let mut pending = BEFORE_CONFIG_PUBLISH_HOOK
+            .lock()
+            .expect("before config publish hook lock");
+        if pending
+            .as_ref()
+            .is_some_and(|hook| paths_equal(&hook.config_path, config_path))
+        {
+            pending.take()
+        } else {
+            None
+        }
+    };
+    if let Some(pending) = pending {
+        (pending.hook)();
     }
 }
 
 #[cfg(not(test))]
-fn run_before_config_publish_hook() {}
+fn run_before_config_publish_hook(_config_path: &Path) {}
 
 fn create_runtime_generation_dir(paths: &IntegrationPaths) -> Result<PathBuf, String> {
     for _ in 0..RUNTIME_GENERATION_CREATE_ATTEMPTS {
@@ -2607,21 +2624,24 @@ mod tests {
 
         let hook_paths = paths.clone();
         let outside_dir = temp.path().join("outside-after-recheck");
-        set_before_config_publish_hook(Box::new(move || {
-            write_dailyos_config(
-                &hook_paths,
-                &outside_dir.join(MCP_LAUNCHER_NAME),
-                vec![
-                    Value::String("--manifest".to_string()),
-                    Value::String(
-                        outside_dir
-                            .join(MANIFEST_FILENAME)
-                            .to_string_lossy()
-                            .to_string(),
-                    ),
-                ],
-            );
-        }));
+        set_before_config_publish_hook(
+            paths.claude_config_path(),
+            Box::new(move || {
+                write_dailyos_config(
+                    &hook_paths,
+                    &outside_dir.join(MCP_LAUNCHER_NAME),
+                    vec![
+                        Value::String("--manifest".to_string()),
+                        Value::String(
+                            outside_dir
+                                .join(MANIFEST_FILENAME)
+                                .to_string_lossy()
+                                .to_string(),
+                        ),
+                    ],
+                );
+            }),
+        );
 
         let error = refresh_existing_claude_desktop_configuration_with_paths(&paths)
             .expect_err("concurrent config edit should abort startup refresh");

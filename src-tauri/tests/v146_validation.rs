@@ -37,7 +37,7 @@ use dailyos_lib::services::context::{EntityContextClaimReadFuture, EntityContext
 use dailyos_lib::services::context::{ExternalClients, ServiceContext, SystemClock, SystemRng};
 use dailyos_lib::services::mcp_v2::actor_policy::{ToolGrant, ToolRateLimit};
 use dailyos_lib::services::mcp_v2::contracts::{
-    McpClientId, McpToolRequestEnvelope, McpToolResult, Scope, ScopedName, ToolError,
+    McpClientId, McpToolRequestEnvelope, McpToolResult, ScopedName, ToolError,
 };
 use dailyos_lib::services::mcp_v2::gateway::Gateway;
 use dailyos_lib::services::mcp_v2::handlers::registration::register_v147_handlers;
@@ -66,7 +66,7 @@ use rusqlite::{params, Connection};
 use serde_json::json;
 
 #[test]
-fn mcp_placement_handler_registered_for_headless_path() {
+fn mcp_placement_handler_registered_but_not_local_stdio_invocable() {
     let runtime = tokio::runtime::Runtime::new().expect("runtime");
     let catalog: Arc<dyn TaxonomyCatalog> =
         Arc::new(YamlTaxonomyCatalog::load_embedded().expect("catalog"));
@@ -92,9 +92,9 @@ fn mcp_placement_handler_registered_for_headless_path() {
             params: serde_json::json!({}),
         },
         &[ToolGrant {
-            tool_name,
+            tool_name: tool_name.clone(),
             scopes_granted: vec![],
-            exposure: McpExposure::Invocable,
+            exposure: McpExposure::None,
             rate_limit: ToolRateLimit {
                 max_calls: 0,
                 window_seconds: 0,
@@ -105,11 +105,11 @@ fn mcp_placement_handler_registered_for_headless_path() {
     assert_eq!(
         response.result,
         McpToolResult::Error {
-            error: ToolError::Unauthorized {
-                missing_scope: Scope::new("write.workspace_place_document")
+            error: ToolError::ExposureForbidden {
+                tool_name: tool_name.clone()
             }
         },
-        "registered placement handler should be resolved before scope denial"
+        "registered placement handler should stay unavailable to local stdio until ADR-0128 expands write exposure"
     );
 }
 

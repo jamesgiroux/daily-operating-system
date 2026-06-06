@@ -151,8 +151,7 @@ impl EntityContextReadHandle for LiveEntityContextReader {
         Box::pin(async move {
             tokio::task::spawn_blocking(move || {
                 // mcp-self-open-allowed: live adapter fallback; indirect reader routing is outside this direct MCP handler pass.
-                let keychain =
-                    crate::db::LocalKeychain::new(); // mcp-self-open-allowed: live adapter fallback
+                let keychain = crate::db::LocalKeychain::new(); // mcp-self-open-allowed: live adapter fallback
                 let db = crate::db::ActionDb::open_readonly(std::sync::Arc::new(keychain)) // mcp-self-open-allowed: live adapter fallback
                 .map_err(|error| format!("Database unavailable: {error}"))?;
                 read_entity_context_entries_from_db(&db, &entity_type, &entity_id)
@@ -1087,8 +1086,7 @@ impl EntityContextClaimReadHandle for LiveEntityContextClaimReader {
         Box::pin(async move {
             tokio::task::spawn_blocking(move || {
                 // mcp-self-open-allowed: live adapter fallback; indirect reader routing is outside this direct MCP handler pass.
-                let keychain =
-                    crate::db::LocalKeychain::new(); // mcp-self-open-allowed: live adapter fallback
+                let keychain = crate::db::LocalKeychain::new(); // mcp-self-open-allowed: live adapter fallback
                 let db = crate::db::ActionDb::open_readonly(std::sync::Arc::new(keychain)) // mcp-self-open-allowed: live adapter fallback
                 .map_err(|error| format!("Database unavailable: {error}"))?;
                 crate::services::claims::load_entity_context_claims_active_for_surface(
@@ -1116,8 +1114,7 @@ impl EntityContextClaimReadHandle for LiveEntityContextClaimReader {
         Box::pin(async move {
             tokio::task::spawn_blocking(move || {
                 // mcp-self-open-allowed: live adapter fallback; indirect reader routing is outside this direct MCP handler pass.
-                let keychain =
-                    crate::db::LocalKeychain::new(); // mcp-self-open-allowed: live adapter fallback
+                let keychain = crate::db::LocalKeychain::new(); // mcp-self-open-allowed: live adapter fallback
                 let db = crate::db::ActionDb::open_readonly(std::sync::Arc::new(keychain)) // mcp-self-open-allowed: live adapter fallback
                 .map_err(|error| format!("Database unavailable: {error}"))?;
                 crate::services::claims::load_entity_context_claims_active_for_surface_limited(
@@ -1176,11 +1173,11 @@ impl AccountCompositionSnapshotReadHandle for LiveAccountCompositionSnapshotRead
             tokio::task::spawn_blocking(move || {
                 let keychain = crate::db::LocalKeychain::new(); // mcp-self-open-allowed: manifest-adapter fallback outside MCP request context.
                 let db = crate::db::ActionDb::open_readonly(std::sync::Arc::new(keychain)) // mcp-self-open-allowed: manifest-adapter fallback outside MCP request context.
-                .map_err(|error| {
-                    AccountCompositionSnapshotReadError::ReadFailed(format!(
-                        "Database unavailable: {error}"
-                    ))
-                })?;
+                    .map_err(|error| {
+                        AccountCompositionSnapshotReadError::ReadFailed(format!(
+                            "Database unavailable: {error}"
+                        ))
+                    })?;
                 read_account_composition_snapshot_from_db(&db, &account_id, surface)
             })
             .await
@@ -2754,8 +2751,7 @@ impl PrepareMeetingContextReadHandle for LivePrepareMeetingContextReader {
         Box::pin(async move {
             tokio::task::spawn_blocking(move || {
                 // mcp-self-open-allowed: live adapter fallback; indirect reader routing is outside this direct MCP handler pass.
-                let keychain =
-                    crate::db::LocalKeychain::new(); // mcp-self-open-allowed: live adapter fallback
+                let keychain = crate::db::LocalKeychain::new(); // mcp-self-open-allowed: live adapter fallback
                 let db = crate::db::ActionDb::open_readonly(std::sync::Arc::new(keychain)) // mcp-self-open-allowed: live adapter fallback
                 .map_err(|error| format!("Database unavailable: {error}"))?;
                 crate::services::meetings::load_prepare_meeting_context_snapshot(&db, &meeting_id)
@@ -3256,12 +3252,13 @@ impl MeetingPrepStatusReadHandle for LiveMeetingPrepStatusReader {
         Box::pin(async move {
             tokio::task::spawn_blocking(move || {
                 // mcp-self-open-allowed: live adapter fallback; indirect reader routing is outside this direct MCP handler pass.
-                let keychain =
-                    crate::db::LocalKeychain::new(); // mcp-self-open-allowed: live adapter fallback
+                let keychain = crate::db::LocalKeychain::new(); // mcp-self-open-allowed: live adapter fallback
                 let db = crate::db::ActionDb::open_readonly(std::sync::Arc::new(keychain)) // mcp-self-open-allowed: live adapter fallback
-                .map_err(|error| {
-                    MeetingPrepStatusReadError::ReadFailed(format!("Database unavailable: {error}"))
-                })?;
+                    .map_err(|error| {
+                        MeetingPrepStatusReadError::ReadFailed(format!(
+                            "Database unavailable: {error}"
+                        ))
+                    })?;
                 project_meeting_prep_status_snapshot(&db, &meeting_id)
             })
             .await
@@ -3360,8 +3357,7 @@ impl TrajectoryReadHandle for LiveTemporalWorkspaceReader {
         Box::pin(async move {
             tokio::task::spawn_blocking(move || {
                 // mcp-self-open-allowed: live adapter fallback; indirect reader routing is outside this direct MCP handler pass.
-                let keychain =
-                    crate::db::LocalKeychain::new(); // mcp-self-open-allowed: live adapter fallback
+                let keychain = crate::db::LocalKeychain::new(); // mcp-self-open-allowed: live adapter fallback
                 let db = crate::db::ActionDb::open_readonly(std::sync::Arc::new(keychain)) // mcp-self-open-allowed: live adapter fallback
                 .map_err(|error| format!("Database unavailable: {error}"))?;
                 crate::services::temporal::read_trajectory_bundle_from_db(
@@ -3387,8 +3383,7 @@ impl TemporalMaintenanceHandle for LiveTemporalWorkspaceReader {
         Box::pin(async move {
             tokio::task::spawn_blocking(move || {
                 // mcp-self-open-allowed: live adapter fallback; indirect writer routing is outside this direct MCP handler pass.
-                let keychain =
-                    crate::db::LocalKeychain::new(); // mcp-self-open-allowed: live adapter fallback
+                let keychain = crate::db::LocalKeychain::new(); // mcp-self-open-allowed: live adapter fallback
                 let db = crate::db::ActionDb::open(std::sync::Arc::new(keychain)) // mcp-self-open-allowed: live adapter fallback
                 .map_err(|error| format!("Database unavailable: {error}"))?;
                 crate::services::temporal::refresh_engagement_curve_in_db(&db, input, computed_at)
@@ -3406,8 +3401,7 @@ impl TemporalMaintenanceHandle for LiveTemporalWorkspaceReader {
         Box::pin(async move {
             tokio::task::spawn_blocking(move || {
                 // mcp-self-open-allowed: live adapter fallback; indirect writer routing is outside this direct MCP handler pass.
-                let keychain =
-                    crate::db::LocalKeychain::new(); // mcp-self-open-allowed: live adapter fallback
+                let keychain = crate::db::LocalKeychain::new(); // mcp-self-open-allowed: live adapter fallback
                 let db = crate::db::ActionDb::open(std::sync::Arc::new(keychain)) // mcp-self-open-allowed: live adapter fallback
                 .map_err(|error| format!("Database unavailable: {error}"))?;
                 crate::services::temporal::detect_role_change_in_db(&db, input, computed_at)

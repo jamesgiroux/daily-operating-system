@@ -26,6 +26,7 @@ use super::contracts::{
 #[cfg(test)]
 use super::handler_context::OwnedConnection;
 use super::handler_context::{McpHandlerContext, OwnedSidecarConnection};
+use super::local_runtime::{LocalConversationStore, LocalRuntimeError};
 
 // ---------------------------------------------------------------------------
 // Constants
@@ -154,6 +155,7 @@ pub struct Gateway {
     handlers: HashMap<ScopedName, Arc<dyn McpToolHandler>>,
     emitter: Arc<dyn SignalEmitter>,
     taxonomy: Option<Arc<dyn super::taxonomy::TaxonomyCatalog>>,
+    local_conversations: LocalConversationStore,
     /// The sidecar's single owned DB connection. `None` in tests and any path
     /// that has not adopted owned-connection threading; handlers then fall back
     /// to their prior self-open behavior. Built once in the sidecar serve path
@@ -167,6 +169,7 @@ impl Gateway {
             handlers: HashMap::new(),
             emitter: Arc::new(StderrSignalEmitter),
             taxonomy: None,
+            local_conversations: LocalConversationStore::default(),
             connection: None,
         }
     }
@@ -176,8 +179,18 @@ impl Gateway {
             handlers: HashMap::new(),
             emitter,
             taxonomy: None,
+            local_conversations: LocalConversationStore::default(),
             connection: None,
         }
+    }
+
+    #[cfg(test)]
+    pub fn with_local_conversation_store_for_tests(
+        mut self,
+        store: LocalConversationStore,
+    ) -> Self {
+        self.local_conversations = store;
+        self
     }
 
     /// Install the single process-lifetime DB connection the sidecar threads
@@ -385,28 +398,7 @@ impl Gateway {
         }
 
         // Reject caller-asserted scope/conversation fields in params per AC-2 (iv).
-        if let Some(params_obj) = envelope.params.as_object() {
-            if params_obj.contains_key("granted_scopes") {
-                return Err(Box::new(GatewayFailure {
-                    error: ToolError::BadParams {
-                        detail: "granted_scopes not accepted in params".to_string(),
-                    },
-                    reject_reason: "caller_asserted_scopes".to_string(),
-                    tool_name_for_signal: Some(envelope.tool_name.clone()),
-                    client_id_for_signal: Some(asserted_client_id.clone()),
-                }));
-            }
-            if params_obj.contains_key("conversation_id") {
-                return Err(Box::new(GatewayFailure {
-                    error: ToolError::BadParams {
-                        detail: "use envelope conversation_handle".to_string(),
-                    },
-                    reject_reason: "caller_asserted_conversation_id".to_string(),
-                    tool_name_for_signal: Some(envelope.tool_name.clone()),
-                    client_id_for_signal: Some(asserted_client_id.clone()),
-                }));
-            }
-        }
+        reject_caller_asserted_params(envelope, asserted_client_id)?;
 
         // Resolve/mint conversation handle per AC-3a/AC-3b §D.bis.
         let conversation_handle = match auth::resolve_or_mint_handle(
@@ -504,32 +496,21 @@ impl Gateway {
             }));
         }
 
-        if let Some(params_obj) = envelope.params.as_object() {
-            if params_obj.contains_key("granted_scopes") {
-                return Err(Box::new(GatewayFailure {
-                    error: ToolError::BadParams {
-                        detail: "granted_scopes not accepted in params".to_string(),
-                    },
-                    reject_reason: "caller_asserted_scopes".to_string(),
-                    tool_name_for_signal: Some(envelope.tool_name.clone()),
-                    client_id_for_signal: Some(asserted_client_id.clone()),
-                }));
-            }
-            if params_obj.contains_key("conversation_id") {
-                return Err(Box::new(GatewayFailure {
-                    error: ToolError::BadParams {
-                        detail: "use envelope conversation_handle".to_string(),
-                    },
-                    reject_reason: "caller_asserted_conversation_id".to_string(),
-                    tool_name_for_signal: Some(envelope.tool_name.clone()),
-                    client_id_for_signal: Some(asserted_client_id.clone()),
-                }));
-            }
-        }
+        reject_caller_asserted_params(envelope, asserted_client_id)?;
 
-        let conversation_handle = envelope.conversation_handle.clone().unwrap_or_else(|| {
-            OpaqueConversationHandle::new(format!("local-stdio-{}", uuid::Uuid::new_v4()))
-        });
+        let conversation_handle = match self
+            .local_conversations
+            .resolve_or_mint(asserted_client_id, envelope.conversation_handle.as_ref())
+        {
+            Ok(handle) => handle,
+            Err(error) => {
+                return Err(local_conversation_to_failure(
+                    error,
+                    envelope,
+                    asserted_client_id,
+                ));
+            }
+        };
 
         Ok(self.invoke_authorized_handler(
             handler.as_ref(),
@@ -636,6 +617,17 @@ impl Gateway {
                             conversation_handle,
                         };
                     }
+                    if matches!(side, Side::Read) {
+                        eprintln!("mcp_v2 read audit failure: {err}");
+                        return Dispatched {
+                            result: McpToolResult::Error {
+                                error: ToolError::Internal {
+                                    trace_id: "mcp_read_audit_failed".to_string(),
+                                },
+                            },
+                            conversation_handle,
+                        };
+                    }
                     eprintln!("mcp_v2 audit single-failure: {err}");
                 }
 
@@ -717,6 +709,91 @@ fn auth_to_failure(
         tool_name_for_signal: Some(envelope.tool_name.clone()),
         client_id_for_signal: attributed_client.cloned(),
     })
+}
+
+fn local_conversation_to_failure(
+    err: LocalRuntimeError,
+    envelope: &McpToolRequestEnvelope,
+    asserted_client_id: &McpClientId,
+) -> Box<GatewayFailure> {
+    match err {
+        LocalRuntimeError::ConversationRevoked => Box::new(GatewayFailure {
+            error: ToolError::ConversationRevoked,
+            reject_reason: "local_conversation_revoked".to_string(),
+            tool_name_for_signal: Some(envelope.tool_name.clone()),
+            client_id_for_signal: Some(asserted_client_id.clone()),
+        }),
+        LocalRuntimeError::BadConversationHandle => Box::new(GatewayFailure {
+            error: ToolError::BadParams {
+                detail: "conversation handle is malformed".to_string(),
+            },
+            reject_reason: "malformed_local_conversation_handle".to_string(),
+            tool_name_for_signal: Some(envelope.tool_name.clone()),
+            client_id_for_signal: Some(asserted_client_id.clone()),
+        }),
+        other => {
+            let detail = other.to_string();
+            Box::new(GatewayFailure {
+                error: ToolError::Internal {
+                    trace_id: opaque_trace_id("local_conversation", &detail),
+                },
+                reject_reason: "local_conversation_store_error".to_string(),
+                tool_name_for_signal: Some(envelope.tool_name.clone()),
+                client_id_for_signal: Some(asserted_client_id.clone()),
+            })
+        }
+    }
+}
+
+fn reject_caller_asserted_params(
+    envelope: &McpToolRequestEnvelope,
+    asserted_client_id: &McpClientId,
+) -> Result<(), Box<GatewayFailure>> {
+    let Some(params_obj) = envelope.params.as_object() else {
+        return Ok(());
+    };
+
+    let forbidden = [
+        "granted_scopes",
+        "grantedScopes",
+        "scopes",
+        "scope",
+        "conversation_id",
+        "conversationId",
+        "conversationHandle",
+        "client_id",
+        "clientId",
+        "actor",
+        "side",
+        "sensitivity",
+        "_dailyos",
+    ];
+    let Some(key) = forbidden
+        .iter()
+        .copied()
+        .find(|key| params_obj.contains_key(*key))
+    else {
+        return Ok(());
+    };
+
+    let reason = match key {
+        "granted_scopes" | "grantedScopes" | "scopes" | "scope" => "caller_asserted_scopes",
+        "conversation_id" | "conversationId" | "conversationHandle" | "_dailyos" => {
+            "caller_asserted_conversation"
+        }
+        "client_id" | "clientId" | "actor" => "caller_asserted_actor",
+        "side" | "sensitivity" => "caller_asserted_classification",
+        _ => "caller_asserted_reserved_param",
+    };
+
+    Err(Box::new(GatewayFailure {
+        error: ToolError::BadParams {
+            detail: format!("{key} not accepted in params"),
+        },
+        reject_reason: reason.to_string(),
+        tool_name_for_signal: Some(envelope.tool_name.clone()),
+        client_id_for_signal: Some(asserted_client_id.clone()),
+    }))
 }
 
 /// Build an opaque `trace_id` for `ToolError::Internal`: never leak raw DB /
@@ -899,11 +976,52 @@ mod tests {
     //! v241-v244 schemas; the unit tests below validate the small pure
     //! helpers that don't need DB state.
 
-    use super::super::contracts::{ParamSchema, ReturnSpec, ToolDescription};
     use super::*;
     use crate::db::ActionDb;
     use crate::services::mcp_v2::actor_policy::ToolRateLimit;
+    use crate::services::mcp_v2::contracts::{ParamSchema, ParamSpec, ReturnSpec, ToolDescription};
     use std::sync::Mutex;
+
+    fn test_description(name: &str, side: Side, scopes: Vec<Scope>) -> ToolDescription {
+        ToolDescription {
+            name: ScopedName::new(name),
+            summary: "test tool".to_string(),
+            when_to_call: "for tests".to_string(),
+            when_not_to_call: "outside tests".to_string(),
+            side,
+            parameters: vec![ParamSpec {
+                name: "subject".to_string(),
+                schema: ParamSchema(json!({ "type": "string" })),
+                required: false,
+                description: "subject".to_string(),
+            }],
+            returns: ReturnSpec {
+                schema: ParamSchema(json!({ "type": "object" })),
+                description: "result".to_string(),
+            },
+            examples: vec![],
+            scopes_required: scopes,
+        }
+    }
+
+    struct StubHandler {
+        description: ToolDescription,
+    }
+
+    impl McpToolHandler for StubHandler {
+        fn description(&self) -> &ToolDescription {
+            &self.description
+        }
+
+        fn invoke(
+            &self,
+            _ctx: &McpHandlerContext,
+            _actor: &McpActor,
+            _params: serde_json::Value,
+        ) -> Result<serde_json::Value, ToolError> {
+            Ok(json!({ "status": "ok" }))
+        }
+    }
 
     struct RecordingContextHandler {
         description: ToolDescription,
@@ -956,24 +1074,132 @@ mod tests {
         }
     }
 
-    fn recording_grant(tool_name: &str) -> ToolGrant {
+    fn gateway_with_stub(
+        name: &str,
+        side: Side,
+        scopes: Vec<Scope>,
+    ) -> (Gateway, tempfile::TempDir) {
+        let dir = tempfile::tempdir().expect("tempdir");
+        let store = LocalConversationStore::new(dir.path().join("handles.json"));
+        let mut gateway = Gateway::new().with_local_conversation_store_for_tests(store);
+        gateway.register(Arc::new(StubHandler {
+            description: test_description(name, side, scopes),
+        }));
+        (gateway, dir)
+    }
+
+    fn grant(
+        name: &str,
+        exposure: abilities_runtime::abilities::registry::McpExposure,
+    ) -> ToolGrant {
         ToolGrant {
-            tool_name: ScopedName::new(tool_name),
-            scopes_granted: vec![Scope::new(tool_name)],
-            exposure: abilities_runtime::abilities::registry::McpExposure::Invocable,
+            tool_name: ScopedName::new(name),
+            scopes_granted: vec![Scope::new(name)],
+            exposure,
             rate_limit: ToolRateLimit {
-                max_calls: 0,
-                window_seconds: 0,
+                max_calls: 600,
+                window_seconds: 60,
             },
         }
     }
 
-    fn envelope(tool_name: &str) -> McpToolRequestEnvelope {
+    fn recording_grant(tool_name: &str) -> ToolGrant {
+        grant(
+            tool_name,
+            abilities_runtime::abilities::registry::McpExposure::Invocable,
+        )
+    }
+
+    fn envelope_with_params(name: &str, params: serde_json::Value) -> McpToolRequestEnvelope {
         McpToolRequestEnvelope {
             conversation_handle: None,
-            tool_name: ScopedName::new(tool_name),
-            params: json!({}),
+            tool_name: ScopedName::new(name),
+            params,
         }
+    }
+
+    fn envelope(name: &str) -> McpToolRequestEnvelope {
+        envelope_with_params(name, json!({}))
+    }
+
+    #[test]
+    fn local_stdio_non_invocable_grant_rejects_before_handler_dispatch() {
+        let tool_name = "dailyos.write.place_document";
+        let (gateway, _dir) =
+            gateway_with_stub(tool_name, Side::Write, vec![Scope::new(tool_name)]);
+        let response = gateway.handle_local_stdio_tool_call(
+            &McpClientId::new("client-a"),
+            envelope(tool_name),
+            &[grant(
+                tool_name,
+                abilities_runtime::abilities::registry::McpExposure::None,
+            )],
+        );
+
+        assert_eq!(
+            response.result,
+            McpToolResult::Error {
+                error: ToolError::ExposureForbidden {
+                    tool_name: ScopedName::new(tool_name)
+                }
+            }
+        );
+    }
+
+    #[test]
+    fn local_stdio_rejects_caller_asserted_dailyos_metadata_at_gateway() {
+        let tool_name = "dailyos.read.account_status";
+        let (gateway, _dir) = gateway_with_stub(tool_name, Side::Read, vec![Scope::new(tool_name)]);
+        let response = gateway.handle_local_stdio_tool_call(
+            &McpClientId::new("client-a"),
+            envelope_with_params(
+                tool_name,
+                json!({
+                    "subject": "Example Account",
+                    "_dailyos": { "clientId": "caller-controlled" }
+                }),
+            ),
+            &[grant(
+                tool_name,
+                abilities_runtime::abilities::registry::McpExposure::Invocable,
+            )],
+        );
+
+        assert!(matches!(
+            response.result,
+            McpToolResult::Error {
+                error: ToolError::BadParams { .. }
+            }
+        ));
+    }
+
+    #[test]
+    fn read_audit_digest_failure_fails_closed() {
+        let tool_name = "dailyos.read.account_status";
+        let (gateway, _dir) = gateway_with_stub(tool_name, Side::Read, vec![Scope::new(tool_name)]);
+
+        let response = super::super::local_runtime::with_audit_digest_key_payload_for_tests(
+            "not-base64",
+            || {
+                gateway.handle_local_stdio_tool_call(
+                    &McpClientId::new("client-a"),
+                    envelope_with_params(tool_name, json!({ "subject": "Example Account" })),
+                    &[grant(
+                        tool_name,
+                        abilities_runtime::abilities::registry::McpExposure::Invocable,
+                    )],
+                )
+            },
+        );
+
+        assert_eq!(
+            response.result,
+            McpToolResult::Error {
+                error: ToolError::Internal {
+                    trace_id: "mcp_read_audit_failed".to_string()
+                }
+            }
+        );
     }
 
     #[test]
