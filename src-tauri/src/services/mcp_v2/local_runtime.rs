@@ -28,6 +28,7 @@ const DIGEST_KEY_BYTES: usize = 32;
 const CONVERSATION_STORE_RELATIVE_PATH: &str = "mcp/conversation-handles.json";
 const DEFAULT_CONVERSATION_TTL: Duration = Duration::from_secs(60 * 60 * 24);
 const SECURITY_CMD_TIMEOUT: Duration = Duration::from_secs(5);
+const SECURITY_CMD_PATH: &str = "/usr/bin/security";
 const CONVERSATION_FILE_LOCK_TIMEOUT: Duration = Duration::from_secs(2);
 const CONVERSATION_STALE_LOCK_AFTER: Duration = Duration::from_secs(30);
 pub const AUDIT_DIGEST_ALGORITHM: &str = "hmac_sha256_canonical_json_v1";
@@ -124,7 +125,7 @@ fn run_security_cmd(args: &[&str]) -> Result<Output, String> {
     const BASE_MS: u64 = 150;
 
     for attempt in 0..=MAX_RETRIES {
-        let output = run_command_with_timeout("security", args, SECURITY_CMD_TIMEOUT)?;
+        let output = run_command_with_timeout(SECURITY_CMD_PATH, args, SECURITY_CMD_TIMEOUT)?;
 
         if output.status.success() {
             return Ok(output);
@@ -717,6 +718,14 @@ mod tests {
             );
             Ok(())
         }
+    }
+
+    #[test]
+    fn security_cli_keychain_uses_absolute_system_binary() {
+        let security_path = Path::new(SECURITY_CMD_PATH);
+
+        assert_eq!(security_path, Path::new("/usr/bin/security"));
+        assert!(security_path.is_absolute());
     }
 
     #[test]
