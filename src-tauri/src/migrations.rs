@@ -1128,12 +1128,18 @@ const MIGRATIONS: &[Migration] = &[
         version: 281,
         sql: include_str!("migrations/281_claim_file_projection_run_claims.sql"),
     },
-    // v1.4.9 DOS-832 — correction replay idempotency journal. This is
-    // intentionally above W3's v280/v281 head so databases that already
-    // applied DOS-628 still receive the replay schema.
+    // Correction replay idempotency journal. This is intentionally above the
+    // readable claim-file projection head so databases that already applied
+    // the projection migrations still receive the replay schema.
     Migration::Fn {
         version: 282,
         apply: migrate_v282_dos_832_rebuild_replay_journal,
+    },
+    // Replay-journal repair for local draft builds that could record the
+    // journal migration before the final content-hash column repair.
+    Migration::Fn {
+        version: 283,
+        apply: migrate_v283_dos_832_rebuild_replay_journal_repair,
     },
 ];
 
@@ -2599,6 +2605,10 @@ fn verify_required_schema(conn: &Connection) -> Result<(), String> {
         }
     }
 
+    if version >= 282 {
+        verify_v282_dos_832_rebuild_replay_journal(conn)?;
+    }
+
     Ok(())
 }
 
@@ -2965,6 +2975,16 @@ fn migrate_v271_recommendation_surfacing(conn: &Connection) -> Result<(), Migrat
 }
 
 fn migrate_v282_dos_832_rebuild_replay_journal(conn: &Connection) -> Result<(), MigrationError> {
+    repair_v282_dos_832_rebuild_replay_journal(conn)
+}
+
+fn migrate_v283_dos_832_rebuild_replay_journal_repair(
+    conn: &Connection,
+) -> Result<(), MigrationError> {
+    repair_v282_dos_832_rebuild_replay_journal(conn)
+}
+
+fn repair_v282_dos_832_rebuild_replay_journal(conn: &Connection) -> Result<(), MigrationError> {
     apply_idempotent_sql_migration(
         conn,
         include_str!("migrations/282_dos_832_rebuild_replay_journal.sql"),
@@ -2980,6 +3000,70 @@ fn migrate_v282_dos_832_rebuild_replay_journal(conn: &Connection) -> Result<(), 
         .map_err(|e| {
             format!("Failed to repair v282 replay journal feedback_content_hash column: {e}")
         })?;
+    }
+    let columns = table_columns(conn, "rebuild_correction_replay_events")?;
+    if !columns.contains("sidecar_checksum") {
+        conn.execute_batch(
+            "ALTER TABLE rebuild_correction_replay_events
+                ADD COLUMN sidecar_checksum TEXT NOT NULL DEFAULT 'legacy-v283-unset';",
+        )
+        .map_err(|e| {
+            format!("Failed to repair v282 replay journal sidecar_checksum column: {e}")
+        })?;
+    }
+
+    Ok(())
+}
+
+fn verify_v282_dos_832_rebuild_replay_journal(conn: &Connection) -> Result<(), MigrationError> {
+    let claim_feedback_columns = table_columns(conn, "claim_feedback")?;
+    if !claim_feedback_columns.contains("replay_event_id") {
+        return Err(
+            "Schema integrity check failed: missing column claim_feedback.replay_event_id"
+                .to_string(),
+        );
+    }
+
+    if !table_exists(conn, "rebuild_correction_replay_events")? {
+        return Err(
+            "Schema integrity check failed: missing required table 'rebuild_correction_replay_events'"
+                .to_string(),
+        );
+    }
+
+    let replay_columns = table_columns(conn, "rebuild_correction_replay_events")?;
+    for col in [
+        "sidecar_event_id",
+        "run_id",
+        "sidecar_checksum",
+        "sidecar_schema_version",
+        "source_runtime_claim_id",
+        "resolved_claim_id",
+        "action",
+        "status",
+        "semantic_identity_hash",
+        "feedback_content_hash",
+        "attempt_count",
+        "claimed_at",
+        "updated_at",
+    ] {
+        if !replay_columns.contains(col) {
+            return Err(format!(
+                "Schema integrity check failed: missing column rebuild_correction_replay_events.{col}"
+            ));
+        }
+    }
+
+    for index_name in [
+        "idx_claim_feedback_replay_event",
+        "idx_rebuild_replay_events_run_status",
+        "idx_rebuild_replay_events_resolved_claim",
+    ] {
+        if !index_exists(conn, index_name)? {
+            return Err(format!(
+                "Schema integrity check failed: missing required index '{index_name}'"
+            ));
+        }
     }
 
     Ok(())
@@ -7716,6 +7800,53 @@ mod tests {
             )
             .expect("read repaired content hash");
         assert_eq!(content_hash, "legacy-v282-unset");
+    }
+
+    #[test]
+    fn migration_283_repairs_replay_journal_when_draft_v282_already_recorded() {
+        let conn = mem_db();
+        run_migrations(&conn).expect("build current schema");
+        conn.execute_batch(
+            "ALTER TABLE rebuild_correction_replay_events DROP COLUMN feedback_content_hash;
+             ALTER TABLE rebuild_correction_replay_events DROP COLUMN sidecar_checksum;
+             INSERT INTO rebuild_correction_replay_events (
+                sidecar_event_id, run_id, sidecar_schema_version, source_runtime_claim_id,
+                resolved_claim_id, action, status, reason_code, reason_detail_hash,
+                semantic_identity_hash, applied_feedback_id, attempt_count, claimed_at,
+                applied_at, updated_at
+             ) VALUES (
+                'draft-v282-event', 'run-1', 2, 'runtime-claim-1', 'claim-1',
+                'cannot_verify', 'claimed', NULL, NULL, 'semantic-hash', NULL,
+                1, '2026-06-05T12:00:00Z', NULL, '2026-06-05T12:00:00Z'
+             );
+             DELETE FROM schema_version WHERE version >= 283;
+             INSERT OR IGNORE INTO schema_version (version) VALUES (282);",
+        )
+        .expect("simulate draft v282 already recorded");
+        assert_eq!(current_version(&conn).expect("current version"), 282);
+        let columns = table_columns(&conn, "rebuild_correction_replay_events")
+            .expect("replay columns before repair");
+        assert!(!columns.contains("feedback_content_hash"));
+        assert!(!columns.contains("sidecar_checksum"));
+
+        run_migrations(&conn).expect("repair already-recorded draft v282");
+
+        let columns = table_columns(&conn, "rebuild_correction_replay_events")
+            .expect("replay columns after repair");
+        assert!(columns.contains("feedback_content_hash"));
+        assert!(columns.contains("sidecar_checksum"));
+        let repaired: (String, String) = conn
+            .query_row(
+                "SELECT feedback_content_hash, sidecar_checksum
+                 FROM rebuild_correction_replay_events
+                 WHERE sidecar_event_id = 'draft-v282-event'",
+                [],
+                |row| Ok((row.get(0)?, row.get(1)?)),
+            )
+            .expect("read repaired replay row");
+        assert_eq!(repaired.0, "legacy-v282-unset");
+        assert_eq!(repaired.1, "legacy-v283-unset");
+        verify_required_schema(&conn).expect("v282 replay invariants pass after repair");
     }
 
     #[test]

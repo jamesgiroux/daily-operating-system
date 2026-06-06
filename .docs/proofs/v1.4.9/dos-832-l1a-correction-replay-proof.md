@@ -1,8 +1,8 @@
 # DOS-832 L1a Proof Bundle -- Current-Encrypted Replica Correction Replay
 
 **Issue:** DOS-832
-**Branch:** `codex/v1.4.9-w1-dos832-l1`
-**Date:** 2026-06-05
+**Branch:** `codex/v1.4.9-w1-dos832-l1-rebased`
+**Date:** 2026-06-06
 **Scope:** L1a substrate proof only. This proves replay of W3 claim-file sidecar feedback into freshly regenerated claim IDs in the current encrypted/Replica-compatible schema. It does not claim final plain-SQLite rebuild, Live cutover, or full DOS-832 release completion.
 
 ## Verdict
@@ -15,18 +15,27 @@ The branch proves the correction-replay core that DOS-832 can honestly validate 
 - Legacy v1 sidecars without `feedbackId` replay through a deterministic derived key so old sidecars remain readable without pretending they had durable source IDs.
 - DOS-832 resolves sidecar entries by rebuild-stable semantic identity, not old runtime claim UUID.
 - v2 replay requires the sidecar source identity hash before mutation. This hash binds `data_source`, `source_ref`, and `item_hash`; it is not proof of the full projection-file contents.
+- Replay now authenticates the sidecar against a committed projection-run ledger before mutation, including checksum binding for the replayed sidecar payload.
 - Replay claims the stable sidecar event in a durable journal before calling the claim feedback service.
 - Feedback replay goes through `services::claims`, not raw `claim_feedback` inserts.
+- Feedback signal rows are persisted inside the feedback transaction, so crash-after-write retry paths do not silently lose feedback signals.
+- Missing feedback signals are repaired on idempotent replay and claim-file apply paths before a replay is considered recovered.
 - Re-running the replay does not duplicate feedback rows.
 - Replay preserves the original sidecar feedback `submitted_at` rather than rewriting it to rebuild time.
+- Sidecar feedback older than an existing claim feedback watermark is rejected as stale before mutation; same-sidecar stale exclusions only apply when durable replay feedback matches the sidecar event action and content hash.
 - Same event ID with changed feedback content or `submitted_at` is rejected.
+- Same event ID collision against a different claim, action, or content is failed without attaching the wrong durable feedback row.
 - Missing stable replay IDs are rejected before mutation.
 - Duplicate stable replay IDs are rejected before mutation.
+- Unsupported feedback actions are rejected during sidecar preflight, before any earlier row can mutate.
 - Unsupported sidecar schema versions are rejected before mutation.
 - Missing, provenance-mismatched, or ambiguous semantic matches are represented as orphan outcomes, not guessed.
-- Service-invalid feedback rows are marked `failed` in the replay journal and do not abort later independent rows.
+- Recoverable orphan rows can be reclaimed only by the same sidecar/event once a later rebuild resolves the semantic claim match. Migrated legacy orphan placeholders keep checksum-neutral behavior because the original checksum is unknowable, but terminal rows still bind canonical feedback content.
+- Deterministic service-invalid feedback rows are marked `failed` in the replay journal and do not abort later independent rows.
+- Retryable service failures remain `claimed` so the same sidecar/event can be retried instead of being permanently terminal.
 - Stable replay event IDs cannot be retargeted after applied, failed, or orphaned terminal journal outcomes.
 - Partial v282 journal rows from an interrupted old-shape migration are repaired before replay continues.
+- A follow-up v283 repair migration covers databases that already recorded the draft v282 migration before the journal shape was completed.
 
 ## Explicit Non-Claims
 
@@ -47,6 +56,7 @@ The runtime report returns `plainSqliteRecoveryProven: false` and `liveCutoverPr
 ### Schema
 
 - Added migration `v282_dos_832_rebuild_replay_journal`.
+- Added migration `v283_dos_832_rebuild_replay_journal_repair`.
 - Added `claim_feedback.replay_event_id` plus a unique partial index for replay idempotency.
 - Added `rebuild_correction_replay_events` with status-coded replay outcomes:
   - `claimed`
@@ -56,8 +66,10 @@ The runtime report returns `plainSqliteRecoveryProven: false` and `liveCutoverPr
   - `orphan_ambiguous`
   - `failed`
 - Journal rows persist a canonical feedback-content hash, including `submitted_at`, so replay can reject event-ID reuse with changed feedback content or historical feedback time.
+- Journal rows persist a sidecar checksum for new replay events, so replay cannot bind an event from one sidecar payload to another sidecar payload after authorization. Rows migrated with `legacy-v283-unset` keep checksum-neutral semantics because the original checksum was not recorded; terminal content hash still binds the feedback payload.
 - Registered v282 through the idempotent multi-statement migration helper so schema-version record gaps can retry without duplicate-column failure.
 - v282 includes an explicit idempotent repair for partial old-shape journal tables missing `feedback_content_hash`.
+- v283 reruns the replay-journal repair path for databases that already recorded v282 before `feedback_content_hash` and `sidecar_checksum` existed.
 - Bumped claim-file sidecar schema version to `2` because stable `feedbackId` is now part of the replay contract.
 
 ### Services
@@ -66,6 +78,8 @@ The runtime report returns `plainSqliteRecoveryProven: false` and `liveCutoverPr
 - Added `services::claims::record_claim_feedback_replay`.
 - Existing `record_claim_feedback` now delegates through a shared internal writer path; replay adds only stable-event idempotency and does not bypass actor or feedback validation.
 - `claim_files` sidecar serialization now includes stable feedback row IDs and semantic identities for supersession/contradiction endpoints.
+- Replay validates sidecars against the committed projection run before claim matching or feedback mutation.
+- Existing feedback replay events now repair missing feedback signals through the service layer before continuing.
 
 ## Intelligence Loop Check
 
@@ -77,42 +91,40 @@ The runtime report returns `plainSqliteRecoveryProven: false` and `liveCutoverPr
 
 ## Validation
 
-Commands run from the DOS-832 worktree:
+Final commands run from the DOS-832 worktree after the Cycle 16 remediation:
 
 ```bash
-src-tauri/scripts/check_migrations_transactional.sh
-cargo test --manifest-path src-tauri/Cargo.toml services::rebuild --lib -- --nocapture
-cargo test --manifest-path src-tauri/Cargo.toml services::claim_files --lib -- --nocapture
-cargo test --manifest-path src-tauri/Cargo.toml record_claim_feedback_replay --lib -- --nocapture
-cargo test --manifest-path src-tauri/Cargo.toml migration_282 --lib -- --nocapture
 cargo fmt --manifest-path src-tauri/Cargo.toml
+cargo test --manifest-path src-tauri/Cargo.toml --lib dos832_replay_rejects_unsupported_later_feedback_action_before_writes
+cargo test --manifest-path src-tauri/Cargo.toml --lib dos832_replay_mismatched_sidecar_event_does_not_mask_stale_later_row
+cargo test --manifest-path src-tauri/Cargo.toml --lib migrated_orphan
+cargo test --manifest-path src-tauri/Cargo.toml --lib dos832
+cargo test --manifest-path src-tauri/Cargo.toml --lib apply_claim_file_corrections_repairs_signal_for_already_applied_feedback
+cargo test --manifest-path src-tauri/Cargo.toml --lib record_claim_feedback_replay_event
+cargo test --manifest-path src-tauri/Cargo.toml --test dos7_d4_lint_test
 cargo clippy --manifest-path src-tauri/Cargo.toml -- -D warnings
-cargo test --manifest-path src-tauri/Cargo.toml --lib
-cargo test --manifest-path src-tauri/Cargo.toml
-pnpm tsc --noEmit
 git diff --check
 ```
 
 Results:
 
-- Migration wrapper check: passed.
-- Focused DOS-832 replay tests: 19 passed.
-- Claim-file tests: 18 passed.
-- Claim feedback replay tests: 5 passed.
-- v282 migration regressions: 2 passed.
+- Unsupported later feedback action preflight regression: 1 passed.
+- Mismatched sidecar event stale-watermark regression: 1 passed.
+- Migrated orphan placeholder regressions: 2 passed.
+- Focused DOS-832 replay suite: 43 passed.
+- Claim-file already-applied signal repair regression: 1 passed.
+- Claim feedback replay idempotency suite: 6 passed.
+- DOS7/D4 lint suite: 28 passed.
 - Clippy: passed with `-D warnings`.
-- Full Rust lib suite: 3183 passed, 0 failed, 11 ignored.
-- Full Cargo suite: passed, including integration tests and doc tests.
-- TypeScript: passed.
 - Diff hygiene: passed.
-- Focused remediation re-review: adversarial reviewer PASS; data-migration reviewer PASS.
-- Note: full Cargo emitted two pre-existing unused-import warnings in `tests/dos567_fixture_backfill_and_composition_versions.rs`; `cargo clippy -- -D warnings` passed.
 
-## L2 Inputs
+## L2 Review Cycles
 
-The next L2 reviewer should focus on these risk areas:
+The L2 remediation ran adversarial review cycles across five subagents: data migrations, reliability, testing, security, and adversarial review. All five passed on Cycle 16.
 
-- Whether replay-event claiming is sufficiently atomic for the current single-writer/local topology.
-- Whether the sidecar stable `feedbackId` contract belongs in W3/DOS-628 before DOS-832 merges, or whether the stacked DOS-832 branch may extend the W3 sidecar contract.
-- Whether the L1a proof boundary is acceptable for PR scope, given the full DOS-832 packet still requires DOS-831 and broader rebuild orchestration.
-- Whether supersession/contradiction endpoint semantic identities are enough as contract plumbing while actual edge replay remains out of this slice.
+- Cycle 11 found missing mismatch proof, missing claimed-legacy signal repair, and terminal checksum rebinding. Fixed with content/action/claim collision tests, recovery signal repair, and legacy checksum-neutral terminal handling.
+- Cycle 12 found content-hash adoption and signal-repair failure ordering gaps. Fixed by requiring content-hash equality for fallback recovery, preserving legacy checksums, and proving retryability after transient signal repair failures.
+- Cycle 13 found pre-terminal content hash mutation and migrated orphan placeholder validation gaps. Fixed by moving content-hash writes into terminal updates and allowing recoverable migrated orphans through validation.
+- Cycle 14 found orphan reclaim pre-binding. Fixed by making orphan reclaim set only `claimed`/`resolved_claim_id`; terminalization owns content binding while legacy checksum placeholders remain neutral by policy.
+- Cycle 15 found sidecar-wide stale exclusions and malformed later feedback action partial writes. Fixed with content-aware stale exclusions and action preflight.
+- Cycle 16 verdict: data migrations PASS; reliability PASS; testing PASS; security PASS; adversarial PASS.

@@ -8,6 +8,7 @@ CREATE UNIQUE INDEX IF NOT EXISTS idx_claim_feedback_replay_event
 CREATE TABLE IF NOT EXISTS rebuild_correction_replay_events (
     sidecar_event_id TEXT PRIMARY KEY,
     run_id TEXT NOT NULL,
+    sidecar_checksum TEXT NOT NULL DEFAULT 'legacy-v283-unset',
     sidecar_schema_version INTEGER NOT NULL,
     source_runtime_claim_id TEXT NOT NULL,
     resolved_claim_id TEXT,

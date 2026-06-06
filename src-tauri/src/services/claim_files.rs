@@ -27,6 +27,7 @@ use crate::services::claim_receipt::feedback::{
     submit_claim_feedback_for_claim_file_apply, ClaimFeedbackRequest, ClaimFeedbackResponse,
     ClaimFileFeedbackApplyCommit, IdempotencyCache,
 };
+use crate::services::claims::repair_claim_feedback_recorded_signal;
 use crate::services::entity_intelligence::auth::{EnvelopeSet, EnvelopeView};
 use crate::services::workspace_ingestion::registry::CLAIM_FILE_PROJECTION_ROOT;
 use crate::state::AppState;
@@ -164,7 +165,7 @@ pub struct ClaimFileProvenanceSummary {
 #[derive(Debug, Clone, Serialize, Deserialize, JsonSchema, PartialEq, Eq)]
 #[serde(rename_all = "camelCase")]
 pub struct ClaimFileFeedbackRow {
-    #[serde(default)]
+    #[serde(default, skip_serializing_if = "String::is_empty")]
     pub feedback_id: String,
     pub action: String,
     pub actor: String,
@@ -244,7 +245,7 @@ struct ParsedCorrection {
 #[derive(Debug, Clone, PartialEq, Eq)]
 enum CorrectionApplyState {
     Claimed,
-    AlreadyApplied,
+    AlreadyApplied { feedback_id: Option<String> },
     InProgress,
 }
 
@@ -265,8 +266,8 @@ struct CorrectionApplyRecord<'a> {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
-struct CommittedProjectionRun {
-    run_id: String,
+pub(crate) struct CommittedProjectionRun {
+    pub run_id: String,
 }
 
 #[derive(Debug, Clone)]
@@ -435,7 +436,12 @@ pub async fn apply_claim_file_corrections(
         )
         .await?
         {
-            CorrectionApplyState::AlreadyApplied => continue,
+            CorrectionApplyState::AlreadyApplied { feedback_id } => {
+                if let Some(feedback_id) = feedback_id {
+                    repair_claim_file_feedback_signal(state, feedback_id).await?;
+                }
+                continue;
+            }
             CorrectionApplyState::InProgress => {
                 failures.push(ClaimFileApplyFailure {
                     claim_id: Some(correction.claim_id),
@@ -1097,6 +1103,28 @@ fn validate_committed_sidecar_projection_db(
     sidecar: &ClaimFileSidecar,
     sidecar_checksum: &str,
 ) -> Result<CommittedProjectionRun, String> {
+    validate_sidecar_projection_db(
+        db,
+        sidecar,
+        sidecar_checksum,
+        CLAIM_FILE_SIDECAR_SCHEMA_VERSION,
+    )
+}
+
+pub(crate) fn validate_replay_sidecar_projection_db(
+    db: &ActionDb,
+    sidecar: &ClaimFileSidecar,
+    sidecar_checksum: &str,
+) -> Result<CommittedProjectionRun, String> {
+    validate_sidecar_projection_db(db, sidecar, sidecar_checksum, sidecar.schema_version)
+}
+
+fn validate_sidecar_projection_db(
+    db: &ActionDb,
+    sidecar: &ClaimFileSidecar,
+    sidecar_checksum: &str,
+    expected_sidecar_schema_version: u32,
+) -> Result<CommittedProjectionRun, String> {
     let binding: Option<(String, String)> = db
         .conn_ref()
         .query_row(
@@ -1139,7 +1167,7 @@ fn validate_committed_sidecar_projection_db(
                 sidecar_checksum,
                 CLAIM_FILE_PROJECTION_ROOT,
                 CLAIM_FILE_PROJECTION_VERSION,
-                CLAIM_FILE_SIDECAR_SCHEMA_VERSION,
+                expected_sidecar_schema_version,
             ],
             |row| row.get(0),
         )
@@ -1660,20 +1688,20 @@ fn claim_correction_apply_db(
         return Ok(CorrectionApplyState::Claimed);
     }
 
-    let (status, claimed_at): (String, String) = db
+    let (status, claimed_at, feedback_id): (String, String, Option<String>) = db
         .conn_ref()
         .query_row(
-            "SELECT status, claimed_at
+            "SELECT status, claimed_at, feedback_id
               FROM claim_file_correction_apply_events
               WHERE idempotency_key = ?1",
             [record.apply_key],
-            |row| Ok((row.get(0)?, row.get(1)?)),
+            |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?)),
         )
         .optional()
         .map_err(|error| error.to_string())?
         .ok_or_else(|| "correction apply event missing after insert conflict".to_string())?;
     match status.as_str() {
-        "applied" => Ok(CorrectionApplyState::AlreadyApplied),
+        "applied" => Ok(CorrectionApplyState::AlreadyApplied { feedback_id }),
         "claimed" => {
             if correction_apply_claim_expired(&claimed_at, now)? {
                 db.conn_ref()
@@ -1719,6 +1747,24 @@ async fn mark_correction_apply_failed(
     let error_detail_hash = redacted_hash(error_detail);
     state
         .db_write(move |db| mark_correction_apply_failed_db(db, &apply_key, &error_detail_hash))
+        .await
+        .map_err(|error| ClaimFileError::Db(error.to_string()))
+}
+
+async fn repair_claim_file_feedback_signal(
+    state: &AppState,
+    feedback_id: String,
+) -> Result<(), ClaimFileError> {
+    state
+        .db_write(move |db| {
+            let clock = crate::services::context::SystemClock;
+            let rng = crate::services::context::SystemRng;
+            let external = crate::services::context::ExternalClients::default();
+            let ctx = crate::services::context::ServiceContext::new_live(&clock, &rng, &external)
+                .with_actor("user");
+            repair_claim_feedback_recorded_signal(&ctx, db, &feedback_id)
+                .map_err(|error| error.to_string())
+        })
         .await
         .map_err(|error| ClaimFileError::Db(error.to_string()))
 }
@@ -2815,6 +2861,12 @@ mod tests {
         }
     }
 
+    fn claim_feedback_recorded_signal_id_for_test(feedback_id: &str) -> String {
+        let mut hasher = Sha256::new();
+        hasher.update(format!("claim-feedback:{feedback_id}:recorded").as_bytes());
+        format!("sig-once-{:x}", hasher.finalize())
+    }
+
     #[test]
     fn sidecar_serialization_round_trips_contract_fields() {
         let mut sidecar = fixture_sidecar();
@@ -3487,7 +3539,9 @@ dailyos-action: mark_false\n\
                 },
             )
             .expect("replay applied"),
-            CorrectionApplyState::AlreadyApplied
+            CorrectionApplyState::AlreadyApplied {
+                feedback_id: Some(feedback.feedback_id.clone())
+            }
         );
 
         let failed_key = format!("{apply_key}-failed");
@@ -3586,6 +3640,199 @@ dailyos-action: mark_false\n\
             )
             .expect("expired claim is reclaimed"),
             CorrectionApplyState::Claimed
+        );
+    }
+
+    #[tokio::test]
+    async fn apply_claim_file_corrections_repairs_signal_for_already_applied_feedback() {
+        let db_dir = tempfile::tempdir().expect("db dir");
+        let db_path = db_dir.path().join("dailyos.db");
+        let db_service =
+            crate::db_service::DbService::open_at_with_fixture_provider_for_tests(db_path)
+                .await
+                .expect("open test db service");
+        let state = AppState::test_with_db_service(db_service);
+        let workspace = tempfile::tempdir().expect("workspace");
+        let _claim_id = state
+            .db_write(|db| {
+                let (clock, rng, external) = test_context_parts();
+                let ctx = test_live_context(&clock, &rng, &external);
+                commit_claim(
+                    &ctx,
+                    db,
+                    fixture_claim_proposal("Public apply signal repair fixture"),
+                )
+                .map(inserted_claim_id)
+                .map_err(|error| error.to_string())
+            })
+            .await
+            .expect("seed projection claim");
+
+        let projection = render_entity_claim_file(
+            &state,
+            workspace.path().to_path_buf(),
+            r#"{"kind":"account","id":"acct-1"}"#.to_string(),
+        )
+        .await
+        .expect("render projection");
+        let markdown_rel_path = PathBuf::from(&projection.markdown_rel_path);
+        let sidecar_rel_path =
+            sidecar_path_for_markdown_rel(&markdown_rel_path).expect("sidecar path");
+        let markdown_path = workspace.path().join(&markdown_rel_path);
+        let sidecar_path = workspace.path().join(&sidecar_rel_path);
+        let original_sidecar_json =
+            std::fs::read_to_string(&sidecar_path).expect("read original sidecar");
+        let edited_markdown = std::fs::read_to_string(&markdown_path)
+            .expect("read markdown")
+            .replace("dailyos-action: none", "dailyos-action: cannot_verify");
+        assert!(edited_markdown.contains("dailyos-action: cannot_verify"));
+        std::fs::write(&markdown_path, &edited_markdown).expect("write edited markdown");
+
+        let sidecar: ClaimFileSidecar =
+            serde_json::from_str(&original_sidecar_json).expect("decode original sidecar");
+        let corrections =
+            parse_markdown_corrections(&edited_markdown, &sidecar, &projection.sidecar_checksum)
+                .expect("parse edited correction");
+        assert_eq!(corrections.len(), 1);
+        let correction = corrections[0].clone();
+        let payload_hash = correction_payload_hash(&correction);
+        let apply_key = correction_apply_idempotency_key(
+            &projection.sidecar_checksum,
+            &correction,
+            &payload_hash,
+        );
+        let feedback_id = {
+            let sidecar_checksum = projection.sidecar_checksum.clone();
+            let apply_key = apply_key.clone();
+            let payload_hash = payload_hash.clone();
+            state
+                .db_write(move |db| {
+                    let apply_state = claim_correction_apply_db(
+                        db,
+                        &CorrectionApplyRecord {
+                            apply_key: &apply_key,
+                            sidecar_checksum: &sidecar_checksum,
+                            claim_id: &correction.claim_id,
+                            projected_claim_version: correction.projected_claim_version,
+                            projected_identity_hash: &correction.projected_identity_hash,
+                            feedback_action: correction.action.as_str(),
+                            payload_hash: &payload_hash,
+                        },
+                    )?;
+                    if apply_state != CorrectionApplyState::Claimed {
+                        return Err(format!("expected claimed apply state, got {apply_state:?}"));
+                    }
+                    let (clock, rng, external) = test_context_parts();
+                    let ctx = test_live_context(&clock, &rng, &external);
+                    record_claim_feedback_for_claim_file_apply(
+                        &ctx,
+                        db,
+                        ClaimFeedbackInput {
+                            claim_id: correction.claim_id.clone(),
+                            action: correction.action,
+                            actor: "user".to_string(),
+                            actor_id: Some("user-fixture".to_string()),
+                            payload_json: correction
+                                .metadata
+                                .as_ref()
+                                .map(|value| value.to_string()),
+                        },
+                        ClaimFileFeedbackApplyInput {
+                            expected_claim_version: correction.projected_claim_version,
+                            correction_apply_key: apply_key,
+                        },
+                    )
+                    .map(|outcome| outcome.feedback_id)
+                    .map_err(|error| error.to_string())
+                })
+                .await
+                .expect("seed applied correction")
+        };
+        let recorded_signal_id = claim_feedback_recorded_signal_id_for_test(&feedback_id);
+        let signal_count = {
+            let recorded_signal_id = recorded_signal_id.clone();
+            state
+                .db_write(move |db| {
+                    db.conn_ref()
+                        .query_row(
+                            "SELECT count(*) FROM signal_events WHERE id = ?1",
+                            params![&recorded_signal_id],
+                            |row| row.get::<_, i64>(0),
+                        )
+                        .map_err(|error| error.to_string())
+                })
+                .await
+                .expect("count recorded signal")
+        };
+        assert_eq!(signal_count, 1);
+        {
+            let recorded_signal_id = recorded_signal_id.clone();
+            state
+                .db_write(move |db| {
+                    db.conn_ref()
+                        .execute(
+                            "DELETE FROM signal_events WHERE id = ?1",
+                            params![&recorded_signal_id],
+                        )
+                        .map(|_| ())
+                        .map_err(|error| error.to_string())
+                })
+                .await
+                .expect("delete recorded signal");
+        }
+
+        std::fs::write(&markdown_path, &edited_markdown).expect("restore edited markdown");
+        std::fs::write(&sidecar_path, &original_sidecar_json).expect("restore original sidecar");
+        let second = apply_claim_file_corrections(
+            &state,
+            workspace.path().to_path_buf(),
+            markdown_rel_path,
+            "user-fixture".to_string(),
+        )
+        .await
+        .expect("second apply");
+
+        assert_eq!(second.applied_count, 0);
+        assert!(second.failures.is_empty());
+        let (feedback_count, signal_count, repaired_payload) = {
+            let feedback_id = feedback_id.clone();
+            let recorded_signal_id = recorded_signal_id.clone();
+            state
+                .db_write(move |db| {
+                    let feedback_count = db
+                        .conn_ref()
+                        .query_row(
+                            "SELECT count(*) FROM claim_feedback WHERE id = ?1",
+                            params![&feedback_id],
+                            |row| row.get::<_, i64>(0),
+                        )
+                        .map_err(|error| error.to_string())?;
+                    let signal_count = db
+                        .conn_ref()
+                        .query_row(
+                            "SELECT count(*) FROM signal_events WHERE id = ?1",
+                            params![&recorded_signal_id],
+                            |row| row.get::<_, i64>(0),
+                        )
+                        .map_err(|error| error.to_string())?;
+                    let repaired_payload = db
+                        .conn_ref()
+                        .query_row(
+                            "SELECT value FROM signal_events WHERE id = ?1",
+                            params![&recorded_signal_id],
+                            |row| row.get::<_, String>(0),
+                        )
+                        .map_err(|error| error.to_string())?;
+                    Ok((feedback_count, signal_count, repaired_payload))
+                })
+                .await
+                .expect("read repair proof")
+        };
+        assert_eq!(feedback_count, 1);
+        assert_eq!(signal_count, 1);
+        assert!(
+            repaired_payload.contains("\"recovered\":true"),
+            "AlreadyApplied branch must repair the missing recorded-feedback signal"
         );
     }
 
@@ -3808,7 +4055,9 @@ dailyos-action: mark_false\n\
         assert_eq!(feedback_id.as_deref(), Some(applied.feedback_id.as_str()));
         assert_eq!(
             claim_correction_apply_db(&db, &record).expect("future retry reads applied"),
-            CorrectionApplyState::AlreadyApplied
+            CorrectionApplyState::AlreadyApplied {
+                feedback_id: Some(applied.feedback_id.clone())
+            }
         );
         let feedback_count: i64 = db
             .conn_ref()
@@ -4036,6 +4285,14 @@ dailyos-action: mark_false\n\
         )
         .expect("validate committed sidecar");
         assert_eq!(committed.run_id, bundle.run_id);
+
+        let err = validate_committed_sidecar_projection_db(
+            &db,
+            &bundle.sidecar,
+            "wrong-sidecar-checksum",
+        )
+        .expect_err("checksum mismatch must not match a committed run");
+        assert!(err.contains("committed projection run not found"));
 
         let mut tampered_membership = bundle.sidecar.clone();
         tampered_membership.claims[0]
