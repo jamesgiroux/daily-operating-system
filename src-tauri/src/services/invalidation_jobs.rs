@@ -3,8 +3,9 @@ use std::sync::Arc;
 use serde_json::json;
 
 use crate::db::invalidation_jobs::{
-    EnqueueInvalidationJob, InvalidationJob, InvalidationQueueBounds, JobFailureDisposition,
-    TerminalizationOutcome, DEFAULT_QUEUE_PENDING_CAP,
+    claim_recompute_coalescing_key, claim_recompute_input_hash, EnqueueInvalidationJob,
+    InvalidationJob, InvalidationQueueBounds, JobFailureDisposition, TerminalizationOutcome,
+    DEFAULT_QUEUE_PENDING_CAP, KIND_CLAIM_RECOMPUTE,
 };
 use crate::db::ActionDb;
 use crate::db_service::DbAccessError;
@@ -102,6 +103,49 @@ pub fn enqueue_signal_claim_recompute_with_config_in_tx(
         .map_err(|e| e.to_string())
 }
 
+pub fn enqueue_direct_claim_recompute_in_tx(
+    tx: &ActionDb,
+    subject_type: &str,
+    subject_id: &str,
+    reason_code: &str,
+) -> Result<crate::db::invalidation_jobs::InvalidationJobReceipt, String> {
+    let source_claim_version = tx
+        .current_subject_claim_version(subject_type, subject_id)
+        .map_err(|e| e.to_string())?;
+    let input_snapshot_hash =
+        claim_recompute_input_hash(subject_type, subject_id, source_claim_version);
+    let input = EnqueueInvalidationJob {
+        job_kind: KIND_CLAIM_RECOMPUTE.to_string(),
+        operation: "claim_recompute".to_string(),
+        origin_signal_id: None,
+        subject_type: subject_type.to_string(),
+        subject_id: subject_id.to_string(),
+        ability_id: "claim_recompute".to_string(),
+        ability_version: "1".to_string(),
+        source_claim_version,
+        source_asof: None,
+        input_snapshot_hash: Some(input_snapshot_hash.clone()),
+        provider_fingerprint: None,
+        prompt_fingerprint: None,
+        payload_json: json!({ "reason_code": reason_code }),
+        coalescing_key: Some(claim_recompute_coalescing_key(
+            subject_type,
+            subject_id,
+            &input_snapshot_hash,
+        )),
+        chain_id: None,
+        parent_job_id: None,
+        successor_of_job_id: None,
+        depth: 0,
+        chain_ancestry: Vec::new(),
+        max_attempts: 5,
+        priority: 0,
+        raw_signal_count: 1,
+    };
+    tx.enqueue_invalidation_job_with_bounds(input, InvalidationJobQueueConfig::from_env().bounds())
+        .map_err(|e| e.to_string())
+}
+
 pub fn process_one_claim_recompute_job(
     ctx: &ServiceContext<'_>,
     db: &ActionDb,
@@ -123,15 +167,16 @@ pub fn process_one_claim_recompute_job(
     };
     let claim_cap = claim_recompute_sync_claim_cap();
     if claim_count > claim_cap {
-        let error = format!(
-            "claim recompute subject has {claim_count} active claims, exceeding synchronous worker cap {claim_cap}; chunked recompute required"
+        log::info!(
+            "Claim recompute subject {}:{} has {} active claims, above advisory worker cap {}; processing through durable recompute instead of dead-lettering by size",
+            job.subject_type,
+            job.subject_id,
+            claim_count,
+            claim_cap
         );
-        db.dead_letter_invalidation_job(&job_id, &error)
-            .map_err(|e| e.to_string())?;
-        return Ok(ClaimRecomputeProcessOutcome::DeadLettered { job_id });
     }
 
-    let recompute = run_claim_recompute(ctx, db, &job);
+    let recompute = run_claim_recompute(ctx, db, &job, claim_count, claim_cap);
     if let Err(error) = recompute {
         let disposition = db
             .mark_invalidation_job_failed(&job_id, &error)
@@ -378,16 +423,39 @@ fn run_claim_recompute(
     ctx: &ServiceContext<'_>,
     db: &ActionDb,
     job: &InvalidationJob,
+    claim_count: usize,
+    claim_cap: usize,
 ) -> Result<(), String> {
     db.with_transaction(|tx| {
-        crate::services::trust_recompute::recompute_claim_trust_for_subject(
-            ctx,
-            tx,
-            &job.subject_type,
-            &job.subject_id,
-        )?;
+        let chunk = claim_recompute_chunk_from_job(job, claim_count, claim_cap)?;
+        let recompute_complete = if let Some(chunk) = chunk {
+            let page_report =
+                crate::services::trust_recompute::recompute_claim_trust_for_subject_page(
+                    ctx,
+                    tx,
+                    &job.subject_type,
+                    &job.subject_id,
+                    chunk.after_created_at.as_deref(),
+                    chunk.after_claim_id.as_deref(),
+                    chunk.limit,
+                )?;
+            if let Some(next_cursor) = page_report.next_cursor {
+                enqueue_claim_recompute_chunk_successor(tx, job, &chunk, next_cursor)?;
+                false
+            } else {
+                true
+            }
+        } else {
+            crate::services::trust_recompute::recompute_claim_trust_for_subject(
+                ctx,
+                tx,
+                &job.subject_type,
+                &job.subject_id,
+            )?;
+            true
+        };
 
-        if job.subject_type.eq_ignore_ascii_case("account") {
+        if recompute_complete && job.subject_type.eq_ignore_ascii_case("account") {
             crate::services::intelligence::recompute_entity_health(
                 ctx,
                 tx,
@@ -398,6 +466,108 @@ fn run_claim_recompute(
 
         Ok(())
     })
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+struct ClaimRecomputeChunk {
+    after_created_at: Option<String>,
+    after_claim_id: Option<String>,
+    limit: usize,
+    index: i64,
+}
+
+fn claim_recompute_chunk_from_job(
+    job: &InvalidationJob,
+    claim_count: usize,
+    claim_cap: usize,
+) -> Result<Option<ClaimRecomputeChunk>, String> {
+    let payload: serde_json::Value = serde_json::from_str(&job.payload_json)
+        .map_err(|error| format!("invalid claim recompute payload: {error}"))?;
+    if let Some(chunk) = payload.get("chunk") {
+        let limit = chunk
+            .get("limit")
+            .and_then(serde_json::Value::as_u64)
+            .and_then(|value| usize::try_from(value).ok())
+            .filter(|value| *value > 0)
+            .map(|value| value.min(claim_cap))
+            .unwrap_or(claim_cap);
+        return Ok(Some(ClaimRecomputeChunk {
+            after_created_at: chunk
+                .get("after_created_at")
+                .and_then(serde_json::Value::as_str)
+                .map(str::to_string),
+            after_claim_id: chunk
+                .get("after_claim_id")
+                .and_then(serde_json::Value::as_str)
+                .map(str::to_string),
+            limit,
+            index: chunk
+                .get("index")
+                .and_then(serde_json::Value::as_i64)
+                .unwrap_or(0),
+        }));
+    }
+
+    if claim_count > claim_cap {
+        return Ok(Some(ClaimRecomputeChunk {
+            after_created_at: None,
+            after_claim_id: None,
+            limit: claim_cap,
+            index: 0,
+        }));
+    }
+
+    Ok(None)
+}
+
+fn enqueue_claim_recompute_chunk_successor(
+    tx: &ActionDb,
+    job: &InvalidationJob,
+    current_chunk: &ClaimRecomputeChunk,
+    next_cursor: crate::services::trust_recompute::TrustRecomputeCursor,
+) -> Result<(), String> {
+    let input_snapshot_hash =
+        claim_recompute_input_hash(&job.subject_type, &job.subject_id, job.source_claim_version);
+    let next_index = current_chunk.index + 1;
+    let input = EnqueueInvalidationJob {
+        job_kind: KIND_CLAIM_RECOMPUTE.to_string(),
+        operation: "claim_recompute_chunk".to_string(),
+        origin_signal_id: job.origin_signal_id.clone(),
+        subject_type: job.subject_type.clone(),
+        subject_id: job.subject_id.clone(),
+        ability_id: "claim_recompute".to_string(),
+        ability_version: "1".to_string(),
+        source_claim_version: job.source_claim_version,
+        source_asof: job.source_asof.clone(),
+        input_snapshot_hash: Some(input_snapshot_hash.clone()),
+        provider_fingerprint: job.provider_fingerprint.clone(),
+        prompt_fingerprint: job.prompt_fingerprint.clone(),
+        payload_json: json!({
+            "reason_code": "chunk_successor",
+            "chunk": {
+                "after_created_at": next_cursor.created_at,
+                "after_claim_id": next_cursor.claim_id,
+                "limit": current_chunk.limit,
+                "index": next_index,
+                "parent_job_id": job.id,
+            }
+        }),
+        coalescing_key: Some(format!(
+            "claim_recompute_chunk:{}:{}:{}:{}",
+            job.subject_type, job.subject_id, input_snapshot_hash, next_index
+        )),
+        chain_id: Some(job.chain_id.clone()),
+        parent_job_id: Some(job.id.clone()),
+        successor_of_job_id: Some(job.id.clone()),
+        depth: job.depth + 1,
+        chain_ancestry: serde_json::from_str(&job.chain_ancestry_json).unwrap_or_default(),
+        max_attempts: job.max_attempts,
+        priority: job.priority,
+        raw_signal_count: job.raw_signal_count,
+    };
+    tx.enqueue_invalidation_job_with_bounds(input, InvalidationJobQueueConfig::from_env().bounds())
+        .map(|_| ())
+        .map_err(|error| error.to_string())
 }
 
 fn subject_ref_json(subject_type: &str, subject_id: &str) -> Result<String, String> {
@@ -414,9 +584,11 @@ mod tests {
     use rusqlite::params;
 
     use super::*;
+    use crate::db::claims::{ClaimSensitivity, TemporalScope};
     use crate::db::test_utils::test_db;
     use crate::db::DbAccount;
     use crate::intelligence::IntelligenceJson;
+    use crate::services::claims::{commit_claim, ClaimProposal};
     use crate::services::context::{ExternalClients, FixedClock, SeedableRng};
 
     fn test_ctx<'a>(
@@ -444,6 +616,30 @@ mod tests {
         };
         db.upsert_entity_intelligence(&intel)
             .expect("seed intelligence");
+    }
+
+    fn active_claim_proposal(account_id: &str, index: usize) -> ClaimProposal {
+        ClaimProposal {
+            id: None,
+            expected_claim_version: None,
+            subject_ref: json!({"kind": "account", "id": account_id}).to_string(),
+            claim_type: "risk".to_string(),
+            field_path: Some(format!("health.risk.{index}")),
+            topic_key: None,
+            text: format!("Synthetic risk claim {index}"),
+            actor: "agent:test".to_string(),
+            data_source: "unit_test".to_string(),
+            source_ref: Some(format!("fixture://source-{index}")),
+            source_asof: Some("2026-05-08T00:00:00Z".to_string()),
+            observed_at: "2026-05-08T00:00:00Z".to_string(),
+            provenance_json: "{}".to_string(),
+            metadata_json: None,
+            thread_id: None,
+            temporal_scope: Some(TemporalScope::State),
+            sensitivity: Some(ClaimSensitivity::Internal),
+            supersedes: None,
+            tombstone: None,
+        }
     }
 
     #[test]
@@ -557,6 +753,90 @@ mod tests {
             )
             .expect("signal count");
         assert_eq!(signal_count, 0);
+    }
+
+    #[test]
+    fn oversized_claim_recompute_subject_does_not_dead_letter_by_size() {
+        let db = test_db();
+        let account_id = "acct-large-recompute";
+        seed_account_with_intelligence(&db, account_id);
+        let clock = FixedClock::new(Utc.with_ymd_and_hms(2026, 5, 8, 12, 0, 0).unwrap());
+        let rng = SeedableRng::new(7);
+        let ext = ExternalClients::default();
+        let ctx = test_ctx(&clock, &rng, &ext);
+
+        for index in 0..=DEFAULT_CLAIM_RECOMPUTE_SYNC_CLAIM_CAP {
+            commit_claim(&ctx, &db, active_claim_proposal(account_id, index))
+                .expect("commit active claim");
+        }
+
+        let receipt =
+            enqueue_direct_claim_recompute_in_tx(&db, "account", account_id, "oversized_test")
+                .expect("enqueue direct recompute");
+        let outcome =
+            process_one_claim_recompute_job(&ctx, &db, "worker-large").expect("process job");
+        assert!(
+            matches!(
+                outcome,
+                ClaimRecomputeProcessOutcome::CompletedFresh { .. }
+                    | ClaimRecomputeProcessOutcome::CompletedStale { .. }
+            ),
+            "oversized subject must not dead-letter solely by active claim count, got {outcome:?}"
+        );
+
+        let job = db
+            .get_invalidation_job(&receipt.job_id)
+            .expect("read recompute job")
+            .expect("job row");
+        assert_ne!(
+            job.status,
+            crate::db::invalidation_jobs::STATUS_DEAD_LETTERED
+        );
+
+        let (successor_count, chunk_limit, chunk_index): (i64, i64, i64) = db
+            .conn_ref()
+            .query_row(
+                "SELECT count(*),
+                        json_extract(payload_json, '$.chunk.limit'),
+                        json_extract(payload_json, '$.chunk.index')
+                   FROM invalidation_jobs
+                  WHERE job_kind = 'claim_recompute'
+                    AND operation = 'claim_recompute_chunk'
+                    AND parent_job_id = ?1
+                    AND status = 'pending'",
+                params![&receipt.job_id],
+                |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?)),
+            )
+            .expect("read chunk successor");
+        assert_eq!(successor_count, 1);
+        assert_eq!(chunk_limit as usize, DEFAULT_CLAIM_RECOMPUTE_SYNC_CLAIM_CAP);
+        assert_eq!(chunk_index, 1);
+
+        let second_outcome =
+            process_one_claim_recompute_job(&ctx, &db, "worker-large-2").expect("process chunk");
+        assert!(
+            matches!(
+                second_outcome,
+                ClaimRecomputeProcessOutcome::CompletedFresh { .. }
+                    | ClaimRecomputeProcessOutcome::CompletedStale { .. }
+            ),
+            "successor chunk must complete, got {second_outcome:?}"
+        );
+        let (pending_chunks, completed_chunks): (i64, i64) = db
+            .conn_ref()
+            .query_row(
+                "SELECT
+                    sum(CASE WHEN status = 'pending' THEN 1 ELSE 0 END),
+                    sum(CASE WHEN status = 'completed' THEN 1 ELSE 0 END)
+                   FROM invalidation_jobs
+                  WHERE job_kind = 'claim_recompute'
+                    AND operation = 'claim_recompute_chunk'",
+                [],
+                |row| Ok((row.get(0)?, row.get(1)?)),
+            )
+            .expect("read final chunk state");
+        assert_eq!(pending_chunks, 0);
+        assert_eq!(completed_chunks, 1);
     }
 
     #[test]

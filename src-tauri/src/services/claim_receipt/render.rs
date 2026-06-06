@@ -3,6 +3,7 @@ use abilities_runtime::sensitivity::{
 };
 use chrono::{DateTime, Duration, NaiveDateTime, Utc};
 
+use crate::db::ActionDb;
 use crate::services::claim_receipt::contracts::*;
 use crate::services::claim_receipt::privacy::{build_receipt_for_audience, Audience, PrivacyError};
 use crate::state::AppState;
@@ -111,6 +112,32 @@ pub async fn render_receipt_for(
     Ok(receipt)
 }
 
+pub(crate) fn render_receipt_for_db(
+    db: &ActionDb,
+    target: ReceiptTarget,
+    surface: SurfaceContext,
+) -> Result<ClaimReceipt, RenderError> {
+    match &target {
+        ReceiptTarget::Claim { .. } => {}
+        ReceiptTarget::Proposal { .. } | ReceiptTarget::WorkItem { .. } => {
+            return Err(RenderError::TargetNotFound);
+        }
+    }
+
+    let audience = audience_for_surface(surface);
+    let mut receipt = build_receipt_for_audience(&target, audience, db.conn_ref())
+        .map_err(render_error_from_privacy)?;
+    receipt.surface_context = surface;
+
+    if matches!(audience, Audience::UserTauri) {
+        if let Some(rendered_text) = render_text_for_user_tauri_surface_db(db, &target, surface)? {
+            receipt.rendered_text = Some(rendered_text);
+        }
+    }
+
+    Ok(receipt)
+}
+
 /// Discriminator prefixes for [`PrivacyError`] → [`RenderError`] transport
 /// across the `db_read` boundary (which insists on `Result<T, String>`).
 const PRIVACY_TAG_NOT_FOUND: &str = "privacy/not_found:";
@@ -141,6 +168,19 @@ fn render_error_from_tagged(tag: String) -> RenderError {
     }
 }
 
+fn render_error_from_privacy(error: PrivacyError) -> RenderError {
+    match error {
+        PrivacyError::ClaimNotFound(_) => RenderError::TargetNotFound,
+        PrivacyError::NonDisclosureAudience
+        | PrivacyError::ComposedClaimDropped
+        | PrivacyError::SurfaceDrop => RenderError::PrivacyDrop,
+        PrivacyError::Storage(error) => RenderError::Storage(error.into()),
+        PrivacyError::InvalidMetadata(message) => {
+            RenderError::Storage(anyhow::anyhow!("invalid metadata: {message}"))
+        }
+    }
+}
+
 /// Resolve the policy-aware rendered text for a Tauri-class surface. We
 /// re-load the claim under a fresh read connection to keep the privacy module
 /// pure (it does not surface rendered_text).
@@ -160,6 +200,32 @@ async fn render_text_for_user_tauri_surface(
         })
         .await
         .map_err(|m| RenderError::Storage(anyhow::anyhow!(m)))?
+        .ok_or(RenderError::TargetNotFound)?;
+
+    let render_surface = render_surface_for(surface);
+    let actor = RenderActor {
+        actor: "user".to_string(),
+        user_id: None,
+    };
+    Ok(renderable_claim_text_with_value(
+        &claim,
+        &claim.text,
+        render_surface,
+        &actor,
+    ))
+}
+
+fn render_text_for_user_tauri_surface_db(
+    db: &ActionDb,
+    target: &ReceiptTarget,
+    surface: SurfaceContext,
+) -> Result<Option<abilities_runtime::sensitivity::RenderableClaimText>, RenderError> {
+    let claim_id = match target {
+        ReceiptTarget::Claim { claim_id, .. } => claim_id,
+        _ => return Ok(None),
+    };
+    let claim = crate::services::claims::load_claim_by_id(db.conn_ref(), claim_id)
+        .map_err(|error| RenderError::Storage(anyhow::anyhow!(error.to_string())))?
         .ok_or(RenderError::TargetNotFound)?;
 
     let render_surface = render_surface_for(surface);

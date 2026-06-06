@@ -227,9 +227,20 @@ pub fn update_meeting_user_layer(
     notes: Option<&str>,
 ) -> Result<(), String> {
     ctx.check_mutation_allowed().map_err(|e| e.to_string())?;
+    crate::services::meeting_prep_status::write::record_user_authored(
+        ctx,
+        meeting_id,
+        &crate::services::meeting_prep_status::UserAuthoredFields {
+            agenda: agenda_json.map(str::to_string),
+            notes: notes.map(str::to_string),
+            preparation_text: None,
+            hidden_attendees: vec![],
+            decisions: vec![],
+        },
+        db,
+    )
+    .map_err(|e| e.to_string())?;
     db.with_transaction(|tx| {
-        tx.update_meeting_user_layer(meeting_id, agenda_json, notes)
-            .map_err(|e| e.to_string())?;
         crate::services::signals::emit_and_propagate(
             ctx,
             tx,

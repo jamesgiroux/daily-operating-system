@@ -240,8 +240,19 @@ pub fn recompute_salience_for_claim(
     db: &ActionDb,
     request: ScoreSalienceRequest,
 ) -> Result<ScoreSalienceResult, SalienceError> {
+    let evaluation_id = format!("salience-eval-{}", uuid::Uuid::new_v4());
+    recompute_salience_for_claim_with_evaluation_id(ctx, db, request, evaluation_id)
+}
+
+pub fn recompute_salience_for_claim_with_evaluation_id(
+    ctx: &ServiceContext<'_>,
+    db: &ActionDb,
+    request: ScoreSalienceRequest,
+    evaluation_id: String,
+) -> Result<ScoreSalienceResult, SalienceError> {
     ctx.check_mutation_allowed()?;
     validate_schema_version(request.schema_version)?;
+    validate_evaluation_id(&evaluation_id)?;
 
     let actor_policy = actor_policy(ctx);
     let claim = load_claim(db.conn_ref(), &request.claim_id, actor_policy)?;
@@ -249,7 +260,6 @@ pub fn recompute_salience_for_claim(
     let computed_at = ctx.clock.now();
     let factors = extract_factors(db.conn_ref(), &claim, weights, computed_at)?;
     let salience = aggregate_salience(factors);
-    let evaluation_id = format!("salience-eval-{}", uuid::Uuid::new_v4());
 
     persist_salience(db, &claim.id, &evaluation_id, computed_at, &salience)?;
 
@@ -260,6 +270,21 @@ pub fn recompute_salience_for_claim(
         persistence: SaliencePersistence::Stored { evaluation_id },
         salience,
     })
+}
+
+fn validate_evaluation_id(evaluation_id: &str) -> Result<(), SalienceError> {
+    let valid = !evaluation_id.trim().is_empty()
+        && evaluation_id.len() <= 160
+        && evaluation_id
+            .bytes()
+            .all(|byte| byte.is_ascii_alphanumeric() || matches!(byte, b'_' | b'-' | b':' | b'.'));
+    if valid {
+        Ok(())
+    } else {
+        Err(SalienceError::InvalidWeights(
+            "salience evaluation id must be a safe storage ref".to_string(),
+        ))
+    }
 }
 
 fn validate_schema_version(schema_version: u32) -> Result<(), SalienceError> {
@@ -561,7 +586,13 @@ fn persist_salience(
                     "INSERT INTO salience_factors (
                         id, evaluation_id, claim_id, factor_kind, factor_value,
                         weight, rationale_json, schema_version, computed_at
-                     ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, 1, ?8)",
+                     ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, 1, ?8)
+                     ON CONFLICT(evaluation_id, claim_id, factor_kind) DO UPDATE SET
+                         factor_value = excluded.factor_value,
+                         weight = excluded.weight,
+                         rationale_json = excluded.rationale_json,
+                         schema_version = excluded.schema_version,
+                         computed_at = excluded.computed_at",
                     params![
                         id,
                         evaluation_id,
@@ -1074,7 +1105,7 @@ mod tests {
 
     fn insert_claim(db: &ActionDb, id: &str, trust_score: f64) {
         let (clock, rng, external) = claim_fixture_ctx();
-        let ctx = ServiceContext::test_live(&clock, &rng, &external).with_actor("system:test");
+        let ctx = ServiceContext::test_live(&clock, &rng, &external).with_actor("user:test");
         let proposal = ClaimProposal {
             id: None,
             expected_claim_version: None,
@@ -1180,10 +1211,12 @@ mod tests {
         insert_claim(&db, "claim-salient", 0.82);
         let (clock, rng, external) = test_ctx(ExecutionMode::Live);
         let ctx = ServiceContext::test_live(&clock, &rng, &external).with_actor("system:test");
+        let feedback_ctx =
+            ServiceContext::test_live(&clock, &rng, &external).with_actor("user:test");
         record_corroboration(&ctx, &db, "claim-salient", "workspace", None, None)
             .expect("record corroboration");
         record_claim_feedback(
-            &ctx,
+            &feedback_ctx,
             &db,
             ClaimFeedbackInput {
                 claim_id: "claim-salient".to_string(),

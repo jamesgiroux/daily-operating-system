@@ -649,7 +649,9 @@ pub async fn merge_people(
     let state_for_ctx = app_state.clone();
     state
         .db_write(move |db| {
-            let ctx = state_for_ctx.live_service_context();
+            let ctx = state_for_ctx
+                .live_service_context()
+                .with_actor("user:tauri");
             crate::services::people::merge_people(&ctx, db, &app_state, &keep_id, &remove_id)
         })
         .await
@@ -670,7 +672,9 @@ pub async fn delete_person(
     let state_for_ctx = app_state.clone();
     state
         .db_write(move |db| {
-            let ctx = state_for_ctx.live_service_context();
+            let ctx = state_for_ctx
+                .live_service_context()
+                .with_actor("user:tauri");
             crate::services::people::delete_person(&ctx, db, &app_state, &person_id)
         })
         .await

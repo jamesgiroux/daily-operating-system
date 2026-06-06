@@ -416,8 +416,32 @@ async fn run_db_service_startup_tasks(init_state: Arc<AppState>) {
         }
     }
 
+    crate::services::claim_feedback_propagation::drain_pending_feedback_propagation_jobs(
+        &init_state,
+    )
+    .await;
+    crate::services::claim_feedback_propagation::drain_source_reliability_feedback_backfill(
+        &init_state,
+    )
+    .await;
+    crate::services::meeting_prep_status::write::drain_pending_prep_regeneration_jobs(&init_state)
+        .await;
     crate::services::invalidation_jobs::drain_pending_claim_recomputes(&init_state).await;
     crate::services::invalidation_jobs::drain_pending_targeted_claim_repairs(&init_state).await;
+    let feedback_propagation_worker_state = init_state.clone();
+    tauri::async_runtime::spawn(async move {
+        crate::services::claim_feedback_propagation::run_feedback_propagation_worker(
+            feedback_propagation_worker_state,
+        )
+        .await;
+    });
+    let prep_regeneration_worker_state = init_state.clone();
+    tauri::async_runtime::spawn(async move {
+        crate::services::meeting_prep_status::write::run_prep_regeneration_worker(
+            prep_regeneration_worker_state,
+        )
+        .await;
+    });
     let repair_worker_state = init_state.clone();
     tauri::async_runtime::spawn(async move {
         crate::services::invalidation_jobs::run_targeted_claim_repair_worker(repair_worker_state)
@@ -907,9 +931,9 @@ pub fn run() {
             commands::reveal_sensitive_claim_text,
             // claim receipt rendering
             commands::render_claim_receipt,
-            // semantic claim feedback
-            commands::submit_claim_feedback_command,
-            // Core
+	            // semantic claim feedback
+	            commands::submit_claim_feedback_command,
+	            // Core
             commands::get_surface_runtime_pairing_status,
             commands::list_surface_client_pairings,
             commands::create_surface_runtime_pairing_string,

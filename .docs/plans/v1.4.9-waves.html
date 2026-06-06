@@ -33,16 +33,65 @@
 <section class="plans-cover">
   <p class="plans-eyebrow">DailyOS · v1.4.9 · Wave Plan</p>
   <h1 class="plans-title">I correct it once, and it stays corrected — everywhere.</h1>
-  <p class="plans-kicker">Substrate Reset &amp; Judgment Maturation. L0 plan-altitude converged (cycle 4).</p>
+  <p class="plans-kicker">Substrate Reset &amp; Judgment Maturation. L0 plan-altitude converged; W4 implementation active.</p>
   <p class="plans-lede">
     A claim carries provenance and a trust band. The user dismisses, contradicts, or re-scopes it — in the app or by editing the claim's readable file — and the source's reliability updates, derived claims invalidate, and what surfaces next visibly changes across the macOS app and MCP, surviving re-enrichment and rebuild. Single-writer is the only hard gate for that loop; storage hardening, security, and transcript run parallel.
   </p>
   <div class="plans-meta">
-    <span>2026 (DRAFT, L0 converged)</span>
+    <span>2026 (IN FLIGHT, W4 L1 active)</span>
     <span>Waves: 6</span>
     <span>Linear: 874a7361</span>
     <span>Critical path: single-writer → W3 → W4 → W5</span>
   </div>
+</section>
+
+<section class="plans-section" aria-labelledby="progress">
+  <header class="plans-section-header">
+    <p class="plans-section-eyebrow">Progress snapshot · refreshed 2026-06-06</p>
+    <h2 id="progress" class="plans-section-title">W1a, W2, and W3 are merged; W4 is locally L2-passed and ready to publish.</h2>
+    <p class="plans-section-lede">This snapshot reflects the local worktree audit plus GitHub PR state. PR merge is not the same as wave closure: no separate v1.4.9 L3 integrated wave-review artifact was found during this refresh.</p>
+  </header>
+  <table class="reviewer-matrix">
+    <thead><tr><th>Wave</th><th>L0 / PR state</th><th>L2 / implementation state</th><th>Current read</th></tr></thead>
+    <tbody>
+      <tr>
+        <td>W1</td>
+        <td>DOS-831 L0 #434 merged; DOS-832 L0 #435 merged. W1a implementation #424 and #431 merged. DOS-846 #433 merged.</td>
+        <td>#424 DOS-758 and #431 DOS-823 carried L2 passed/checks green. #433 carried <code>L2-status: not-run-acknowledged</code>. #443 DOS-832 L1a is open/clean with L2 cycle-16 pass evidence, but it is bounded correction replay, not full rebuild/cutover.</td>
+        <td>W1a gate satisfied. W1b remains partial until DOS-832 completes beyond L1a.</td>
+      </tr>
+      <tr>
+        <td>W2</td>
+        <td>W2 L0 #437 merged. DOS-833 implementation #441 merged to <code>dev</code>.</td>
+        <td>#441 reports L2 cycle 3 passed with adversarial, security, and reliability subagents; proof bundle present; checks green.</td>
+        <td>Implementation merged at L2. Separate L3 wave evidence not found.</td>
+      </tr>
+      <tr>
+        <td>W3</td>
+        <td>DOS-628 implementation #436 merged to <code>dev</code>.</td>
+        <td>#436 carried L2 pass evidence after focused recheck; checks green.</td>
+        <td>W3 is done at PR/L2 level. Separate L3 wave evidence not found.</td>
+      </tr>
+      <tr>
+        <td>W4</td>
+        <td>W4 L0 #438 merged after challenge cycle 7 approval.</td>
+        <td>L1 implementation is local in <code>codex/v1.4.9-w4-dos834</code>; no implementation PR yet. Bounded L2 subagents passed for adversarial full-diff, security/trust-boundary, data/migration, and reliability after the retry-durability fix. Gates are clean: <code>cargo fmt --check</code>, <code>cargo test --lib</code>, <code>cargo clippy -- -D warnings</code>, <code>pnpm tsc --noEmit</code>, and <code>git diff --check</code>.</td>
+        <td>Ready to commit, push, and open the W4 implementation PR.</td>
+      </tr>
+      <tr>
+        <td>W5</td>
+        <td>W5 L0 #439 merged and approved.</td>
+        <td>No W5 L1 implementation PR found. W2 gate is now satisfied; W4 headline work still precedes meaningful W5 parity completion.</td>
+        <td>L0 only.</td>
+      </tr>
+      <tr>
+        <td>W6</td>
+        <td>W6 release-valve L0 #440 merged and approved.</td>
+        <td>No W6 implementation PR found.</td>
+        <td>Release-valve closure is done for v1.4.9; implementation is not a tag gate per packet.</td>
+      </tr>
+    </tbody>
+  </table>
 </section>
 
 <section class="plans-section" aria-labelledby="origin">
@@ -168,8 +217,8 @@
 
 <div class="finis">
   <div class="finis-mark">W1 · W2 · W3 · W4 · W5 · W6</div>
-  <div class="finis-date">v1.4.9 Wave Plan · L0 plan-altitude converged · refreshed 2026-06-03</div>
-  <div class="finis-caption">Mechanism-depth design routes to the per-wave L0 packets; the version plan converges at plan altitude.</div>
+  <div class="finis-date">v1.4.9 Wave Plan · W4 L2 passed locally, PR pending · refreshed 2026-06-06</div>
+  <div class="finis-caption">Mechanism-depth design routes to the per-wave L0 packets; progress state routes to PRs, proof bundles, and the L3 wave-review record.</div>
 </div>
 
 </div>

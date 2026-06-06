@@ -8,6 +8,7 @@ use chrono::Utc;
 use crate::commands::{EntitySummary, MeetingSummary, PersonDetailResult};
 use crate::db::{ActionDb, DbPerson};
 use crate::services::context::ServiceContext;
+use crate::services::correction_artifacts::RebindSubjectArtifactsInput;
 use crate::services::stakeholder_writer;
 use crate::state::AppState;
 use rusqlite::OptionalExtension;
@@ -365,6 +366,15 @@ pub(crate) fn delete_person_with_stakeholder_cache_rebuild(
             "delete_person",
             |tx| {
                 let affected_entities = affected_stakeholder_entities_for_person(tx, person_id)?;
+                crate::services::correction_artifacts::delete_subject_artifacts_in_tx(
+                    tx,
+                    "person",
+                    person_id,
+                    "person_deleted",
+                    ctx.actor,
+                    &chrono::Utc::now().to_rfc3339(),
+                )
+                .map_err(|e| e.to_string())?;
                 tx.delete_person(person_id).map_err(|e| e.to_string())?;
                 Ok(((), affected_entities))
             },
@@ -391,6 +401,19 @@ pub(crate) fn merge_people_with_stakeholder_cache_rebuild(
                 affected_entities.sort();
                 affected_entities.dedup();
 
+                crate::services::correction_artifacts::rebind_subject_artifacts_in_tx(
+                    tx,
+                    RebindSubjectArtifactsInput {
+                        subject_kind: "person",
+                        subject_id: remove_id,
+                        new_subject_kind: "person",
+                        new_subject_id: keep_id,
+                        reason_code: "person_merged",
+                    },
+                    ctx.actor,
+                    &chrono::Utc::now().to_rfc3339(),
+                )
+                .map_err(|e| e.to_string())?;
                 tx.merge_people(keep_id, remove_id)
                     .map_err(|e| e.to_string())?;
                 Ok(((), affected_entities))

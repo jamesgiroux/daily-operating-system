@@ -136,6 +136,14 @@ pub(crate) fn record_cancelled_calendar_meetings(
         for meeting_id in &cancelled {
             tx.update_intelligence_state(meeting_id, "archived", None, None)
                 .map_err(|e| e.to_string())?;
+            crate::services::correction_artifacts::remove_meeting_artifacts_for_meeting_id_in_tx(
+                tx,
+                meeting_id,
+                "calendar_event_cancelled",
+                ctx.actor,
+                &chrono::Utc::now().to_rfc3339(),
+            )
+            .map_err(|e| e.to_string())?;
             crate::services::signals::emit_and_propagate_or_log(
                 ctx,
                 tx,
@@ -3342,6 +3350,8 @@ pub fn update_meeting_user_agenda(
     hidden_attendees: Option<Vec<String>>,
 ) -> Result<(), String> {
     ctx.check_mutation_allowed().map_err(|e| e.to_string())?;
+    crate::services::correction_artifacts::authorize_lifecycle_actor(ctx.actor)
+        .map_err(|e| e.to_string())?;
     let meeting = db
         .get_meeting_intelligence_row(meeting_id)
         .map_err(|e| e.to_string())?
@@ -3392,10 +3402,21 @@ pub fn update_meeting_user_agenda(
     } else {
         Some(serde_json::to_string(&layer).map_err(|e| format!("Serialize error: {}", e))?)
     };
-    db.update_meeting_user_layer(
+    crate::services::meeting_prep_status::write::record_user_authored_with_options(
+        ctx,
         meeting_id,
-        agenda_json.as_deref(),
-        meeting.user_notes.as_deref(),
+        &crate::services::meeting_prep_status::UserAuthoredFields {
+            agenda: agenda_json.clone(),
+            notes: meeting.user_notes.clone(),
+            preparation_text: None,
+            hidden_attendees: layer.hidden_attendees.clone(),
+            decisions: vec![],
+        },
+        crate::services::meeting_prep_status::write::RecordUserAuthoredOptions {
+            update_hidden_attendees: true,
+            update_decisions: false,
+        },
+        db,
     )
     .map_err(|e| e.to_string())?;
 
@@ -3466,6 +3487,8 @@ pub fn update_meeting_user_notes(
     notes: &str,
 ) -> Result<(), String> {
     ctx.check_mutation_allowed().map_err(|e| e.to_string())?;
+    crate::services::correction_artifacts::authorize_lifecycle_actor(ctx.actor)
+        .map_err(|e| e.to_string())?;
     let meeting = db
         .get_meeting_intelligence_row(meeting_id)
         .map_err(|e| e.to_string())?
@@ -3480,8 +3503,19 @@ pub fn update_meeting_user_notes(
     } else {
         Some(notes)
     };
-    db.update_meeting_user_layer(meeting_id, meeting.user_agenda_json.as_deref(), notes_opt)
-        .map_err(|e| e.to_string())?;
+    crate::services::meeting_prep_status::write::record_user_authored(
+        ctx,
+        meeting_id,
+        &crate::services::meeting_prep_status::UserAuthoredFields {
+            agenda: meeting.user_agenda_json.clone(),
+            notes: notes_opt.map(str::to_string),
+            preparation_text: None,
+            hidden_attendees: vec![],
+            decisions: vec![],
+        },
+        db,
+    )
+    .map_err(|e| e.to_string())?;
 
     // Optional mirror write to active prep file for same-session coherence.
     if let Ok(prep_path) = resolve_prep_path(meeting_id, state) {
@@ -3526,111 +3560,120 @@ pub fn update_meeting_prep_field(
     target_person_id: Option<&str>,
 ) -> Result<(), String> {
     ctx.check_mutation_allowed().map_err(|e| e.to_string())?;
-    let meeting = db
-        .get_meeting_intelligence_row(meeting_id)
-        .map_err(|e| e.to_string())?
-        .ok_or_else(|| format!("Meeting not found: {}", meeting_id))?;
+    let _ = (db, state, meeting_id, field_path, value, target_person_id);
+    return Err(
+        "update_meeting_prep_field is disabled; prep corrections must use W4 journaled user-authored fields"
+            .to_string(),
+    );
+    #[allow(unreachable_code)]
+    {
+        let meeting = db
+            .get_meeting_intelligence_row(meeting_id)
+            .map_err(|e| e.to_string())?
+            .ok_or_else(|| format!("Meeting not found: {}", meeting_id))?;
 
-    // ADR-0101: Read from prep_context_json (DB read model) first, fall back to
-    // prep_frozen_json. This matches the read priority in load_meeting_prep_from_sources.
-    let source_json = meeting
-        .prep_context_json
-        .as_deref()
-        .or(meeting.prep_frozen_json.as_deref())
-        .ok_or_else(|| "No prep JSON to update".to_string())?;
+        // ADR-0101: Read from prep_context_json (DB read model) first, fall back to
+        // prep_frozen_json. This matches the read priority in load_meeting_prep_from_sources.
+        let source_json = meeting
+            .prep_context_json
+            .as_deref()
+            .or(meeting.prep_frozen_json.as_deref())
+            .ok_or_else(|| "No prep JSON to update".to_string())?;
 
-    let mut json: serde_json::Value =
-        serde_json::from_str(source_json).map_err(|e| format!("Invalid prep JSON: {}", e))?;
+        let mut json: serde_json::Value =
+            serde_json::from_str(source_json).map_err(|e| format!("Invalid prep JSON: {}", e))?;
 
-    // Parse field_path and apply update
-    apply_field_path_update(&mut json, field_path, value)?;
+        // Parse field_path and apply update
+        apply_field_path_update(&mut json, field_path, value)?;
 
-    let updated = serde_json::to_string(&json).map_err(|e| format!("Serialize error: {}", e))?;
+        let updated =
+            serde_json::to_string(&json).map_err(|e| format!("Serialize error: {}", e))?;
 
-    // Distinguish curation (delete/clear) from correction (edit).
-    let is_curation = value.trim().is_empty() || value == "[]" || value == "null";
+        // Distinguish curation (delete/clear) from correction (edit).
+        let is_curation = value.trim().is_empty() || value == "[]" || value == "null";
 
-    // Get linked entities for signal emission
-    let entities = db
-        .get_meeting_entities(meeting_id)
-        .map_err(|e| e.to_string())?;
-
-    db.with_transaction(|tx| {
-        // ADR-0101: Write to both prep_context_json (DB read model) and
-        // prep_frozen_json (MCP export). prep_context_json is the primary
-        // read source; prep_frozen_json is kept in sync for MCP tools.
-        tx.update_meeting_prep_context(meeting_id, &updated)
+        // Get linked entities for signal emission
+        let entities = db
+            .get_meeting_entities(meeting_id)
             .map_err(|e| e.to_string())?;
-        tx.update_prep_frozen_json(meeting_id, &updated)
-            .map_err(|e| e.to_string())?;
 
-        let (signal_type, source, confidence) = if is_curation {
-            ("intelligence_curated", "user_curation", 0.5)
-        } else {
-            ("user_correction", "user_edit", 1.0)
-        };
+        db.with_transaction(|tx| {
+            // ADR-0101: Write to both prep_context_json (DB read model) and
+            // prep_frozen_json (MCP export). prep_context_json is the primary
+            // read source; prep_frozen_json is kept in sync for MCP tools.
+            tx.update_meeting_prep_context(meeting_id, &updated)
+                .map_err(|e| e.to_string())?;
+            tx.update_prep_frozen_json(meeting_id, &updated)
+                .map_err(|e| e.to_string())?;
 
-        // Emit signal for each linked entity
-        for entity in &entities {
-            let entity_type_str = match entity.entity_type {
-                crate::entity::EntityType::Account => "account",
-                crate::entity::EntityType::Project => "project",
-                crate::entity::EntityType::Person => "person",
-                _ => continue,
+            let (signal_type, source, confidence) = if is_curation {
+                ("intelligence_curated", "user_curation", 0.5)
+            } else {
+                ("user_correction", "user_edit", 1.0)
             };
-            crate::services::signals::emit_and_propagate(
+
+            // Emit signal for each linked entity
+            for entity in &entities {
+                let entity_type_str = match entity.entity_type {
+                    crate::entity::EntityType::Account => "account",
+                    crate::entity::EntityType::Project => "project",
+                    crate::entity::EntityType::Person => "person",
+                    _ => continue,
+                };
+                crate::services::signals::emit_and_propagate(
+                    ctx,
+                    tx,
+                    &state.signals.engine,
+                    entity_type_str,
+                    &entity.id,
+                    signal_type,
+                    source,
+                    Some(&format!(
+                        "{{\"field\":\"{}\",\"meeting_id\":\"{}\"}}",
+                        field_path, meeting_id
+                    )),
+                    confidence,
+                )
+                .map_err(|e| format!("signal emit failed: {e}"))?;
+            }
+
+            // Attendee assessment edits: also target the specific person entity
+            if let Some(person_id) = target_person_id {
+                crate::services::signals::emit_and_propagate(
+                    ctx,
+                    tx,
+                    &state.signals.engine,
+                    "person",
+                    person_id,
+                    signal_type,
+                    source,
+                    Some(&format!(
+                        "{{\"field\":\"{}\",\"meeting_id\":\"{}\"}}",
+                        field_path, meeting_id
+                    )),
+                    confidence,
+                )
+                .map_err(|e| format!("signal emit failed: {e}"))?;
+            }
+
+            // Also emit a signal for the meeting itself
+            crate::services::signals::emit(
                 ctx,
                 tx,
-                &state.signals.engine,
-                entity_type_str,
-                &entity.id,
+                "meeting",
+                meeting_id,
                 signal_type,
                 source,
-                Some(&format!(
-                    "{{\"field\":\"{}\",\"meeting_id\":\"{}\"}}",
-                    field_path, meeting_id
-                )),
+                Some(&format!("{{\"field\":\"{}\"}}", field_path)),
                 confidence,
             )
             .map_err(|e| format!("signal emit failed: {e}"))?;
-        }
 
-        // Attendee assessment edits: also target the specific person entity
-        if let Some(person_id) = target_person_id {
-            crate::services::signals::emit_and_propagate(
-                ctx,
-                tx,
-                &state.signals.engine,
-                "person",
-                person_id,
-                signal_type,
-                source,
-                Some(&format!(
-                    "{{\"field\":\"{}\",\"meeting_id\":\"{}\"}}",
-                    field_path, meeting_id
-                )),
-                confidence,
-            )
-            .map_err(|e| format!("signal emit failed: {e}"))?;
-        }
-
-        // Also emit a signal for the meeting itself
-        crate::services::signals::emit(
-            ctx,
-            tx,
-            "meeting",
-            meeting_id,
-            signal_type,
-            source,
-            Some(&format!("{{\"field\":\"{}\"}}", field_path)),
-            confidence,
-        )
-        .map_err(|e| format!("signal emit failed: {e}"))?;
+            Ok(())
+        })?;
 
         Ok(())
-    })?;
-
-    Ok(())
+    }
 }
 
 /// Parse a field path and apply an update to a JSON value.
@@ -5386,6 +5429,237 @@ mod tests {
         ext: &'a ExternalClients,
     ) -> ServiceContext<'a> {
         ServiceContext::test_live(clock, rng, ext)
+    }
+
+    fn seed_future_meeting_for_user_layer(db: &crate::db::ActionDb, meeting_id: &str) {
+        db.conn_ref()
+            .execute(
+                "INSERT INTO meetings (id, title, meeting_type, start_time, end_time, attendees, created_at)
+                 VALUES (?1, 'Actor Boundary Prep', 'external', '2026-06-10T17:00:00Z',
+                         '2026-06-10T17:30:00Z', '[]', '2026-06-05T09:00:00Z')",
+                rusqlite::params![meeting_id],
+            )
+            .expect("seed future meeting");
+    }
+
+    fn active_prep_journal_count(db: &crate::db::ActionDb, meeting_id: &str) -> i64 {
+        db.conn_ref()
+            .query_row(
+                "SELECT count(*)
+                   FROM meeting_prep_correction_journal
+                  WHERE meeting_id = ?1
+                    AND lifecycle_state = 'active'",
+                rusqlite::params![meeting_id],
+                |row| row.get(0),
+            )
+            .expect("count active prep journal rows")
+    }
+
+    fn active_prep_journal_field_count(
+        db: &crate::db::ActionDb,
+        meeting_id: &str,
+        field_path: &str,
+    ) -> i64 {
+        db.conn_ref()
+            .query_row(
+                "SELECT count(*)
+                   FROM meeting_prep_correction_journal
+                  WHERE meeting_id = ?1
+                    AND field_path = ?2
+                    AND lifecycle_state = 'active'",
+                rusqlite::params![meeting_id, field_path],
+                |row| row.get(0),
+            )
+            .expect("count active prep journal field rows")
+    }
+
+    #[test]
+    fn w4_meeting_user_notes_rejects_system_actor_before_replay_artifact() {
+        let db = test_db();
+        let state = AppState::new();
+        let meeting_id = "meeting-w4-user-notes-system-actor";
+        seed_future_meeting_for_user_layer(&db, meeting_id);
+
+        let clock = FixedClock::new(chrono::Utc.with_ymd_and_hms(2026, 6, 6, 9, 0, 0).unwrap());
+        let rng = SeedableRng::new(1491);
+        let ext = ExternalClients::default();
+        let ctx = test_ctx(&clock, &rng, &ext).with_actor("system:test");
+
+        let result =
+            super::update_meeting_user_notes(&ctx, &db, &state, meeting_id, "User prep note");
+
+        assert!(
+            result
+                .as_ref()
+                .is_err_and(|err| err.contains("correction artifact lifecycle actor not allowed")),
+            "system actor should be rejected before writing replay artifacts, got {result:?}",
+        );
+        assert_eq!(
+            active_prep_journal_count(&db, meeting_id),
+            0,
+            "rejected system actor must not create active replay artifacts",
+        );
+    }
+
+    #[test]
+    fn w4_meeting_user_notes_accepts_user_actor_and_records_replay_artifact() {
+        let db = test_db();
+        let state = AppState::new();
+        let meeting_id = "meeting-w4-user-notes-user-actor";
+        seed_future_meeting_for_user_layer(&db, meeting_id);
+
+        let clock = FixedClock::new(chrono::Utc.with_ymd_and_hms(2026, 6, 6, 9, 0, 0).unwrap());
+        let rng = SeedableRng::new(1492);
+        let ext = ExternalClients::default();
+        let ctx = test_ctx(&clock, &rng, &ext).with_actor("user:test");
+
+        super::update_meeting_user_notes(&ctx, &db, &state, meeting_id, "User prep note")
+            .expect("user actor writes meeting prep notes");
+
+        assert_eq!(
+            active_prep_journal_field_count(&db, meeting_id, "user_notes"),
+            1,
+            "accepted user actor should create the notes replay artifact",
+        );
+    }
+
+    #[test]
+    fn w4_mutation_user_layer_rejects_system_actor_before_replay_artifact() {
+        let db = test_db();
+        let meeting_id = "meeting-w4-mutation-system-actor";
+        seed_future_meeting_for_user_layer(&db, meeting_id);
+
+        let clock = FixedClock::new(chrono::Utc.with_ymd_and_hms(2026, 6, 6, 9, 0, 0).unwrap());
+        let rng = SeedableRng::new(1495);
+        let ext = ExternalClients::default();
+        let ctx = test_ctx(&clock, &rng, &ext).with_actor("system:test");
+        let engine = crate::signals::propagation::PropagationEngine::new();
+
+        let result = crate::services::mutations::update_meeting_user_layer(
+            &ctx,
+            &db,
+            &engine,
+            meeting_id,
+            Some("[\"Discuss renewal\"]"),
+            Some("User prep note"),
+        );
+
+        assert!(
+            result
+                .as_ref()
+                .is_err_and(|err| err.contains("correction artifact lifecycle actor not allowed")),
+            "system actor should be rejected before lower-level replay artifact write, got {result:?}",
+        );
+        assert_eq!(
+            active_prep_journal_count(&db, meeting_id),
+            0,
+            "rejected mutation path must not create active replay artifacts",
+        );
+    }
+
+    #[test]
+    fn w4_legacy_prep_field_update_is_disabled_before_unjournaled_write() {
+        let db = test_db();
+        let state = AppState::new();
+        let meeting_id = "meeting-w4-disabled-prep-field";
+        seed_future_meeting_for_user_layer(&db, meeting_id);
+
+        let clock = FixedClock::new(chrono::Utc.with_ymd_and_hms(2026, 6, 6, 9, 0, 0).unwrap());
+        let rng = SeedableRng::new(1495);
+        let ext = ExternalClients::default();
+        let ctx = test_ctx(&clock, &rng, &ext).with_actor("user:test");
+        let err = super::update_meeting_prep_field(
+            &ctx,
+            &db,
+            &state,
+            meeting_id,
+            "meetingContext",
+            "Edited context",
+            None,
+        )
+        .expect_err("legacy unjournaled prep field edits are disabled");
+
+        assert!(
+            err.contains("W4 journaled user-authored fields"),
+            "unexpected error: {err}"
+        );
+        assert_eq!(
+            active_prep_journal_count(&db, meeting_id),
+            0,
+            "disabled legacy prep field edits must not create replay artifacts",
+        );
+    }
+
+    #[test]
+    fn w4_calendar_cancellation_system_actor_removes_active_prep_artifacts() {
+        let db = test_db();
+        let state = AppState::new();
+        let meeting_id = "meeting-w4-calendar-cancel";
+        db.conn_ref()
+            .execute(
+                "INSERT INTO meetings (
+                    id, title, meeting_type, start_time, end_time, attendees,
+                    calendar_event_id, created_at
+                 ) VALUES (
+                    ?1, 'Cancelled Calendar Prep', 'external',
+                    '2099-06-10T17:00:00Z', '2099-06-10T17:30:00Z',
+                    '[]', 'calendar-event-w4-cancel', '2026-06-05T09:00:00Z'
+                 )",
+                rusqlite::params![meeting_id],
+            )
+            .expect("seed cancellable meeting");
+
+        let user_clock =
+            FixedClock::new(chrono::Utc.with_ymd_and_hms(2026, 6, 6, 9, 0, 0).unwrap());
+        let user_rng = SeedableRng::new(1493);
+        let user_ext = ExternalClients::default();
+        let user_ctx = test_ctx(&user_clock, &user_rng, &user_ext).with_actor("user:test");
+        super::update_meeting_user_notes(&user_ctx, &db, &state, meeting_id, "User prep note")
+            .expect("user actor writes prep artifact");
+        assert!(
+            active_prep_journal_count(&db, meeting_id) > 0,
+            "fixture must start with active prep replay artifacts",
+        );
+
+        let system_clock =
+            FixedClock::new(chrono::Utc.with_ymd_and_hms(2026, 6, 6, 10, 0, 0).unwrap());
+        let system_rng = SeedableRng::new(1494);
+        let system_ext = ExternalClients::default();
+        let system_ctx =
+            test_ctx(&system_clock, &system_rng, &system_ext).with_actor("system:calendar_sync");
+        let engine = crate::signals::propagation::PropagationEngine::new();
+        let cancelled = super::record_cancelled_calendar_meetings(
+            &system_ctx,
+            &db,
+            &engine,
+            &std::collections::HashSet::new(),
+            "2099-06-10T00:00:00Z",
+            "2099-06-11T00:00:00Z",
+        )
+        .expect("system cancellation cleans correction artifacts");
+
+        assert_eq!(cancelled, 1);
+        assert_eq!(
+            active_prep_journal_count(&db, meeting_id),
+            0,
+            "calendar cancellation must not leave active prep replay artifacts",
+        );
+        let removed_count: i64 = db
+            .conn_ref()
+            .query_row(
+                "SELECT count(*)
+                   FROM meeting_prep_correction_journal
+                  WHERE meeting_stable_key IN (
+                        SELECT meeting_stable_key
+                          FROM meeting_prep_correction_journal
+                         WHERE meeting_removed_reason_code = 'calendar_event_cancelled'
+                    )
+                    AND lifecycle_state = 'meeting_removed'",
+                [],
+                |row| row.get(0),
+            )
+            .expect("count removed prep artifacts");
+        assert!(removed_count > 0);
     }
 
     #[test]

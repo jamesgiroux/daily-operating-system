@@ -2301,6 +2301,13 @@ async fn local_loopback_invoke_response(
         }
     };
 
+    if local_loopback_rejects_ability(registry, &invoke.ability) {
+        return error_response(
+            SurfaceHttpError::bad_request("local_invoke_mutation_blocked")
+                .with_request_id(request_id),
+        );
+    }
+
     let audit_input = invoke.input.clone();
     match TauriAbilityBridge::new(registry)
         .invoke(
@@ -2343,6 +2350,22 @@ async fn local_loopback_invoke_response(
             error_response(local_bridge_surface_error(error).with_request_id(request_id))
         }
     }
+}
+
+fn local_loopback_rejects_ability(
+    registry: &crate::abilities::AbilityRegistry,
+    ability_name: &str,
+) -> bool {
+    if ability_name == abilities_runtime::abilities::recommendations::SUBMIT_RECOMMENDATION_FEEDBACK_ABILITY_NAME {
+        return true;
+    }
+    let Some(descriptor) = registry
+        .iter_all()
+        .find(|descriptor| descriptor.name == ability_name)
+    else {
+        return false;
+    };
+    !descriptor.mutates.is_empty()
 }
 
 async fn local_loopback_project_composition_response(
@@ -2945,7 +2968,16 @@ async fn surface_nonce_verify_response(
                 payload_json: verified.payload_json.clone(),
             };
 
-            match crate::services::claims::record_claim_feedback(&ctx, db, input) {
+            match crate::services::claims::record_claim_feedback_from_verified_surface(
+                &ctx,
+                db,
+                input,
+                crate::services::claims::VerifiedSurfaceFeedbackDelegation {
+                    surface_client_id: &verified.surface_client_id,
+                    session_id: &verified.session_id,
+                    trusted_surface: verified.trusted_surface.as_deref(),
+                },
+            ) {
                 Ok(feedback) => Ok(Ok(VerifyWireThroughOutcome::Recorded {
                     verify: verified,
                     feedback,
@@ -4857,11 +4889,47 @@ mod tests {
         }
     }
 
+    fn local_loopback_claim_feedback_descriptor() -> AbilityDescriptor {
+        AbilityDescriptor {
+            name: abilities_runtime::abilities::recommendations::SUBMIT_RECOMMENDATION_FEEDBACK_ABILITY_NAME,
+            version: "1.0.0",
+            schema_version: 1,
+            category: AbilityCategory::Maintenance,
+            policy: AbilityPolicy {
+                allowed_actors: &[ActorKind::User],
+                allowed_modes: &[crate::services::context::ExecutionMode::Live],
+                requires_confirmation: false,
+                may_publish: false,
+                required_scopes: &[],
+                mcp_exposure: McpExposure::None,
+                client_side_executable: false,
+                rate_limit: None,
+            },
+            composes: &[],
+            mutates: &["intelligence_claims", "claim_feedback"],
+            experimental: false,
+            registered_at: None,
+            signal_policy: SignalPolicy::default(),
+            invoke_erased: surface_route_dispatch_erased,
+            input_schema: surface_route_schema,
+            output_schema: surface_route_schema,
+        }
+    }
+
     fn local_loopback_registry() -> Arc<crate::abilities::AbilityRegistry> {
         SURFACE_ROUTE_DISPATCH_COUNT.store(0, Ordering::SeqCst);
         Arc::new(
             crate::abilities::AbilityRegistry::from_descriptors_unchecked_for_runtime_validation_tests(
                 vec![local_loopback_descriptor()],
+            ),
+        )
+    }
+
+    fn local_loopback_claim_feedback_registry() -> Arc<crate::abilities::AbilityRegistry> {
+        SURFACE_ROUTE_DISPATCH_COUNT.store(0, Ordering::SeqCst);
+        Arc::new(
+            crate::abilities::AbilityRegistry::from_descriptors_unchecked_for_runtime_validation_tests(
+                vec![local_loopback_claim_feedback_descriptor()],
             ),
         )
     }
@@ -6171,6 +6239,38 @@ mod tests {
         assert!(invoked.wp_user_id.is_none());
         assert!(invoked.wp_user_hash.is_none());
         assert_eq!(invoked.detail["ability_name"], json!("surface_route_test"));
+    }
+
+    #[test]
+    fn w4_local_loopback_invoke_rejects_claim_feedback_mutation_ability() {
+        let _counter_guard = SURFACE_ROUTE_COUNTER_LOCK
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner());
+        let runtime = runtime_for_surface_route_tests(
+            local_loopback_claim_feedback_registry(),
+            SurfaceClientBridgeConfig::default(),
+        );
+        let request = request_for_tests(
+            Method::POST,
+            "/v1/local/invoke",
+            Bytes::from_static(
+                br#"{"ability":"submit_recommendation_feedback","input":{"value":761}}"#,
+            ),
+        );
+
+        let response = dispatch_for_tests(
+            request,
+            Arc::clone(&runtime),
+            "req_local_feedback_block".into(),
+        );
+
+        assert_eq!(response.status(), StatusCode::BAD_REQUEST);
+        assert_eq!(SURFACE_ROUTE_DISPATCH_COUNT.load(Ordering::SeqCst), 0);
+        let body = body_json(response);
+        assert_eq!(
+            body["error"]["code"],
+            json!("local_invoke_mutation_blocked"),
+        );
     }
 
     #[test]

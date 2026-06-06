@@ -1,6 +1,6 @@
 # ADR-0123: Typed Claim Feedback Semantics
 
-**Status:** Accepted (V1.1 amendment 2026-05-21 adds `MergeIntent` as 10th variant)
+**Status:** Accepted (V1.1 amendment 2026-05-21 adds `MergeIntent` as 10th variant; V1.2 amendment 2026-06-06 adds W4 privacy redaction semantics)
 **Date:** 2026-04-24
 **Target:** v1.4.0 substrate (FeedbackAction enum + ClaimFeedback row + Trust-compiler effects) / v1.4.2 (UI surfaces beyond inline)
 **Extends:** [ADR-0113](0113-human-and-agent-analysis-as-first-class-claim-sources.md), [ADR-0114](0114-scoring-unification.md), [ADR-0105](0105-provenance-as-first-class-output.md) (SubjectAttribution amendment)
@@ -31,6 +31,51 @@ Semantics matrix: `verification_state = Active`, `trust_effect = NONE`, `repair
 
 DB widening: migration `245_dos_484_feedback_merge_intent.sql` rebuilds the
 `claim_feedback.feedback_type` CHECK constraint to include `'merge_intent'`.
+
+## V1.2 Amendment (2026-06-06) - W4 Payload Redaction Privacy Exception
+
+v1.4.9 W4 introduces durable correction artifacts around `claim_feedback`:
+correction envelopes, propagation jobs/outcomes, source-reliability deltas,
+subject-inference deltas, prep replay journal rows, DOS-338 stickiness
+observations, lifecycle events, and declassification decisions. Some of those
+artifacts carry user-authored payloads or source identifiers. Keeping all raw
+payload-bearing fields forever would conflict with ADR-0108 privacy behavior
+and the W4 UserOnly prep-journal contract.
+
+This amendment narrows "append-only" for feedback:
+
+- **Event identity remains append-only.** `feedback_id`, `claim_id`, action,
+  actor class, submitted/applied timestamps, lifecycle/trust effect, and
+  PII-safe reason codes remain as durable audit identity.
+- **Payload-bearing/source-identifier fields may be irreversibly scrubbed.**
+  A service-owned privacy mutation may replace `claim_feedback.payload_json`,
+  correction-envelope receipt/source/action metadata, source refs, prep journal
+  payloads, propagation details, proof observations, and declassification
+  decisions with redaction markers, keyed hashes, or PII-safe tombstones.
+- **No overlay-only redaction.** If raw sensitive payload remains queryable, the
+  artifact is not redacted. The mutation must alter the payload-bearing storage
+  through the service boundary.
+- **Replay fails closed.** If a redacted payload was required for future repair,
+  prep replay, rebuild replay, or proof explanation, that replay target becomes
+  `redacted`/`orphaned`/`blocked_by_*` with a PII-safe reason code. Services do
+  not reconstruct or guess the original payload.
+- **Trust consumes preserved semantics only.** Trust recompute may consume the
+  preserved action, non-sensitive claim ids, keyed source hashes, and lifecycle
+  state. It must not require scrubbed free text, source labels, local paths, or
+  receipt snippets.
+- **Authorization is local user-only in W4.** Redaction, purge, reset, and
+  declassification decisions are first-party local/Tauri user mutations. Agent,
+  system/runtime, surface-client, and MCP-origin lifecycle requests are denied
+  unless a later ADR/scope manifest explicitly widens them.
+- **Declassification fails closed.** Any parent redaction, source removal,
+  meeting removal, subject/entity deletion/merge/rebind, workspace reset, or
+  artifact version change revokes affected declassification decisions before a
+  read surface can reuse them.
+
+This amendment does not authorize deleting feedback history to hide a correction
+event. It authorizes scrubbing payload/source material while preserving the
+minimal typed event identity needed for audit, trust, lifecycle, and replay
+safety.
 
 ## Context
 

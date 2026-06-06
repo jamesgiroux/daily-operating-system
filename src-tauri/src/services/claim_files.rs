@@ -68,6 +68,13 @@ pub struct ClaimFileProjectionResult {
     pub sidecar_checksum: String,
 }
 
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+pub(crate) struct ClaimFileProjectionEvalSnapshot {
+    pub markdown_checksum: String,
+    pub sidecar_checksum: String,
+    pub claim_count: usize,
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize, JsonSchema, PartialEq, Eq)]
 #[serde(rename_all = "camelCase")]
 pub struct ClaimFileProjectionChangeStatus {
@@ -605,6 +612,18 @@ fn build_render_bundle_db(db: &ActionDb, subject_ref_json: &str) -> Result<Rende
         sidecar_json,
         markdown_checksum,
         sidecar_checksum,
+    })
+}
+
+pub(crate) fn render_entity_claim_file_eval_snapshot_db(
+    db: &ActionDb,
+    subject_ref_json: &str,
+) -> Result<ClaimFileProjectionEvalSnapshot, String> {
+    let bundle = build_render_bundle_db(db, subject_ref_json)?;
+    Ok(ClaimFileProjectionEvalSnapshot {
+        markdown_checksum: bundle.markdown_checksum,
+        sidecar_checksum: bundle.sidecar_checksum,
+        claim_count: bundle.sidecar.claims.len(),
     })
 }
 
@@ -1829,28 +1848,47 @@ fn metadata_for_action(
         Some(raw) => Some(serde_json::from_str::<serde_json::Value>(raw)?),
         None => None,
     };
-    if matches!(action, FeedbackAction::WrongSource) {
-        let mut obj = payload_value
-            .and_then(|value| value.as_object().cloned())
-            .unwrap_or_default();
-        if !obj.contains_key("source_content_hash") {
-            let hash = claim
-                .semantic_identity
-                .source_content_hash
-                .as_deref()
-                .ok_or_else(|| {
-                    ClaimFileError::BadRequest(
-                        "wrong_source missing source_content_hash".to_string(),
-                    )
-                })?;
-            obj.insert(
-                "source_content_hash".to_string(),
-                serde_json::Value::String(hash.to_string()),
-            );
-        }
-        return Ok(Some(serde_json::Value::Object(obj)));
+    let source_content_hash = claim.semantic_identity.source_content_hash.as_deref();
+    if matches!(action, FeedbackAction::WrongSource) && source_content_hash.is_none() {
+        return Err(ClaimFileError::BadRequest(
+            "wrong_source missing source_content_hash".to_string(),
+        ));
     }
-    Ok(payload_value)
+
+    Ok(Some(with_file_projection_metadata(
+        payload_value,
+        source_content_hash,
+    )))
+}
+
+fn with_file_projection_metadata(
+    payload_value: Option<serde_json::Value>,
+    source_content_hash: Option<&str>,
+) -> serde_json::Value {
+    let mut obj = payload_value
+        .and_then(|value| value.as_object().cloned())
+        .unwrap_or_default();
+    obj.insert(
+        "surface".to_string(),
+        serde_json::Value::String("file_projection".to_string()),
+    );
+    obj.insert(
+        "entry_point".to_string(),
+        serde_json::Value::String("claim_file_projection".to_string()),
+    );
+    obj.insert(
+        "claim_file_projection_version".to_string(),
+        serde_json::json!(CLAIM_FILE_PROJECTION_VERSION),
+    );
+    if let Some(hash) = source_content_hash {
+        obj.insert(
+            "source_content_hash".to_string(),
+            serde_json::Value::String(hash.to_string()),
+        );
+    } else {
+        obj.remove("source_content_hash");
+    }
+    serde_json::Value::Object(obj)
 }
 
 fn feedback_action_from_slug(value: &str) -> Result<FeedbackAction, ClaimFileError> {
@@ -2827,7 +2865,7 @@ mod tests {
         rng: &'a SeedableRng,
         external: &'a ExternalClients,
     ) -> ServiceContext<'a> {
-        ServiceContext::test_live(clock, rng, external)
+        ServiceContext::test_live(clock, rng, external).with_actor("user:test")
     }
 
     fn fixture_claim_proposal(text: &str) -> ClaimProposal {
@@ -2981,6 +3019,85 @@ dailyos-payload: {}
                 .and_then(|metadata| metadata.get("source_content_hash")),
             Some(&serde_json::json!("abcdef0123456789"))
         );
+        assert_eq!(
+            corrections[0]
+                .metadata
+                .as_ref()
+                .and_then(|metadata| metadata.get("surface")),
+            Some(&serde_json::json!("file_projection"))
+        );
+        assert_eq!(
+            corrections[0]
+                .metadata
+                .as_ref()
+                .and_then(|metadata| metadata.get("entry_point")),
+            Some(&serde_json::json!("claim_file_projection"))
+        );
+    }
+
+    #[test]
+    fn parser_overwrites_forged_source_hash_for_file_projection_feedback() {
+        let sidecar = fixture_sidecar();
+        for action in ["confirm_current", "mark_false"] {
+            let markdown = format!(
+                "\
+<!-- dailyos-claim-start -->
+dailyos-claim-id: claim-1
+dailyos-claim-version: 3
+dailyos-identity-hash: identity-hash-1
+dailyos-sidecar-checksum: checksum-1
+dailyos-action: {action}
+dailyos-payload: {{\"source_content_hash\":\"forged\",\"surface\":\"spoofed\",\"entry_point\":\"spoofed\"}}
+<!-- dailyos-claim-end -->
+"
+            );
+
+            let corrections =
+                parse_markdown_corrections(&markdown, &sidecar, "checksum-1").expect("parse");
+
+            assert_eq!(corrections.len(), 1);
+            let metadata = corrections[0].metadata.as_ref().expect("metadata");
+            assert_eq!(
+                metadata.get("source_content_hash"),
+                Some(&serde_json::json!("abcdef0123456789")),
+                "{action} must use the sidecar's canonical source hash"
+            );
+            assert_eq!(
+                metadata.get("surface"),
+                Some(&serde_json::json!("file_projection")),
+                "{action} must not preserve forged surface metadata"
+            );
+            assert_eq!(
+                metadata.get("entry_point"),
+                Some(&serde_json::json!("claim_file_projection")),
+                "{action} must not preserve forged entry point metadata"
+            );
+        }
+    }
+
+    #[test]
+    fn parser_drops_payload_source_hash_when_sidecar_has_no_canonical_hash() {
+        let mut sidecar = fixture_sidecar();
+        sidecar.claims[0].semantic_identity.source_content_hash = None;
+        let markdown = "\
+<!-- dailyos-claim-start -->
+dailyos-claim-id: claim-1
+dailyos-claim-version: 3
+dailyos-identity-hash: identity-hash-1
+dailyos-sidecar-checksum: checksum-1
+dailyos-action: confirm_current
+dailyos-payload: {\"source_content_hash\":\"forged\"}
+<!-- dailyos-claim-end -->
+";
+
+        let corrections =
+            parse_markdown_corrections(markdown, &sidecar, "checksum-1").expect("parse");
+
+        let metadata = corrections[0].metadata.as_ref().expect("metadata");
+        assert!(
+            metadata.get("source_content_hash").is_none(),
+            "file projection must not let payload author source hash authority"
+        );
     }
 
     #[test]
@@ -3018,6 +3135,14 @@ dailyos-payload: {}
 
             assert_eq!(corrections.len(), 1, "{slug} should map one correction");
             assert_eq!(corrections[0].action, expected, "{slug} action maps");
+            assert_eq!(
+                corrections[0]
+                    .metadata
+                    .as_ref()
+                    .and_then(|metadata| metadata.get("surface")),
+                Some(&serde_json::json!("file_projection")),
+                "{slug} should carry file projection surface metadata"
+            );
         }
     }
 

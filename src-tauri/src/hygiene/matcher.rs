@@ -30,7 +30,8 @@ pub fn resolve_names_from_emails(
     let clock = crate::services::context::SystemClock;
     let rng = crate::services::context::SystemRng;
     let ext = crate::services::context::ExternalClients::default();
-    let ctx = crate::services::context::ServiceContext::new_live(&clock, &rng, &ext);
+    let ctx = crate::services::context::ServiceContext::new_live(&clock, &rng, &ext)
+        .with_actor("system:hygiene");
 
     let mut stmt = match db.conn_ref().prepare(
         "SELECT DISTINCT sender_email, sender_name
@@ -124,7 +125,8 @@ pub fn auto_link_people_by_domain(db: &ActionDb) -> (usize, Vec<HygieneFixDetail
     let clock = crate::services::context::SystemClock;
     let rng = crate::services::context::SystemRng;
     let ext = crate::services::context::ExternalClients::default();
-    let ctx = crate::services::context::ServiceContext::new_live(&clock, &rng, &ext);
+    let ctx = crate::services::context::ServiceContext::new_live(&clock, &rng, &ext)
+        .with_actor("system:hygiene");
     for person in &people {
         // Check if already linked
         let already_linked = db

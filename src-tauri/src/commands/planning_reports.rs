@@ -254,7 +254,9 @@ pub async fn apply_meeting_prep_prefill(
     let state_for_ctx = state.inner().clone();
     let result = state
         .db_write(move |db| {
-            let ctx = state_for_ctx.live_service_context();
+            let ctx = state_for_ctx
+                .live_service_context()
+                .with_actor("user:tauri");
             apply_meeting_prep_prefill_inner(&ctx, db, &engine, &mid, &ai, &na)
         })
         .await?;
@@ -354,7 +356,7 @@ pub async fn update_meeting_user_agenda(
     let app_state = state.inner().clone();
     state
         .db_write(move |db| {
-            let ctx = app_state.live_service_context();
+            let ctx = app_state.live_service_context().with_actor("user:tauri");
             crate::services::meetings::update_meeting_user_agenda(
                 &ctx,
                 db,
@@ -383,7 +385,7 @@ pub async fn update_meeting_user_notes(
     let app_state = state.inner().clone();
     state
         .db_write(move |db| {
-            let ctx = app_state.live_service_context();
+            let ctx = app_state.live_service_context().with_actor("user:tauri");
             crate::services::meetings::update_meeting_user_notes(
                 &ctx,
                 db,
@@ -466,7 +468,7 @@ mod tests {
         rng: &'a SeedableRng,
         ext: &'a ExternalClients,
     ) -> ServiceContext<'a> {
-        ServiceContext::test_live(clock, rng, ext)
+        ServiceContext::test_live(clock, rng, ext).with_actor("user:test")
     }
 
     #[test]

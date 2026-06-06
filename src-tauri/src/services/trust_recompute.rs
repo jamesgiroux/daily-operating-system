@@ -3,6 +3,11 @@ use rusqlite::OptionalExtension;
 
 use crate::db::claims::IntelligenceClaim;
 use crate::db::ActionDb;
+use crate::services::claim_feedback_propagation::{
+    derive_source_reliability_key_for_claim, read_claim_type_source_reliability,
+    ClaimTypeSourceReliability, SOURCE_KEY_SIGNAL_TYPE,
+};
+use crate::services::claims::ClaimError;
 use crate::services::context::ServiceContext;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -28,6 +33,18 @@ impl TrustRecomputeReport {
     }
 }
 
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct TrustRecomputeCursor {
+    pub created_at: String,
+    pub claim_id: String,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct TrustRecomputePageReport {
+    pub report: TrustRecomputeReport,
+    pub next_cursor: Option<TrustRecomputeCursor>,
+}
+
 pub fn recompute_claim_trust_for_subject(
     ctx: &ServiceContext<'_>,
     db: &ActionDb,
@@ -36,13 +53,66 @@ pub fn recompute_claim_trust_for_subject(
 ) -> Result<TrustRecomputeReport, String> {
     ctx.check_mutation_allowed().map_err(|e| e.to_string())?;
     let subject_type = normalize_entity_type(subject_type);
-    let mut report = TrustRecomputeReport::new(&subject_type, subject_id);
 
     let subject_ref = claim_subject_ref_json_for_entity(&subject_type, subject_id)
         .ok_or_else(|| format!("unsupported claim recompute subject type: {subject_type}"))?;
 
     let claims = crate::services::claims::load_claims_active(db, &subject_ref, None)
         .map_err(|e| format!("load claims for trust recompute: {e}"))?;
+    recompute_claim_trust_for_claims(ctx, db, &subject_type, subject_id, claims)
+}
+
+pub fn recompute_claim_trust_for_subject_page(
+    ctx: &ServiceContext<'_>,
+    db: &ActionDb,
+    subject_type: &str,
+    subject_id: &str,
+    after_created_at: Option<&str>,
+    after_claim_id: Option<&str>,
+    limit: usize,
+) -> Result<TrustRecomputePageReport, String> {
+    ctx.check_mutation_allowed().map_err(|e| e.to_string())?;
+    if limit == 0 {
+        return Err("claim recompute chunk limit must be greater than zero".to_string());
+    }
+    let subject_type = normalize_entity_type(subject_type);
+    let subject_ref = claim_subject_ref_json_for_entity(&subject_type, subject_id)
+        .ok_or_else(|| format!("unsupported claim recompute subject type: {subject_type}"))?;
+    let mut claims = crate::services::claims::load_claims_active_recompute_page(
+        db,
+        &subject_ref,
+        after_created_at,
+        after_claim_id,
+        limit.saturating_add(1),
+    )
+    .map_err(|e| format!("load claim page for trust recompute: {e}"))?;
+    let has_more = claims.len() > limit;
+    if has_more {
+        claims.truncate(limit);
+    }
+    let next_cursor = if has_more {
+        claims.last().map(|claim| TrustRecomputeCursor {
+            created_at: claim.created_at.clone(),
+            claim_id: claim.id.clone(),
+        })
+    } else {
+        None
+    };
+    let report = recompute_claim_trust_for_claims(ctx, db, &subject_type, subject_id, claims)?;
+    Ok(TrustRecomputePageReport {
+        report,
+        next_cursor,
+    })
+}
+
+fn recompute_claim_trust_for_claims(
+    ctx: &ServiceContext<'_>,
+    db: &ActionDb,
+    subject_type: &str,
+    subject_id: &str,
+    claims: Vec<IntelligenceClaim>,
+) -> Result<TrustRecomputeReport, String> {
+    let mut report = TrustRecomputeReport::new(subject_type, subject_id);
     if claims.is_empty() {
         return Ok(report);
     }
@@ -52,14 +122,14 @@ pub fn recompute_claim_trust_for_subject(
     let account_extraction_context =
         match crate::services::trust_extraction::build_account_extraction_context(
             db,
-            &subject_type,
+            subject_type,
             subject_id,
         ) {
             Ok(context) => context,
             Err(e) => {
                 log::warn!(
                     "TrustRecompute: extractor context error on {}:{}: {}",
-                    &subject_type,
+                    subject_type,
                     subject_id,
                     e
                 );
@@ -67,7 +137,7 @@ pub fn recompute_claim_trust_for_subject(
                     report.failures_recorded += record_trust_recompute_pipeline_failure(
                         ctx,
                         db,
-                        &subject_type,
+                        subject_type,
                         subject_id,
                         "extractor_error",
                         Some(&format!("claim_id={} error={e}", claim.id)),
@@ -102,7 +172,7 @@ pub fn recompute_claim_trust_for_subject(
             match crate::services::trust_extraction::extract_generic_target_footprint(
                 db,
                 &subject,
-                &subject_type,
+                subject_type,
                 subject_id,
             ) {
                 Ok(outcome) => outcome,
@@ -111,7 +181,7 @@ pub fn recompute_claim_trust_for_subject(
                     report.failures_recorded += record_trust_recompute_pipeline_failure(
                         ctx,
                         db,
-                        &subject_type,
+                        subject_type,
                         subject_id,
                         "extractor_error",
                         Some(&format!("claim_id={} error={e}", claim.id)),
@@ -130,14 +200,14 @@ pub fn recompute_claim_trust_for_subject(
                 log::debug!(
                     "TrustRecompute: extractor mismatch for claim {} on {}:{} ({:?}); preserving prior trust",
                     claim.id,
-                    &subject_type,
+                    subject_type,
                     subject_id,
                     reason
                 );
                 report.failures_recorded += record_trust_recompute_pipeline_failure(
                     ctx,
                     db,
-                    &subject_type,
+                    subject_type,
                     subject_id,
                     "extractor_mismatch",
                     Some(&format!("claim_id={} reason={reason:?}", claim.id)),
@@ -150,7 +220,7 @@ pub fn recompute_claim_trust_for_subject(
                 let (trust_ctx, indeterminate_reasons) = build_trust_context_for_claim(
                     ctx,
                     db,
-                    &subject_type,
+                    subject_type,
                     subject_id,
                     &claim,
                     footprint,
@@ -160,7 +230,7 @@ pub fn recompute_claim_trust_for_subject(
                     report.failures_recorded += record_trust_recompute_pipeline_failure(
                         ctx,
                         db,
-                        &subject_type,
+                        subject_type,
                         subject_id,
                         "trust_read_state_indeterminate",
                         Some(&format!(
@@ -187,7 +257,7 @@ pub fn recompute_claim_trust_for_subject(
                         report.failures_recorded += record_trust_recompute_pipeline_failure(
                             ctx,
                             db,
-                            &subject_type,
+                            subject_type,
                             subject_id,
                             "trust_compile_failed",
                             Some(&format!("claim_id={} error={e}", claim.id)),
@@ -214,7 +284,7 @@ pub fn recompute_claim_trust_for_subject(
                     report.failures_recorded += record_trust_recompute_pipeline_failure(
                         ctx,
                         db,
-                        &subject_type,
+                        subject_type,
                         subject_id,
                         "trust_update_failed",
                         Some(&format!("claim_id={} error={e}", claim.id)),
@@ -228,7 +298,7 @@ pub fn recompute_claim_trust_for_subject(
                     emit_claim_trust_changed_signal(
                         ctx,
                         db,
-                        &subject_type,
+                        subject_type,
                         subject_id,
                         &claim,
                         previous_score,
@@ -241,7 +311,7 @@ pub fn recompute_claim_trust_for_subject(
                 emit_confidence_evidence_signals(
                     ctx,
                     db,
-                    &subject_type,
+                    subject_type,
                     subject_id,
                     &claim.id,
                     &computation.evidence,
@@ -496,6 +566,32 @@ pub(crate) fn source_reliability_for_claim(
                 claim.id
             );
             return TrustInput::indeterminate(1.0, "projection_signature_signal_read_failed");
+        }
+    }
+
+    match derive_source_reliability_key_for_claim(claim, subject_type, SOURCE_KEY_SIGNAL_TYPE) {
+        Ok(source_key) => match read_claim_type_source_reliability(db, &source_key) {
+            Ok(Some(ClaimTypeSourceReliability::Active(value))) => return TrustInput::ok(value),
+            Ok(Some(ClaimTypeSourceReliability::Excluded)) => {
+                return TrustInput::indeterminate(1.0, "claim_type_source_reliability_excluded");
+            }
+            Ok(None) => {}
+            Err(ClaimError::InvalidFeedback(message))
+                if message == "w4_source_reliability_table_missing" => {}
+            Err(error) => {
+                log::warn!(
+                    "TrustRecompute: failed to read claim-type source reliability for {}: {error}",
+                    claim.id
+                );
+                return TrustInput::indeterminate(1.0, "claim_type_source_reliability_read_failed");
+            }
+        },
+        Err(error) => {
+            log::warn!(
+                "TrustRecompute: failed to derive source reliability key for {}: {error}",
+                claim.id
+            );
+            return TrustInput::indeterminate(1.0, "source_reliability_key_derive_failed");
         }
     }
 
@@ -1333,6 +1429,16 @@ mod tests {
             .expect("read trust columns")
     }
 
+    fn load_test_claim(db: &ActionDb, claim_id: &str) -> IntelligenceClaim {
+        crate::services::claims::load_claim_by_id(db.conn_ref(), claim_id)
+            .expect("load claim")
+            .expect("claim exists")
+    }
+
+    fn source_reliability_parts(input: TrustInput<f64>) -> (f64, Option<&'static str>) {
+        input.into_parts()
+    }
+
     fn signal_count(db: &ActionDb, signal_type: &str) -> i64 {
         db.conn_ref()
             .query_row(
@@ -1462,6 +1568,219 @@ mod tests {
         assert_eq!(reason, None);
         assert!(freshness.timestamp_known);
         assert_eq!(freshness.age_days, 1.0);
+    }
+
+    #[test]
+    fn source_reliability_prefers_claim_type_row_over_legacy_signal_weight() {
+        let db = test_db();
+        let account_id = "acct-source-reliability-precedence";
+        seed_account(&db, account_id);
+        let (clock, rng, ext) = fixed_ctx();
+        let ctx = test_ctx(&clock, &rng, &ext);
+        let mut proposal = claim_proposal(
+            "account",
+            account_id,
+            "risk",
+            "The account has a source reliability signal.",
+        );
+        proposal.data_source = "glean_crm".to_string();
+        proposal.source_ref = Some("fixture://source-precedence".to_string());
+        let claim_id = inserted_claim_id(commit_claim(&ctx, &db, proposal).expect("commit claim"));
+        let claim = load_test_claim(&db, &claim_id);
+        let source_key =
+            derive_source_reliability_key_for_claim(&claim, "account", SOURCE_KEY_SIGNAL_TYPE)
+                .expect("derive source key");
+
+        db.conn_ref()
+            .execute(
+                "INSERT INTO signal_weights (
+                    source, entity_type, signal_type, alpha, beta, update_count, updated_at
+                 ) VALUES ('glean_crm', 'account', 'enrichment_quality', 1.0, 9.0, 1, ?1)",
+                params![TS],
+            )
+            .expect("insert legacy signal weight");
+        db.conn_ref()
+            .execute(
+                "INSERT INTO source_claim_type_reliability (
+                    source_key_version, source_key_epoch_hash, source_key_hash,
+                    data_source, source_key_kind, claim_type, signal_type,
+                    alpha, beta, update_count, updated_at
+                 ) VALUES (?1, ?2, ?3, ?4, ?5, 'risk', ?6, 8.0, 2.0, 1, ?7)",
+                params![
+                    source_key.source_key_version,
+                    source_key.source_key_epoch_hash,
+                    source_key.source_key_hash,
+                    source_key.data_source,
+                    source_key.source_key_kind,
+                    SOURCE_KEY_SIGNAL_TYPE,
+                    TS,
+                ],
+            )
+            .expect("insert W4 source reliability");
+
+        let (value, reason) =
+            source_reliability_parts(source_reliability_for_claim(&db, "account", &claim));
+        assert_eq!(reason, None);
+        assert!((value - 0.8).abs() < f64::EPSILON);
+    }
+
+    #[test]
+    fn source_reliability_falls_back_to_legacy_and_neutral_when_claim_type_absent() {
+        let db = test_db();
+        let account_id = "acct-source-reliability-fallback";
+        seed_account(&db, account_id);
+        let (clock, rng, ext) = fixed_ctx();
+        let ctx = test_ctx(&clock, &rng, &ext);
+        let mut proposal = claim_proposal(
+            "account",
+            account_id,
+            "risk",
+            "The account has legacy source reliability.",
+        );
+        proposal.data_source = "email_signal".to_string();
+        let claim_id = inserted_claim_id(commit_claim(&ctx, &db, proposal).expect("commit claim"));
+        let claim = load_test_claim(&db, &claim_id);
+
+        let (neutral, neutral_reason) =
+            source_reliability_parts(source_reliability_for_claim(&db, "account", &claim));
+        assert_eq!(neutral_reason, None);
+        assert_eq!(neutral, 1.0);
+
+        db.conn_ref()
+            .execute(
+                "INSERT INTO signal_weights (
+                    source, entity_type, signal_type, alpha, beta, update_count, updated_at
+                 ) VALUES ('email_signal', 'account', 'enrichment_quality', 3.0, 1.0, 1, ?1)",
+                params![TS],
+            )
+            .expect("insert legacy signal weight");
+        let (legacy, legacy_reason) =
+            source_reliability_parts(source_reliability_for_claim(&db, "account", &claim));
+        assert_eq!(legacy_reason, None);
+        assert_eq!(legacy, 0.75);
+    }
+
+    #[test]
+    fn source_reliability_excluded_and_stale_rows_stop_legacy_fallback() {
+        let db = test_db();
+        let account_id = "acct-source-reliability-excluded";
+        seed_account(&db, account_id);
+        let (clock, rng, ext) = fixed_ctx();
+        let ctx = test_ctx(&clock, &rng, &ext);
+        let mut proposal = claim_proposal(
+            "account",
+            account_id,
+            "risk",
+            "The account has excluded source reliability.",
+        );
+        proposal.data_source = "glean_crm".to_string();
+        proposal.source_ref = Some("fixture://source-excluded".to_string());
+        let claim_id = inserted_claim_id(commit_claim(&ctx, &db, proposal).expect("commit claim"));
+        let claim = load_test_claim(&db, &claim_id);
+        let source_key =
+            derive_source_reliability_key_for_claim(&claim, "account", SOURCE_KEY_SIGNAL_TYPE)
+                .expect("derive source key");
+
+        db.conn_ref()
+            .execute(
+                "INSERT INTO signal_weights (
+                    source, entity_type, signal_type, alpha, beta, update_count, updated_at
+                 ) VALUES ('glean_crm', 'account', 'enrichment_quality', 9.0, 1.0, 1, ?1)",
+                params![TS],
+            )
+            .expect("insert legacy signal weight");
+        db.conn_ref()
+            .execute(
+                "INSERT INTO source_claim_type_reliability (
+                    source_key_version, source_key_epoch_hash, source_key_hash,
+                    data_source, source_key_kind, claim_type, signal_type,
+                    alpha, beta, update_count, excluded_at, updated_at
+                 ) VALUES (?1, ?2, ?3, ?4, ?5, 'risk', ?6, 9.0, 1.0, 1, ?7, ?7)",
+                params![
+                    source_key.source_key_version,
+                    source_key.source_key_epoch_hash,
+                    source_key.source_key_hash,
+                    source_key.data_source,
+                    source_key.source_key_kind,
+                    SOURCE_KEY_SIGNAL_TYPE,
+                    TS,
+                ],
+            )
+            .expect("insert excluded source reliability");
+        let (excluded, excluded_reason) =
+            source_reliability_parts(source_reliability_for_claim(&db, "account", &claim));
+        assert_eq!(
+            excluded_reason,
+            Some("claim_type_source_reliability_excluded")
+        );
+        assert_eq!(excluded, 1.0);
+
+        db.conn_ref()
+            .execute(
+                "UPDATE source_claim_type_reliability
+                    SET excluded_at = NULL,
+                        stale_key_version = ?1
+                  WHERE source_key_hash = ?2",
+                params![source_key.source_key_version, source_key.source_key_hash],
+            )
+            .expect("mark source reliability stale");
+        let (stale, stale_reason) =
+            source_reliability_parts(source_reliability_for_claim(&db, "account", &claim));
+        assert_eq!(stale_reason, Some("claim_type_source_reliability_excluded"));
+        assert_eq!(stale, 1.0);
+    }
+
+    #[test]
+    fn source_reliability_reads_source_content_hash_from_claim_metadata() {
+        let db = test_db();
+        let account_id = "acct-source-content-reliability";
+        seed_account(&db, account_id);
+        let (clock, rng, ext) = fixed_ctx();
+        let ctx = test_ctx(&clock, &rng, &ext);
+        let mut proposal = claim_proposal(
+            "account",
+            account_id,
+            "risk",
+            "The account has file-projection source reliability.",
+        );
+        proposal.data_source = "claim_file_projection".to_string();
+        proposal.source_ref = None;
+        proposal.metadata_json = Some(
+            serde_json::json!({
+                "source_content_hash": "fixture-content-hash-1"
+            })
+            .to_string(),
+        );
+        let claim_id = inserted_claim_id(commit_claim(&ctx, &db, proposal).expect("commit claim"));
+        let claim = load_test_claim(&db, &claim_id);
+        let source_key =
+            derive_source_reliability_key_for_claim(&claim, "account", SOURCE_KEY_SIGNAL_TYPE)
+                .expect("derive source key");
+        assert_eq!(source_key.source_key_kind, "source_content_hash");
+
+        db.conn_ref()
+            .execute(
+                "INSERT INTO source_claim_type_reliability (
+                    source_key_version, source_key_epoch_hash, source_key_hash,
+                    data_source, source_key_kind, claim_type, signal_type,
+                    alpha, beta, update_count, updated_at
+                 ) VALUES (?1, ?2, ?3, ?4, ?5, 'risk', ?6, 2.0, 8.0, 1, ?7)",
+                params![
+                    source_key.source_key_version,
+                    source_key.source_key_epoch_hash,
+                    source_key.source_key_hash,
+                    source_key.data_source,
+                    source_key.source_key_kind,
+                    SOURCE_KEY_SIGNAL_TYPE,
+                    TS,
+                ],
+            )
+            .expect("insert source-content W4 source reliability");
+
+        let (value, reason) =
+            source_reliability_parts(source_reliability_for_claim(&db, "account", &claim));
+        assert_eq!(reason, None);
+        assert!((value - 0.2).abs() < f64::EPSILON);
     }
 
     #[test]

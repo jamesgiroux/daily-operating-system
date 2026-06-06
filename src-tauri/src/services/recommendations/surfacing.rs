@@ -20,8 +20,8 @@ use super::contracts::{
 };
 use super::recommendation::action_key;
 use super::salience::{
-    recompute_salience_for_claim, score_salience, SalienceError, SaliencePersistence,
-    ScoreSalienceRequest, SCORE_SALIENCE_SCHEMA_VERSION,
+    recompute_salience_for_claim, recompute_salience_for_claim_with_evaluation_id, score_salience,
+    SalienceError, SaliencePersistence, ScoreSalienceRequest, SCORE_SALIENCE_SCHEMA_VERSION,
 };
 use super::why_this_now::why_this_now_for_score;
 use crate::db::ActionDb;
@@ -363,14 +363,20 @@ pub fn evaluate_surfacing_for_claim(
     let now = ctx.clock.now();
     let claim = load_recommendation_claim(db.conn_ref(), &input.claim_id)?;
     let policy = load_policy(db.conn_ref())?;
-    let salience = recompute_salience_for_claim(
-        ctx,
-        db,
-        ScoreSalienceRequest {
-            schema_version: SCORE_SALIENCE_SCHEMA_VERSION,
-            claim_id: input.claim_id.clone(),
-        },
-    )?;
+    let salience_request = ScoreSalienceRequest {
+        schema_version: SCORE_SALIENCE_SCHEMA_VERSION,
+        claim_id: input.claim_id.clone(),
+    };
+    let salience = if let Some(source_signal_id) = input.source_signal_id.as_deref() {
+        recompute_salience_for_claim_with_evaluation_id(
+            ctx,
+            db,
+            salience_request,
+            stable_salience_evaluation_id_for_source(&input, source_signal_id),
+        )?
+    } else {
+        recompute_salience_for_claim(ctx, db, salience_request)?
+    };
     let SaliencePersistence::Stored {
         evaluation_id: salience_evaluation_id,
     } = salience.persistence.clone()
@@ -386,16 +392,23 @@ pub fn evaluate_surfacing_for_claim(
         input.surface_class,
         local_day,
     );
-    let decision_id = format!("surfacing-decision-{}", uuid::Uuid::new_v4());
-    let idempotency_key = format!(
-        "surfacing:{policy_version}:{claim_id}:{salience_evaluation_id}:{surface}",
+    let surfacing_identity = input
+        .source_signal_id
+        .as_deref()
+        .unwrap_or(salience_evaluation_id.as_str());
+    let base_idempotency_key = format!(
+        "surfacing:{policy_version}:{claim_id}:{surfacing_identity}:{surface}",
         policy_version = policy.policy_version,
         claim_id = claim.row.id.0,
         surface = input.render_surface.as_str(),
     );
+    let is_feedback_propagation_retry = input
+        .source_signal_id
+        .as_deref()
+        .is_some_and(|source_signal_id| source_signal_id.starts_with("feedback-propagation:"));
     let actor_kind = actor_kind(ctx);
 
-    let (decision, signal_outcome, derived_signal_ids) = db
+    let (decision_id, decision, signal_outcome, derived_signal_ids) = db
         .with_transaction(|tx| {
             let latest_suppression_at =
                 latest_suppression_at(tx.conn_ref(), &claim, &input, now, &policy)
@@ -414,6 +427,11 @@ pub fn evaluate_surfacing_for_claim(
             let material_change_key_fresh =
                 material_change_key_fresh(tx.conn_ref(), &claim, input.source_signal_id.as_deref())
                     .map_err(|error| error.to_string())?;
+            let material_change_label = if material_change_key_fresh {
+                "fresh"
+            } else {
+                "consumed"
+            };
             let material_source_asof = max_datetime(
                 claim.row.source_asof.as_deref().and_then(parse_datetime),
                 input.trigger_source_asof.as_ref().cloned(),
@@ -455,6 +473,17 @@ pub fn evaluate_surfacing_for_claim(
                 SurfacingDecision::Defer { .. } | SurfacingDecision::Suppress { .. } => None,
             };
             let decision_payload = decision_storage(&decision);
+            let idempotency_key = if is_feedback_propagation_retry {
+                base_idempotency_key.clone()
+            } else {
+                format!(
+                    "{}:material:{}:decision:{}",
+                    base_idempotency_key,
+                    material_change_label,
+                    decision_storage_key(&decision_payload)
+                )
+            };
+            let decision_id = stable_surfacing_decision_id(&idempotency_key);
             let signal_value = surfacing_signal_value(
                 &decision_id,
                 &candidate,
@@ -465,7 +494,7 @@ pub fn evaluate_surfacing_for_claim(
             )
             .map_err(|error| error.to_string())?;
 
-            insert_surfacing_decision(
+            let inserted_decision = insert_surfacing_decision(
                 tx,
                 InsertSurfacingDecision {
                     decision_id: &decision_id,
@@ -485,6 +514,21 @@ pub fn evaluate_surfacing_for_claim(
                 },
             )
             .map_err(|error| error.to_string())?;
+            if !inserted_decision && is_feedback_propagation_retry {
+                let signal_id = crate::signals::bus::signal_id_for_idempotency(
+                    crate::signals::bus::SignalIdempotency::Key(&idempotency_key),
+                )
+                .map_err(|error| error.to_string())?;
+                return Ok((
+                    decision_id,
+                    decision,
+                    crate::signals::bus::SignalEmitOutcome {
+                        id: signal_id,
+                        coalesced: true,
+                    },
+                    Vec::new(),
+                ));
+            }
 
             crate::services::signals::emit_once_for_key_and_propagate(
                 ctx,
@@ -501,7 +545,7 @@ pub fn evaluate_surfacing_for_claim(
             .map_err(SurfacingError::Signal)
             .map_err(|error| error.to_string())
             .map(|(signal_outcome, derived_signal_ids)| {
-                (decision, signal_outcome, derived_signal_ids)
+                (decision_id, decision, signal_outcome, derived_signal_ids)
             })
         })
         .map_err(SurfacingError::Database)?;
@@ -996,9 +1040,9 @@ struct InsertSurfacingDecision<'a> {
 fn insert_surfacing_decision(
     db: &ActionDb,
     input: InsertSurfacingDecision<'_>,
-) -> Result<(), rusqlite::Error> {
-    db.conn_ref().execute(
-        "INSERT INTO surfacing_decisions (
+) -> Result<bool, rusqlite::Error> {
+    let rows_changed = db.conn_ref().execute(
+        "INSERT OR IGNORE INTO surfacing_decisions (
              id, idempotency_key, policy_version, claim_id, decision_kind,
              surfacing_tier, defer_reason, defer_until, suppress_reason, budget_key,
              actor_kind, local_day, claim_type, sensitivity, surface_class,
@@ -1049,7 +1093,30 @@ fn insert_surfacing_decision(
             input.created_at.to_rfc3339(),
         ],
     )?;
-    Ok(())
+    Ok(rows_changed > 0)
+}
+
+fn stable_salience_evaluation_id_for_source(
+    input: &SurfacingEvaluationInput,
+    source_signal_id: &str,
+) -> String {
+    let mut hasher = Sha256::new();
+    hasher.update(input.claim_id.0.as_bytes());
+    hasher.update(b"\x1f");
+    hasher.update(input.render_surface.as_str().as_bytes());
+    hasher.update(b"\x1f");
+    hasher.update(source_signal_id.as_bytes());
+    let prefix = if source_signal_id.starts_with("feedback-propagation:") {
+        "salience-eval-feedback"
+    } else {
+        "salience-eval-source"
+    };
+    format!("{prefix}-{}", hex::encode(&hasher.finalize()[..16]))
+}
+
+fn stable_surfacing_decision_id(idempotency_key: &str) -> String {
+    let digest = Sha256::digest(idempotency_key.as_bytes());
+    format!("surfacing-decision-{}", hex::encode(&digest[..16]))
 }
 
 fn surfacing_signal_value(
@@ -1086,6 +1153,17 @@ struct DecisionStorage {
     defer_reason: Option<&'static str>,
     defer_until: Option<String>,
     suppress_reason: Option<&'static str>,
+}
+
+fn decision_storage_key(decision: &DecisionStorage) -> String {
+    format!(
+        "{}:{}:{}:{}:{}",
+        decision.kind,
+        decision.tier.unwrap_or("_"),
+        decision.defer_reason.unwrap_or("_"),
+        decision.defer_until.as_deref().unwrap_or("_"),
+        decision.suppress_reason.unwrap_or("_")
+    )
 }
 
 fn decision_storage(decision: &SurfacingDecision) -> DecisionStorage {

@@ -6632,6 +6632,91 @@ fn seed_intelligence_data(db: &ActionDb) -> Result<(), String> {
     seed_claim_review_deferrals(db)?;
     seed_salience_factor_weights(db)?;
     seed_workspace_backfill_state(db)?;
+    seed_w4_correction_loop_state(db)?;
+
+    Ok(())
+}
+
+/// Seed one service-produced W4 correction artifact set so dev mode exercises
+/// the correction loop tables without static artifact inserts.
+fn seed_w4_correction_loop_state(db: &ActionDb) -> Result<(), String> {
+    assert_dev_db_connection(db)?;
+
+    let conn = db.conn_ref();
+    let existing: i64 = conn
+        .query_row(
+            "SELECT COUNT(*)
+               FROM claim_feedback_correction_envelopes
+              WHERE source_ref = 'mock-w4-correction-source'",
+            [],
+            |row| row.get(0),
+        )
+        .map_err(|e| format!("Check W4 correction loop seed: {e}"))?;
+    if existing > 0 {
+        return Ok(());
+    }
+
+    let clock = crate::services::context::SystemClock;
+    let rng = crate::services::context::SystemRng;
+    let ext = crate::services::context::ExternalClients::default();
+    let claim_ctx = crate::services::context::ServiceContext::new_live(&clock, &rng, &ext)
+        .with_actor("agent:devtools");
+    let now = chrono::Utc::now().to_rfc3339();
+    let committed = crate::services::claims::commit_claim(
+        &claim_ctx,
+        db,
+        crate::services::claims::ClaimProposal {
+            id: None,
+            expected_claim_version: None,
+            subject_ref: serde_json::json!({
+                "kind": "account",
+                "id": "mock-acme-corp"
+            })
+            .to_string(),
+            claim_type: "risk".to_string(),
+            field_path: Some("risks.mock_w4_correction".to_string()),
+            topic_key: Some("mock_w4_correction".to_string()),
+            text: "Mock account risk confirmed through W4 correction feedback".to_string(),
+            actor: "agent:devtools".to_string(),
+            data_source: "devtools_mock".to_string(),
+            source_ref: Some("mock-w4-correction-source".to_string()),
+            source_asof: Some(now.clone()),
+            observed_at: now,
+            provenance_json: serde_json::json!({
+                "source": "devtools_mock",
+                "fixture": "w4_correction_loop"
+            })
+            .to_string(),
+            metadata_json: None,
+            thread_id: None,
+            temporal_scope: Some(crate::db::claims::TemporalScope::State),
+            sensitivity: Some(crate::db::claims::ClaimSensitivity::Internal),
+            supersedes: None,
+            tombstone: None,
+        },
+    )
+    .map_err(|e| format!("Seed W4 correction claim: {e}"))?;
+    let claim_id = match committed {
+        crate::services::claims::CommittedClaim::Inserted { claim }
+        | crate::services::claims::CommittedClaim::Reinforced { claim, .. }
+        | crate::services::claims::CommittedClaim::Tombstoned { claim } => claim.id,
+        crate::services::claims::CommittedClaim::Forked { new_claim_id, .. } => new_claim_id,
+    };
+
+    let feedback_ctx =
+        crate::services::context::ServiceContext::new_live(&clock, &rng, &ext).with_actor("user");
+    crate::services::claims::record_claim_feedback(
+        &feedback_ctx,
+        db,
+        crate::services::claims::ClaimFeedbackInput {
+            claim_id,
+            action: crate::abilities::feedback::FeedbackAction::ConfirmCurrent,
+            actor: "user".to_string(),
+            actor_id: Some("mock-devtools-user".to_string()),
+            payload_json: None,
+        },
+    )
+    .map_err(|e| format!("Seed W4 correction feedback: {e}"))?;
 
     Ok(())
 }

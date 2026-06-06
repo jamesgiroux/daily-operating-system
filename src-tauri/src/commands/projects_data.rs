@@ -336,11 +336,33 @@ pub async fn rebuild_database(
 
     state
         .db_write(move |db| {
-            crate::db_backup::rebuild_from_filesystem(
+            let rebuild_counts = crate::db_backup::rebuild_from_filesystem(
                 std::path::Path::new(&workspace_path),
                 db,
                 &user_domains,
-            )
+            )?;
+
+            let clock = crate::services::context::SystemClock;
+            let rng = crate::services::context::SystemRng;
+            let external = crate::services::context::ExternalClients::default();
+            let ctx = crate::services::context::ServiceContext::new_live(&clock, &rng, &external)
+                .with_actor("system:rebuild_database");
+            let rebuild_replay_id = format!("dos832-rebuild:{}", ctx.clock.now().to_rfc3339());
+            let replay_report =
+                crate::services::meeting_prep_status::write::replay_active_prep_correction_journal(
+                    &ctx,
+                    db,
+                    &rebuild_replay_id,
+                )
+                .map_err(|error| error.to_string())?;
+            log::info!(
+                "database rebuild replayed prep correction journal: replayed={}, orphaned={}, skipped={}",
+                replay_report.replayed_entries,
+                replay_report.orphaned_entries,
+                replay_report.skipped_entries
+            );
+
+            Ok(rebuild_counts)
         })
         .await
         .map_err(String::from)
@@ -696,7 +718,9 @@ pub async fn merge_accounts(
     let state_for_ctx = app_state.clone();
     state
         .db_write(move |db| {
-            let ctx = state_for_ctx.live_service_context();
+            let ctx = state_for_ctx
+                .live_service_context()
+                .with_actor("user:tauri");
             crate::services::accounts::merge_accounts(&ctx, db, &app_state, &from_id, &into_id)
         })
         .await
