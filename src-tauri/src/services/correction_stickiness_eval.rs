@@ -1,4 +1,4 @@
-//! DOS-338 correction stickiness measurement.
+//! Correction stickiness measurement.
 //!
 //! The mutation phase writes only fixture-safe hashes/ids. The read/eval
 //! phase can then use ADR-0110 ability evaluation to compare rendered
@@ -22,11 +22,11 @@ use crate::services::context::{
 
 #[derive(Debug, thiserror::Error)]
 pub enum StickinessEvalError {
-    #[error("service mode rejected DOS-338 mutation: {0}")]
+    #[error("service mode rejected correction stickiness mutation: {0}")]
     Mode(String),
     #[error("database error: {0}")]
     Db(String),
-    #[error("invalid DOS-338 observation: {0}")]
+    #[error("invalid correction stickiness observation: {0}")]
     InvalidObservation(String),
 }
 
