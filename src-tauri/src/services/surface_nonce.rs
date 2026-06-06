@@ -15,6 +15,7 @@ use thiserror::Error;
 use tokio::sync::Mutex;
 
 use abilities_runtime::abilities::{registry::Actor, FeedbackAction};
+use abilities_runtime::sensitivity::ClaimDismissalSurface;
 
 use crate::audit_log::{emit_surface_audit, AuditError, AuditFields, AuditLogger};
 use crate::db::ActionDb;
@@ -121,13 +122,19 @@ impl SurfaceNonceService {
         request_meta: PresenceNonceRequestMeta,
     ) -> Result<SurfaceNonceIssue, SurfaceNonceError> {
         ensure_surface_client(session, fallback_request_id)?;
-        let request = IssueNonceRequest::parse(payload, fallback_request_id)
+        let mut request = IssueNonceRequest::parse(payload, fallback_request_id)
             .map_err(|error| self.shape_error(session, error, request_meta.clone()))?;
         let audit = NonceAuditContext::from_issue(session, &request).with_request_meta(
             request_meta.ip_hash.clone(),
             request_meta.user_agent_hash.clone(),
         );
         ensure_session_tuple(session, &request.session_id, request.wp_user_id, &audit)?;
+        request.trusted_surface = trusted_surface_for_issue_action(
+            request.action,
+            request.requested_surface,
+            &request.request_id,
+        )
+        .map_err(|error| self.shape_error(session, error, request_meta.clone()))?;
 
         let issue_budget_key =
             request.budget_key(&session.surface_client_id, NonceBudgetClass::Issue);
@@ -200,6 +207,7 @@ impl SurfaceNonceService {
             generated_at: now,
             expires_at,
             payload_json: request.payload_json.clone(),
+            trusted_surface: request.trusted_surface.clone(),
         };
 
         let issued = self.inner.store.issue(
@@ -287,8 +295,10 @@ impl SurfaceNonceService {
                     claim_id: verified.claim_id,
                     action: verified.action,
                     payload_json: verified.payload_json,
+                    trusted_surface: verified.trusted_surface,
                     wp_user_id: verified.wp_user_id,
                     session_id: verified.session_id,
+                    surface_client_id: session.surface_client_id.clone(),
                 })
             }
             Err(mut error) => {
@@ -634,6 +644,10 @@ pub struct PresenceNonceBindingFields {
     // from the verify request body (packet F §5.2). Sensitivity=User content
     // never appears in audit event payloads (§5.5).
     payload_json: Option<String>,
+    // For surface-scoped dismissals this is bound at issue time and stored
+    // separately from caller-authored metadata, then verified payloads derive
+    // `surface_inappropriate.surface` from this trusted value.
+    trusted_surface: Option<String>,
 }
 
 #[derive(Clone, Debug, Default)]
@@ -734,6 +748,7 @@ struct VerifiedNonce {
     claim_id: String,
     action: PresenceNonceAction,
     payload_json: Option<String>,
+    trusted_surface: Option<String>,
     wp_user_id: u64,
     session_id: String,
 }
@@ -892,6 +907,7 @@ impl SurfaceNonceStore {
             claim_id: binding.fields.claim_id.clone(),
             action: binding.fields.action,
             payload_json: binding.fields.payload_json.clone(),
+            trusted_surface: binding.fields.trusted_surface.clone(),
             wp_user_id: binding.fields.wp_user_id,
             session_id: binding.fields.session_id.clone(),
         })
@@ -997,6 +1013,8 @@ struct IssueNonceRequest {
     // source_index for wrong_source). WP-side validates shape before mint; stored
     // on the binding so verify can forward to record_claim_feedback.
     payload_json: Option<String>,
+    requested_surface: Option<ClaimDismissalSurface>,
+    trusted_surface: Option<String>,
 }
 
 impl IssueNonceRequest {
@@ -1016,6 +1034,7 @@ impl IssueNonceRequest {
                     RequestShapeError::new(PresenceNonceRejectReason::MalformedRequest, &request_id)
                 })?;
         let payload_json = optional_payload_json(object.get("payload_json"));
+        let requested_surface = requested_surface_for_action(action, object, &request_id)?;
         Ok(Self {
             session_id: required_string(object.get("session_id"), &request_id)?,
             wp_user_id: required_u64(object.get("wp_user_id"), &request_id)?,
@@ -1027,6 +1046,8 @@ impl IssueNonceRequest {
             composition_version: required_u64(object.get("composition_version"), &request_id)?,
             request_id,
             payload_json,
+            requested_surface,
+            trusted_surface: None,
         })
     }
 
@@ -1122,6 +1143,49 @@ fn optional_payload_json(value: Option<&Value>) -> Option<String> {
     serde_json::to_string(raw).ok()
 }
 
+fn requested_surface_for_action(
+    action: PresenceNonceAction,
+    object: &serde_json::Map<String, Value>,
+    request_id: &str,
+) -> Result<Option<ClaimDismissalSurface>, RequestShapeError> {
+    if action != PresenceNonceAction::SurfaceInappropriate {
+        return Ok(None);
+    }
+    let Some(surface) = optional_string(object.get("surface"))
+        .or_else(|| optional_string(object.get("render_surface")))
+    else {
+        return Ok(None);
+    };
+    ClaimDismissalSurface::from_name(&surface)
+        .map(Some)
+        .ok_or_else(|| {
+            RequestShapeError::new(PresenceNonceRejectReason::MalformedRequest, request_id)
+        })
+}
+
+fn trusted_surface_for_issue_action(
+    action: PresenceNonceAction,
+    requested_surface: Option<ClaimDismissalSurface>,
+    request_id: &str,
+) -> Result<Option<String>, RequestShapeError> {
+    if action != PresenceNonceAction::SurfaceInappropriate {
+        return Ok(None);
+    }
+
+    // Signed surface-client nonce issue is a server-owned bridge route. It must
+    // not let the client name a first-party Tauri surface such as `briefing`.
+    let trusted_surface = ClaimDismissalSurface::LogStructured;
+    if let Some(requested_surface) = requested_surface {
+        if requested_surface != trusted_surface {
+            return Err(RequestShapeError::new(
+                PresenceNonceRejectReason::MalformedRequest,
+                request_id,
+            ));
+        }
+    }
+    Ok(Some(trusted_surface.as_str().to_string()))
+}
+
 fn required_string(value: Option<&Value>, request_id: &str) -> Result<String, RequestShapeError> {
     optional_string(value).ok_or_else(|| {
         RequestShapeError::new(PresenceNonceRejectReason::MalformedRequest, request_id)
@@ -1193,8 +1257,10 @@ pub struct SurfaceNonceVerify {
     pub claim_id: String,
     pub action: PresenceNonceAction,
     pub payload_json: Option<String>,
+    pub trusted_surface: Option<String>,
     pub wp_user_id: u64,
     pub session_id: String,
+    pub surface_client_id: String,
 }
 
 /// Per-request audit metadata supplied by the handler at REST entry. The
@@ -1939,6 +2005,100 @@ mod tests {
         }
     }
 
+    #[test]
+    fn surface_inappropriate_nonce_binds_trusted_surface() {
+        let service = service(SurfaceNonceConfig::default());
+        let db = db();
+        let clock = FixedClock::new(Utc.with_ymd_and_hms(2026, 5, 13, 12, 0, 0).unwrap());
+        let rng = SeedableRng::new(44);
+        let ext = ExternalClients::default();
+        let context = ctx(&clock, &rng, &ext);
+        let session = session("session-1", 42);
+
+        let mut spoofed_surface = issue_payload();
+        spoofed_surface["action"] = json!("surface_inappropriate");
+        spoofed_surface["surface"] = json!("briefing");
+        let error = service
+            .issue_nonce(
+                &context,
+                &db,
+                &session,
+                spoofed_surface,
+                "request-spoofed-surface",
+                PresenceNonceRequestMeta::default(),
+            )
+            .expect_err("surface dismissal issue rejects client-named Tauri surface");
+        assert_eq!(error.reason, PresenceNonceRejectReason::MalformedRequest);
+
+        let mut issue = issue_payload();
+        issue["action"] = json!("surface_inappropriate");
+        issue["surface"] = json!("log_structured");
+        issue["payload_json"] = json!({"surface": "briefing"});
+        let token = service
+            .issue_nonce(
+                &context,
+                &db,
+                &session,
+                issue,
+                "request-bound-surface",
+                PresenceNonceRequestMeta::default(),
+            )
+            .expect("issue surface dismissal nonce")
+            .presence_nonce;
+        let mut verify = verify_payload(&token);
+        verify["action"] = json!("surface_inappropriate");
+        let verified = service
+            .verify_nonce(
+                &context,
+                &db,
+                &session,
+                verify,
+                "request-verify-surface",
+                PresenceNonceRequestMeta::default(),
+            )
+            .expect("verify surface dismissal nonce");
+
+        assert_eq!(verified.trusted_surface.as_deref(), Some("log_structured"));
+        let payload: serde_json::Value = serde_json::from_str(
+            verified
+                .payload_json
+                .as_deref()
+                .expect("payload_json retained separately"),
+        )
+        .expect("parse stored payload");
+        assert_eq!(
+            payload.get("surface").and_then(serde_json::Value::as_str),
+            Some("briefing")
+        );
+
+        let mut server_derived = issue_payload();
+        server_derived["action"] = json!("surface_inappropriate");
+        let token = service
+            .issue_nonce(
+                &context,
+                &db,
+                &session,
+                server_derived,
+                "request-server-derived-surface",
+                PresenceNonceRequestMeta::default(),
+            )
+            .expect("issue surface dismissal nonce without client surface")
+            .presence_nonce;
+        let mut verify = verify_payload(&token);
+        verify["action"] = json!("surface_inappropriate");
+        let verified = service
+            .verify_nonce(
+                &context,
+                &db,
+                &session,
+                verify,
+                "request-verify-server-derived-surface",
+                PresenceNonceRequestMeta::default(),
+            )
+            .expect("verify server-derived surface dismissal nonce");
+        assert_eq!(verified.trusted_surface.as_deref(), Some("log_structured"));
+    }
+
     fn issue_payload() -> Value {
         json!({
             "session_id": "session-1",
@@ -2028,6 +2188,7 @@ mod tests {
                 generated_at: Utc::now(),
                 expires_at: Utc::now(),
                 payload_json: None,
+                trusted_surface: None,
             },
             NonceDigest([1_u8; DIGEST_BYTES]),
         );
@@ -2777,7 +2938,17 @@ mod tests {
             actor_id: Some(verified.session_id.clone()),
             payload_json: verified.payload_json.clone(),
         };
-        let outcome = claims::record_claim_feedback(&context, &db, input).expect("record ok");
+        let outcome = claims::record_claim_feedback_from_verified_surface(
+            &context,
+            &db,
+            input,
+            claims::VerifiedSurfaceFeedbackDelegation {
+                surface_client_id: &verified.surface_client_id,
+                session_id: &verified.session_id,
+                trusted_surface: verified.trusted_surface.as_deref(),
+            },
+        )
+        .expect("record ok");
 
         // Confirm the substrate write — claim row updated with the new
         // verification_state matching the FeedbackAction semantics.
@@ -2891,7 +3062,17 @@ mod tests {
             actor_id: Some(verified.session_id.clone()),
             payload_json: None,
         };
-        claims::record_claim_feedback(&context, &db, input).expect("first feedback ok");
+        claims::record_claim_feedback_from_verified_surface(
+            &context,
+            &db,
+            input,
+            claims::VerifiedSurfaceFeedbackDelegation {
+                surface_client_id: &verified.surface_client_id,
+                session_id: &verified.session_id,
+                trusted_surface: verified.trusted_surface.as_deref(),
+            },
+        )
+        .expect("first feedback ok");
 
         // Second verify: nonce already consumed → Replayed rejection. The
         // audit event MUST be a presence_nonce_rejected with reason=replayed

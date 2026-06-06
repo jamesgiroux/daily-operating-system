@@ -1,5 +1,6 @@
 # Lessons
 
+- 2026-06-06: Treat L0/L2 packet review as a reviewer-cycle loop, not a one-shot summary. After any blocking finding is patched, rerun every assigned reviewer on the current tree and do not call the packet done until all blocking reviewers return PASS.
 - 2026-06-02: L2 blocking reviews should stay scoped to acceptance criteria, ADR-named contracts, and PR-introduced regressions. Extra edge cases and speculative hardening belong in path-alpha/maintenance so wave work does not stall in expanding review cycles.
 - 2026-06-02: Replica and mock dev builds must scope both database and workspace paths before any scaffolding or managed-folder writes run. Validate the effective mode-scoped path first, then initialize; otherwise a replica-safe DB can still mutate production workspace folders.
 - 2026-06-01: When a parallel session owns replica/production environment investigation, keep this session out of DB-mode, Keychain, and replica-isolation changes. Stop any local dev app processes from this session and advance only independent PR-readiness work until the blocker is resolved.

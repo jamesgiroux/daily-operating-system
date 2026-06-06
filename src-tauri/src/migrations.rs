@@ -1141,6 +1141,27 @@ const MIGRATIONS: &[Migration] = &[
         version: 283,
         apply: migrate_v283_dos_832_rebuild_replay_journal_repair,
     },
+    // v1.4.9 W4 — durable correction envelope, propagation jobs/outcomes,
+    // lifecycle events, and declassification decisions.
+    Migration::Sql {
+        version: 284,
+        sql: include_str!("migrations/284_claim_feedback_correction_artifacts.sql"),
+    },
+    // v1.4.9 W4 — claim-type-grained source reliability and subject-fit deltas.
+    Migration::Sql {
+        version: 285,
+        sql: include_str!("migrations/285_source_claim_type_reliability.sql"),
+    },
+    // v1.4.9 W4 — prep correction replay journal and durable outbox.
+    Migration::Fn {
+        version: 286,
+        apply: migrate_v286_meeting_prep_correction_replay,
+    },
+    // v1.4.9 W4 — cross-surface correction stickiness observations.
+    Migration::Sql {
+        version: 287,
+        sql: include_str!("migrations/287_correction_stickiness_eval.sql"),
+    },
 ];
 
 const V155_SHADOW_TRUST_VERSION: i64 = 1_401_003;
@@ -3067,6 +3088,14 @@ fn verify_v282_dos_832_rebuild_replay_journal(conn: &Connection) -> Result<(), M
     }
 
     Ok(())
+}
+
+fn migrate_v286_meeting_prep_correction_replay(conn: &Connection) -> Result<(), MigrationError> {
+    apply_idempotent_sql_migration(
+        conn,
+        include_str!("migrations/286_meeting_prep_correction_replay.sql"),
+        "v1.4.9 W4 meeting prep correction replay",
+    )
 }
 
 fn migrate_v273_recommendation_w2_shape_repair(conn: &Connection) -> Result<(), MigrationError> {

@@ -13,6 +13,7 @@ use std::{
 
 use abilities_runtime::abilities::claim_files::contracts as runtime_claim_files;
 use abilities_runtime::abilities::recommendations::contracts as runtime_salience;
+use abilities_runtime::abilities::registry::{Actor, ActorKind};
 use abilities_runtime::abilities::trust::TrustBand;
 
 pub use abilities_runtime::services::context::*;
@@ -87,6 +88,17 @@ pub struct LiveMeetingPrepStatusReader;
 /// invoke `claim_receipt` (the existing `render_claim_receipt` Tauri command
 /// remains as the React/Tauri invocation path).
 pub struct LiveClaimReceiptReader;
+
+fn service_actor_label_for_recommendation_feedback(actor: &Actor) -> &'static str {
+    match actor.kind() {
+        ActorKind::User => "user",
+        ActorKind::SurfaceClient => "surface_client",
+        ActorKind::Admin => "admin",
+        ActorKind::System => "system",
+        ActorKind::Agent => "agent",
+        ActorKind::McpClient => "mcp",
+    }
+}
 
 pub fn attach_live_workspace_readers(ctx: ServiceContext<'_>) -> ServiceContext<'_> {
     attach_live_workspace_readers_with_signal_engine(ctx, None)
@@ -460,7 +472,7 @@ impl RecommendationFeedbackWriteHandle for LiveRecommendationFeedbackWriter {
                 let clock = FixedClock::new(request.recorded_at);
                 let rng = SeedableRng::new(7);
                 let external = ExternalClients::default();
-                let service_actor = "user";
+                let service_actor = service_actor_label_for_recommendation_feedback(&request.actor);
                 let mut service_ctx =
                     ServiceContext::new_live(&clock, &rng, &external).with_actor(service_actor);
                 if let Some(ability_id) = request.ability_id.as_deref() {
@@ -3271,7 +3283,7 @@ impl MeetingPrepStatusReadHandle for LiveMeetingPrepStatusReader {
     }
 }
 
-fn project_meeting_prep_status_snapshot(
+pub(crate) fn project_meeting_prep_status_snapshot(
     db: &crate::db::ActionDb,
     meeting_id: &str,
 ) -> Result<MeetingPrepStatusSnapshot, MeetingPrepStatusReadError> {
@@ -3544,7 +3556,7 @@ fn live_render_claim_receipt(
     Ok(app_receipt_to_ability(receipt))
 }
 
-fn ability_target_to_app(
+pub(crate) fn ability_target_to_app(
     target: &ClaimReceiptTarget,
 ) -> crate::services::claim_receipt::contracts::ReceiptTarget {
     use crate::services::claim_receipt::contracts as app;
@@ -3579,7 +3591,7 @@ fn ability_target_to_app(
     }
 }
 
-fn app_target_to_ability(
+pub(crate) fn app_target_to_ability(
     target: &crate::services::claim_receipt::contracts::ReceiptTarget,
 ) -> ClaimReceiptTarget {
     use crate::services::claim_receipt::contracts as app;
@@ -3614,7 +3626,7 @@ fn app_target_to_ability(
     }
 }
 
-fn ability_surface_to_app(
+pub(crate) fn ability_surface_to_app(
     surface: ClaimReceiptSurfaceContext,
 ) -> crate::services::claim_receipt::contracts::SurfaceContext {
     use crate::services::claim_receipt::contracts as app;
@@ -3627,7 +3639,7 @@ fn ability_surface_to_app(
     }
 }
 
-fn app_surface_to_ability(
+pub(crate) fn app_surface_to_ability(
     surface: crate::services::claim_receipt::contracts::SurfaceContext,
 ) -> ClaimReceiptSurfaceContext {
     use crate::services::claim_receipt::contracts as app;
@@ -3640,7 +3652,7 @@ fn app_surface_to_ability(
     }
 }
 
-fn app_receipt_to_ability(
+pub(crate) fn app_receipt_to_ability(
     receipt: crate::services::claim_receipt::contracts::ClaimReceipt,
 ) -> ClaimReceiptSnapshot {
     ClaimReceiptSnapshot {

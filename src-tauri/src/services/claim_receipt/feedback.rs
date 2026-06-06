@@ -44,6 +44,7 @@ use abilities_runtime::abilities::provenance::subject::SubjectRef as ReceiptSubj
 use abilities_runtime::sensitivity::{RenderActor, RenderSurface};
 use abilities_runtime::types::{ClaimSensitivity, IntelligenceClaim};
 
+use crate::services::claim_files::CLAIM_FILE_PROJECTION_VERSION;
 use crate::services::claim_receipt::auth::{can_surface_for, AuthError};
 use crate::services::claim_receipt::contracts::{ClaimReceipt, ReceiptTarget, SurfaceContext};
 use crate::services::claim_receipt::render::{render_receipt_for, RenderError};
@@ -324,7 +325,11 @@ async fn submit_claim_feedback_with_persistence(
     can_surface_for(state, actor, render_surface, &claim_id).await?;
 
     // Step 3 + 4: validate + sanitize per-action metadata.
-    let validated = validate_and_sanitize_metadata(request.action, request.metadata.as_ref())?;
+    let validated = validate_and_sanitize_metadata_for_mode(
+        request.action,
+        request.metadata.as_ref(),
+        MetadataValidationMode::from_persistence(&persistence),
+    )?;
 
     // Load claim for source-set check (AC-8.11) + sensitivity inherit (AC-8.9).
     let claim_for_check = claim_id.clone();
@@ -497,9 +502,47 @@ impl ValidatedMetadata {
     }
 }
 
+pub(crate) fn sanitize_metadata_payload_for_writer(
+    action: FeedbackAction,
+    metadata: Option<&serde_json::Value>,
+) -> Result<Option<String>, FeedbackError> {
+    let validated = validate_and_sanitize_metadata(action, metadata)?;
+    Ok(match action {
+        FeedbackAction::WrongSource => bridge_wrong_source_for_writer(&validated),
+        _ => validated.payload_for_writer(),
+    })
+}
+
 fn validate_and_sanitize_metadata(
     action: FeedbackAction,
     metadata: Option<&serde_json::Value>,
+) -> Result<ValidatedMetadata, FeedbackError> {
+    validate_and_sanitize_metadata_for_mode(action, metadata, MetadataValidationMode::Default)
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum MetadataValidationMode {
+    Default,
+    ClaimFileApply,
+}
+
+impl MetadataValidationMode {
+    fn from_persistence(persistence: &FeedbackPersistence) -> Self {
+        match persistence {
+            FeedbackPersistence::Default => Self::Default,
+            FeedbackPersistence::ClaimFileApply(_) => Self::ClaimFileApply,
+        }
+    }
+
+    fn allows_claim_file_projection_metadata(self) -> bool {
+        self == Self::ClaimFileApply
+    }
+}
+
+fn validate_and_sanitize_metadata_for_mode(
+    action: FeedbackAction,
+    metadata: Option<&serde_json::Value>,
+    mode: MetadataValidationMode,
 ) -> Result<ValidatedMetadata, FeedbackError> {
     // Global metadata envelope checks.
     if let Some(value) = metadata {
@@ -549,13 +592,16 @@ fn validate_and_sanitize_metadata(
     if let Some(value) = sanitized_metadata.as_ref() {
         let obj = value.as_object().expect("validated as object above");
         for key in obj.keys() {
-            if !allowed.contains(&key.as_str()) {
+            if !allowed.contains(&key.as_str())
+                && !claim_file_projection_metadata_key_allowed(mode, key)
+            {
                 return Err(FeedbackError::BadRequest(format!(
                     "{} feedback rejects unknown metadata key {key:?}",
                     action.as_str()
                 )));
             }
         }
+        validate_claim_file_projection_metadata(mode, obj)?;
     }
 
     match action {
@@ -764,6 +810,64 @@ fn validate_and_sanitize_metadata(
         metadata: sanitized_metadata,
         sanitizer_warnings: warnings,
     })
+}
+
+fn claim_file_projection_metadata_key_allowed(mode: MetadataValidationMode, key: &str) -> bool {
+    mode.allows_claim_file_projection_metadata()
+        && matches!(
+            key,
+            "surface" | "entry_point" | "claim_file_projection_version" | "source_content_hash"
+        )
+}
+
+fn validate_claim_file_projection_metadata(
+    mode: MetadataValidationMode,
+    metadata: &serde_json::Map<String, serde_json::Value>,
+) -> Result<(), FeedbackError> {
+    if !mode.allows_claim_file_projection_metadata() {
+        return Ok(());
+    }
+    if let Some(surface) = metadata.get("surface") {
+        if surface.as_str() != Some("file_projection") {
+            return Err(FeedbackError::BadRequest(
+                "claim-file feedback metadata.surface must be file_projection".to_string(),
+            ));
+        }
+    }
+    if let Some(entry_point) = metadata.get("entry_point") {
+        if entry_point.as_str() != Some("claim_file_projection") {
+            return Err(FeedbackError::BadRequest(
+                "claim-file feedback metadata.entry_point must be claim_file_projection"
+                    .to_string(),
+            ));
+        }
+    }
+    if let Some(version) = metadata.get("claim_file_projection_version") {
+        if version.as_u64() != Some(u64::from(CLAIM_FILE_PROJECTION_VERSION)) {
+            return Err(FeedbackError::BadRequest(format!(
+                "claim-file feedback metadata.claim_file_projection_version must be {}",
+                CLAIM_FILE_PROJECTION_VERSION
+            )));
+        }
+    }
+    if let Some(hash) = metadata.get("source_content_hash") {
+        let hash = hash
+            .as_str()
+            .map(str::trim)
+            .filter(|value| !value.is_empty())
+            .ok_or_else(|| {
+                FeedbackError::BadRequest(
+                    "claim-file feedback metadata.source_content_hash must be opaque text"
+                        .to_string(),
+                )
+            })?;
+        if !is_opaque_hash(hash) {
+            return Err(FeedbackError::BadRequest(
+                "claim-file feedback metadata.source_content_hash must be opaque text".to_string(),
+            ));
+        }
+    }
+    Ok(())
 }
 
 fn normalize_wrong_subject_ref(
@@ -1278,6 +1382,71 @@ mod tests {
         )
         .unwrap_err();
         assert!(matches!(err, FeedbackError::BadRequest(message) if message.contains("evil_key")));
+    }
+
+    #[test]
+    fn claim_file_projection_metadata_is_apply_scoped() {
+        let metadata = serde_json::json!({
+            "surface": "file_projection",
+            "entry_point": "claim_file_projection",
+            "claim_file_projection_version": CLAIM_FILE_PROJECTION_VERSION,
+            "source_content_hash": "abcdef0123456789"
+        });
+
+        let err = validate_and_sanitize_metadata(FeedbackAction::ConfirmCurrent, Some(&metadata))
+            .expect_err("normal receipt feedback must not accept file-projection bookkeeping");
+        assert!(
+            matches!(err, FeedbackError::BadRequest(ref message) if message.contains("unknown metadata key")),
+            "unexpected error: {err}"
+        );
+
+        validate_and_sanitize_metadata_for_mode(
+            FeedbackAction::ConfirmCurrent,
+            Some(&metadata),
+            MetadataValidationMode::ClaimFileApply,
+        )
+        .expect("claim-file apply accepts canonical projection bookkeeping");
+    }
+
+    #[test]
+    fn claim_file_projection_metadata_rejects_spoofed_bookkeeping_values() {
+        let metadata = serde_json::json!({
+            "surface": "spoofed",
+            "entry_point": "claim_file_projection",
+            "claim_file_projection_version": CLAIM_FILE_PROJECTION_VERSION
+        });
+
+        let err = validate_and_sanitize_metadata_for_mode(
+            FeedbackAction::ConfirmCurrent,
+            Some(&metadata),
+            MetadataValidationMode::ClaimFileApply,
+        )
+        .expect_err("claim-file apply bookkeeping must be canonical");
+        assert!(
+            matches!(err, FeedbackError::BadRequest(ref message) if message.contains("metadata.surface")),
+            "unexpected error: {err}"
+        );
+    }
+
+    #[test]
+    fn claim_file_projection_metadata_rejects_malformed_source_hash() {
+        let metadata = serde_json::json!({
+            "surface": "file_projection",
+            "entry_point": "claim_file_projection",
+            "claim_file_projection_version": CLAIM_FILE_PROJECTION_VERSION,
+            "source_content_hash": "not a hash"
+        });
+
+        let err = validate_and_sanitize_metadata_for_mode(
+            FeedbackAction::ConfirmCurrent,
+            Some(&metadata),
+            MetadataValidationMode::ClaimFileApply,
+        )
+        .expect_err("claim-file apply source authority hash must be opaque");
+        assert!(
+            matches!(err, FeedbackError::BadRequest(ref message) if message.contains("source_content_hash")),
+            "unexpected error: {err}"
+        );
     }
 
     #[test]

@@ -544,6 +544,35 @@ mod tests {
     }
 
     #[test]
+    fn w4_surface_client_recommendation_feedback_cannot_direct_write_claim_feedback() {
+        let db = test_db();
+        let (clock, rng, external) = ctx_parts();
+        let ctx = ServiceContext::test_live(&clock, &rng, &external)
+            .with_actor("surface_client")
+            .with_ability_id(runtime::SUBMIT_RECOMMENDATION_FEEDBACK_ABILITY_NAME);
+        seed_recommendation_claim(&db, "claim-surface-direct", app::FeedbackState::Pending);
+
+        let error = record_recommendation_feedback(
+            &ctx,
+            &db,
+            runtime::ClaimId("claim-surface-direct".to_string()),
+            runtime::RecommendationFeedbackDecision::Accept { at: at() },
+            feedback_context(),
+            &surface_actor(),
+        )
+        .expect_err("surface client recommendation feedback needs verified delegation");
+
+        assert!(
+            matches!(error, ClaimError::Mode(_)),
+            "surface client direct feedback should fail at service actor boundary, got {error:?}",
+        );
+        assert!(
+            claim_feedback_rows(&db, "claim-surface-direct").is_empty(),
+            "rejected surface recommendation feedback must not create claim_feedback rows",
+        );
+    }
+
+    #[test]
     fn recommendation_feedback_rejects_unknown_claim_id() {
         let db = test_db();
         let (clock, rng, external) = ctx_parts();

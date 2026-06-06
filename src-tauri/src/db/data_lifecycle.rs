@@ -406,6 +406,8 @@ pub struct PurgeReport {
     pub signal_derivations_deleted: usize,
     #[serde(default)]
     pub briefing_callouts_deleted: usize,
+    #[serde(default)]
+    pub correction_artifacts_lifecycle_marked: usize,
 }
 
 fn is_profile_field(field: &str) -> bool {
@@ -1065,6 +1067,23 @@ pub fn purge_source(db: &ActionDb, source: DataSource) -> Result<PurgeReport, Db
 
         let enrichment_sources_cleared = purge_people_profile_fields_by_source(tx, source)
             .map_err(|e| format!("purge people enrichment_sources failed: {e}"))?;
+        let correction_artifact_report =
+            crate::services::correction_artifacts::remove_data_source_artifacts_for_source_purge_in_tx(
+                tx,
+                source_str,
+                "source_purged",
+                "user:source_purge",
+                &Utc::now().to_rfc3339(),
+            )
+            .map_err(|e| format!("purge correction artifacts failed: {e}"))?;
+        let correction_artifacts_lifecycle_marked =
+            correction_artifact_report.feedback_payloads_redacted
+                + correction_artifact_report.envelopes_redacted
+                + correction_artifact_report.source_deltas_redacted
+                + correction_artifact_report.source_aggregates_excluded
+                + correction_artifact_report.propagation_jobs_staled
+                + correction_artifact_report.declassification_decisions_revoked
+                + correction_artifact_report.dos338_observations_marked;
 
         Ok(PurgeReport {
             source: source_str.to_string(),
@@ -1088,6 +1107,7 @@ pub fn purge_source(db: &ActionDb, source: DataSource) -> Result<PurgeReport, Db
             account_products_deleted,
             signal_derivations_deleted,
             briefing_callouts_deleted,
+            correction_artifacts_lifecycle_marked,
         })
     })
     .map_err(DbError::Migration)

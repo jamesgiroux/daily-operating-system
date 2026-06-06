@@ -2828,6 +2828,19 @@ pub fn merge_accounts(
 ) -> Result<crate::db::MergeResult, String> {
     ctx.check_mutation_allowed().map_err(|e| e.to_string())?;
     db.with_transaction(|tx| {
+        crate::services::correction_artifacts::rebind_subject_artifacts_in_tx(
+            tx,
+            crate::services::correction_artifacts::RebindSubjectArtifactsInput {
+                subject_kind: "account",
+                subject_id: from_id,
+                new_subject_kind: "account",
+                new_subject_id: into_id,
+                reason_code: "account_merged",
+            },
+            ctx.actor,
+            &chrono::Utc::now().to_rfc3339(),
+        )
+        .map_err(|e| e.to_string())?;
         let result = tx
             .merge_accounts(from_id, into_id)
             .map_err(|e| e.to_string())?;

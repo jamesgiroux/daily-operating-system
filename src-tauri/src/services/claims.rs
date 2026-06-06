@@ -44,6 +44,10 @@ use crate::db::claims::{
 };
 use crate::db::{ActionDb, DbError};
 use crate::intelligence::canonicalization::{item_hash, ItemKind};
+use crate::services::claim_feedback_propagation::{
+    record_feedback_propagation_in_tx, FeedbackPropagationWrite,
+};
+use crate::services::claim_receipt::feedback::sanitize_metadata_payload_for_writer;
 use crate::services::comparator_thresholds::{
     ambiguous_base_interval, COMPARATOR_THRESHOLD_VERSION, HIGH_THRESHOLD, LOW_THRESHOLD,
 };
@@ -233,6 +237,13 @@ pub struct ClaimFeedbackInput {
     pub actor: String,
     pub actor_id: Option<String>,
     pub payload_json: Option<String>,
+}
+
+#[derive(Debug, Clone, Copy)]
+pub struct VerifiedSurfaceFeedbackDelegation<'a> {
+    pub surface_client_id: &'a str,
+    pub session_id: &'a str,
+    pub trusted_surface: Option<&'a str>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
@@ -5651,6 +5662,85 @@ fn canonical_json_value(value: &serde_json::Value) -> serde_json::Value {
     }
 }
 
+fn validate_feedback_invocation(
+    service_actor: &str,
+    input: &ClaimFeedbackInput,
+    invocation: FeedbackInvocation<'_>,
+) -> Result<(), ClaimError> {
+    validate_feedback_actor(&input.actor)?;
+    match invocation {
+        FeedbackInvocation::Direct => {
+            crate::services::correction_artifacts::authorize_lifecycle_actor(service_actor)
+                .map_err(|error| ClaimError::Mode(error.to_string()))?;
+            Ok(())
+        }
+        FeedbackInvocation::VerifiedSurface(delegation) => {
+            let normalized = service_actor.trim().to_ascii_lowercase();
+            if normalized != "surface_client" {
+                return Err(ClaimError::Mode(format!(
+                    "verified surface feedback requires surface_client service actor, got {service_actor}"
+                )));
+            }
+            if delegation.surface_client_id.trim().is_empty()
+                || delegation.session_id.trim().is_empty()
+            {
+                return Err(ClaimError::InvalidFeedback(
+                    "verified surface feedback requires surface client and session identity"
+                        .to_string(),
+                ));
+            }
+            Ok(())
+        }
+        FeedbackInvocation::Replay => {
+            crate::services::correction_artifacts::authorize_service_lifecycle_actor(service_actor)
+                .map_err(|error| ClaimError::Mode(error.to_string()))?;
+            Ok(())
+        }
+    }
+}
+
+fn attach_verified_surface_delegation_payload(
+    payload_json: Option<String>,
+    service_actor: &str,
+    delegation: VerifiedSurfaceFeedbackDelegation<'_>,
+) -> Result<Option<String>, ClaimError> {
+    let mut payload = match payload_json {
+        Some(raw) => serde_json::from_str::<serde_json::Value>(&raw).map_err(|error| {
+            ClaimError::InvalidFeedback(format!("payload_json must be valid JSON: {error}"))
+        })?,
+        None => serde_json::json!({}),
+    };
+    let Some(payload_object) = payload.as_object_mut() else {
+        return Err(ClaimError::InvalidFeedback(
+            "verified surface feedback payload_json must be a JSON object".to_string(),
+        ));
+    };
+    payload_object.insert(
+        "_verified_surface_delegation".to_string(),
+        serde_json::json!({
+            "invoker_actor": service_actor,
+            "surface_client_id_hash": feedback_delegation_hash(
+                "surface_client_id",
+                delegation.surface_client_id,
+            ),
+            "session_id_hash": feedback_delegation_hash("session_id", delegation.session_id),
+        }),
+    );
+    serde_json::to_string(&payload).map(Some).map_err(|error| {
+        ClaimError::InvalidFeedback(format!("payload_json serialize failed: {error}"))
+    })
+}
+
+fn feedback_delegation_hash(label: &str, value: &str) -> String {
+    let mut hasher = Sha256::new();
+    hasher.update(b"dailyos.w4.feedback.delegation.v1");
+    hasher.update([0]);
+    hasher.update(label.as_bytes());
+    hasher.update([0]);
+    hasher.update(value.as_bytes());
+    format!("sha256:{:x}", hasher.finalize())
+}
+
 fn validate_feedback_payload(
     input: &ClaimFeedbackInput,
     metadata: &ClaimFeedbackMetadata,
@@ -7304,7 +7394,7 @@ pub fn record_claim_feedback(
     db: &ActionDb,
     input: ClaimFeedbackInput,
 ) -> Result<ClaimFeedbackOutcome, ClaimError> {
-    record_claim_feedback_inner(ctx, db, input, None, None)
+    record_claim_feedback_inner(ctx, db, input, None, None, FeedbackInvocation::Direct)
 }
 
 pub fn record_claim_feedback_for_claim_file_apply(
@@ -7313,7 +7403,158 @@ pub fn record_claim_feedback_for_claim_file_apply(
     input: ClaimFeedbackInput,
     apply: ClaimFileFeedbackApplyInput,
 ) -> Result<ClaimFeedbackOutcome, ClaimError> {
-    record_claim_feedback_inner(ctx, db, input, Some(apply), None)
+    record_claim_feedback_inner(
+        ctx,
+        db,
+        input,
+        Some(apply),
+        None,
+        FeedbackInvocation::Direct,
+    )
+}
+
+pub fn record_claim_feedback_from_verified_surface(
+    ctx: &ServiceContext<'_>,
+    db: &ActionDb,
+    mut input: ClaimFeedbackInput,
+    delegation: VerifiedSurfaceFeedbackDelegation<'_>,
+) -> Result<ClaimFeedbackOutcome, ClaimError> {
+    let claim = load_claim_by_id(db.conn_ref(), &input.claim_id)?
+        .ok_or_else(|| ClaimError::UnknownClaimId(input.claim_id.clone()))?;
+    input.payload_json = validate_verified_surface_payload_for_writer(
+        &claim,
+        input.action,
+        input.payload_json.take(),
+        delegation.trusted_surface,
+    )?;
+    input.payload_json = attach_verified_surface_delegation_payload(
+        input.payload_json.take(),
+        ctx.actor,
+        delegation,
+    )?;
+    record_claim_feedback_inner(
+        ctx,
+        db,
+        input,
+        None,
+        None,
+        FeedbackInvocation::VerifiedSurface(delegation),
+    )
+}
+
+fn validate_verified_surface_payload_for_writer(
+    claim: &IntelligenceClaim,
+    action: FeedbackAction,
+    payload_json: Option<String>,
+    trusted_surface: Option<&str>,
+) -> Result<Option<String>, ClaimError> {
+    let mut object = verified_surface_payload_object(action, payload_json)?;
+    if action == FeedbackAction::WrongSource {
+        let expected_hash = current_source_content_hash_for_claim(claim);
+
+        if let Some(supplied_hash) = object.get("source_content_hash") {
+            let supplied_hash = supplied_hash
+                .as_str()
+                .map(str::trim)
+                .filter(|value| !value.is_empty())
+                .ok_or_else(|| {
+                    ClaimError::InvalidFeedback(
+                        "wrong_source verified-surface source_content_hash must be opaque text"
+                            .to_string(),
+                    )
+                })?;
+            if supplied_hash != expected_hash {
+                return Err(ClaimError::InvalidFeedback(
+                    "wrong_source verified-surface source_content_hash does not match current claim"
+                        .to_string(),
+                ));
+            }
+        }
+
+        object.remove("source_ref");
+        object.insert(
+            "source_content_hash".to_string(),
+            serde_json::Value::String(expected_hash),
+        );
+    }
+    if action == FeedbackAction::SurfaceInappropriate {
+        let trusted = trusted_surface
+            .map(str::trim)
+            .filter(|value| !value.is_empty())
+            .ok_or_else(|| {
+                ClaimError::InvalidFeedback(
+                    "verified surface_inappropriate feedback requires trusted surface".to_string(),
+                )
+            })?;
+        if trusted.len() > 64 {
+            return Err(ClaimError::InvalidFeedback(
+                "verified surface_inappropriate trusted surface exceeds 64 char budget".to_string(),
+            ));
+        }
+        if let Some(supplied) = object
+            .get("surface")
+            .and_then(serde_json::Value::as_str)
+            .map(str::trim)
+            .filter(|value| !value.is_empty())
+        {
+            if supplied != trusted {
+                return Err(ClaimError::InvalidFeedback(
+                    "verified surface_inappropriate surface does not match trusted receipt surface"
+                        .to_string(),
+                ));
+            }
+        }
+        object.insert(
+            "surface".to_string(),
+            serde_json::Value::String(trusted.to_string()),
+        );
+    }
+
+    let metadata = serde_json::Value::Object(object);
+    sanitize_metadata_payload_for_writer(action, Some(&metadata)).map_err(|error| {
+        ClaimError::InvalidFeedback(format!("verified surface payload invalid: {error}"))
+    })
+}
+
+fn verified_surface_payload_object(
+    action: FeedbackAction,
+    payload_json: Option<String>,
+) -> Result<serde_json::Map<String, serde_json::Value>, ClaimError> {
+    match payload_json {
+        Some(raw) => match serde_json::from_str::<serde_json::Value>(&raw) {
+            Ok(serde_json::Value::Object(object)) => Ok(object),
+            Ok(_) => Err(ClaimError::InvalidFeedback(format!(
+                "{} verified-surface payload_json must be a JSON object",
+                action.as_str()
+            ))),
+            Err(error) => Err(ClaimError::InvalidFeedback(format!(
+                "{} verified-surface payload_json must be valid JSON: {error}",
+                action.as_str()
+            ))),
+        },
+        None => Ok(serde_json::Map::new()),
+    }
+}
+
+fn current_source_content_hash_for_claim(claim: &IntelligenceClaim) -> String {
+    let mut hasher = Sha256::new();
+    hasher.update(claim.data_source.as_bytes());
+    hasher.update(b"\x1f");
+    if let Some(source_ref) = claim.source_ref.as_deref() {
+        hasher.update(source_ref.as_bytes());
+    }
+    hasher.update(b"\x1f");
+    if let Some(item_hash) = claim.item_hash.as_deref() {
+        hasher.update(item_hash.as_bytes());
+    }
+    format!("{:x}", hasher.finalize())
+}
+
+#[derive(Debug, Clone, Copy)]
+enum FeedbackInvocation<'a> {
+    Direct,
+    Replay,
+    VerifiedSurface(VerifiedSurfaceFeedbackDelegation<'a>),
 }
 
 pub fn record_claim_feedback_replay(
@@ -7322,7 +7563,14 @@ pub fn record_claim_feedback_replay(
     input: ClaimFeedbackReplayInput,
 ) -> Result<ClaimFeedbackOutcome, ClaimError> {
     let replay = prepare_claim_feedback_replay(&input)?;
-    record_claim_feedback_inner(ctx, db, input.feedback, None, Some(replay))
+    record_claim_feedback_inner(
+        ctx,
+        db,
+        input.feedback,
+        None,
+        Some(replay),
+        FeedbackInvocation::Replay,
+    )
 }
 
 pub(crate) fn recorded_claim_feedback_replay_outcome(
@@ -7364,11 +7612,13 @@ fn record_claim_feedback_inner(
     input: ClaimFeedbackInput,
     claim_file_apply: Option<ClaimFileFeedbackApplyInput>,
     replay: Option<ClaimFeedbackReplayWrite>,
+    invocation: FeedbackInvocation<'_>,
 ) -> Result<ClaimFeedbackOutcome, ClaimError> {
     ctx.check_mutation_allowed()
         .map_err(|e| ClaimError::Mode(e.to_string()))?;
 
     let metadata = feedback_semantics(input.action);
+    validate_feedback_invocation(ctx.actor, &input, invocation)?;
     validate_feedback_payload(&input, &metadata)?;
 
     if let Some(replay) = replay.as_ref() {
@@ -7400,6 +7650,7 @@ fn record_claim_feedback_inner(
                 });
             }
         }
+        ensure_feedback_target_active(&claim)?;
         validate_feedback_actor(&input.actor)?;
         let metadata = feedback_metadata_for_claim(&claim, &input, metadata.clone())?;
         let subject_value: serde_json::Value = serde_json::from_str(&claim.subject_ref)?;
@@ -7569,6 +7820,21 @@ fn record_claim_feedback_inner(
         bump_invalidation_for_claim_id(tx, &input.claim_id)?;
         let repair_job_id =
             targeted_repair_enqueue_job(ctx, tx, &claim, &feedback_id, metadata.repair)?;
+        record_feedback_propagation_in_tx(
+            tx,
+            FeedbackPropagationWrite {
+                feedback_id: &feedback_id,
+                claim: &claim,
+                input: &input,
+                subject: &subject,
+                repair: metadata.repair,
+                repair_job_id: repair_job_id.as_deref(),
+                claim_file_apply_key: claim_file_apply
+                    .as_ref()
+                    .map(|apply| apply.correction_apply_key.as_str()),
+                now: &now,
+            },
+        )?;
         if let Some(apply) = claim_file_apply.as_ref() {
             let updated = tx.conn_ref().execute(
                 "UPDATE claim_file_correction_apply_events
@@ -8009,6 +8275,17 @@ fn json_string_any(value: &serde_json::Value, paths: &[&[&str]]) -> Option<Strin
             .filter(|s| !s.is_empty())
             .map(str::to_string)
     })
+}
+
+fn ensure_feedback_target_active(claim: &IntelligenceClaim) -> Result<(), ClaimError> {
+    if claim.claim_state == ClaimState::Active && claim.surfacing_state == SurfacingState::Active {
+        return Ok(());
+    }
+    Err(ClaimError::InvalidFeedback(format!(
+        "claim feedback target must be active; claim_state={}, surfacing_state={}",
+        enum_to_db(&claim.claim_state)?,
+        enum_to_db(&claim.surfacing_state)?,
+    )))
 }
 
 fn json_u64_any(value: &serde_json::Value, paths: &[&[&str]]) -> Option<u64> {
@@ -9921,6 +10198,69 @@ pub fn load_claims_active(
         claim_type,
         "claim_state = 'active' AND surfacing_state = 'active'",
     )
+}
+
+pub fn load_claims_active_recompute_page(
+    db: &ActionDb,
+    subject_ref: &str,
+    after_created_at: Option<&str>,
+    after_claim_id: Option<&str>,
+    limit: usize,
+) -> Result<Vec<IntelligenceClaim>, ClaimError> {
+    if limit == 0 {
+        return Ok(Vec::new());
+    }
+    let Some((kind, id)) = claim_subject_lookup_parts(subject_ref)? else {
+        return Ok(Vec::new());
+    };
+    let surface_columns = claim_surface_shadow_columns(db.conn_ref(), "current_claim")?;
+    let workspace_lifecycle_filter =
+        workspace_source_lifecycle_filter(db.conn_ref(), "current_claim")?;
+    let cursor_filter = if after_created_at.is_some() && after_claim_id.is_some() {
+        "AND (
+            current_claim.created_at > ?3
+            OR (current_claim.created_at = ?3 AND current_claim.id > ?4)
+        )"
+    } else {
+        ""
+    };
+    let limit_placeholder = if after_created_at.is_some() && after_claim_id.is_some() {
+        "?5"
+    } else {
+        "?3"
+    };
+    let sql = format!(
+        "SELECT {CLAIM_COLUMNS}, {surface_columns}
+         FROM intelligence_claims current_claim
+         WHERE json_valid(subject_ref) = 1
+           AND lower(json_extract(subject_ref, '$.kind')) = lower(?1)
+           AND json_extract(subject_ref, '$.id') = ?2
+           AND claim_state = 'active'
+           AND surfacing_state = 'active'
+           {workspace_lifecycle_filter}
+           {cursor_filter}
+         ORDER BY current_claim.created_at ASC, current_claim.id ASC
+         LIMIT {limit_placeholder}"
+    );
+    let mut stmt = db.conn_ref().prepare(&sql)?;
+    let mut rows = if let (Some(after_created_at), Some(after_claim_id)) =
+        (after_created_at, after_claim_id)
+    {
+        stmt.query(params![
+            kind,
+            id,
+            after_created_at,
+            after_claim_id,
+            limit as i64
+        ])?
+    } else {
+        stmt.query(params![kind, id, limit as i64])?
+    };
+    let mut claims = Vec::new();
+    while let Some(row) = rows.next()? {
+        claims.push(read_claim_row_with_surface_shadow_state(row)?);
+    }
+    Ok(claims)
 }
 
 /// Surface-aware active reader: active globally, minus claims dismissed
@@ -13397,7 +13737,7 @@ mod tests {
         external: &'a ExternalClients,
     ) -> ServiceContext<'a> {
         register_canonical_embedding_fixtures();
-        ServiceContext::test_live(clock, rng, external)
+        ServiceContext::test_live(clock, rng, external).with_actor("user:test")
     }
 
     fn proposal(text: &str) -> ClaimProposal {
@@ -13716,6 +14056,567 @@ mod tests {
             replay_event_id: replay_event_id.to_string(),
             submitted_at: REPLAY_TS.to_string(),
         }
+    }
+
+    #[test]
+    fn w4_surface_client_feedback_requires_verified_delegation() {
+        let db = test_db();
+        seed_account(&db);
+        let (clock, rng, external) = ctx_parts();
+        let user_ctx = live_ctx(&clock, &rng, &external);
+        let claim_id =
+            inserted_claim_id(commit_claim(&user_ctx, &db, proposal("Surface claim")).unwrap());
+        let surface_ctx =
+            ServiceContext::test_live(&clock, &rng, &external).with_actor("surface_client");
+        let input = ClaimFeedbackInput {
+            claim_id: claim_id.clone(),
+            action: FeedbackAction::ConfirmCurrent,
+            actor: "user:wp:42".to_string(),
+            actor_id: Some("surface-session-1".to_string()),
+            payload_json: None,
+        };
+
+        let direct_error = record_claim_feedback(&surface_ctx, &db, input.clone())
+            .expect_err("surface client requires verified delegation");
+        assert!(
+            matches!(direct_error, ClaimError::Mode(_)),
+            "direct surface feedback should fail at service actor boundary, got {direct_error:?}",
+        );
+
+        let outcome = record_claim_feedback_from_verified_surface(
+            &surface_ctx,
+            &db,
+            input,
+            VerifiedSurfaceFeedbackDelegation {
+                surface_client_id: "surface-client-1",
+                session_id: "surface-session-1",
+                trusted_surface: None,
+            },
+        )
+        .expect("verified surface feedback records");
+
+        let payload_json: String = db
+            .conn_ref()
+            .query_row(
+                "SELECT payload_json FROM claim_feedback WHERE id = ?1",
+                params![&outcome.feedback_id],
+                |row| row.get(0),
+            )
+            .expect("read delegated feedback payload");
+        let payload: serde_json::Value =
+            serde_json::from_str(&payload_json).expect("delegated payload json");
+        assert_eq!(
+            payload["_verified_surface_delegation"]["invoker_actor"],
+            "surface_client",
+        );
+        assert!(
+            payload["_verified_surface_delegation"]["surface_client_id_hash"]
+                .as_str()
+                .is_some_and(|hash| hash.starts_with("sha256:")),
+            "delegation metadata should carry a privacy-safe surface client hash",
+        );
+    }
+
+    #[test]
+    fn w4_verified_surface_wrong_source_canonicalizes_source_authority() {
+        let db = test_db();
+        seed_account(&db);
+        let (clock, rng, external) = ctx_parts();
+        let user_ctx = live_ctx(&clock, &rng, &external);
+        let claim_id = inserted_claim_id(
+            commit_claim(&user_ctx, &db, proposal("Surface wrong source claim")).unwrap(),
+        );
+        let claim = load_claim_by_id(db.conn_ref(), &claim_id)
+            .expect("load claim")
+            .expect("claim exists");
+        let expected_hash = current_source_content_hash_for_claim(&claim);
+        let surface_ctx =
+            ServiceContext::test_live(&clock, &rng, &external).with_actor("surface_client");
+        let delegation = VerifiedSurfaceFeedbackDelegation {
+            surface_client_id: "surface-client-1",
+            session_id: "surface-session-1",
+            trusted_surface: None,
+        };
+
+        let mismatch = record_claim_feedback_from_verified_surface(
+            &surface_ctx,
+            &db,
+            ClaimFeedbackInput {
+                claim_id: claim_id.clone(),
+                action: FeedbackAction::WrongSource,
+                actor: "user:wp:42".to_string(),
+                actor_id: Some("surface-session-1".to_string()),
+                payload_json: Some(
+                    serde_json::json!({
+                        "source_ref": "attacker-source-ref",
+                        "source_content_hash": "deadbeefdeadbeef"
+                    })
+                    .to_string(),
+                ),
+            },
+            delegation,
+        )
+        .expect_err("mismatched source_content_hash must be rejected");
+        assert!(matches!(
+            mismatch,
+            ClaimError::InvalidFeedback(ref message)
+                if message.contains("source_content_hash does not match current claim")
+        ));
+
+        let outcome = record_claim_feedback_from_verified_surface(
+            &surface_ctx,
+            &db,
+            ClaimFeedbackInput {
+                claim_id: claim_id.clone(),
+                action: FeedbackAction::WrongSource,
+                actor: "user:wp:42".to_string(),
+                actor_id: Some("surface-session-1".to_string()),
+                payload_json: Some(
+                    serde_json::json!({
+                        "source_ref": "attacker-source-ref",
+                        "source_content_hash": expected_hash.clone()
+                    })
+                    .to_string(),
+                ),
+            },
+            delegation,
+        )
+        .expect("matching source_content_hash records delegated wrong-source feedback");
+
+        let (payload_json, metadata_json): (String, String) = db
+            .conn_ref()
+            .query_row(
+                "SELECT feedback.payload_json, envelope.action_metadata_json
+                   FROM claim_feedback feedback
+                   JOIN claim_feedback_correction_envelopes envelope
+                     ON envelope.feedback_id = feedback.id
+                  WHERE feedback.id = ?1",
+                params![&outcome.feedback_id],
+                |row| Ok((row.get(0)?, row.get(1)?)),
+            )
+            .expect("read verified-surface source authority");
+        let payload: serde_json::Value =
+            serde_json::from_str(&payload_json).expect("parse payload");
+        let metadata: serde_json::Value =
+            serde_json::from_str(&metadata_json).expect("parse metadata");
+        assert_eq!(
+            payload
+                .get("source_content_hash")
+                .and_then(|value| value.as_str()),
+            Some(expected_hash.as_str())
+        );
+        assert_eq!(
+            payload.get("source_ref").and_then(|value| value.as_str()),
+            Some(expected_hash.as_str())
+        );
+        assert_eq!(
+            metadata
+                .get("source_content_hash")
+                .and_then(|value| value.as_str()),
+            Some(expected_hash.as_str())
+        );
+        assert_ne!(
+            metadata.get("source_ref").and_then(|value| value.as_str()),
+            Some("attacker-source-ref")
+        );
+    }
+
+    #[test]
+    fn w4_verified_surface_payload_uses_receipt_metadata_contract() {
+        let db = test_db();
+        seed_account(&db);
+        let (clock, rng, external) = ctx_parts();
+        let user_ctx = live_ctx(&clock, &rng, &external);
+        let claim_id = inserted_claim_id(
+            commit_claim(&user_ctx, &db, proposal("Surface needs nuance claim")).unwrap(),
+        );
+        let surface_ctx =
+            ServiceContext::test_live(&clock, &rng, &external).with_actor("surface_client");
+        let delegation = VerifiedSurfaceFeedbackDelegation {
+            surface_client_id: "surface-client-1",
+            session_id: "surface-session-1",
+            trusted_surface: None,
+        };
+
+        let rogue = record_claim_feedback_from_verified_surface(
+            &surface_ctx,
+            &db,
+            ClaimFeedbackInput {
+                claim_id: claim_id.clone(),
+                action: FeedbackAction::NeedsNuance,
+                actor: "user:wp:42".to_string(),
+                actor_id: Some("surface-session-1".to_string()),
+                payload_json: Some(
+                    serde_json::json!({
+                        "corrected_text": "Add nuance from the verified surface.",
+                        "rogue": "bypasses receipt validation"
+                    })
+                    .to_string(),
+                ),
+            },
+            delegation,
+        )
+        .expect_err("verified surface payloads must reject receipt-unknown keys");
+        assert!(matches!(
+            rogue,
+            ClaimError::InvalidFeedback(ref message)
+                if message.contains("verified surface payload invalid")
+                    && message.contains("unknown metadata key")
+        ));
+
+        let oversized = record_claim_feedback_from_verified_surface(
+            &surface_ctx,
+            &db,
+            ClaimFeedbackInput {
+                claim_id,
+                action: FeedbackAction::NeedsNuance,
+                actor: "user:wp:42".to_string(),
+                actor_id: Some("surface-session-1".to_string()),
+                payload_json: Some(
+                    serde_json::json!({
+                        "corrected_text": "x".repeat(2001)
+                    })
+                    .to_string(),
+                ),
+            },
+            delegation,
+        )
+        .expect_err("verified surface payloads must enforce receipt text budgets");
+        assert!(matches!(
+            oversized,
+            ClaimError::InvalidFeedback(ref message)
+                if message.contains("verified surface payload invalid")
+                    && message.contains("corrected_text exceeds 2000 char budget")
+        ));
+    }
+
+    #[test]
+    fn w4_verified_surface_inappropriate_derives_trusted_surface() {
+        let db = test_db();
+        seed_account(&db);
+        let (clock, rng, external) = ctx_parts();
+        let user_ctx = live_ctx(&clock, &rng, &external);
+        let claim_id = inserted_claim_id(
+            commit_claim(&user_ctx, &db, proposal("Surface scoped dismissal claim")).unwrap(),
+        );
+        let surface_ctx =
+            ServiceContext::test_live(&clock, &rng, &external).with_actor("surface_client");
+
+        let spoofed = record_claim_feedback_from_verified_surface(
+            &surface_ctx,
+            &db,
+            ClaimFeedbackInput {
+                claim_id: claim_id.clone(),
+                action: FeedbackAction::SurfaceInappropriate,
+                actor: "user:wp:42".to_string(),
+                actor_id: Some("surface-session-1".to_string()),
+                payload_json: Some(serde_json::json!({"surface": "mcp_tool"}).to_string()),
+            },
+            VerifiedSurfaceFeedbackDelegation {
+                surface_client_id: "surface-client-1",
+                session_id: "surface-session-1",
+                trusted_surface: Some("briefing"),
+            },
+        )
+        .expect_err("caller-supplied surface must not override trusted receipt surface");
+        assert!(matches!(
+            spoofed,
+            ClaimError::InvalidFeedback(ref message)
+                if message.contains("surface does not match trusted receipt surface")
+        ));
+
+        let outcome = record_claim_feedback_from_verified_surface(
+            &surface_ctx,
+            &db,
+            ClaimFeedbackInput {
+                claim_id,
+                action: FeedbackAction::SurfaceInappropriate,
+                actor: "user:wp:42".to_string(),
+                actor_id: Some("surface-session-1".to_string()),
+                payload_json: None,
+            },
+            VerifiedSurfaceFeedbackDelegation {
+                surface_client_id: "surface-client-1",
+                session_id: "surface-session-1",
+                trusted_surface: Some("briefing"),
+            },
+        )
+        .expect("trusted surface supplies required dismissal metadata");
+
+        let payload_json: String = db
+            .conn_ref()
+            .query_row(
+                "SELECT payload_json FROM claim_feedback WHERE id = ?1",
+                params![&outcome.feedback_id],
+                |row| row.get(0),
+            )
+            .expect("read verified-surface payload");
+        let payload: serde_json::Value =
+            serde_json::from_str(&payload_json).expect("parse payload");
+        assert_eq!(
+            payload.get("surface").and_then(serde_json::Value::as_str),
+            Some("briefing")
+        );
+    }
+
+    #[test]
+    fn w4_feedback_rejects_inactive_claim_before_artifact_write() {
+        let db = test_db();
+        seed_account(&db);
+        let (clock, rng, external) = ctx_parts();
+        let user_ctx = live_ctx(&clock, &rng, &external);
+        let claim_id = inserted_claim_id(
+            commit_claim(&user_ctx, &db, proposal("Withdrawn target claim")).unwrap(),
+        );
+        execute_claims_update(
+            db.conn_ref(),
+            "UPDATE intelligence_claims
+                SET claim_state = 'withdrawn',
+                    surfacing_state = 'dormant'
+              WHERE id = ?1",
+            params![&claim_id],
+        )
+        .expect("withdraw claim fixture");
+
+        let err = record_claim_feedback(
+            &user_ctx,
+            &db,
+            ClaimFeedbackInput {
+                claim_id: claim_id.clone(),
+                action: FeedbackAction::CannotVerify,
+                actor: "user".to_string(),
+                actor_id: Some("user-fixture".to_string()),
+                payload_json: Some(serde_json::json!({"note": "Stale receipt"}).to_string()),
+            },
+        )
+        .expect_err("inactive claims reject fresh feedback");
+        assert!(matches!(
+            err,
+            ClaimError::InvalidFeedback(ref message)
+                if message.contains("feedback target must be active")
+                    && message.contains("withdrawn")
+        ));
+
+        let (feedback_rows, propagation_rows): (i64, i64) = db
+            .conn_ref()
+            .query_row(
+                "SELECT
+                    (SELECT COUNT(*) FROM claim_feedback WHERE claim_id = ?1),
+                    (SELECT COUNT(*)
+                       FROM claim_feedback_propagation_jobs jobs
+                       JOIN claim_feedback feedback ON feedback.id = jobs.feedback_id
+                      WHERE feedback.claim_id = ?1)",
+                params![&claim_id],
+                |row| Ok((row.get(0)?, row.get(1)?)),
+            )
+            .expect("count stale feedback artifacts");
+        assert_eq!(feedback_rows, 0);
+        assert_eq!(propagation_rows, 0);
+    }
+
+    #[derive(Debug, PartialEq)]
+    struct W4FeedbackArtifactShape {
+        envelope_action: String,
+        claim_type: String,
+        field_path: Option<String>,
+        data_source: String,
+        has_source_ref_hash: bool,
+        has_source_key_hash: bool,
+        lifecycle_state: String,
+        metadata_has_source_content_hash: bool,
+        propagation_jobs: Vec<(String, String, String, String)>,
+        propagation_outcomes: Vec<(String, String, String, String, Option<String>)>,
+        source_deltas: Vec<(String, String, String, String, f64, f64)>,
+        subject_deltas: Vec<(String, String, String, f64, f64)>,
+    }
+
+    fn w4_feedback_artifact_shape(db: &ActionDb, feedback_id: &str) -> W4FeedbackArtifactShape {
+        let (
+            envelope_action,
+            claim_type,
+            field_path,
+            data_source,
+            source_ref_hash,
+            source_key_hash,
+            lifecycle_state,
+            action_metadata_json,
+        ): (
+            String,
+            String,
+            Option<String>,
+            String,
+            Option<String>,
+            String,
+            String,
+            String,
+        ) = db
+            .conn_ref()
+            .query_row(
+                "SELECT action,
+                        claim_type,
+                        field_path,
+                        data_source,
+                        source_ref_hash,
+                        source_key_hash,
+                        lifecycle_state,
+                        action_metadata_json
+                   FROM claim_feedback_correction_envelopes
+                  WHERE feedback_id = ?1",
+                params![feedback_id],
+                |row| {
+                    Ok((
+                        row.get(0)?,
+                        row.get(1)?,
+                        row.get(2)?,
+                        row.get(3)?,
+                        row.get(4)?,
+                        row.get(5)?,
+                        row.get(6)?,
+                        row.get(7)?,
+                    ))
+                },
+            )
+            .expect("read W4 correction envelope shape");
+        let action_metadata: serde_json::Value =
+            serde_json::from_str(&action_metadata_json).expect("parse action metadata");
+
+        W4FeedbackArtifactShape {
+            envelope_action,
+            claim_type,
+            field_path,
+            data_source,
+            has_source_ref_hash: source_ref_hash
+                .as_deref()
+                .is_some_and(|hash| !hash.is_empty()),
+            has_source_key_hash: !source_key_hash.is_empty(),
+            lifecycle_state,
+            metadata_has_source_content_hash: action_metadata
+                .get("source_content_hash")
+                .and_then(|value| value.as_str())
+                .is_some_and(|value| !value.is_empty()),
+            propagation_jobs: w4_feedback_propagation_job_shape(db, feedback_id),
+            propagation_outcomes: w4_feedback_propagation_outcome_shape(db, feedback_id),
+            source_deltas: w4_source_delta_shape(db, feedback_id),
+            subject_deltas: w4_subject_delta_shape(db, feedback_id),
+        }
+    }
+
+    fn w4_feedback_surface_and_apply_key(
+        db: &ActionDb,
+        feedback_id: &str,
+    ) -> (String, Option<String>) {
+        db.conn_ref()
+            .query_row(
+                "SELECT surface, idempotency_key
+                   FROM claim_feedback_correction_envelopes
+                  WHERE feedback_id = ?1",
+                params![feedback_id],
+                |row| Ok((row.get(0)?, row.get(1)?)),
+            )
+            .expect("read W4 correction envelope surface")
+    }
+
+    fn w4_feedback_propagation_job_shape(
+        db: &ActionDb,
+        feedback_id: &str,
+    ) -> Vec<(String, String, String, String)> {
+        let mut stmt = db
+            .conn_ref()
+            .prepare(
+                "SELECT target_kind, operation, sync_class, status
+                   FROM claim_feedback_propagation_jobs
+                  WHERE feedback_id = ?1
+                  ORDER BY target_kind, operation, sync_class, status",
+            )
+            .expect("prepare propagation job shape query");
+        stmt.query_map(params![feedback_id], |row| {
+            Ok((row.get(0)?, row.get(1)?, row.get(2)?, row.get(3)?))
+        })
+        .expect("query propagation job shape")
+        .collect::<Result<Vec<_>, _>>()
+        .expect("map propagation job shape")
+    }
+
+    fn w4_feedback_propagation_outcome_shape(
+        db: &ActionDb,
+        feedback_id: &str,
+    ) -> Vec<(String, String, String, String, Option<String>)> {
+        let mut stmt = db
+            .conn_ref()
+            .prepare(
+                "SELECT target_kind, operation, sync_class, status, reason_code
+                   FROM claim_feedback_propagation_outcomes
+                  WHERE feedback_id = ?1
+                  ORDER BY target_kind, operation, sync_class, status, reason_code",
+            )
+            .expect("prepare propagation outcome shape query");
+        stmt.query_map(params![feedback_id], |row| {
+            Ok((
+                row.get(0)?,
+                row.get(1)?,
+                row.get(2)?,
+                row.get(3)?,
+                row.get(4)?,
+            ))
+        })
+        .expect("query propagation outcome shape")
+        .collect::<Result<Vec<_>, _>>()
+        .expect("map propagation outcome shape")
+    }
+
+    fn w4_source_delta_shape(
+        db: &ActionDb,
+        feedback_id: &str,
+    ) -> Vec<(String, String, String, String, f64, f64)> {
+        let mut stmt = db
+            .conn_ref()
+            .prepare(
+                "SELECT claim_type, signal_type, effect_kind, status, alpha_delta, beta_delta
+                   FROM source_reliability_feedback_deltas
+                  WHERE feedback_id = ?1
+                  ORDER BY claim_type, signal_type, effect_kind, status",
+            )
+            .expect("prepare source delta shape query");
+        stmt.query_map(params![feedback_id], |row| {
+            Ok((
+                row.get(0)?,
+                row.get(1)?,
+                row.get(2)?,
+                row.get(3)?,
+                row.get(4)?,
+                row.get(5)?,
+            ))
+        })
+        .expect("query source delta shape")
+        .collect::<Result<Vec<_>, _>>()
+        .expect("map source delta shape")
+    }
+
+    fn w4_subject_delta_shape(
+        db: &ActionDb,
+        feedback_id: &str,
+    ) -> Vec<(String, String, String, f64, f64)> {
+        let mut stmt = db
+            .conn_ref()
+            .prepare(
+                "SELECT claim_type, signal_type, status, alpha_delta, beta_delta
+                   FROM subject_inference_reliability_deltas
+                  WHERE feedback_id = ?1
+                  ORDER BY claim_type, signal_type, status",
+            )
+            .expect("prepare subject delta shape query");
+        stmt.query_map(params![feedback_id], |row| {
+            Ok((
+                row.get(0)?,
+                row.get(1)?,
+                row.get(2)?,
+                row.get(3)?,
+                row.get(4)?,
+            ))
+        })
+        .expect("query subject delta shape")
+        .collect::<Result<Vec<_>, _>>()
+        .expect("map subject delta shape")
     }
 
     fn read_verification_columns(
@@ -15373,10 +16274,13 @@ mod tests {
         seed_account(&db);
         let (clock, rng, external) = ctx_parts();
         let ctx = live_ctx(&clock, &rng, &external);
-        let claim_id =
-            inserted_claim_id(commit_claim(&ctx, &db, proposal("Risk for feedback")).unwrap());
 
-        for action in all_feedback_actions() {
+        let actions = all_feedback_actions();
+        for action in actions.iter().copied() {
+            let claim_text = format!("Risk for feedback {}", action.as_str());
+            let mut claim_proposal = proposal(&claim_text);
+            claim_proposal.field_path = Some(format!("health.risk.{}", action.as_str()));
+            let claim_id = inserted_claim_id(commit_claim(&ctx, &db, claim_proposal).unwrap());
             let outcome =
                 record_claim_feedback(&ctx, &db, feedback_input(&claim_id, action)).unwrap();
             assert_eq!(outcome.claim_id, claim_id);
@@ -15389,20 +16293,1083 @@ mod tests {
                 .conn_ref()
                 .prepare(
                     "SELECT feedback_type FROM claim_feedback \
-                     WHERE claim_id = ?1 ORDER BY rowid",
+                     ORDER BY rowid",
                 )
                 .unwrap();
-            stmt.query_map(params![&claim_id], |row| row.get::<_, String>(0))
+            stmt.query_map([], |row| row.get::<_, String>(0))
                 .unwrap()
                 .collect::<Result<Vec<_>, _>>()
                 .unwrap()
         };
-        let expected = all_feedback_actions()
+        let expected = actions
             .iter()
             .map(FeedbackAction::as_str)
             .map(str::to_string)
             .collect::<Vec<_>>();
         assert_eq!(rows, expected);
+    }
+
+    #[test]
+    fn record_claim_feedback_persists_w4_correction_artifacts() {
+        let db = test_db();
+        seed_account(&db);
+        let (clock, rng, external) = ctx_parts();
+        let ctx = live_ctx(&clock, &rng, &external);
+        let mut claim = proposal("Risk with source support");
+        claim.source_ref = Some("fixture://source-1".to_string());
+        let claim_id = inserted_claim_id(commit_claim(&ctx, &db, claim).unwrap());
+        let payload = serde_json::json!({
+            "source_ref": "fixture://source-1",
+            "source_content_hash": "fixture-content-hash-1",
+            "surface": "entity_detail",
+            "target_receipt": {
+                "kind": "claim",
+                "claim_id": claim_id
+            }
+        })
+        .to_string();
+
+        let outcome = record_claim_feedback(
+            &ctx,
+            &db,
+            ClaimFeedbackInput {
+                claim_id: claim_id.clone(),
+                action: FeedbackAction::WrongSource,
+                actor: "user".to_string(),
+                actor_id: Some("user-fixture".to_string()),
+                payload_json: Some(payload),
+            },
+        )
+        .unwrap();
+
+        let (
+            envelope_action,
+            surface,
+            source_ref_hash,
+            source_key_hash,
+            replay_key,
+            metadata_json,
+            lifecycle_state,
+        ): (
+            String,
+            String,
+            Option<String>,
+            String,
+            String,
+            String,
+            String,
+        ) = db
+            .conn_ref()
+            .query_row(
+                "SELECT action, surface, source_ref_hash, source_key_hash,
+                        replay_key, action_metadata_json, lifecycle_state
+                   FROM claim_feedback_correction_envelopes
+                  WHERE feedback_id = ?1",
+                params![&outcome.feedback_id],
+                |row| {
+                    Ok((
+                        row.get(0)?,
+                        row.get(1)?,
+                        row.get(2)?,
+                        row.get(3)?,
+                        row.get(4)?,
+                        row.get(5)?,
+                        row.get(6)?,
+                    ))
+                },
+            )
+            .expect("read W4 correction envelope");
+        assert_eq!(envelope_action, "wrong_source");
+        assert_eq!(surface, "entity_detail");
+        assert!(source_ref_hash
+            .as_deref()
+            .is_some_and(|hash| !hash.is_empty()));
+        assert!(!source_key_hash.is_empty());
+        assert!(!replay_key.is_empty());
+        assert_eq!(lifecycle_state, "active");
+        let metadata: serde_json::Value =
+            serde_json::from_str(&metadata_json).expect("metadata JSON");
+        assert_eq!(
+            metadata
+                .get("source_content_hash")
+                .and_then(|value| value.as_str()),
+            Some("fixture-content-hash-1")
+        );
+
+        let propagation_job_count: i64 = db
+            .conn_ref()
+            .query_row(
+                "SELECT count(*)
+                   FROM claim_feedback_propagation_jobs
+                  WHERE feedback_id = ?1",
+                params![&outcome.feedback_id],
+                |row| row.get(0),
+            )
+            .expect("count W4 propagation jobs");
+        assert!(
+            propagation_job_count >= 6,
+            "wrong_source should record durable logical propagation targets"
+        );
+        let propagation_outcome_count: i64 = db
+            .conn_ref()
+            .query_row(
+                "SELECT count(*)
+                   FROM claim_feedback_propagation_outcomes
+                  WHERE feedback_id = ?1",
+                params![&outcome.feedback_id],
+                |row| row.get(0),
+            )
+            .expect("count W4 propagation outcomes");
+        assert_eq!(propagation_outcome_count, propagation_job_count);
+
+        let source_delta_count: i64 = db
+            .conn_ref()
+            .query_row(
+                "SELECT count(*)
+                   FROM source_reliability_feedback_deltas
+                  WHERE feedback_id = ?1
+                    AND claim_type = 'risk'
+                    AND signal_type = 'user_feedback'",
+                params![&outcome.feedback_id],
+                |row| row.get(0),
+            )
+            .expect("count source reliability deltas");
+        assert_eq!(source_delta_count, 1);
+        let (alpha, beta, update_count): (f64, f64, i64) = db
+            .conn_ref()
+            .query_row(
+                "SELECT alpha, beta, update_count
+                   FROM source_claim_type_reliability
+                  WHERE source_key_hash = ?1
+                    AND claim_type = 'risk'
+                    AND signal_type = 'user_feedback'",
+                params![source_key_hash],
+                |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?)),
+            )
+            .expect("read source reliability aggregate");
+        assert_eq!(alpha, 1.0);
+        assert_eq!(beta, 2.0);
+        assert_eq!(update_count, 1);
+    }
+
+    #[test]
+    fn w4_propagation_worker_enqueues_claim_recompute_from_feedback_job() {
+        let db = test_db();
+        seed_account(&db);
+        let (clock, rng, external) = ctx_parts();
+        let ctx = live_ctx(&clock, &rng, &external);
+        let claim_id =
+            inserted_claim_id(commit_claim(&ctx, &db, proposal("Risk for propagation")).unwrap());
+
+        let outcome = record_claim_feedback(
+            &ctx,
+            &db,
+            ClaimFeedbackInput {
+                claim_id: claim_id.clone(),
+                action: FeedbackAction::ConfirmCurrent,
+                actor: "user".to_string(),
+                actor_id: Some("user-fixture".to_string()),
+                payload_json: Some(
+                    serde_json::json!({
+                        "surface": "file_projection",
+                        "entry_point": "claim_file_projection"
+                    })
+                    .to_string(),
+                ),
+            },
+        )
+        .expect("record feedback");
+
+        let process_outcome =
+            crate::services::claim_feedback_propagation::process_one_feedback_propagation_job(
+                &ctx,
+                &db,
+                "w4-propagation-test",
+            )
+            .expect("process W4 propagation job");
+        assert!(
+            matches!(
+                process_outcome,
+                crate::services::claim_feedback_propagation::FeedbackPropagationProcessOutcome::Completed { .. }
+            ),
+            "first W4 propagation job should complete claim recompute handoff, got {process_outcome:?}"
+        );
+
+        let recompute_job_status: String = db
+            .conn_ref()
+            .query_row(
+                "SELECT status
+                   FROM claim_feedback_propagation_jobs
+                  WHERE feedback_id = ?1
+                    AND target_kind = 'claim_recompute'
+                    AND operation = 'targeted_claim_recompute'",
+                params![&outcome.feedback_id],
+                |row| row.get(0),
+            )
+            .expect("read W4 recompute job status");
+        assert_eq!(recompute_job_status, "completed");
+
+        let invalidation_job_count: i64 = db
+            .conn_ref()
+            .query_row(
+                "SELECT count(*)
+                   FROM invalidation_jobs
+                  WHERE job_kind = 'claim_recompute'
+                    AND operation = 'claim_recompute'
+                    AND subject_type = 'account'
+                    AND subject_id = 'acct-1'",
+                [],
+                |row| row.get(0),
+            )
+            .expect("count durable recompute jobs");
+        assert_eq!(invalidation_job_count, 1);
+    }
+
+    #[test]
+    fn w4_repeated_feedback_coalesces_pending_logical_targets() {
+        let db = test_db();
+        seed_account(&db);
+        let (clock, rng, external) = ctx_parts();
+        let ctx = live_ctx(&clock, &rng, &external);
+        let claim_id =
+            inserted_claim_id(commit_claim(&ctx, &db, proposal("Risk for coalescing")).unwrap());
+
+        let first = record_claim_feedback(
+            &ctx,
+            &db,
+            ClaimFeedbackInput {
+                claim_id: claim_id.clone(),
+                action: FeedbackAction::ConfirmCurrent,
+                actor: "user".to_string(),
+                actor_id: Some("user-fixture".to_string()),
+                payload_json: None,
+            },
+        )
+        .expect("record first feedback");
+        let second = record_claim_feedback(
+            &ctx,
+            &db,
+            ClaimFeedbackInput {
+                claim_id,
+                action: FeedbackAction::ConfirmCurrent,
+                actor: "user".to_string(),
+                actor_id: Some("user-fixture".to_string()),
+                payload_json: None,
+            },
+        )
+        .expect("record second feedback");
+
+        let (job_count, outcome_count, coalesced_outcomes): (i64, i64, i64) = db
+            .conn_ref()
+            .query_row(
+                "SELECT
+                    (SELECT count(*)
+                       FROM claim_feedback_propagation_jobs
+                      WHERE target_kind = 'claim_recompute'
+                        AND operation = 'targeted_claim_recompute'
+                        AND status = 'pending'),
+                    (SELECT count(*)
+                       FROM claim_feedback_propagation_outcomes
+                      WHERE target_kind = 'claim_recompute'
+                        AND operation = 'targeted_claim_recompute'
+                        AND feedback_id IN (?1, ?2)),
+                    (SELECT count(*)
+                       FROM claim_feedback_propagation_outcomes
+                      WHERE target_kind = 'claim_recompute'
+                        AND operation = 'targeted_claim_recompute'
+                        AND feedback_id = ?2
+                        AND status = 'coalesced')",
+                params![&first.feedback_id, &second.feedback_id],
+                |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?)),
+            )
+            .expect("read coalesced W4 propagation state");
+        assert_eq!(job_count, 1);
+        assert_eq!(outcome_count, 2);
+        assert_eq!(coalesced_outcomes, 1);
+    }
+
+    #[test]
+    fn w4_propagation_worker_completes_review_queue_and_subject_graph_targets() {
+        let db = test_db();
+        seed_account(&db);
+        let (clock, rng, external) = ctx_parts();
+        let ctx = live_ctx(&clock, &rng, &external);
+        let claim_id = inserted_claim_id(
+            commit_claim(&ctx, &db, edge_proposal("Risk for graph invalidation")).unwrap(),
+        );
+        db.conn_ref()
+            .execute(
+                "INSERT INTO claim_review_deferrals (
+                    id, target_kind, target_id, surface, reason, created_at, updated_at, actor
+                 ) VALUES (
+                    'deferral-w4-review-queue', 'claim', ?1, 'entity_detail',
+                    'user_snoozed', ?2, ?2, 'user'
+                 )",
+                params![&claim_id, TS],
+            )
+            .expect("seed review queue deferral");
+        let graph_version_before_worker: i64 = db
+            .conn_ref()
+            .query_row(
+                "SELECT version FROM entity_graph_version WHERE id = 1",
+                [],
+                |row| row.get(0),
+            )
+            .expect("read entity graph version");
+
+        let outcome = record_claim_feedback(
+            &ctx,
+            &db,
+            ClaimFeedbackInput {
+                claim_id: claim_id.clone(),
+                action: FeedbackAction::MarkFalse,
+                actor: "user".to_string(),
+                actor_id: Some("user-fixture".to_string()),
+                payload_json: None,
+            },
+        )
+        .expect("record mark_false feedback");
+        let account_version_before_worker = read_account_claim_version(&db);
+
+        for _ in 0..12 {
+            match crate::services::claim_feedback_propagation::process_one_feedback_propagation_job(
+                &ctx,
+                &db,
+                "w4-propagation-review-queue-test",
+            )
+            .expect("process W4 propagation job")
+            {
+                crate::services::claim_feedback_propagation::FeedbackPropagationProcessOutcome::NoJob => break,
+                _ => {}
+            }
+        }
+
+        let statuses: Vec<(String, String, String)> = {
+            let mut stmt = db
+                .conn_ref()
+                .prepare(
+                    "SELECT target_kind, operation, status
+                       FROM claim_feedback_propagation_jobs
+                      WHERE feedback_id = ?1
+                        AND target_kind IN ('derived_context', 'review_queue', 'subject_graph')
+                      ORDER BY target_kind, operation",
+                )
+                .expect("prepare W4 target status query");
+            stmt.query_map(params![&outcome.feedback_id], |row| {
+                Ok((row.get(0)?, row.get(1)?, row.get(2)?))
+            })
+            .expect("query W4 target statuses")
+            .collect::<Result<Vec<_>, _>>()
+            .expect("map W4 target statuses")
+        };
+        assert!(
+            statuses.iter().all(|(_, _, status)| status == "completed"),
+            "derived context, review queue, and subject graph jobs must complete, got {statuses:?}"
+        );
+
+        let review_event_count: i64 = db
+            .conn_ref()
+            .query_row(
+                "SELECT count(*)
+                   FROM claim_feedback_review_queue_events
+                  WHERE feedback_id = ?1
+                    AND claim_id = ?2
+                    AND resolved_deferrals = 1",
+                params![&outcome.feedback_id, &claim_id],
+                |row| row.get(0),
+            )
+            .expect("count W4 review queue events");
+        assert_eq!(review_event_count, 1);
+        let deferral_resolved_at: Option<String> = db
+            .conn_ref()
+            .query_row(
+                "SELECT resolved_at
+                   FROM claim_review_deferrals
+                  WHERE id = 'deferral-w4-review-queue'",
+                [],
+                |row| row.get(0),
+            )
+            .expect("read resolved review deferral");
+        assert!(
+            deferral_resolved_at.is_some(),
+            "review queue propagation must resolve active claim deferrals"
+        );
+
+        let (graph_event_count, graph_version_after_worker): (i64, i64) = db
+            .conn_ref()
+            .query_row(
+                "SELECT
+                    (SELECT count(*)
+                       FROM claim_feedback_subject_graph_invalidations
+                      WHERE feedback_id = ?1
+                        AND claim_id = ?2),
+                    (SELECT version FROM entity_graph_version WHERE id = 1)",
+                params![&outcome.feedback_id, &claim_id],
+                |row| Ok((row.get(0)?, row.get(1)?)),
+            )
+            .expect("read W4 subject graph effect");
+        assert_eq!(graph_event_count, 1);
+        assert!(
+            graph_version_after_worker > graph_version_before_worker,
+            "subject graph propagation must invalidate the entity graph version"
+        );
+        assert!(
+            read_account_claim_version(&db) > account_version_before_worker,
+            "derived context propagation must bump the subject claim version"
+        );
+    }
+
+    #[test]
+    fn w4_propagation_worker_recomputes_salience_target() {
+        let db = test_db();
+        seed_account(&db);
+        let (clock, rng, external) = ctx_parts();
+        let ctx = live_ctx(&clock, &rng, &external);
+        let claim_id =
+            inserted_claim_id(commit_claim(&ctx, &db, proposal("Risk for salience")).unwrap());
+
+        let outcome = record_claim_feedback(
+            &ctx,
+            &db,
+            ClaimFeedbackInput {
+                claim_id: claim_id.clone(),
+                action: FeedbackAction::ConfirmCurrent,
+                actor: "user".to_string(),
+                actor_id: Some("user-fixture".to_string()),
+                payload_json: None,
+            },
+        )
+        .expect("record feedback");
+
+        for _ in 0..8 {
+            let _ =
+                crate::services::claim_feedback_propagation::process_one_feedback_propagation_job(
+                    &ctx,
+                    &db,
+                    "w4-salience-propagation-test",
+                )
+                .expect("process W4 propagation job");
+        }
+
+        let (job_status, salience_rows): (String, i64) = db
+            .conn_ref()
+            .query_row(
+                "SELECT
+                    (SELECT status
+                       FROM claim_feedback_propagation_jobs
+                      WHERE feedback_id = ?1
+                        AND target_kind = 'salience_surfacing'
+                        AND operation = 'rerank_bounded_candidates'),
+                    (SELECT count(*)
+                       FROM salience_factors
+                      WHERE claim_id = ?2)",
+                params![&outcome.feedback_id, &claim_id],
+                |row| Ok((row.get(0)?, row.get(1)?)),
+            )
+            .expect("read salience propagation state");
+        assert_eq!(job_status, "completed");
+        assert!(
+            salience_rows > 0,
+            "salience propagation must persist a stored salience evaluation"
+        );
+    }
+
+    #[test]
+    fn w4_propagation_worker_enqueues_meeting_prep_regeneration_job() {
+        let db = test_db();
+        let (clock, rng, external) = ctx_parts();
+        let ctx = live_ctx(&clock, &rng, &external);
+        let mut claim = proposal("Meeting prep is stale after source correction");
+        claim.subject_ref = r#"{"kind":"meeting","id":"meeting-1"}"#.to_string();
+        claim.claim_type = "meeting_event_note".to_string();
+        claim.field_path = Some("prep.readiness".to_string());
+        let claim_id = inserted_claim_id(commit_claim(&ctx, &db, claim).unwrap());
+
+        let outcome = record_claim_feedback(
+            &ctx,
+            &db,
+            ClaimFeedbackInput {
+                claim_id: claim_id.clone(),
+                action: FeedbackAction::MarkOutdated,
+                actor: "user".to_string(),
+                actor_id: Some("user-fixture".to_string()),
+                payload_json: None,
+            },
+        )
+        .expect("record meeting feedback");
+
+        for _ in 0..8 {
+            let _ =
+                crate::services::claim_feedback_propagation::process_one_feedback_propagation_job(
+                    &ctx,
+                    &db,
+                    "w4-prep-propagation-test",
+                )
+                .expect("process W4 propagation job");
+        }
+
+        let prep_status: String = db
+            .conn_ref()
+            .query_row(
+                "SELECT status
+                   FROM claim_feedback_propagation_jobs
+                  WHERE feedback_id = ?1
+                    AND target_kind = 'prep_regeneration'
+                    AND operation = 'enqueue_prep_regeneration'",
+                params![&outcome.feedback_id],
+                |row| row.get(0),
+            )
+            .expect("read W4 prep job status");
+        assert_eq!(prep_status, "completed");
+
+        let prep_regeneration_count: i64 = db
+            .conn_ref()
+            .query_row(
+                "SELECT count(*)
+                   FROM meeting_prep_regeneration_jobs
+                  WHERE field_path = 'prep.readiness'
+                    AND status = 'pending'",
+                [],
+                |row| row.get(0),
+            )
+            .expect("count durable prep regeneration jobs");
+        assert_eq!(prep_regeneration_count, 1);
+    }
+
+    #[test]
+    fn source_reliability_backfill_replays_existing_feedback_idempotently() {
+        let db = test_db();
+        seed_account(&db);
+        let (clock, rng, external) = ctx_parts();
+        let ctx = live_ctx(&clock, &rng, &external);
+        let mut claim = proposal("Risk with legacy feedback");
+        claim.source_ref = Some("fixture://legacy-source".to_string());
+        let claim_id = inserted_claim_id(commit_claim(&ctx, &db, claim).unwrap());
+        let mut second_claim = proposal("Second risk with legacy feedback");
+        second_claim.source_ref = Some("fixture://legacy-source".to_string());
+        let second_claim_id = inserted_claim_id(commit_claim(&ctx, &db, second_claim).unwrap());
+
+        db.conn_ref()
+            .execute(
+                "INSERT INTO claim_feedback (
+                    id, claim_id, feedback_type, actor, actor_id, payload_json,
+                    submitted_at, applied_at
+                 ) VALUES (
+                    'feedback-backfill-1', ?1, 'wrong_source',
+                    'user', 'user-fixture', NULL, ?2, ?2
+                 )",
+                params![&claim_id, TS],
+            )
+            .expect("insert legacy feedback row");
+        db.conn_ref()
+            .execute(
+                "INSERT INTO claim_feedback (
+                    id, claim_id, feedback_type, actor, actor_id, payload_json,
+                    submitted_at, applied_at
+                 ) VALUES (
+                    'feedback-backfill-2', ?1, 'wrong_source',
+                    'user', 'user-fixture', NULL, ?2, ?2
+                 )",
+                params![&second_claim_id, TS],
+            )
+            .expect("insert second legacy feedback row");
+
+        let first =
+            crate::services::claim_feedback_propagation::run_source_reliability_feedback_backfill(
+                &ctx, &db, 1,
+            )
+            .expect("run source reliability backfill");
+        let current_epoch_hash: String = db
+            .conn_ref()
+            .query_row(
+                "SELECT source_key_epoch_hash
+                   FROM source_reliability_backfill_runs
+                  WHERE id = ?1",
+                params![&first.run_id],
+                |row| row.get(0),
+            )
+            .expect("read current source key epoch hash");
+        db.conn_ref()
+            .execute(
+                "INSERT INTO source_reliability_backfill_runs (
+                    id, status, source_key_version, source_key_epoch_hash,
+                    cursor_json, retry_count, max_attempts, started_at,
+                    created_at, updated_at
+                 ) VALUES (
+                    'interrupted-source-backfill-run', 'running', ?1, ?2,
+                    '{}', 1, 5, '2026-05-02T11:00:00+00:00',
+                    '2026-05-02T11:00:00+00:00',
+                    '2026-05-02T11:00:00+00:00'
+                 )",
+                params![
+                    crate::services::claim_feedback_propagation::SOURCE_KEY_VERSION,
+                    &current_epoch_hash
+                ],
+            )
+            .expect("insert interrupted current-key source backfill run");
+        db.conn_ref()
+            .execute(
+                "INSERT INTO source_reliability_backfill_runs (
+                    id, status, source_key_version, source_key_epoch_hash,
+                    cursor_json, retry_count, max_attempts, failure_reason_code,
+                    started_at, created_at, updated_at
+                 ) VALUES (
+                    'stale-key-source-backfill-run', 'failed', 0, 'stale-epoch-fixture',
+                    '{}', 4, 5, 'previous_failure',
+                    '2026-05-02T11:00:00+00:00',
+                    '2026-05-02T11:00:00+00:00',
+                    '2026-05-02T11:00:00+00:00'
+                 )",
+                [],
+            )
+            .expect("insert stale-key source backfill run");
+        let second =
+            crate::services::claim_feedback_propagation::run_source_reliability_feedback_backfill(
+                &ctx, &db, 1,
+            )
+            .expect("rerun source reliability backfill");
+        let third =
+            crate::services::claim_feedback_propagation::run_source_reliability_feedback_backfill(
+                &ctx, &db, 25,
+            )
+            .expect("rerun source reliability backfill with no remaining rows");
+
+        assert_eq!(first.status, "completed");
+        assert_eq!(first.eligible_feedback_rows, 1);
+        assert_eq!(first.applied_delta_rows, 1);
+        assert_eq!(second.status, "completed");
+        assert_eq!(second.eligible_feedback_rows, 1);
+        assert_eq!(second.applied_delta_rows, 1);
+        assert_eq!(third.status, "completed");
+        assert_eq!(third.eligible_feedback_rows, 0);
+        assert_eq!(
+            third.applied_delta_rows, 0,
+            "rerun must observe the existing delta and not double-count"
+        );
+
+        let (delta_count, aggregate_updates): (i64, i64) = db
+            .conn_ref()
+            .query_row(
+                "SELECT
+                    (SELECT count(*)
+                       FROM source_reliability_feedback_deltas
+                      WHERE feedback_id IN ('feedback-backfill-1', 'feedback-backfill-2')),
+                    (SELECT update_count
+                       FROM source_claim_type_reliability
+                      WHERE claim_type = 'risk'
+                        AND signal_type = 'user_feedback')",
+                [],
+                |row| Ok((row.get(0)?, row.get(1)?)),
+            )
+            .expect("read source reliability backfill state");
+        assert_eq!(delta_count, 2);
+        assert_eq!(aggregate_updates, 2);
+
+        let (interrupted_status, interrupted_reason, interrupted_terminalized): (
+            String,
+            Option<String>,
+            Option<String>,
+        ) = db
+            .conn_ref()
+            .query_row(
+                "SELECT status, failure_reason_code, terminalized_at
+                   FROM source_reliability_backfill_runs
+                  WHERE id = 'interrupted-source-backfill-run'",
+                [],
+                |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?)),
+            )
+            .expect("read reclaimed interrupted source backfill run");
+        assert_eq!(interrupted_status, "aborted");
+        assert_eq!(
+            interrupted_reason.as_deref(),
+            Some("restart_reclaimed_interrupted_run")
+        );
+        assert!(
+            interrupted_terminalized.is_some(),
+            "interrupted run should be terminalized before a new replay pass"
+        );
+
+        let (stale_status, stale_reason, stale_terminalized): (
+            String,
+            Option<String>,
+            Option<String>,
+        ) = db
+            .conn_ref()
+            .query_row(
+                "SELECT status, failure_reason_code, terminalized_at
+                   FROM source_reliability_backfill_runs
+                  WHERE id = 'stale-key-source-backfill-run'",
+                [],
+                |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?)),
+            )
+            .expect("read stale-key source backfill run");
+        assert_eq!(stale_status, "stale_key_version");
+        assert_eq!(stale_reason.as_deref(), Some("source_key_version_changed"));
+        assert!(
+            stale_terminalized.is_some(),
+            "stale-key run should be terminalized before a new replay pass"
+        );
+
+        let completed_runs: i64 = db
+            .conn_ref()
+            .query_row(
+                "SELECT count(*)
+                   FROM source_reliability_backfill_runs
+                  WHERE status = 'completed'
+                    AND terminalized_at IS NOT NULL",
+                [],
+                |row| row.get(0),
+            )
+            .expect("count terminal source backfill runs");
+        assert_eq!(completed_runs, 3);
+    }
+
+    #[test]
+    fn source_reliability_backfill_terminally_skips_malformed_historical_subjects() {
+        let db = test_db();
+        seed_account(&db);
+        let (clock, rng, external) = ctx_parts();
+        let ctx = live_ctx(&clock, &rng, &external);
+        let mut malformed_claim = proposal("Malformed legacy subject");
+        malformed_claim.source_ref = Some("fixture://malformed-source".to_string());
+        let malformed_claim_id =
+            inserted_claim_id(commit_claim(&ctx, &db, malformed_claim).unwrap());
+        let mut valid_claim = proposal("Valid legacy subject");
+        valid_claim.source_ref = Some("fixture://valid-source".to_string());
+        let valid_claim_id = inserted_claim_id(commit_claim(&ctx, &db, valid_claim).unwrap());
+
+        db.conn_ref()
+            .execute(
+                "UPDATE intelligence_claims /* dos7-allowed: test-only malformed historical subject fixture */
+                    SET subject_ref = 'not-json'
+                  WHERE id = ?1
+                  -- dos7-allowed: test-only malformed historical subject fixture",
+                params![&malformed_claim_id],
+            )
+            .expect("corrupt historical subject ref");
+        db.conn_ref()
+            .execute(
+                "INSERT INTO claim_feedback (
+                    id, claim_id, feedback_type, actor, actor_id, payload_json,
+                    submitted_at, applied_at
+                 ) VALUES (
+                    'feedback-backfill-malformed-subject', ?1, 'wrong_source',
+                    'user', 'user-fixture', NULL, ?2, ?2
+                 )",
+                params![&malformed_claim_id, TS],
+            )
+            .expect("insert malformed historical feedback row");
+        db.conn_ref()
+            .execute(
+                "INSERT INTO claim_feedback (
+                    id, claim_id, feedback_type, actor, actor_id, payload_json,
+                    submitted_at, applied_at
+                 ) VALUES (
+                    'feedback-backfill-valid-after-malformed', ?1, 'wrong_source',
+                    'user', 'user-fixture', NULL, ?2, ?2
+                 )",
+                params![&valid_claim_id, "2026-05-02T12:01:00+00:00"],
+            )
+            .expect("insert valid historical feedback row");
+
+        let first =
+            crate::services::claim_feedback_propagation::run_source_reliability_feedback_backfill(
+                &ctx, &db, 1,
+            )
+            .expect("first backfill skips malformed row");
+        let second =
+            crate::services::claim_feedback_propagation::run_source_reliability_feedback_backfill(
+                &ctx, &db, 1,
+            )
+            .expect("second backfill reaches valid row");
+
+        assert_eq!(first.status, "completed");
+        assert_eq!(first.applied_delta_rows, 0);
+        assert_eq!(first.skipped_feedback_rows, 1);
+        assert_eq!(second.status, "completed");
+        assert_eq!(second.eligible_feedback_rows, 1);
+        assert_eq!(second.applied_delta_rows, 1);
+
+        let (skip_status, skip_effect, skip_alpha, skip_beta): (String, String, f64, f64) = db
+            .conn_ref()
+            .query_row(
+                "SELECT status, effect_kind, alpha_delta, beta_delta
+                   FROM source_reliability_feedback_deltas
+                  WHERE feedback_id = 'feedback-backfill-malformed-subject'",
+                [],
+                |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?, row.get(3)?)),
+            )
+            .expect("read terminal skip delta");
+        assert_eq!(skip_status, "redacted");
+        assert_eq!(skip_effect, "backfill_skip:malformed_subject_ref");
+        assert_eq!(skip_alpha, 0.0);
+        assert_eq!(skip_beta, 0.0);
+
+        let (delta_count, aggregate_count, aggregate_updates): (i64, i64, i64) = db
+            .conn_ref()
+            .query_row(
+                "SELECT
+                    (SELECT count(*)
+                       FROM source_reliability_feedback_deltas
+                      WHERE feedback_id IN (
+                        'feedback-backfill-malformed-subject',
+                        'feedback-backfill-valid-after-malformed'
+                      )),
+                    (SELECT count(*)
+                       FROM source_claim_type_reliability),
+                    (SELECT COALESCE(sum(update_count), 0)
+                       FROM source_claim_type_reliability)",
+                [],
+                |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?)),
+            )
+            .expect("read source reliability state");
+        assert_eq!(delta_count, 2);
+        assert_eq!(
+            aggregate_count, 1,
+            "terminal skip must not create a source reliability aggregate"
+        );
+        assert_eq!(aggregate_updates, 1);
+    }
+
+    #[test]
+    fn claim_file_apply_feedback_persists_w4_correction_artifacts_atomically() {
+        let db = test_db();
+        seed_account(&db);
+        let (clock, rng, external) = ctx_parts();
+        let ctx = live_ctx(&clock, &rng, &external);
+        let claim_id =
+            inserted_claim_id(commit_claim(&ctx, &db, proposal("Risk from claim file")).unwrap());
+        let projected_claim_version: u64 = db
+            .conn_ref()
+            .query_row(
+                "SELECT claim_version FROM intelligence_claims WHERE id = ?1",
+                params![&claim_id],
+                |row| row.get::<_, i64>(0),
+            )
+            .expect("read claim version")
+            .try_into()
+            .expect("claim_version fits u64");
+        let apply_key = "w4-claim-file-apply-key";
+
+        db.conn_ref()
+            .execute(
+                "INSERT INTO claim_file_correction_apply_events (
+                    idempotency_key, sidecar_checksum, claim_id,
+                    projected_claim_version, projected_identity_hash,
+                    feedback_action, payload_hash, status, claimed_at, updated_at
+                 ) VALUES (?1, 'fixture-sidecar-checksum', ?2, ?3,
+                    'fixture-identity-hash', 'confirm_current',
+                    'fixture-payload-hash', 'claimed', ?4, ?4)",
+                params![apply_key, &claim_id, projected_claim_version as i64, TS],
+            )
+            .expect("insert claimed apply event");
+
+        let outcome = record_claim_feedback_for_claim_file_apply(
+            &ctx,
+            &db,
+            ClaimFeedbackInput {
+                claim_id: claim_id.clone(),
+                action: FeedbackAction::ConfirmCurrent,
+                actor: "user".to_string(),
+                actor_id: Some("user-fixture".to_string()),
+                payload_json: Some(
+                    serde_json::json!({
+                        "surface": "file_projection",
+                        "entry_point": "claim_file_projection"
+                    })
+                    .to_string(),
+                ),
+            },
+            ClaimFileFeedbackApplyInput {
+                expected_claim_version: projected_claim_version,
+                correction_apply_key: apply_key.to_string(),
+            },
+        )
+        .expect("record claim-file feedback");
+
+        let (apply_status, apply_feedback_id): (String, Option<String>) = db
+            .conn_ref()
+            .query_row(
+                "SELECT status, feedback_id
+                   FROM claim_file_correction_apply_events
+                  WHERE idempotency_key = ?1",
+                params![apply_key],
+                |row| Ok((row.get(0)?, row.get(1)?)),
+            )
+            .expect("read apply event");
+        assert_eq!(apply_status, "applied");
+        assert_eq!(
+            apply_feedback_id.as_deref(),
+            Some(outcome.feedback_id.as_str())
+        );
+
+        let (envelope_action, surface, idempotency_key, propagation_job_count): (
+            String,
+            String,
+            String,
+            i64,
+        ) = db
+            .conn_ref()
+            .query_row(
+                "SELECT envelope.action,
+                        envelope.surface,
+                        envelope.idempotency_key,
+                        (
+                            SELECT count(*)
+                              FROM claim_feedback_propagation_jobs jobs
+                             WHERE jobs.feedback_id = envelope.feedback_id
+                        )
+                   FROM claim_feedback_correction_envelopes envelope
+                  WHERE envelope.feedback_id = ?1",
+                params![&outcome.feedback_id],
+                |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?, row.get(3)?)),
+            )
+            .expect("read W4 claim-file artifacts");
+        assert_eq!(envelope_action, "confirm_current");
+        assert_eq!(surface, "file_projection");
+        assert_eq!(idempotency_key, apply_key);
+        assert!(
+            propagation_job_count >= 5,
+            "claim-file feedback must record durable logical propagation targets"
+        );
+    }
+
+    #[test]
+    fn claim_file_apply_feedback_matches_app_w4_artifact_shape() {
+        let db = test_db();
+        seed_account(&db);
+        db.conn_ref()
+            .execute(
+                "INSERT INTO accounts (id, name, updated_at) VALUES (?1, ?2, ?3)",
+                params!["acct-2", "Account 2", TS],
+            )
+            .expect("seed second account");
+        let (clock, rng, external) = ctx_parts();
+        let ctx = live_ctx(&clock, &rng, &external);
+
+        let mut app_claim = proposal("Risk from app feedback parity");
+        app_claim.source_ref = Some("fixture://app-source-parity".to_string());
+        let app_claim_id = inserted_claim_id(commit_claim(&ctx, &db, app_claim).unwrap());
+
+        let mut file_claim = proposal("Risk from file feedback parity");
+        file_claim.subject_ref = serde_json::json!({
+            "kind": "account",
+            "id": "acct-2"
+        })
+        .to_string();
+        file_claim.source_ref = Some("fixture://file-source-parity".to_string());
+        let file_claim_id = inserted_claim_id(commit_claim(&ctx, &db, file_claim).unwrap());
+        let projected_claim_version: u64 = db
+            .conn_ref()
+            .query_row(
+                "SELECT claim_version FROM intelligence_claims WHERE id = ?1",
+                params![&file_claim_id],
+                |row| row.get::<_, i64>(0),
+            )
+            .expect("read file claim version")
+            .try_into()
+            .expect("claim_version fits u64");
+        let apply_key = "w4-claim-file-parity-apply-key";
+        db.conn_ref()
+            .execute(
+                "INSERT INTO claim_file_correction_apply_events (
+                    idempotency_key, sidecar_checksum, claim_id,
+                    projected_claim_version, projected_identity_hash,
+                    feedback_action, payload_hash, status, claimed_at, updated_at
+                 ) VALUES (?1, 'fixture-sidecar-checksum', ?2, ?3,
+                    'fixture-identity-hash', 'wrong_source',
+                    'fixture-payload-hash', 'claimed', ?4, ?4)",
+                params![
+                    apply_key,
+                    &file_claim_id,
+                    projected_claim_version as i64,
+                    TS
+                ],
+            )
+            .expect("insert claimed apply event");
+
+        let app_outcome = record_claim_feedback(
+            &ctx,
+            &db,
+            ClaimFeedbackInput {
+                claim_id: app_claim_id,
+                action: FeedbackAction::WrongSource,
+                actor: "user".to_string(),
+                actor_id: Some("user-fixture".to_string()),
+                payload_json: Some(
+                    serde_json::json!({
+                        "source_ref": "fixture://app-source-parity",
+                        "source_content_hash": "fixture-content-hash-app-parity",
+                        "surface": "entity_detail",
+                        "target_receipt": {
+                            "kind": "claim",
+                            "claim_id": "app-claim-feedback-parity"
+                        }
+                    })
+                    .to_string(),
+                ),
+            },
+        )
+        .expect("record app feedback");
+        let file_outcome = record_claim_feedback_for_claim_file_apply(
+            &ctx,
+            &db,
+            ClaimFeedbackInput {
+                claim_id: file_claim_id,
+                action: FeedbackAction::WrongSource,
+                actor: "user".to_string(),
+                actor_id: Some("user-fixture".to_string()),
+                payload_json: Some(
+                    serde_json::json!({
+                        "source_ref": "fixture://file-source-parity",
+                        "source_content_hash": "fixture-content-hash-file-parity",
+                        "surface": "file_projection",
+                        "entry_point": "claim_file_projection",
+                        "claim_file_projection_version": 1,
+                        "target_receipt": {
+                            "kind": "claim",
+                            "claim_id": "file-claim-feedback-parity"
+                        }
+                    })
+                    .to_string(),
+                ),
+            },
+            ClaimFileFeedbackApplyInput {
+                expected_claim_version: projected_claim_version,
+                correction_apply_key: apply_key.to_string(),
+            },
+        )
+        .expect("record claim-file feedback");
+
+        let (app_surface, app_apply_key) =
+            w4_feedback_surface_and_apply_key(&db, &app_outcome.feedback_id);
+        let (file_surface, file_apply_key) =
+            w4_feedback_surface_and_apply_key(&db, &file_outcome.feedback_id);
+        assert_eq!(app_surface, "entity_detail");
+        assert_eq!(app_apply_key, None);
+        assert_eq!(file_surface, "file_projection");
+        assert_eq!(file_apply_key.as_deref(), Some(apply_key));
+
+        assert_eq!(
+            w4_feedback_artifact_shape(&db, &file_outcome.feedback_id),
+            w4_feedback_artifact_shape(&db, &app_outcome.feedback_id),
+            "claim-file apply must produce the same W4 artifact shape as app feedback, excluding expected surface/idempotency differences"
+        );
+
+        let apply_feedback_id: Option<String> = db
+            .conn_ref()
+            .query_row(
+                "SELECT feedback_id
+                   FROM claim_file_correction_apply_events
+                  WHERE idempotency_key = ?1",
+                params![apply_key],
+                |row| row.get(0),
+            )
+            .expect("read claim-file parity apply event");
+        assert_eq!(
+            apply_feedback_id.as_deref(),
+            Some(file_outcome.feedback_id.as_str())
+        );
     }
 
     #[test]

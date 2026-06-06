@@ -18,8 +18,8 @@
 use rusqlite::OptionalExtension;
 
 use super::{
-    BlockingReason, EntityBinding, PrepStatus, PrepStatusError, PrepStatusSnapshot, StaleReason,
-    UserAuthoredFields,
+    BlockingReason, DecisionRef, EntityBinding, PrepStatus, PrepStatusError, PrepStatusSnapshot,
+    StaleReason, UserAuthoredFields,
 };
 use crate::db::ActionDb;
 
@@ -32,6 +32,9 @@ struct ViewRow {
     linked_entity_type: Option<String>,
     user_agenda_json: Option<String>,
     user_notes: Option<String>,
+    user_preparation_text: Option<String>,
+    user_hidden_attendees_json: Option<String>,
+    user_decisions_json: Option<String>,
     last_prepared_at: Option<String>,
 }
 
@@ -75,13 +78,12 @@ pub fn compute_status(
     let user_authored = UserAuthoredFields {
         agenda: row.user_agenda_json.clone(),
         notes: row.user_notes.clone(),
-        // preparation_text/hidden_attendees/decisions live in claim
-        // store + future user_authored columns; AC-335.8 preservation
-        // is upheld by writers, but the W1 read-side projection only
-        // surfaces what's persisted today via meeting_prep columns.
-        preparation_text: None,
-        hidden_attendees: Vec::new(),
-        decisions: Vec::new(),
+        preparation_text: row.user_preparation_text.clone(),
+        hidden_attendees: parse_string_vec_json(
+            row.user_hidden_attendees_json.as_deref(),
+            "user_hidden_attendees_json",
+        )?,
+        decisions: parse_decision_refs_json(row.user_decisions_json.as_deref())?,
     };
 
     let next_allowed_transition = status.legal_transitions().to_vec();
@@ -111,10 +113,19 @@ fn load_view_row(meeting_id: &str, db: &ActionDb) -> Result<Option<ViewRow>, Pre
     let conn = db.conn_ref();
     let mut stmt = conn
         .prepare(
-            "SELECT meeting_id, event_id, linked_entity_id, linked_entity_type,
-                    user_agenda_json, user_notes, last_prepared_at
-             FROM meeting_prep_status_view
-             WHERE meeting_id = ?1
+            "SELECT status_view.meeting_id,
+                    status_view.event_id,
+                    status_view.linked_entity_id,
+                    status_view.linked_entity_type,
+                    status_view.user_agenda_json,
+                    status_view.user_notes,
+                    prep.user_preparation_text,
+                    prep.user_hidden_attendees_json,
+                    prep.user_decisions_json,
+                    status_view.last_prepared_at
+             FROM meeting_prep_status_view status_view
+             LEFT JOIN meeting_prep prep ON prep.meeting_id = status_view.meeting_id
+             WHERE status_view.meeting_id = ?1
              LIMIT 1",
         )
         .map_err(|e| PrepStatusError::Db(e.to_string()))?;
@@ -127,12 +138,34 @@ fn load_view_row(meeting_id: &str, db: &ActionDb) -> Result<Option<ViewRow>, Pre
                 linked_entity_type: row.get(3)?,
                 user_agenda_json: row.get(4)?,
                 user_notes: row.get(5)?,
-                last_prepared_at: row.get(6)?,
+                user_preparation_text: row.get(6)?,
+                user_hidden_attendees_json: row.get(7)?,
+                user_decisions_json: row.get(8)?,
+                last_prepared_at: row.get(9)?,
             })
         })
         .optional()
         .map_err(|e| PrepStatusError::Db(e.to_string()))?;
     Ok(row)
+}
+
+fn parse_string_vec_json(
+    raw: Option<&str>,
+    field_name: &str,
+) -> Result<Vec<String>, PrepStatusError> {
+    let Some(raw) = raw.map(str::trim).filter(|value| !value.is_empty()) else {
+        return Ok(Vec::new());
+    };
+    serde_json::from_str(raw)
+        .map_err(|error| PrepStatusError::Db(format!("invalid {field_name}: {error}")))
+}
+
+fn parse_decision_refs_json(raw: Option<&str>) -> Result<Vec<DecisionRef>, PrepStatusError> {
+    let Some(raw) = raw.map(str::trim).filter(|value| !value.is_empty()) else {
+        return Ok(Vec::new());
+    };
+    serde_json::from_str(raw)
+        .map_err(|error| PrepStatusError::Db(format!("invalid user_decisions_json: {error}")))
 }
 
 /// Load the latest unresolved dismissal kind for a meeting, if any.
