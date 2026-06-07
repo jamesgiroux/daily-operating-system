@@ -1175,9 +1175,9 @@ const MIGRATIONS: &[Migration] = &[
         version: 291,
         sql: include_str!("migrations/291_meeting_prep_replay_active_index.sql"),
     },
-    // v1.4.9 L3 stickiness repair — W5 landed, so MCP observations can now
-    // pass/fail under the same DOS-338 criteria instead of being constrained
-    // to the W4-era blocked_by_w5 result.
+    // v1.4.9 L3 stickiness repair — the W5 runtime path is now available, so
+    // MCP observations can pass/fail under the same correction-stickiness
+    // criteria instead of being constrained to the W4-era blocked_by_w5 result.
     Migration::Fn {
         version: 292,
         apply: migrate_v292_dos338_mcp_stickiness_result_repair,
