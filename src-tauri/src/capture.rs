@@ -16,10 +16,26 @@ use std::path::Path;
 use std::sync::Arc;
 
 use chrono::{DateTime, Duration, Utc};
+use sha2::{Digest, Sha256};
 use tauri::{AppHandle, Emitter};
 
 use crate::state::AppState;
 use crate::types::{CalendarEvent, MeetingType};
+
+fn capture_ref(kind: &str, value: &str) -> String {
+    let mut hasher = Sha256::new();
+    hasher.update(value.as_bytes());
+    let digest = hex::encode(hasher.finalize());
+    format!("{kind}:{}", &digest[..12])
+}
+
+fn meeting_ref(event: &CalendarEvent) -> String {
+    capture_ref("meeting", &event.id)
+}
+
+fn transcript_file_ref(filename: &str) -> String {
+    capture_ref("transcript_file", filename)
+}
 
 /// State machine for a pending post-meeting prompt.
 #[derive(Debug, Clone)]
@@ -193,8 +209,8 @@ pub async fn run_capture_loop(state: Arc<AppState>, app_handle: AppHandle) {
                     },
                 });
                 log::info!(
-                    "Meeting ended: '{}' — waiting for transcript until {}",
-                    event.title,
+                    "Meeting ended: meeting_ref={} — waiting for transcript until {}",
+                    meeting_ref(event),
                     transcript_deadline
                 );
             }
@@ -216,9 +232,9 @@ pub async fn run_capture_loop(state: Arc<AppState>, app_handle: AppHandle) {
                             &meeting_date,
                         ) {
                             log::info!(
-                                "Transcript detected for '{}': {} — skipping prompt",
-                                prompt.meeting.title,
-                                filename
+                                "Transcript detected: meeting_ref={}, transcript_file_ref={} — skipping prompt",
+                                meeting_ref(&prompt.meeting),
+                                transcript_file_ref(&filename)
                             );
                             prompt.state = PromptState::TranscriptDetected { filename };
                             continue;
@@ -228,8 +244,8 @@ pub async fn run_capture_loop(state: Arc<AppState>, app_handle: AppHandle) {
                     // Check if deadline passed without transcript
                     if now >= *deadline {
                         log::info!(
-                            "No transcript for '{}' — switching to fallback prompt",
-                            prompt.meeting.title
+                            "No transcript for meeting_ref={} — switching to fallback prompt",
+                            meeting_ref(&prompt.meeting)
                         );
                         prompt.state = PromptState::FallbackReady;
                     }
@@ -239,8 +255,8 @@ pub async fn run_capture_loop(state: Arc<AppState>, app_handle: AppHandle) {
                     // Wait until trigger_time and user is not in another meeting
                     if prompt.trigger_time <= now && current_in_progress.is_empty() {
                         log::info!(
-                            "Triggering fallback capture prompt for '{}'",
-                            prompt.meeting.title
+                            "Triggering fallback capture prompt for meeting_ref={}",
+                            meeting_ref(&prompt.meeting)
                         );
                         #[allow(
                             clippy::let_underscore_must_use,
@@ -265,14 +281,14 @@ pub async fn run_capture_loop(state: Arc<AppState>, app_handle: AppHandle) {
 
                         if already_processed {
                             log::info!(
-                                "Transcript for '{}' already processed — skipping",
-                                prompt.meeting.title
+                                "Transcript for meeting_ref={} already processed — skipping",
+                                meeting_ref(&prompt.meeting)
                             );
                         } else {
                             log::info!(
-                                "Auto-processing transcript '{}' for '{}' with meeting context",
-                                filename,
-                                prompt.meeting.title
+                                "Auto-processing transcript: meeting_ref={}, transcript_file_ref={}",
+                                meeting_ref(&prompt.meeting),
+                                transcript_file_ref(filename)
                             );
 
                             let profile = config
@@ -306,8 +322,14 @@ pub async fn run_capture_loop(state: Arc<AppState>, app_handle: AppHandle) {
                                 // Record transcript
                                 let record = crate::types::TranscriptRecord {
                                     meeting_id: prompt.meeting.id.clone(),
-                                    file_path: file_path.display().to_string(),
-                                    destination: result.destination.clone().unwrap_or_default(),
+                                    file_path: transcript_file_ref(
+                                        &file_path.display().to_string(),
+                                    ),
+                                    destination: result
+                                        .destination
+                                        .as_deref()
+                                        .map(transcript_file_ref)
+                                        .unwrap_or_default(),
                                     summary: result.summary.clone(),
                                     processed_at: Utc::now().to_rfc3339(),
                                 };
@@ -346,16 +368,16 @@ pub async fn run_capture_loop(state: Arc<AppState>, app_handle: AppHandle) {
                                 let _ = app_handle.emit("transcript-processed", &outcome);
 
                                 log::info!(
-                                    "Auto-processed transcript for '{}' — {} wins, {} risks, {} decisions",
-                                    prompt.meeting.title,
+                                    "Auto-processed transcript: meeting_ref={}, wins_count={}, risks_count={}, decisions_count={}",
+                                    meeting_ref(&prompt.meeting),
                                     result.wins.len(),
                                     result.risks.len(),
                                     result.decisions.len(),
                                 );
                             } else {
                                 log::warn!(
-                                    "Auto-processing transcript for '{}' failed: {}",
-                                    prompt.meeting.title,
+                                    "Auto-processing transcript failed: meeting_ref={}, message={}",
+                                    meeting_ref(&prompt.meeting),
                                     result.message.unwrap_or_default()
                                 );
                             }
@@ -380,17 +402,12 @@ pub async fn run_capture_loop(state: Arc<AppState>, app_handle: AppHandle) {
 fn build_auto_outcome(
     meeting_id: &str,
     result: &crate::types::TranscriptResult,
-    state: &AppState,
+    _state: &AppState,
 ) -> crate::types::MeetingOutcomeData {
     let actions = crate::db::ActionDb::open(std::sync::Arc::new(crate::db::LocalKeychain::new()))
         .ok()
         .and_then(|db| db.get_actions_for_meeting(meeting_id).ok())
         .unwrap_or_default();
-
-    let transcript_path = {
-        let guard = state.capture.transcript_processed.lock();
-        guard.get(meeting_id).map(|r| r.destination.clone())
-    };
 
     crate::types::MeetingOutcomeData {
         meeting_id: meeting_id.to_string(),
@@ -399,7 +416,23 @@ fn build_auto_outcome(
         risks: result.risks.clone(),
         decisions: result.decisions.clone(),
         actions,
-        transcript_path,
+        transcript_path: None,
         processed_at: Some(Utc::now().to_rfc3339()),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn transcript_file_ref_does_not_include_raw_filename() {
+        let raw = "sensitive-customer-qbr-transcript.md";
+        let redacted = transcript_file_ref(raw);
+
+        assert!(redacted.starts_with("transcript_file:"));
+        assert!(!redacted.contains("sensitive"));
+        assert!(!redacted.contains("customer"));
+        assert_eq!(redacted, transcript_file_ref(raw));
     }
 }

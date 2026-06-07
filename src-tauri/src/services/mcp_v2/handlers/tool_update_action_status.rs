@@ -14,7 +14,7 @@ use crate::services::mcp_v2::target_handles::{
 use crate::signals::propagation::PropagationEngine;
 
 use super::tool_utils::{
-    bad_params, mutation_cursor_for_target, reject_raw_id_params, required_str,
+    bad_params, internal_trace, mutation_cursor_for_target, reject_raw_id_params, required_str,
     unavailable_payload, validate_bounded_string, validate_yyyy_mm_dd,
 };
 
@@ -88,9 +88,7 @@ impl McpToolHandler for UpdateActionStatusHandler {
                     ));
                 }
                 Err(TargetHandleResolutionError::Internal(detail)) => {
-                    return Err(ToolError::Internal {
-                        trace_id: format!("mcp_action_handle_resolve:{detail}"),
-                    });
+                    return Err(internal_trace("mcp_action_handle_resolve", detail));
                 }
             };
             let action_id = resolved
@@ -113,11 +111,9 @@ impl McpToolHandler for UpdateActionStatusHandler {
                 ));
             };
             let current_watermark = action_watermark_for_handle(&action);
-            if !resolved_target_watermark_matches(&resolved, &current_watermark).map_err(
-                |error| ToolError::Internal {
-                    trace_id: format!("mcp_action_handle_watermark:{error}"),
-                },
-            )? {
+            if !resolved_target_watermark_matches(&resolved, &current_watermark)
+                .map_err(|error| internal_trace("mcp_action_handle_watermark", error))?
+            {
                 return Ok(unavailable_payload(
                     SCHEMA_VERSION,
                     &self.description.name,

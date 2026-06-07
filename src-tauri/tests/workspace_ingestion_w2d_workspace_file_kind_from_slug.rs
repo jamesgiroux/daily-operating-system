@@ -19,6 +19,10 @@ fn workspace_file_kind_from_slug_covers_canonical_variants() {
         Some(WorkspaceFileKind::UserAttachment)
     );
     assert_eq!(
+        WorkspaceFileKind::from_slug("generic_transcript"),
+        Some(WorkspaceFileKind::GenericTranscript)
+    );
+    assert_eq!(
         WorkspaceFileKind::from_slug("granola_transcript"),
         Some(WorkspaceFileKind::GranolaTranscript)
     );

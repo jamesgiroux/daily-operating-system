@@ -2557,7 +2557,7 @@ pub struct TranscriptResult {
     pub status: String, // "success" | "error"
     #[serde(skip_serializing_if = "Option::is_none")]
     pub summary: Option<String>,
-    #[serde(skip_serializing_if = "Option::is_none")]
+    #[serde(default, skip_serializing)]
     pub destination: Option<String>,
     #[serde(default)]
     pub wins: Vec<String>,

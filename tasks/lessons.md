@@ -1,5 +1,7 @@
 # Lessons
 
+- 2026-06-07: Before continuing review or remediation loops, re-anchor findings to the wave's accepted AC boundary. For W5, blockers are registered MCP-eligible parity failures, not broad MCP hardening or unrelated tag-gate cleanup; classify every finding as wave blocker, version tag blocker, or maintenance before another L2 cycle.
+- 2026-06-07: Do not treat W6 as only a release-valve packet when the user says the six-wave v1.4.9 plan must finish. W6 L0 approval is not enough; derive AC2+ implementation work from the approved DOS-511 packet and keep W6 in the tag-completion path.
 - 2026-06-06: Treat L0/L2 packet review as a reviewer-cycle loop, not a one-shot summary. After any blocking finding is patched, rerun every assigned reviewer on the current tree and do not call the packet done until all blocking reviewers return PASS.
 - 2026-06-02: L2 blocking reviews should stay scoped to acceptance criteria, ADR-named contracts, and PR-introduced regressions. Extra edge cases and speculative hardening belong in path-alpha/maintenance so wave work does not stall in expanding review cycles.
 - 2026-06-02: Replica and mock dev builds must scope both database and workspace paths before any scaffolding or managed-folder writes run. Validate the effective mode-scoped path first, then initialize; otherwise a replica-safe DB can still mutate production workspace folders.

@@ -1394,7 +1394,7 @@ pub fn build_outcome_data(
         risks: result.risks.clone(),
         decisions: result.decisions.clone(),
         actions,
-        transcript_path: result.destination.clone(),
+        transcript_path: None,
         processed_at: Some(chrono::Utc::now().to_rfc3339()),
     }
 }

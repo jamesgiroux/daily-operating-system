@@ -465,16 +465,31 @@ function EvidenceListBlock({ block, accountId, entityType, payload, renderedProv
   return (
     <BlockShell block={block} accountId={accountId} entityType={entityType} payload={payload} renderedProvenance={renderedProvenance} title={text(payload.title) ?? "Evidence"} empty={items.length === 0}>
       <div className={pageStyles.compositionEvidenceList}>
-        {items.map((item, index) => (
-          <div className={pageStyles.compositionEvidenceRow} key={`${text(item.label) ?? "evidence"}-${index}`}>
-            <div className={pageStyles.compositionEvidenceMain}>
-              <p className={pageStyles.compositionEvidenceTitle}>{text(item.label)}</p>
-              <p className={pageStyles.compositionEvidenceMeta}>
-                {[text(item.source_label), text(item.source_asof)].filter(Boolean).join(" · ")}
-              </p>
+        {items.map((item, index) => {
+          const title = text(item.evidence_quote) ?? text(item.label);
+          const assertion = text(item.assertion_text);
+          const meta = [
+            text(item.source_label),
+            text(item.source_asof),
+            text(item.workspace_file_kind),
+            text(item.trust_band),
+            text(item.sensitivity),
+            text(item.redaction_state),
+          ].filter(Boolean);
+          return (
+            <div className={pageStyles.compositionEvidenceRow} key={`${title ?? "evidence"}-${index}`}>
+              <div className={pageStyles.compositionEvidenceMain}>
+                <p className={pageStyles.compositionEvidenceTitle}>{title}</p>
+                {assertion && assertion !== title && (
+                  <p className={pageStyles.compositionEvidenceMeta}>{assertion}</p>
+                )}
+                {meta.length > 0 && (
+                  <p className={pageStyles.compositionEvidenceMeta}>{meta.join(" · ")}</p>
+                )}
+              </div>
             </div>
-          </div>
-        ))}
+          );
+        })}
       </div>
     </BlockShell>
   );

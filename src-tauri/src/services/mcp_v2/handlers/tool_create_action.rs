@@ -15,7 +15,7 @@ use crate::services::mcp_v2::target_handles::{
 use crate::signals::propagation::PropagationEngine;
 
 use super::tool_utils::{
-    bad_params, current_entity_watermark, deterministic_uuid_from_replay_key,
+    bad_params, current_entity_watermark, deterministic_uuid_from_replay_key, internal_trace,
     mcp_submit_replay_key, mutation_cursor_for_target, reject_raw_id_params, required_str,
     unavailable_payload, validate_bounded_string, validate_yyyy_mm_dd,
 };
@@ -87,8 +87,8 @@ impl McpToolHandler for CreateActionHandler {
                             ));
                         };
                         if !resolved_target_watermark_matches(&resolved, &current_watermark)
-                            .map_err(|error| ToolError::Internal {
-                                trace_id: format!("mcp_action_entity_handle_watermark:{error}"),
+                            .map_err(|error| {
+                                internal_trace("mcp_action_entity_handle_watermark", error)
                             })?
                         {
                             return Ok(unavailable_payload(
@@ -109,9 +109,7 @@ impl McpToolHandler for CreateActionHandler {
                         ));
                     }
                     Err(TargetHandleResolutionError::Internal(detail)) => {
-                        return Err(ToolError::Internal {
-                            trace_id: format!("mcp_action_entity_handle_resolve:{detail}"),
-                        });
+                        return Err(internal_trace("mcp_action_entity_handle_resolve", detail));
                     }
                 }
             } else {
@@ -178,9 +176,7 @@ impl McpToolHandler for CreateActionHandler {
                     watermark_material: &watermark,
                 },
             )
-            .map_err(|error| ToolError::Internal {
-                trace_id: format!("mcp_action_handle_mint:{}", error),
-            })?;
+            .map_err(|error| internal_trace("mcp_action_handle_mint", error))?;
 
             Ok(json!({
                 "schema_version": SCHEMA_VERSION,

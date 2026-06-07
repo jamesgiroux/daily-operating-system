@@ -35,15 +35,15 @@ pub struct QuillParticipant {
 /// Errors from Quill MCP operations.
 #[derive(Debug, thiserror::Error)]
 pub enum QuillError {
-    #[error("Bridge not found at {0}")]
+    #[error("Quill bridge is not available")]
     BridgeNotFound(String),
-    #[error("Failed to spawn bridge process: {0}")]
+    #[error("Quill bridge process failed")]
     SpawnFailed(String),
-    #[error("MCP connection failed: {0}")]
+    #[error("Quill connection failed")]
     ConnectionFailed(String),
-    #[error("Tool call failed: {0}")]
+    #[error("Quill tool call failed")]
     ToolCallFailed(String),
-    #[error("Parse error: {0}")]
+    #[error("Quill response could not be parsed")]
     ParseError(String),
     #[error("Meeting not found")]
     MeetingNotFound,

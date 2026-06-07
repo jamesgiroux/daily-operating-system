@@ -68,6 +68,7 @@ pub mod surface_pairing;
 pub mod surface_session_keychain;
 pub mod temporal;
 pub mod threads;
+pub mod transcript_claims;
 pub mod trust_extraction;
 pub mod trust_recompute;
 pub mod user_entity;

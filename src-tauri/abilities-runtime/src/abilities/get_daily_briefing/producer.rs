@@ -480,6 +480,7 @@ fn accumulate_from_envelope(
                 id: source.id.clone(),
                 label: source.label.clone(),
                 source_type: source.source_type.clone(),
+                workspace_file_kind: source.workspace_file_kind.clone(),
                 as_of: source.as_of,
                 redacted: source.redacted,
             });

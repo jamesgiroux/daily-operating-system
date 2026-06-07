@@ -275,6 +275,8 @@ pub struct EnvelopeProvenanceSource {
     pub id: String,
     pub label: String,
     pub source_type: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub workspace_file_kind: Option<String>,
     #[schemars(with = "Option<String>")]
     pub as_of: Option<DateTime<Utc>>,
     pub redacted: bool,

@@ -29,8 +29,9 @@ use crate::abilities::list_open_loops::{ListOpenLoopsInput, OpenLoopSubject, Ope
 use crate::abilities::provenance::source_time::{parse_source_timestamp, SourceTimestampStatus};
 use crate::abilities::provenance::trust::claim_trust_band_from_score;
 use crate::abilities::provenance::{
-    AbilityExecutionMode, AbilityVersion, FieldAttribution, FieldPath, ProvenanceBuilder,
-    ProvenanceBuilderConfig, SchemaVersion, SubjectAttribution, SubjectRef,
+    data_source_from_key, AbilityExecutionMode, AbilityVersion, DataSource, FieldAttribution,
+    FieldPath, ProvenanceBuilder, ProvenanceBuilderConfig, SchemaVersion, SubjectAttribution,
+    SubjectRef,
 };
 use crate::abilities::trust::types::TrustBand;
 use crate::abilities::{
@@ -480,6 +481,7 @@ async fn compose_open_loops(
                     id: label.clone(),
                     label: open_loop.loop_kind.clone(),
                     source_type: Some("open_loop".to_string()),
+                    workspace_file_kind: None,
                     as_of: parse_optional_timestamp(open_loop.source_asof.as_deref()),
                     redacted: false,
                 },
@@ -708,6 +710,7 @@ fn project_touchpoint(
             id: id_label,
             label,
             source_type: Some("meeting".to_string()),
+            workspace_file_kind: None,
             as_of: parse_optional_timestamp(raw.source_asof.as_deref()),
             redacted,
         },
@@ -1056,6 +1059,7 @@ fn project_relationship_edge(
             id: source_id,
             label: source_label_for_relationship(&raw.source_type, render_actor),
             source_type: Some(raw.source_type.clone()),
+            workspace_file_kind: None,
             as_of: parse_optional_timestamp(raw.source_asof.as_deref()),
             redacted: !render_actor.is_user(),
         },
@@ -1117,6 +1121,7 @@ fn project_relationship_participant(
             id: source_id,
             label: source_label_for_relationship(&raw.source_type, render_actor),
             source_type: Some(raw.source_type.clone()),
+            workspace_file_kind: None,
             as_of: parse_optional_timestamp(raw.source_asof.as_deref()),
             redacted: !render_actor.is_user(),
         },
@@ -1377,6 +1382,7 @@ fn project_meeting_health(
             id: format!("meeting_prep:{meeting_id}"),
             label: "Meeting prep status".to_string(),
             source_type: Some("meeting_prep_status".to_string()),
+            workspace_file_kind: None,
             as_of: parse_optional_timestamp(snapshot.last_prepared_at.as_deref()),
             redacted: false,
         },
@@ -1668,10 +1674,12 @@ fn upsert_provenance_source(
     if provenance.sources.iter().any(|s| s.id == id) {
         return id;
     }
+    let (label, source_type, workspace_file_kind) = envelope_source_descriptor(&claim.data_source);
     let source = EnvelopeProvenanceSource {
         id: id.clone(),
-        label: claim.data_source.clone(),
-        source_type: Some(claim.data_source.clone()),
+        label,
+        source_type: Some(source_type),
+        workspace_file_kind,
         as_of: parse_optional_timestamp(claim.source_asof.as_deref()),
         // W1 producer is naive about redaction — the W2 projection layer composes
         // `redact_provenance_for_surface`. Substrate marks redacted=false
@@ -1680,6 +1688,17 @@ fn upsert_provenance_source(
     };
     provenance.sources.push(source);
     id
+}
+
+fn envelope_source_descriptor(source_key: &str) -> (String, String, Option<String>) {
+    match data_source_from_key(source_key) {
+        DataSource::WorkspaceFile { kind } => (
+            DataSource::WorkspaceFile { kind: kind.clone() }.display_name(),
+            "workspace_file".to_string(),
+            Some(kind.slug().to_string()),
+        ),
+        parsed => (parsed.display_name(), source_key.trim().to_string(), None),
+    }
 }
 
 fn upsert_static_provenance_source(
@@ -3044,6 +3063,16 @@ mod tests {
             Some("meeting_prep_status")
         );
         assert!(!prov.sources[0].redacted);
+    }
+
+    #[test]
+    fn claim_workspace_file_source_descriptor_preserves_kind() {
+        let (label, source_type, workspace_file_kind) =
+            envelope_source_descriptor("workspace_file:quill_transcript");
+
+        assert_eq!(label, "Workspace file (Quill transcript)");
+        assert_eq!(source_type, "workspace_file");
+        assert_eq!(workspace_file_kind.as_deref(), Some("quill_transcript"));
     }
 
     #[test]

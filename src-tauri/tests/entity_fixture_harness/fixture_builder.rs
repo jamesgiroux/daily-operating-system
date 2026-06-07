@@ -172,6 +172,7 @@ fn glean_source(id: &str) -> EnvelopeProvenanceSource {
         id: id.to_string(),
         label: "Glean document (redacted)".to_string(),
         source_type: Some("glean".to_string()),
+        workspace_file_kind: None,
         as_of: Some(now_anchor()),
         redacted: true,
     }
@@ -182,6 +183,7 @@ fn generic_source(id: &str, label: &str, source_type: &str) -> EnvelopeProvenanc
         id: id.to_string(),
         label: label.to_string(),
         source_type: Some(source_type.to_string()),
+        workspace_file_kind: None,
         as_of: Some(now_anchor()),
         redacted: false,
     }

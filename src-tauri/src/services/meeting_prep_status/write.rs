@@ -28,6 +28,7 @@
 //! through the existing signal substrate; this module does not
 //! arrange consumer notification beyond the signal emit.
 
+use std::collections::BTreeMap;
 use std::sync::Arc;
 
 use chrono::Duration;
@@ -256,10 +257,10 @@ pub fn replay_active_prep_correction_journal(
         skipped_entries: 0,
     };
 
-    let mut rows_by_meeting =
-        std::collections::BTreeMap::<String, Vec<PrepReplayJournalRow>>::new();
+    let resolver = MeetingReplayResolver::load(db)?;
+    let mut rows_by_meeting = BTreeMap::<String, Vec<PrepReplayJournalRow>>::new();
     for row in rows {
-        match resolve_replay_meeting_id(db, &row)? {
+        match resolver.resolve(&row) {
             Some(meeting_id) => rows_by_meeting.entry(meeting_id).or_default().push(row),
             None => {
                 mark_prep_replay_orphaned(db, &row.id, rebuild_replay_id, "meeting_not_rebuilt")?;
@@ -520,11 +521,11 @@ fn run_prep_regeneration_job(
         ));
     }
 
-    let mut rows_by_meeting =
-        std::collections::BTreeMap::<String, Vec<PrepReplayJournalRow>>::new();
+    let resolver = MeetingReplayResolver::load(tx)?;
+    let mut rows_by_meeting = BTreeMap::<String, Vec<PrepReplayJournalRow>>::new();
     let mut orphaned = 0usize;
     for row in rows {
-        match resolve_replay_meeting_id(tx, &row)? {
+        match resolver.resolve(&row) {
             Some(meeting_id) => rows_by_meeting.entry(meeting_id).or_default().push(row),
             None => {
                 mark_prep_replay_orphaned_in_tx(
@@ -706,18 +707,6 @@ fn load_active_replay_rows_for_stable_key(
     Ok(rows)
 }
 
-fn meeting_row_exists(db: &ActionDb, meeting_id: &str) -> Result<bool, PrepStatusError> {
-    let exists = db
-        .conn_ref()
-        .query_row("SELECT 1 FROM meetings WHERE id = ?1", [meeting_id], |_| {
-            Ok(())
-        })
-        .optional()
-        .map_err(|error| PrepStatusError::Db(error.to_string()))?
-        .is_some();
-    Ok(exists)
-}
-
 fn meeting_stable_key_for_db(db: &ActionDb, meeting_id: &str) -> Result<String, PrepStatusError> {
     let row = db
         .conn_ref()
@@ -744,8 +733,21 @@ fn meeting_stable_key_for_db(db: &ActionDb, meeting_id: &str) -> Result<String, 
             &["missing_meeting_id_fallback", meeting_id],
         );
     };
+    meeting_stable_key_from_parts(
+        meeting_id,
+        calendar_event_id.as_deref(),
+        &start_time,
+        attendees_json.as_deref(),
+    )
+}
 
-    if let Some(calendar_event_id) = calendar_event_id.as_ref() {
+fn meeting_stable_key_from_parts(
+    meeting_id: &str,
+    calendar_event_id: Option<&str>,
+    start_time: &str,
+    attendees_json: Option<&str>,
+) -> Result<String, PrepStatusError> {
+    if let Some(calendar_event_id) = calendar_event_id {
         let calendar_event_id = calendar_event_id.trim();
         if !calendar_event_id.is_empty() {
             let key = pii_safe_hash(
@@ -756,8 +758,7 @@ fn meeting_stable_key_for_db(db: &ActionDb, meeting_id: &str) -> Result<String, 
             return Ok(format!("calendar:{key}"));
         }
     }
-
-    let identity = meeting_manual_identity(&start_time, attendees_json.as_deref())?;
+    let identity = meeting_manual_identity(start_time, attendees_json)?;
     let discriminator = pii_safe_hash(
         "meeting_prep",
         "dailyos.w4.meeting_prep.stable_key",
@@ -771,6 +772,110 @@ fn meeting_stable_key_for_db(db: &ActionDb, meeting_id: &str) -> Result<String, 
         "manual:{strong_family}:{}:{discriminator}",
         identity.loose_family
     ))
+}
+
+#[derive(Debug, Clone)]
+struct MeetingReplayCandidate {
+    id: String,
+    stable_key: String,
+}
+
+#[derive(Debug, Default)]
+struct MeetingReplayResolver {
+    by_id: BTreeMap<String, MeetingReplayCandidate>,
+    by_stable_key: BTreeMap<String, Vec<String>>,
+    by_strong_family: BTreeMap<String, Vec<String>>,
+    by_loose_family: BTreeMap<String, Vec<String>>,
+}
+
+impl MeetingReplayResolver {
+    fn load(db: &ActionDb) -> Result<Self, PrepStatusError> {
+        let mut stmt = db
+            .conn_ref()
+            .prepare(
+                "SELECT id, calendar_event_id, start_time, attendees
+                   FROM meetings
+                  ORDER BY id",
+            )
+            .map_err(|error| PrepStatusError::Db(error.to_string()))?;
+        let rows = stmt
+            .query_map([], |row| {
+                Ok((
+                    row.get::<_, String>(0)?,
+                    row.get::<_, Option<String>>(1)?,
+                    row.get::<_, String>(2)?,
+                    row.get::<_, Option<String>>(3)?,
+                ))
+            })
+            .map_err(|error| PrepStatusError::Db(error.to_string()))?
+            .collect::<Result<Vec<_>, _>>()
+            .map_err(|error| PrepStatusError::Db(error.to_string()))?;
+
+        let mut resolver = Self::default();
+        for (id, calendar_event_id, start_time, attendees_json) in rows {
+            let Ok(stable_key) = meeting_stable_key_from_parts(
+                &id,
+                calendar_event_id.as_deref(),
+                &start_time,
+                attendees_json.as_deref(),
+            ) else {
+                continue;
+            };
+            let manual_identity = manual_identity_from_stable_key(&stable_key);
+            resolver
+                .by_stable_key
+                .entry(stable_key.clone())
+                .or_default()
+                .push(id.clone());
+            if let Some(identity) = manual_identity.as_ref() {
+                if let Some(strong_family) = identity.strong_family.as_ref() {
+                    resolver
+                        .by_strong_family
+                        .entry(strong_family.clone())
+                        .or_default()
+                        .push(id.clone());
+                }
+                resolver
+                    .by_loose_family
+                    .entry(identity.loose_family.clone())
+                    .or_default()
+                    .push(id.clone());
+            }
+            resolver
+                .by_id
+                .insert(id.clone(), MeetingReplayCandidate { id, stable_key });
+        }
+        Ok(resolver)
+    }
+
+    fn resolve(&self, row: &PrepReplayJournalRow) -> Option<String> {
+        if let Some(meeting_id) = row.meeting_id.as_deref() {
+            if let Some(candidate) = self.by_id.get(meeting_id) {
+                if candidate.stable_key == row.meeting_stable_key {
+                    return Some(candidate.id.clone());
+                }
+            }
+        }
+
+        if let Some(match_id) = unique_match(self.by_stable_key.get(&row.meeting_stable_key)) {
+            return Some(match_id);
+        }
+
+        let stored_identity = manual_identity_from_stable_key(&row.meeting_stable_key)?;
+        if let Some(strong_family) = stored_identity.strong_family.as_ref() {
+            if let Some(match_id) = unique_match(self.by_strong_family.get(strong_family)) {
+                return Some(match_id);
+            }
+        }
+        unique_match(self.by_loose_family.get(&stored_identity.loose_family))
+    }
+}
+
+fn unique_match(matches: Option<&Vec<String>>) -> Option<String> {
+    match matches {
+        Some(matches) if matches.len() == 1 => matches.first().cloned(),
+        _ => None,
+    }
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -852,76 +957,6 @@ fn normalized_attendees_identity(attendees_json: Option<&str>) -> Result<String,
     attendees.sort();
     attendees.dedup();
     serde_json::to_string(&attendees).map_err(|error| PrepStatusError::Db(error.to_string()))
-}
-
-fn resolve_replay_meeting_id(
-    db: &ActionDb,
-    row: &PrepReplayJournalRow,
-) -> Result<Option<String>, PrepStatusError> {
-    if let Some(meeting_id) = row.meeting_id.as_deref() {
-        if meeting_row_exists(db, meeting_id)?
-            && meeting_stable_key_for_db(db, meeting_id)? == row.meeting_stable_key
-        {
-            return Ok(Some(meeting_id.to_string()));
-        }
-    }
-
-    let mut stmt = db
-        .conn_ref()
-        .prepare("SELECT id FROM meetings ORDER BY id")
-        .map_err(|error| PrepStatusError::Db(error.to_string()))?;
-    let candidate_ids = stmt
-        .query_map([], |row| row.get::<_, String>(0))
-        .map_err(|error| PrepStatusError::Db(error.to_string()))?
-        .collect::<Result<Vec<_>, _>>()
-        .map_err(|error| PrepStatusError::Db(error.to_string()))?;
-
-    let mut matches = Vec::new();
-    for candidate_id in &candidate_ids {
-        let candidate_key = meeting_stable_key_for_db(db, candidate_id)?;
-        if candidate_key == row.meeting_stable_key {
-            matches.push(candidate_id.clone());
-        }
-    }
-    if matches.len() == 1 {
-        return Ok(matches.pop());
-    }
-
-    let Some(stored_identity) = manual_identity_from_stable_key(&row.meeting_stable_key) else {
-        return Ok(None);
-    };
-    if let Some(stored_strong_family) = stored_identity.strong_family.as_deref() {
-        let mut strong_matches = Vec::new();
-        for candidate_id in &candidate_ids {
-            let candidate_key = meeting_stable_key_for_db(db, candidate_id)?;
-            if manual_identity_from_stable_key(&candidate_key)
-                .and_then(|identity| identity.strong_family)
-                .as_deref()
-                == Some(stored_strong_family)
-            {
-                strong_matches.push(candidate_id.clone());
-            }
-        }
-        if strong_matches.len() == 1 {
-            return Ok(strong_matches.pop());
-        }
-    }
-
-    let mut loose_matches = Vec::new();
-    for candidate_id in candidate_ids {
-        let candidate_key = meeting_stable_key_for_db(db, &candidate_id)?;
-        if manual_identity_from_stable_key(&candidate_key)
-            .map(|identity| identity.loose_family == stored_identity.loose_family)
-            .unwrap_or(false)
-        {
-            loose_matches.push(candidate_id);
-        }
-    }
-    if loose_matches.len() == 1 {
-        Ok(loose_matches.pop())
-    } else {
-        Ok(None)
-    }
 }
 
 fn user_authored_fields_from_replay_rows(
@@ -1831,6 +1866,44 @@ mod tests {
         assert_eq!(report.replayed_entries, 5);
         assert_eq!(report.orphaned_entries, 0);
         assert_meeting_prep_user_authored_fields(&db, "meeting-rebuilt-fixture-1", &fields);
+    }
+
+    #[test]
+    fn w4_replay_resolver_ignores_unrelated_legacy_csv_attendees() {
+        let db = test_db();
+        let attendees = r#"["person-a@example.com","person-b@example.com"]"#;
+        insert_manual_meeting_fixture(
+            &db,
+            "meeting-fixture-1",
+            "Planning session",
+            "2026-06-06T12:00:00Z",
+            attendees,
+        );
+        let ctx_fixture = UserCtxFixture::new();
+        let seed_ctx = ctx_fixture.ctx();
+        let fields = w4_user_authored_fixture();
+        record_user_authored(&seed_ctx, "meeting-fixture-1", &fields, &db)
+            .expect("record user-authored manual meeting prep");
+
+        insert_manual_meeting_fixture(
+            &db,
+            "unrelated-legacy-meeting",
+            "Legacy attendee fixture",
+            "2026-06-07T12:00:00Z",
+            "person-a@example.com, person-b@example.com",
+        );
+        delete_meeting_prep_row(&db, "meeting-fixture-1");
+
+        let clock = crate::services::context::SystemClock;
+        let rng = crate::services::context::SystemRng;
+        let external = crate::services::context::ExternalClients::default();
+        let ctx = ServiceContext::new_live(&clock, &rng, &external).with_actor("user:test");
+        let report = replay_active_prep_correction_journal(&ctx, &db, "legacy-csv-rebuild")
+            .expect("unrelated malformed attendees should not abort replay");
+
+        assert_eq!(report.replayed_entries, 5);
+        assert_eq!(report.orphaned_entries, 0);
+        assert_meeting_prep_user_authored_fields(&db, "meeting-fixture-1", &fields);
     }
 
     #[test]

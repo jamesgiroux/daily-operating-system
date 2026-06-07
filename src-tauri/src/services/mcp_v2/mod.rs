@@ -14,6 +14,7 @@ pub mod actor_policy;
 pub mod audit;
 pub mod auth;
 pub mod contracts;
+pub mod diagnostics;
 pub mod gateway;
 pub mod handler_context;
 pub mod handlers;

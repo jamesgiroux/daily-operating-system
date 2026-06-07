@@ -396,6 +396,7 @@ SAFE_STRING_FIELDS = {
         "id": "source identifier metadata",
         "label": "render-policy-safe provenance label",
         "source_type": "enum metadata",
+        "workspace_file_kind": "enum metadata",
     },
     "EnvelopeProvenance": {},
     "EnvelopeTrustSummary": {},

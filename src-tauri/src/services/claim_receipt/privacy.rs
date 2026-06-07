@@ -47,10 +47,16 @@ use abilities_runtime::sensitivity::{
     render_policy_for_surface, RenderActor, RenderDecision, RenderSurface,
 };
 use abilities_runtime::types::{ClaimSensitivity, IntelligenceClaim};
-use chrono::{DateTime, Duration, NaiveDateTime, Utc};
+use chrono::{DateTime, NaiveDateTime, Utc};
 use rusqlite::Connection;
 
 use crate::services::claim_receipt::contracts::*;
+use crate::services::claim_receipt::contradiction::{
+    contradiction_caveat, unresolved_contradiction_count,
+};
+use crate::services::claim_receipt::render_rules::{
+    freshness_for, generic_source_label, redaction_for, ReceiptRenderKind,
+};
 
 // ─── Audience ──────────────────────────────────────────────────────────────
 
@@ -204,15 +210,17 @@ pub fn build_receipt_for_audience(
                 Err(PrivacyError::SurfaceDrop)
             };
         }
-        RenderDecision::Render => RenderKind::Render,
-        RenderDecision::RenderRedacted { .. } => RenderKind::Redacted,
+        RenderDecision::Render => ReceiptRenderKind::Render,
+        RenderDecision::RenderRedacted { .. } => ReceiptRenderKind::Redacted,
     };
 
     let source_asof = claim.source_asof.as_deref().and_then(parse_claim_timestamp);
     let now = Utc::now();
     let freshness = freshness_for(source_asof, now);
+    let contradiction_caveat =
+        contradiction_caveat(unresolved_contradiction_count(conn, &claim.id)?);
 
-    let receipt = match audience {
+    let mut receipt = match audience {
         Audience::UserTauri => build_user_tauri(
             target,
             target_field_path,
@@ -243,6 +251,7 @@ pub fn build_receipt_for_audience(
         ),
         Audience::OperationalAuditStorage => unreachable!("rejected above"),
     };
+    receipt.trust.caveat = contradiction_caveat;
 
     Ok(receipt)
 }
@@ -255,7 +264,7 @@ fn build_user_tauri(
     target_field_path: Option<String>,
     claim: &IntelligenceClaim,
     chain_max: &ClaimSensitivity,
-    render_kind: RenderKind,
+    render_kind: ReceiptRenderKind,
     source_asof: Option<DateTime<Utc>>,
     freshness: Freshness,
 ) -> ClaimReceipt {
@@ -266,7 +275,7 @@ fn build_user_tauri(
         source_type: Some(claim.data_source.clone()),
         as_of: source_asof,
         href: None,
-        redacted: matches!(render_kind, RenderKind::Redacted),
+        redacted: matches!(render_kind, ReceiptRenderKind::Redacted),
     }];
 
     let evidence_summary = sanitized_evidence_summary(claim);
@@ -308,7 +317,7 @@ fn build_agent_mcp(
     target: &ReceiptTarget,
     claim: &IntelligenceClaim,
     chain_max: &ClaimSensitivity,
-    render_kind: RenderKind,
+    render_kind: ReceiptRenderKind,
     freshness: Freshness,
 ) -> ClaimReceipt {
     let scrubbed_target = scrub_target_for_agent_mcp(target);
@@ -349,7 +358,7 @@ fn build_activity_log(
     target_field_path: Option<String>,
     claim: &IntelligenceClaim,
     chain_max: &ClaimSensitivity,
-    render_kind: RenderKind,
+    render_kind: ReceiptRenderKind,
     source_asof: Option<DateTime<Utc>>,
     freshness: Freshness,
 ) -> ClaimReceipt {
@@ -377,7 +386,7 @@ fn build_activity_log(
                 source_type: Some(claim.data_source.clone()),
                 as_of: source_asof,
                 href: None,
-                redacted: matches!(render_kind, RenderKind::Redacted),
+                redacted: matches!(render_kind, ReceiptRenderKind::Redacted),
             }],
             field_path: target_field_path.or_else(|| claim.field_path.clone()),
             evidence_summary: None,
@@ -393,7 +402,7 @@ fn build_lint(
     target_field_path: Option<String>,
     claim: &IntelligenceClaim,
     chain_max: &ClaimSensitivity,
-    render_kind: RenderKind,
+    render_kind: ReceiptRenderKind,
     source_asof: Option<DateTime<Utc>>,
     freshness: Freshness,
 ) -> ClaimReceipt {
@@ -421,7 +430,7 @@ fn build_lint(
                 source_type: Some(claim.data_source.clone()),
                 as_of: source_asof,
                 href: None,
-                redacted: matches!(render_kind, RenderKind::Redacted),
+                redacted: matches!(render_kind, ReceiptRenderKind::Redacted),
             }],
             field_path: target_field_path.or_else(|| claim.field_path.clone()),
             evidence_summary: None,
@@ -432,39 +441,6 @@ fn build_lint(
 }
 
 // ─── Helpers ──────────────────────────────────────────────────────────────
-
-#[derive(Debug, Clone, Copy)]
-enum RenderKind {
-    Render,
-    Redacted,
-}
-
-fn redaction_for(kind: RenderKind, chain_max: &ClaimSensitivity) -> RedactionLevel {
-    match (kind, chain_max) {
-        (RenderKind::Render, _) => RedactionLevel::None,
-        (RenderKind::Redacted, ClaimSensitivity::Confidential | ClaimSensitivity::UserOnly) => {
-            RedactionLevel::Partial
-        }
-        (RenderKind::Redacted, _) => RedactionLevel::Full,
-    }
-}
-
-fn generic_source_label(data_source: &str) -> String {
-    let lowered = data_source.to_ascii_lowercase();
-    if lowered.contains("gmail") || lowered.contains("mail") {
-        "email source".to_string()
-    } else if lowered.contains("slack") || lowered.contains("chat") {
-        "chat source".to_string()
-    } else if lowered.contains("calendar") || lowered.contains("event") {
-        "calendar source".to_string()
-    } else if lowered.contains("doc") || lowered.contains("drive") {
-        "document source".to_string()
-    } else if lowered.contains("crm") {
-        "crm source".to_string()
-    } else {
-        "primary source".to_string()
-    }
-}
 
 fn sanitized_evidence_summary(claim: &IntelligenceClaim) -> Option<String> {
     if claim.text.trim().is_empty() {
@@ -613,22 +589,6 @@ fn synthetic_chain_max_claim(
     let mut synthetic = claim.clone();
     synthetic.sensitivity = chain_max;
     synthetic
-}
-
-// ─── Freshness ────────────────────────────────────────────────────────────
-
-fn freshness_for(source_asof: Option<DateTime<Utc>>, now: DateTime<Utc>) -> Freshness {
-    let Some(source_asof) = source_asof else {
-        return Freshness::Unknown;
-    };
-    let age = now.signed_duration_since(source_asof);
-    if age <= Duration::days(7) {
-        Freshness::Current
-    } else if age <= Duration::days(30) {
-        Freshness::Aging
-    } else {
-        Freshness::Stale
-    }
 }
 
 fn parse_claim_timestamp(value: &str) -> Option<DateTime<Utc>> {

@@ -75,14 +75,17 @@ pub async fn run_granola_poller(state: Arc<AppState>, app_handle: AppHandle) {
                         .await
                     {
                         log::warn!(
-                            "entity_linking after Granola ingest failed (non-fatal) for {}: {}",
-                            event.id,
-                            e
+                            "entity_linking after Granola ingest failed (non-fatal): meeting_ref={}, error_ref={}",
+                            crate::processor::transcript::transcript_audit_id(&event.id),
+                            crate::processor::transcript::digest_token(&e.to_string())
                         );
                     }
                 }
             }
-            Err(e) => log::warn!("Granola poller: {}", e),
+            Err(e) => log::warn!(
+                "Granola poller failed: error_ref={}",
+                crate::processor::transcript::digest_token(&e.to_string())
+            ),
         }
 
         tokio::select! {
@@ -104,8 +107,8 @@ fn poll_once_prefer_companion(
             Ok(events) => return Ok(events),
             Err(error) => {
                 log::warn!(
-                    "Granola poller: companion source failed, falling back to cache: {}",
-                    error
+                    "Granola poller: companion source failed, falling back to cache: error_ref={}",
+                    crate::processor::transcript::digest_token(&error)
                 );
             }
         }
@@ -156,9 +159,9 @@ fn poll_once_companion(
             Ok(doc) => doc,
             Err(error) => {
                 log::warn!(
-                    "Granola companion: failed to fetch note content for '{}': {}",
-                    note.title,
-                    error
+                    "Granola companion: failed to fetch note content: note_ref={}, error_ref={}",
+                    crate::processor::transcript::digest_token(&note.title),
+                    crate::processor::transcript::digest_token(&error.to_string())
                 );
                 continue;
             }
@@ -248,15 +251,19 @@ fn sync_matched_document(
     match &result {
         Ok((dest, _)) => {
             log::info!(
-                "Granola sync: processed '{}' → {} ({} chars, {:?})",
-                doc.title,
-                dest,
+                "Granola sync: processed meeting_ref={} to destination_ref={} (input_bytes={}, match_method={:?})",
+                crate::processor::transcript::transcript_audit_id(&matched.meeting_id),
+                crate::processor::transcript::redacted_path_ref(dest),
                 doc.content.len(),
                 matched.method,
             );
         }
         Err(e) => {
-            log::warn!("Granola sync: processing failed for '{}': {}", doc.title, e);
+            log::warn!(
+                "Granola sync: processing failed: meeting_ref={}, error_ref={}",
+                crate::processor::transcript::transcript_audit_id(&matched.meeting_id),
+                crate::processor::transcript::digest_token(&e.to_string())
+            );
         }
     }
 
@@ -429,6 +436,38 @@ fn process_granola_document(
                     tr.summary.as_deref(),
                 );
 
+                let clock = crate::services::context::SystemClock;
+                let rng = crate::services::context::SystemRng;
+                let ext = crate::services::context::ExternalClients::default();
+                let ctx = crate::services::context::ServiceContext::new_live(&clock, &rng, &ext);
+                match crate::processor::transcript::commit_provider_transcript_claims_from_result(
+                    &ctx,
+                    db,
+                    &workspace,
+                    &calendar_event,
+                    content,
+                    &tr,
+                    abilities_runtime::abilities::provenance::source::WorkspaceFileKind::GranolaTranscript,
+                ) {
+                    Ok(report) => {
+                        log::info!(
+                            "Granola transcript claim production: meeting_ref={}, attempted={}, inserted={}, skipped_duplicates={}, warnings={}",
+                            crate::processor::transcript::transcript_audit_id(&calendar_event.id),
+                            report.attempted,
+                            report.inserted,
+                            report.skipped_duplicates,
+                            report.warnings.len()
+                        );
+                    }
+                    Err(error) => {
+                        log::warn!(
+                            "Granola transcript claim production failed: meeting_ref={}, error_ref={}",
+                            crate::processor::transcript::transcript_audit_id(&calendar_event.id),
+                            crate::processor::transcript::digest_token(&error.to_string())
+                        );
+                    }
+                }
+
                 // Write captures (wins, risks, decisions) extracted by AI
                 let meeting_account_id = resolve_meeting_account_id(db, &calendar_event.id);
                 let account = calendar_event.account.as_deref();
@@ -546,19 +585,20 @@ fn process_granola_document(
                     Ok(()) => written += 1,
                     Err(e) => {
                         log::warn!(
-                            "Granola: failed to write action '{}': {}",
-                            db_action.title,
-                            e
+                            "Granola: failed to write action: meeting_ref={}, action_ref={}, error_ref={}",
+                            crate::processor::transcript::transcript_audit_id(&calendar_event.id),
+                            crate::processor::transcript::digest_token(&db_action.title),
+                            crate::processor::transcript::digest_token(&e.to_string())
                         );
                     }
                 }
             }
             if !tr.actions.is_empty() {
                 log::info!(
-                    "Granola: wrote {}/{} suggested actions for '{}'",
+                    "Granola: wrote {}/{} suggested actions for meeting_ref={}",
                     written,
                     tr.actions.len(),
-                    calendar_event.title
+                    crate::processor::transcript::transcript_audit_id(&calendar_event.id)
                 );
             }
 
@@ -601,7 +641,7 @@ fn process_granola_document(
                     None,
                     None,
                     None,
-                    Some(&error),
+                    Some("Transcript processing failed"),
                 );
                 #[allow(
                     clippy::let_underscore_must_use,
@@ -673,38 +713,15 @@ fn get_recent_meetings_for_matching(
         .map_err(|e| e.to_string())
 }
 
-/// Emit transcript-processed event with full MeetingOutcomeData payload when available.
-fn emit_transcript_processed(state: &AppState, app_handle: &AppHandle, meeting_id: &str) {
+/// Emit transcript-processed as a refresh signal. Granola sync deliberately
+/// avoids pushing transcript-derived snippets over the event channel.
+fn emit_transcript_processed(_state: &AppState, app_handle: &AppHandle, meeting_id: &str) {
     let meeting_id = meeting_id.to_string();
-    let payload = state
-        .with_db(|db| {
-            Ok(db
-                .get_meeting_by_id(&meeting_id)
-                .ok()
-                .flatten()
-                .and_then(|meeting| {
-                    crate::services::meetings::collect_meeting_outcomes_from_db(db, &meeting)
-                }))
-        })
-        .ok()
-        .flatten();
-
-    match payload {
-        Some(outcome) => {
-            #[allow(
-                clippy::let_underscore_must_use,
-                reason = "intentional best-effort discard; preserves existing non-blocking behavior"
-            )]
-            let _ = app_handle.emit("transcript-processed", &outcome);
-        }
-        None => {
-            #[allow(
-                clippy::let_underscore_must_use,
-                reason = "intentional best-effort discard; preserves existing non-blocking behavior"
-            )]
-            let _ = app_handle.emit("transcript-processed", &meeting_id);
-        }
-    }
+    #[allow(
+        clippy::let_underscore_must_use,
+        reason = "intentional best-effort discard; preserves existing non-blocking behavior"
+    )]
+    let _ = app_handle.emit("transcript-processed", &meeting_id);
 }
 
 /// Run a one-time backfill: match all Granola cache documents to meetings.
@@ -721,8 +738,8 @@ pub fn run_granola_backfill(state: &AppState, days_back: i32) -> Result<(usize, 
             Ok(result) => return Ok(result),
             Err(error) => {
                 log::warn!(
-                    "Granola backfill: companion source failed, falling back to cache: {}",
-                    error
+                    "Granola backfill: companion source failed, falling back to cache: error_ref={}",
+                    crate::processor::transcript::digest_token(&error)
                 );
             }
         }
@@ -904,8 +921,9 @@ pub fn trigger_granola_sync_for_meeting(
         Ok(None) => {}
         Err(error) => {
             log::warn!(
-                "Granola manual sync: companion source failed, falling back to cache: {}",
-                error
+                "Granola manual sync: companion source failed, falling back to cache: meeting_ref={}, error_ref={}",
+                crate::processor::transcript::transcript_audit_id(meeting_id),
+                crate::processor::transcript::digest_token(&error)
             );
         }
     }
@@ -943,14 +961,19 @@ pub fn trigger_granola_sync_for_meeting(
                         ManualGranolaSyncResult {
                             status: ManualGranolaSyncStatus::Attached,
                             message: "Transcript synced successfully".to_string(),
-                            document_title: Some(doc.title.clone()),
+                            document_title: None,
                             content_type: Some(doc.content_type),
                         },
                         Some(calendar_event),
                     ));
                 }
                 Err(e) => {
-                    return Err(format!("Granola sync failed: {}", e));
+                    log::warn!(
+                        "Granola manual sync failed: meeting_ref={}, error_ref={}",
+                        crate::processor::transcript::transcript_audit_id(meeting_id),
+                        crate::processor::transcript::digest_token(&e)
+                    );
+                    return Err("Granola sync failed".to_string());
                 }
             }
         }
@@ -1015,13 +1038,20 @@ fn trigger_companion_sync_for_meeting(
                     ManualGranolaSyncResult {
                         status: ManualGranolaSyncStatus::Attached,
                         message: "Transcript synced successfully".to_string(),
-                        document_title: Some(doc.title),
+                        document_title: None,
                         content_type: Some(doc.content_type),
                     },
                     Some(calendar_event),
                 )))
             }
-            Err(e) => Err(format!("Granola sync failed: {}", e)),
+            Err(e) => {
+                log::warn!(
+                    "Granola companion sync failed: meeting_ref={}, error_ref={}",
+                    crate::processor::transcript::transcript_audit_id(meeting_id),
+                    crate::processor::transcript::digest_token(&e)
+                );
+                Err("Granola sync failed".to_string())
+            }
         };
     }
 

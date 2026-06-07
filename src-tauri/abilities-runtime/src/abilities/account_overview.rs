@@ -16,10 +16,10 @@ use crate::abilities::composition::{
 use crate::abilities::provenance::source_time::{parse_source_timestamp, SourceTimestampStatus};
 use crate::abilities::provenance::trust::{claim_trust_band_from_score, most_cautious_trust_band};
 use crate::abilities::provenance::{
-    AbilityExecutionMode, AbilityVersion, Confidence, DataSource, EntityId, FieldAttribution,
-    FieldPath, GleanDownstream, InputsSnapshot, InvocationId, ProvenanceBuilder,
-    ProvenanceBuilderConfig, SchemaVersion, SourceAttribution, SourceIdentifier, SourceName,
-    SourceRef, SubjectAttribution, SubjectRef,
+    data_source_from_key, workspace_file_id_from_source_ref, AbilityExecutionMode, AbilityVersion,
+    Confidence, DataSource, DocumentId, EntityId, FieldAttribution, FieldPath, GleanDownstream,
+    InputsSnapshot, InvocationId, ProvenanceBuilder, ProvenanceBuilderConfig, SchemaVersion,
+    SourceAttribution, SourceIdentifier, SourceName, SourceRef, SubjectAttribution, SubjectRef,
 };
 use crate::abilities::trust::TrustBand;
 use crate::abilities::{
@@ -31,12 +31,14 @@ use crate::services::context::{
 };
 use crate::types::{
     prompt_input_sensitivity_allowed, subject_ref_from_json, ClaimState, ClaimSubjectRef,
-    IntelligenceClaim, SurfacingState,
+    ClaimSensitivity, IntelligenceClaim, SurfacingState,
 };
 
 const ABILITY_NAME: &str = "dailyos/account-overview";
 const ABILITY_SCHEMA_VERSION: u32 = 1;
 const ACCOUNT_CLAIM_DEPTH: usize = 3;
+const MAX_TRANSCRIPT_QUOTE_ITEMS: usize = 5;
+const TRANSCRIPT_QUOTE_REDACTION_POLICY: &str = "sensitivity_ceiling";
 
 const VARIANT_D_SECTIONS: [(&str, &str); 11] = [
     ("headline", "Headline"),
@@ -93,6 +95,17 @@ struct ClaimProjection {
 struct SnapshotReadOutcome {
     snapshot: Option<AccountCompositionSnapshot>,
     degraded_reason: Option<String>,
+}
+
+struct TranscriptQuoteEvidence<'a> {
+    projection: &'a ClaimProjection,
+    quote: TranscriptVerifiedQuote,
+}
+
+struct TranscriptVerifiedQuote {
+    text: String,
+    start_char: u64,
+    end_char: u64,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -885,6 +898,21 @@ fn build_record_section_blocks(
         )?]);
     }
 
+    let mut blocks = Vec::new();
+    let quote_items = transcript_quote_evidence_items(projections);
+    if !quote_items.is_empty() {
+        let block_index = blocks.len();
+        blocks.push(build_transcript_quote_wall_block(
+            input,
+            quote_items,
+            section_index,
+            block_index,
+            subject,
+            invocation_id,
+            provenance_builder,
+        )?);
+    }
+
     let mut claim_refs = Vec::new();
     let mut source_indexes = Vec::new();
     let mut items = Vec::new();
@@ -893,7 +921,7 @@ fn build_record_section_blocks(
         source_indexes.push(projection.source_index);
         items.push(json!({
             "label": projection.rendered_text,
-            "source_label": projection.claim.data_source,
+            "source_label": source_label_for_claim(&projection.claim),
             "source_asof": projection.claim.source_asof,
         }));
     }
@@ -907,7 +935,8 @@ fn build_record_section_blocks(
         items.push(snapshot_field_evidence_item(field));
     }
 
-    let composition_block_path = format!("/sections/{section_index}/blocks/0");
+    let block_index = blocks.len();
+    let composition_block_path = format!("/sections/{section_index}/blocks/{block_index}");
     let mut block = Block::new(
         BlockId::new(block_id(input, "the-record", "evidence_list", "sources")),
         BlockType::EvidenceList,
@@ -928,7 +957,135 @@ fn build_record_section_blocks(
         subject,
         source_indexes,
     )?;
-    Ok(vec![block])
+    blocks.push(block);
+    Ok(blocks)
+}
+
+#[allow(clippy::too_many_arguments)]
+fn build_transcript_quote_wall_block(
+    input: &NormalizedInput,
+    quote_items: Vec<TranscriptQuoteEvidence<'_>>,
+    section_index: usize,
+    block_index: usize,
+    subject: &SubjectAttribution,
+    invocation_id: InvocationId,
+    provenance_builder: &mut ProvenanceBuilder,
+) -> Result<Block, AbilityError> {
+    let claim_refs = quote_items
+        .iter()
+        .map(|item| claim_ref_for_projection(item.projection))
+        .collect::<Result<Vec<_>, _>>()?;
+    let source_indexes = quote_items
+        .iter()
+        .map(|item| item.projection.source_index)
+        .collect::<Vec<_>>();
+    let items = quote_items
+        .iter()
+        .map(|item| {
+            let workspace_file_kind = match data_source_for_claim(&item.projection.claim.data_source)
+            {
+                DataSource::WorkspaceFile { kind } => Some(kind.slug()),
+                _ => None,
+            };
+            json!({
+                "label": item.quote.text.as_str(),
+                "claim_id": item.projection.claim.id.as_str(),
+                "claim_type": item.projection.claim.claim_type.as_str(),
+                "assertion_text": item.projection.rendered_text.as_str(),
+                "evidence_quote": item.quote.text.as_str(),
+                "quote_exactness": "exact_match",
+                "quote_redaction_policy": TRANSCRIPT_QUOTE_REDACTION_POLICY,
+                "source_label": source_label_for_claim(&item.projection.claim),
+                "source_asof": item.projection.claim.source_asof,
+                "workspace_file_kind": workspace_file_kind,
+                "trust_band": trust_band_label(item.projection.trust_band),
+                "sensitivity": claim_sensitivity_label(&item.projection.claim.sensitivity),
+                "redaction_state": "policy_allowed",
+                "source_locator": {
+                    "type": "char_range",
+                    "start_char": item.quote.start_char,
+                    "end_char": item.quote.end_char,
+                },
+                "feedback_allowed": true,
+                "feedback_claim_id": item.projection.claim.id.as_str(),
+                "feedback_route": "claim_feedback",
+            })
+        })
+        .collect::<Vec<_>>();
+    let composition_block_path = format!("/sections/{section_index}/blocks/{block_index}");
+    let mut block = Block::new(
+        BlockId::new(block_id(input, "the-record", "evidence_list", "their-voice")),
+        BlockType::EvidenceList,
+        json!({
+            "title": "Their voice",
+            "items": items
+        }),
+        claim_refs,
+        ProvenanceRef::new(
+            invocation_id,
+            FieldPath::new(&composition_block_path).map_err(field_error)?,
+        ),
+        None,
+    )
+    .map_err(block_error)?;
+    block.field_bindings = transcript_quote_display_bindings(items.len())?;
+    block.salience = salience(0.66, SalienceBand::Contextual, "transcript quotes");
+    attribute_block(
+        provenance_builder,
+        &composition_block_path,
+        subject,
+        source_indexes,
+    )?;
+    Ok(block)
+}
+
+fn transcript_quote_evidence_items(
+    projections: &[ClaimProjection],
+) -> Vec<TranscriptQuoteEvidence<'_>> {
+    projections
+        .iter()
+        .filter_map(|projection| {
+            transcript_verified_quote_text(projection).map(|quote| TranscriptQuoteEvidence {
+                projection,
+                quote,
+            })
+        })
+        .take(MAX_TRANSCRIPT_QUOTE_ITEMS)
+        .collect()
+}
+
+fn transcript_verified_quote_text(projection: &ClaimProjection) -> Option<TranscriptVerifiedQuote> {
+    match data_source_for_claim(&projection.claim.data_source) {
+        DataSource::WorkspaceFile { .. } => {}
+        _ => return None,
+    }
+    let metadata: Value = serde_json::from_str(projection.claim.metadata_json.as_deref()?).ok()?;
+    if metadata.get("producer").and_then(Value::as_str) != Some("transcript_claims") {
+        return None;
+    }
+    if metadata.get("quote_verified").and_then(Value::as_bool) != Some(true) {
+        return None;
+    }
+    let quote = metadata.get("quote")?;
+    if quote.get("verification").and_then(Value::as_str) != Some("exact_match") {
+        return None;
+    }
+    if quote.get("redaction_policy").and_then(Value::as_str)
+        != Some(TRANSCRIPT_QUOTE_REDACTION_POLICY)
+    {
+        return None;
+    }
+    let start = quote.get("start_char").and_then(Value::as_u64)?;
+    let end = quote.get("end_char").and_then(Value::as_u64)?;
+    if start >= end {
+        return None;
+    }
+    let text = quote.get("text").and_then(Value::as_str)?.trim();
+    (!text.is_empty()).then(|| TranscriptVerifiedQuote {
+        text: text.to_string(),
+        start_char: start,
+        end_char: end,
+    })
 }
 
 #[allow(clippy::too_many_arguments)]
@@ -1677,6 +1834,49 @@ fn evidence_list_display_bindings(item_count: usize) -> Result<Vec<FieldBinding>
     Ok(bindings)
 }
 
+fn transcript_quote_display_bindings(item_count: usize) -> Result<Vec<FieldBinding>, AbilityError> {
+    let mut bindings = Vec::with_capacity(item_count * 19);
+    for index in 0..item_count {
+        for field in [
+            "label",
+            "claim_id",
+            "claim_type",
+            "assertion_text",
+            "evidence_quote",
+            "quote_exactness",
+            "quote_redaction_policy",
+            "source_label",
+            "source_asof",
+            "workspace_file_kind",
+            "trust_band",
+            "sensitivity",
+            "redaction_state",
+            "feedback_claim_id",
+            "feedback_route",
+        ] {
+            bindings.push(display_only_binding(&format!("/items/{index}/{field}"))?);
+        }
+        bindings.push(binding(
+            &format!("/items/{index}/evidence_quote"),
+            BindingRole::FeedbackTarget,
+            vec![index],
+        )?);
+        bindings.push(display_only_binding(&format!(
+            "/items/{index}/feedback_allowed"
+        ))?);
+        bindings.push(display_only_binding(&format!(
+            "/items/{index}/source_locator/type"
+        ))?);
+        bindings.push(display_only_binding(&format!(
+            "/items/{index}/source_locator/start_char"
+        ))?);
+        bindings.push(display_only_binding(&format!(
+            "/items/{index}/source_locator/end_char"
+        ))?);
+    }
+    Ok(bindings)
+}
+
 fn action_list_display_bindings(item_count: usize) -> Result<Vec<FieldBinding>, AbilityError> {
     let mut bindings = Vec::with_capacity(item_count * 3);
     for index in 0..item_count {
@@ -1845,17 +2045,28 @@ fn source_for_claim(
     let now = ctx.services().clock.now();
     let observed_at = parse_observed_at(claim, now);
     let source_asof = parse_claim_source_asof(claim, now);
+    let mut identifiers = vec![SourceIdentifier::Entity {
+        entity_id: EntityId::new(account_id.to_string()),
+        field: Some(
+            claim
+                .field_path
+                .clone()
+                .unwrap_or_else(|| claim.claim_type.clone()),
+        ),
+    }];
+    if let Some(file_id) = claim
+        .source_ref
+        .as_deref()
+        .and_then(workspace_file_id_from_source_ref)
+    {
+        identifiers.push(SourceIdentifier::Document {
+            document_id: DocumentId::new(file_id.to_string()),
+            chunk_id: None,
+        });
+    }
     SourceAttribution::new(
         data_source_for_claim(&claim.data_source),
-        vec![SourceIdentifier::Entity {
-            entity_id: EntityId::new(account_id.to_string()),
-            field: Some(
-                claim
-                    .field_path
-                    .clone()
-                    .unwrap_or_else(|| claim.claim_type.clone()),
-            ),
-        }],
+        identifiers,
         observed_at,
         source_asof,
         1.0,
@@ -1885,15 +2096,23 @@ fn parse_claim_source_asof(claim: &IntelligenceClaim, now: DateTime<Utc>) -> Opt
 
 fn data_source_for_claim(value: &str) -> DataSource {
     match value.trim().to_ascii_lowercase().as_str() {
-        "user" | "human" | "manual" => DataSource::User,
-        "google" => DataSource::Google,
         "glean" => DataSource::Glean {
             downstream: GleanDownstream::Documents,
         },
-        "ai" | "agent" => DataSource::Ai,
-        "local_enrichment" => DataSource::LocalEnrichment,
-        "legacy_unattributed" => DataSource::LegacyUnattributed,
-        other => DataSource::Other(SourceName::new(other)),
+        _ => data_source_from_key(value),
+    }
+}
+
+fn source_label_for_claim(claim: &IntelligenceClaim) -> String {
+    data_source_for_claim(&claim.data_source).display_name()
+}
+
+fn claim_sensitivity_label(sensitivity: &ClaimSensitivity) -> &'static str {
+    match sensitivity {
+        ClaimSensitivity::Public => "public",
+        ClaimSensitivity::Internal => "internal",
+        ClaimSensitivity::Confidential => "confidential",
+        ClaimSensitivity::UserOnly => "user_only",
     }
 }
 
@@ -2834,6 +3053,354 @@ mod tests {
                     && block.attributes.to_string().contains("Growth potential")),
             "snapshot evidence remains renderable beside claims"
         );
+    }
+
+    #[tokio::test]
+    async fn transcript_claim_quotes_render_their_voice_evidence() {
+        let mut verified = claim(
+            "claim-transcript-quote",
+            "entity_win",
+            "/transcript/wins",
+            "Expansion interest surfaced in the transcript",
+            Some(0.91),
+            Some("2026-05-14T09:00:00Z"),
+            ClaimSensitivity::Internal,
+        );
+        verified.data_source = "workspace_file:quill_transcript".to_string();
+        verified.source_ref = Some("workspace_file:file-quill-1".to_string());
+        verified.temporal_scope = TemporalScope::PointInTime;
+        verified.metadata_json = Some(
+            json!({
+                "producer": "transcript_claims",
+                "quote_verified": true,
+                "quote": {
+                    "text": "We would expand if onboarding gets easier.",
+                    "start_char": 12,
+                    "end_char": 55,
+                    "verification": "exact_match",
+                    "redaction_policy": "sensitivity_ceiling"
+                }
+            })
+            .to_string(),
+        );
+
+        let mut unverified = claim(
+            "claim-transcript-unverified",
+            "entity_risk",
+            "/transcript/risks",
+            "Unverified paraphrase should not enter the quote wall",
+            Some(0.84),
+            Some("2026-05-14T09:00:00Z"),
+            ClaimSensitivity::Internal,
+        );
+        unverified.data_source = "workspace_file:quill_transcript".to_string();
+        unverified.source_ref = Some("workspace_file:file-quill-2".to_string());
+        unverified.temporal_scope = TemporalScope::PointInTime;
+        unverified.metadata_json = Some(
+            json!({
+                "producer": "transcript_claims",
+                "quote_verified": false,
+                "quote": {
+                    "text": "This is not exact.",
+                    "start_char": 4,
+                    "end_char": 22,
+                    "verification": "paraphrase",
+                    "redaction_policy": "sensitivity_ceiling"
+                }
+            })
+            .to_string(),
+        );
+
+        let mut missing_policy = claim(
+            "claim-transcript-no-policy",
+            "entity_win",
+            "/transcript/wins",
+            "Policyless quote should not enter the quote wall",
+            Some(0.82),
+            Some("2026-05-14T09:00:00Z"),
+            ClaimSensitivity::Internal,
+        );
+        missing_policy.data_source = "workspace_file:quill_transcript".to_string();
+        missing_policy.source_ref = Some("workspace_file:file-quill-3".to_string());
+        missing_policy.temporal_scope = TemporalScope::PointInTime;
+        missing_policy.metadata_json = Some(
+            json!({
+                "producer": "transcript_claims",
+                "quote_verified": true,
+                "quote": {
+                    "text": "This lacks a quote redaction policy.",
+                    "start_char": 6,
+                    "end_char": 43,
+                    "verification": "exact_match"
+                }
+            })
+            .to_string(),
+        );
+
+        let mut confidential = claim(
+            "claim-transcript-confidential",
+            "entity_win",
+            "/transcript/wins",
+            "Confidential transcript claim should not render",
+            Some(0.8),
+            Some("2026-05-14T09:00:00Z"),
+            ClaimSensitivity::Confidential,
+        );
+        confidential.data_source = "workspace_file:quill_transcript".to_string();
+        confidential.source_ref = Some("workspace_file:file-quill-4".to_string());
+        confidential.temporal_scope = TemporalScope::PointInTime;
+        confidential.metadata_json = Some(
+            json!({
+                "producer": "transcript_claims",
+                "quote_verified": true,
+                "quote": {
+                    "text": "This confidential quote should not render.",
+                    "start_char": 1,
+                    "end_char": 44,
+                    "verification": "exact_match",
+                    "redaction_policy": "sensitivity_ceiling"
+                }
+            })
+            .to_string(),
+        );
+
+        let (clock, rng, external, reader, committer, provider) =
+            fixture_parts(vec![verified, unverified, missing_policy, confidential]);
+        let services = services(&clock, &rng, &external, reader, committer);
+        let ctx = ability_ctx(&services, &provider);
+
+        let output = account_overview(&ctx, input())
+            .await
+            .expect("transcript-backed account overview succeeds");
+        let composition = output.data();
+        let record_section = composition
+            .sections
+            .iter()
+            .find(|section| section.id.as_str() == "the-record")
+            .expect("record section exists");
+        let quote_block = record_section
+            .blocks
+            .iter()
+            .find(|block| {
+                block.block_type == BlockType::EvidenceList
+                    && block.attributes.pointer("/title").and_then(Value::as_str)
+                        == Some("Their voice")
+            })
+            .expect("verified transcript quote block exists");
+
+        assert_eq!(
+            quote_block
+                .attributes
+                .pointer("/items/0/label")
+                .and_then(Value::as_str),
+            Some("We would expand if onboarding gets easier.")
+        );
+        assert_eq!(
+            quote_block
+                .attributes
+                .pointer("/items/0/claim_id")
+                .and_then(Value::as_str),
+            Some("claim-transcript-quote")
+        );
+        assert_eq!(
+            quote_block
+                .attributes
+                .pointer("/items/0/claim_type")
+                .and_then(Value::as_str),
+            Some("entity_win")
+        );
+        assert_eq!(
+            quote_block
+                .attributes
+                .pointer("/items/0/assertion_text")
+                .and_then(Value::as_str),
+            Some("Expansion interest surfaced in the transcript")
+        );
+        assert_eq!(
+            quote_block
+                .attributes
+                .pointer("/items/0/evidence_quote")
+                .and_then(Value::as_str),
+            Some("We would expand if onboarding gets easier.")
+        );
+        assert_eq!(
+            quote_block
+                .attributes
+                .pointer("/items/0/quote_exactness")
+                .and_then(Value::as_str),
+            Some("exact_match")
+        );
+        assert_eq!(
+            quote_block
+                .attributes
+                .pointer("/items/0/quote_redaction_policy")
+                .and_then(Value::as_str),
+            Some(TRANSCRIPT_QUOTE_REDACTION_POLICY)
+        );
+        assert_eq!(
+            quote_block
+                .attributes
+                .pointer("/items/0/source_label")
+                .and_then(Value::as_str),
+            Some("Workspace file (Quill transcript)")
+        );
+        assert_eq!(
+            quote_block
+                .attributes
+                .pointer("/items/0/workspace_file_kind")
+                .and_then(Value::as_str),
+            Some("quill_transcript")
+        );
+        assert_eq!(
+            quote_block
+                .attributes
+                .pointer("/items/0/trust_band")
+                .and_then(Value::as_str),
+            Some("likely_current")
+        );
+        assert_eq!(
+            quote_block
+                .attributes
+                .pointer("/items/0/sensitivity")
+                .and_then(Value::as_str),
+            Some("internal")
+        );
+        assert_eq!(
+            quote_block
+                .attributes
+                .pointer("/items/0/redaction_state")
+                .and_then(Value::as_str),
+            Some("policy_allowed")
+        );
+        assert_eq!(
+            quote_block
+                .attributes
+                .pointer("/items/0/source_locator/type")
+                .and_then(Value::as_str),
+            Some("char_range")
+        );
+        assert_eq!(
+            quote_block
+                .attributes
+                .pointer("/items/0/source_locator/start_char")
+                .and_then(Value::as_u64),
+            Some(12)
+        );
+        assert_eq!(
+            quote_block
+                .attributes
+                .pointer("/items/0/source_locator/end_char")
+                .and_then(Value::as_u64),
+            Some(55)
+        );
+        assert_eq!(
+            quote_block
+                .attributes
+                .pointer("/items/0/feedback_allowed")
+                .and_then(Value::as_bool),
+            Some(true)
+        );
+        assert_eq!(
+            quote_block
+                .attributes
+                .pointer("/items/0/feedback_claim_id")
+                .and_then(Value::as_str),
+            Some("claim-transcript-quote")
+        );
+        assert!(quote_block.field_bindings.iter().any(|binding| {
+            binding.role == BindingRole::FeedbackTarget
+                && binding.field_path.as_str() == "/items/0/evidence_quote"
+                && !binding.claim_refs.is_empty()
+        }));
+        assert_eq!(
+            quote_block
+                .attributes
+                .pointer("/items/0/source_asof")
+                .and_then(Value::as_str),
+            Some("2026-05-14T09:00:00Z")
+        );
+        assert!(!quote_block.attributes.to_string().contains("This is not exact"));
+        assert!(!quote_block
+            .attributes
+            .to_string()
+            .contains("This lacks a quote redaction policy."));
+        assert!(!quote_block
+            .attributes
+            .to_string()
+            .contains("This confidential quote should not render."));
+        assert!(quote_block
+            .claim_refs
+            .iter()
+            .any(|claim_ref| claim_ref.claim_id == "claim-transcript-quote"));
+        assert!(output.provenance().sources.iter().any(|source| {
+            matches!(&source.data_source, DataSource::WorkspaceFile { .. })
+                && source.identifiers.iter().any(|identifier| {
+                    matches!(
+                        identifier,
+                        SourceIdentifier::Document { document_id, .. }
+                            if document_id.0.as_str() == "file-quill-1"
+                    )
+                })
+        }));
+
+        let proj_ctx = FallbackProjectionContext::new(
+            Actor::SurfaceClient {
+                instance: crate::abilities::registry::SurfaceClientId::new("sc_fixture"),
+                scopes: ScopeSet::new([
+                    crate::abilities::registry::SurfaceScope::new("read.account_overview"),
+                    crate::abilities::registry::SurfaceScope::new("submit.feedback"),
+                ])
+                .expect("scope set"),
+            },
+            SurfaceKind::SurfaceClient,
+            3,
+        );
+        let (projected, _audits) = project_composition_for_surface(composition, &proj_ctx)
+            .expect("projected transcript quote preserves contract fields");
+        let projected_record = projected
+            .sections
+            .iter()
+            .find(|section| section.section_id.as_str() == "the-record")
+            .expect("projected record section");
+        let projected_quote = projected_record
+            .block_indexes
+            .iter()
+            .filter_map(|index| projected.blocks.get(*index as usize))
+            .find(|block| block.payload.pointer("/title").and_then(Value::as_str) == Some("Their voice"))
+            .expect("projected quote wall block");
+        assert_eq!(
+            projected_quote
+                .payload
+                .pointer("/items/0/evidence_quote")
+                .and_then(Value::as_str),
+            Some("We would expand if onboarding gets easier.")
+        );
+        assert_eq!(
+            projected_quote
+                .payload
+                .pointer("/items/0/workspace_file_kind")
+                .and_then(Value::as_str),
+            Some("quill_transcript")
+        );
+        assert_eq!(
+            projected_quote
+                .payload
+                .pointer("/items/0/trust_band")
+                .and_then(Value::as_str),
+            Some("likely_current")
+        );
+        assert_eq!(
+            projected_quote
+                .payload
+                .pointer("/items/0/feedback_allowed")
+                .and_then(Value::as_bool),
+            Some(true)
+        );
+        assert!(projected_quote.edit_routes.iter().any(|route| {
+            route.feedback_allowed
+                && route.field_path.as_str() == "/items/0/evidence_quote"
+                && !route.claim_refs.is_empty()
+        }));
     }
 
     #[tokio::test]

@@ -1169,6 +1169,19 @@ const MIGRATIONS: &[Migration] = &[
         version: 290,
         sql: include_str!("migrations/290_mcp_target_handles.sql"),
     },
+    // v1.4.9 L3 performance repair — support active replay scans without
+    // walking the whole correction journal.
+    Migration::Sql {
+        version: 291,
+        sql: include_str!("migrations/291_meeting_prep_replay_active_index.sql"),
+    },
+    // v1.4.9 L3 stickiness repair — W5 landed, so MCP observations can now
+    // pass/fail under the same DOS-338 criteria instead of being constrained
+    // to the W4-era blocked_by_w5 result.
+    Migration::Fn {
+        version: 292,
+        apply: migrate_v292_dos338_mcp_stickiness_result_repair,
+    },
 ];
 
 const V155_SHADOW_TRUST_VERSION: i64 = 1_401_003;
@@ -3105,6 +3118,177 @@ fn migrate_v286_meeting_prep_correction_replay(conn: &Connection) -> Result<(), 
     )
 }
 
+fn migrate_v292_dos338_mcp_stickiness_result_repair(
+    conn: &Connection,
+) -> Result<(), MigrationError> {
+    run_immediate_migration_transaction(
+        conn,
+        "v1.4.9 L3 DOS-338 MCP stickiness result repair",
+        |conn| {
+            conn.execute_batch(
+                r#"
+                -- Some legacy migration-runner fixtures start at v143 with
+                -- older migrations marked applied but without the v110
+                -- linked-entity substrate. Heal the substrate shape inside
+                -- the same transaction as the table rebuild so a failed
+                -- re-parse cannot leave observations dropped.
+                CREATE TABLE IF NOT EXISTS linked_entities_raw (
+                    owner_type    TEXT NOT NULL CHECK (owner_type IN ('meeting', 'email', 'email_thread')),
+                    owner_id      TEXT NOT NULL,
+                    entity_id     TEXT NOT NULL,
+                    entity_type   TEXT NOT NULL,
+                    role          TEXT NOT NULL CHECK (role IN ('primary', 'related', 'auto_suggested')),
+                    source        TEXT NOT NULL,
+                    rule_id       TEXT,
+                    confidence    REAL,
+                    evidence_json TEXT,
+                    graph_version INTEGER NOT NULL,
+                    created_at    TEXT NOT NULL,
+                    PRIMARY KEY (owner_type, owner_id, entity_id, entity_type)
+                );
+
+                CREATE UNIQUE INDEX IF NOT EXISTS idx_one_primary
+                    ON linked_entities_raw (owner_type, owner_id)
+                    WHERE role = 'primary';
+
+                CREATE INDEX IF NOT EXISTS idx_linked_entities_raw_owner
+                    ON linked_entities_raw (owner_type, owner_id);
+
+                CREATE VIEW IF NOT EXISTS linked_entities AS
+                    SELECT * FROM linked_entities_raw
+                    WHERE source != 'user_dismissed';
+
+                DROP TABLE IF EXISTS temp.dos338_stickiness_observations_v292;
+
+                CREATE TEMP TABLE dos338_stickiness_observations_v292 AS
+                SELECT
+                    id,
+                    run_id,
+                    feedback_id,
+                    entry_point,
+                    action,
+                    subject_kind,
+                    subject_ref_hash,
+                    direct_surface,
+                    indirect_surface,
+                    direct_surface_before_hash,
+                    direct_surface_after_hash,
+                    indirect_surface_before_hash,
+                    indirect_surface_after_hash,
+                    pre_reenrichment_state_hash,
+                    post_reenrichment_state_hash,
+                    post_rebuild_state_hash,
+                    trust_band_before,
+                    trust_band_after,
+                    recompute_job_id,
+                    repair_job_id,
+                    dead_letter_reason,
+                    sensitivity_gate_result,
+                    result,
+                    reason_code,
+                    observed_at
+                FROM dos338_stickiness_observations;
+
+                DROP TABLE dos338_stickiness_observations;
+
+                CREATE TABLE dos338_stickiness_observations (
+                    id TEXT PRIMARY KEY,
+                    run_id TEXT NOT NULL REFERENCES dos338_stickiness_runs(id),
+                    feedback_id TEXT REFERENCES claim_feedback(id) ON DELETE SET NULL,
+                    entry_point TEXT NOT NULL CHECK (entry_point IN ('app', 'file_projection', 'mcp')),
+                    action TEXT NOT NULL,
+                    subject_kind TEXT NOT NULL,
+                    subject_ref_hash TEXT NOT NULL,
+                    direct_surface TEXT NOT NULL,
+                    indirect_surface TEXT NOT NULL,
+                    direct_surface_before_hash TEXT,
+                    direct_surface_after_hash TEXT,
+                    indirect_surface_before_hash TEXT,
+                    indirect_surface_after_hash TEXT,
+                    pre_reenrichment_state_hash TEXT,
+                    post_reenrichment_state_hash TEXT,
+                    post_rebuild_state_hash TEXT,
+                    trust_band_before TEXT,
+                    trust_band_after TEXT,
+                    recompute_job_id TEXT,
+                    repair_job_id TEXT,
+                    dead_letter_reason TEXT,
+                    sensitivity_gate_result TEXT NOT NULL,
+                    result TEXT NOT NULL CHECK (result IN ('passed', 'failed', 'blocked_by_w5', 'blocked_by_privacy_gate')),
+                    reason_code TEXT,
+                    observed_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+                );
+
+                INSERT INTO dos338_stickiness_observations (
+                    id,
+                    run_id,
+                    feedback_id,
+                    entry_point,
+                    action,
+                    subject_kind,
+                    subject_ref_hash,
+                    direct_surface,
+                    indirect_surface,
+                    direct_surface_before_hash,
+                    direct_surface_after_hash,
+                    indirect_surface_before_hash,
+                    indirect_surface_after_hash,
+                    pre_reenrichment_state_hash,
+                    post_reenrichment_state_hash,
+                    post_rebuild_state_hash,
+                    trust_band_before,
+                    trust_band_after,
+                    recompute_job_id,
+                    repair_job_id,
+                    dead_letter_reason,
+                    sensitivity_gate_result,
+                    result,
+                    reason_code,
+                    observed_at
+                )
+                SELECT
+                    id,
+                    run_id,
+                    feedback_id,
+                    entry_point,
+                    action,
+                    subject_kind,
+                    subject_ref_hash,
+                    direct_surface,
+                    indirect_surface,
+                    direct_surface_before_hash,
+                    direct_surface_after_hash,
+                    indirect_surface_before_hash,
+                    indirect_surface_after_hash,
+                    pre_reenrichment_state_hash,
+                    post_reenrichment_state_hash,
+                    post_rebuild_state_hash,
+                    trust_band_before,
+                    trust_band_after,
+                    recompute_job_id,
+                    repair_job_id,
+                    dead_letter_reason,
+                    sensitivity_gate_result,
+                    result,
+                    reason_code,
+                    observed_at
+                FROM dos338_stickiness_observations_v292;
+
+                DROP TABLE temp.dos338_stickiness_observations_v292;
+
+                CREATE INDEX IF NOT EXISTS idx_dos338_stickiness_observations_run
+                    ON dos338_stickiness_observations(run_id, result, observed_at);
+
+                CREATE INDEX IF NOT EXISTS idx_dos338_stickiness_observations_feedback
+                    ON dos338_stickiness_observations(feedback_id, observed_at);
+                "#,
+            )
+            .map_err(|e| format!("v292 DOS-338 observation rebuild: {e}"))?;
+            Ok(())
+        },
+    )
+}
+
 fn migrate_v273_recommendation_w2_shape_repair(conn: &Connection) -> Result<(), MigrationError> {
     repair_v273_surfacing_decisions(conn)?;
     repair_v273_triggers_log(conn)
@@ -4558,6 +4742,124 @@ mod tests {
     /// Helper: open an in-memory database with WAL-like settings.
     fn mem_db() -> Connection {
         Connection::open_in_memory().expect("in-memory db")
+    }
+
+    #[test]
+    fn migration_292_rebuilds_dos338_observations_without_losing_rows() {
+        let conn = mem_db();
+        conn.execute_batch(
+            "CREATE TABLE dos338_stickiness_runs (id TEXT PRIMARY KEY);
+             CREATE TABLE claim_feedback (id TEXT PRIMARY KEY);
+             CREATE TABLE dos338_stickiness_observations (
+                id TEXT PRIMARY KEY,
+                run_id TEXT NOT NULL REFERENCES dos338_stickiness_runs(id),
+                feedback_id TEXT REFERENCES claim_feedback(id) ON DELETE SET NULL,
+                entry_point TEXT NOT NULL CHECK (entry_point IN ('app', 'file_projection', 'mcp')),
+                action TEXT NOT NULL,
+                subject_kind TEXT NOT NULL,
+                subject_ref_hash TEXT NOT NULL,
+                direct_surface TEXT NOT NULL,
+                indirect_surface TEXT NOT NULL,
+                direct_surface_before_hash TEXT,
+                direct_surface_after_hash TEXT,
+                indirect_surface_before_hash TEXT,
+                indirect_surface_after_hash TEXT,
+                pre_reenrichment_state_hash TEXT,
+                post_reenrichment_state_hash TEXT,
+                post_rebuild_state_hash TEXT,
+                trust_band_before TEXT,
+                trust_band_after TEXT,
+                recompute_job_id TEXT,
+                repair_job_id TEXT,
+                dead_letter_reason TEXT,
+                sensitivity_gate_result TEXT NOT NULL,
+                result TEXT NOT NULL CHECK (result IN ('blocked_by_w5', 'blocked_by_privacy_gate')),
+                reason_code TEXT,
+                observed_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+             );
+             INSERT INTO dos338_stickiness_runs /* dos7-allowed: migration 292 fixture seed */ (id)
+             VALUES ('run-v292');
+             INSERT INTO claim_feedback /* dos7-allowed: migration 292 fixture seed */ (id)
+             VALUES ('feedback-v292');
+             INSERT INTO dos338_stickiness_observations (
+                id,
+                run_id,
+                feedback_id,
+                entry_point,
+                action,
+                subject_kind,
+                subject_ref_hash,
+                direct_surface,
+                indirect_surface,
+                sensitivity_gate_result,
+                result,
+                reason_code
+             ) VALUES (
+                'obs-v292',
+                'run-v292',
+                'feedback-v292',
+                'mcp',
+                'apply_correction',
+                'claim',
+                'subject_hash',
+                'account_status',
+                'meeting_prep',
+                'allowed',
+                'blocked_by_w5',
+                'legacy_w5_gate'
+             );",
+        )
+        .expect("seed legacy v292 observation shape");
+
+        let migration = MIGRATIONS
+            .iter()
+            .find(|migration| migration.version() == 292)
+            .expect("migration 292 registered");
+        assert!(
+            matches!(migration, Migration::Fn { .. }),
+            "v292 must stay a transactional function migration"
+        );
+        migrate_v292_dos338_mcp_stickiness_result_repair(&conn)
+            .expect("v292 repair migration applies");
+
+        let preserved: i64 = conn
+            .query_row(
+                "SELECT count(*)
+                   FROM dos338_stickiness_observations
+                  WHERE id = 'obs-v292'
+                    AND result = 'blocked_by_w5'",
+                [],
+                |row| row.get(0),
+            )
+            .expect("query preserved row");
+        assert_eq!(preserved, 1);
+
+        conn.execute_batch(
+            "INSERT INTO dos338_stickiness_observations (
+                id,
+                run_id,
+                entry_point,
+                action,
+                subject_kind,
+                subject_ref_hash,
+                direct_surface,
+                indirect_surface,
+                sensitivity_gate_result,
+                result
+             ) VALUES (
+                'obs-v292-pass',
+                'run-v292',
+                'mcp',
+                'apply_correction',
+                'claim',
+                'subject_hash_2',
+                'account_status',
+                'meeting_prep',
+                'allowed',
+                'passed'
+             );",
+        )
+        .expect("repaired observation table accepts post-W5 pass result");
     }
 
     fn reset_migrated_db_to_version_159(conn: &Connection) {
