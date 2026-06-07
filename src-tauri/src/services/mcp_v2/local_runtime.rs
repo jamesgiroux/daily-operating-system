@@ -2,7 +2,7 @@
 //!
 //! W2 keeps local stdio auth right-sized: the server owns the local client id,
 //! read audit digests use a server-held key, and conversation continuity is
-//! persisted outside the SQLCipher auth tables.
+//! persisted outside the DB auth tables.
 
 use std::collections::BTreeMap;
 use std::fs::{File, OpenOptions};

@@ -1,5 +1,6 @@
 # Lessons
 
+- 2026-06-07: When the user pauses an external system like Linear, remove it from the active workflow immediately and continue from local Git/worktree evidence until they explicitly reconnect it.
 - 2026-06-07: Before continuing review or remediation loops, re-anchor findings to the wave's accepted AC boundary. For W5, blockers are registered MCP-eligible parity failures, not broad MCP hardening or unrelated tag-gate cleanup; classify every finding as wave blocker, version tag blocker, or maintenance before another L2 cycle.
 - 2026-06-07: Do not treat W6 as only a release-valve packet when the user says the six-wave v1.4.9 plan must finish. W6 L0 approval is not enough; derive AC2+ implementation work from the approved DOS-511 packet and keep W6 in the tag-completion path.
 - 2026-06-06: Treat L0/L2 packet review as a reviewer-cycle loop, not a one-shot summary. After any blocking finding is patched, rerun every assigned reviewer on the current tree and do not call the packet done until all blocking reviewers return PASS.

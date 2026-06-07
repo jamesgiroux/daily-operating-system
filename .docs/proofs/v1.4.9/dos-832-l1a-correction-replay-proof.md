@@ -1,15 +1,15 @@
-# DOS-832 L1a Proof Bundle -- Current-Encrypted Replica Correction Replay
+# DOS-832 Proof Bundle -- Correction Replay + Plain-SQLite Storage Addendum
 
 **Issue:** DOS-832
-**Branch:** `codex/v1.4.9-w1-dos832-l1-rebased`
-**Date:** 2026-06-06
-**Scope:** L1a substrate proof only. This proves replay of W3 claim-file sidecar feedback into freshly regenerated claim IDs in the current encrypted/Replica-compatible schema. It does not claim final plain-SQLite rebuild, Live cutover, or full DOS-832 release completion.
+**Branch:** `codex/v1.4.9-l3-storage-rebuild`
+**Date:** 2026-06-06; L3 addendum updated 2026-06-07
+**Scope:** L1a correction-replay proof plus L3 storage-reset addendum. The original L1a slice proves replay of W3 claim-file sidecar feedback into freshly regenerated claim IDs. The 2026-06-07 addendum proves the same replay path on a service-backed plain-SQLite DB and proves the Live cutover exclusivity substrate blocks new/shared DB access through typed `RebuildCutoverInProgress` errors.
 
 ## Verdict
 
-**L1a pass, bounded.**
+**L1a pass, bounded; L3 storage-reset addendum pass, bounded.**
 
-The branch proves the correction-replay core that DOS-832 can honestly validate before DOS-831 lands:
+The branch proves the correction-replay core and the plain-SQLite storage boundary that DOS-832 can honestly validate at this stage:
 
 - W3 sidecar feedback rows now carry a stable `feedbackId` replay key.
 - Legacy v1 sidecars without `feedbackId` replay through a deterministic derived key so old sidecars remain readable without pretending they had durable source IDs.
@@ -36,20 +36,22 @@ The branch proves the correction-replay core that DOS-832 can honestly validate 
 - Stable replay event IDs cannot be retargeted after applied, failed, or orphaned terminal journal outcomes.
 - Partial v282 journal rows from an interrupted old-shape migration are repaired before replay continues.
 - A follow-up v283 repair migration covers databases that already recorded the draft v282 migration before the journal shape was completed.
+- Service-backed replay now runs against a file-backed plain-SQLite DB and reports `plainSqliteRecoveryProven: true`.
+- Service-backed replay now proves the process/OS cutover gate blocks exclusive Live cutover while the `DbService` pool holds shared DB access, and reports `liveCutoverProven: true`.
+- Direct `ActionDb` opens and raw `DbService` opens fail with typed `RebuildCutoverInProgress` while an exclusive cutover token is active.
 
 ## Explicit Non-Claims
 
-These remain unproven by this L1a slice:
+These remain unproven by this bounded proof:
 
-- Plain-SQLite fresh recovery after DOS-831.
-- Live destructive replacement and cutover exclusivity.
+- Full destructive replacement file swap, restore-point creation, queue pause/drain/resume, phase manifest, rollback/roll-forward, and crash-consistency recovery.
 - Entity JSON seed trust-boundary replay.
 - Full source registration, ingestion, re-enrichment, salience, embeddings, and derived-context rebuild.
 - Supersession and contradiction edge replay beyond sidecar serialization of semantic endpoint identities.
 - Operator recovery docs and ADR-0048 amendment.
 - Real-workspace end-to-end rebuild.
 
-The runtime report returns `plainSqliteRecoveryProven: false` and `liveCutoverProven: false` to keep these boundaries machine-visible.
+The runtime report keeps the boundary machine-visible: in-memory/direct replay remains false for both proof flags, while service-backed file replay sets `plainSqliteRecoveryProven: true` and `liveCutoverProven: true`.
 
 ## Implementation Evidence
 
@@ -80,6 +82,9 @@ The runtime report returns `plainSqliteRecoveryProven: false` and `liveCutoverPr
 - `claim_files` sidecar serialization now includes stable feedback row IDs and semantic identities for supersession/contradiction endpoints.
 - Replay validates sidecars against the committed projection run before claim matching or feedback mutation.
 - Existing feedback replay events now repair missing feedback signals through the service layer before continuing.
+- Added `services::rebuild` DB-path-scoped cutover gate plus OS-level shared/exclusive lock file. Normal DB access acquires a shared token; Live cutover acquires an exclusive token and fails typed when same-DB shared access is still open.
+- `DbService` now holds the shared rebuild access token for the pool lifetime. Direct `ActionDb` open paths acquire fail-fast shared tokens during open/preflight.
+- Replay reports plain-SQLite recovery proof from the actual file-backed DB header and cutover proof only when the service-held shared access token blocks exclusive cutover for that DB path.
 
 ## Intelligence Loop Check
 
@@ -106,6 +111,18 @@ cargo clippy --manifest-path src-tauri/Cargo.toml -- -D warnings
 git diff --check
 ```
 
+L3 addendum commands run from `codex/v1.4.9-l3-storage-rebuild` after the plain-SQLite storage reset remediation:
+
+```bash
+cargo fmt --manifest-path src-tauri/Cargo.toml
+cargo check --manifest-path src-tauri/Cargo.toml
+cargo test --manifest-path src-tauri/Cargo.toml live_cutover_gate_blocks_new_shared_access_until_released
+cargo test --manifest-path src-tauri/Cargo.toml shared_access_guard_blocks_live_cutover_until_released
+cargo test --manifest-path src-tauri/Cargo.toml action_db_open_at_fails_while_live_cutover_active
+cargo test --manifest-path src-tauri/Cargo.toml live_cutover_fails_while_db_service_pool_is_open
+cargo test --manifest-path src-tauri/Cargo.toml dos832_replay_report_proves_plain_sqlite_and_cutover_when_service_backed
+```
+
 Results:
 
 - Unsupported later feedback action preflight regression: 1 passed.
@@ -117,6 +134,7 @@ Results:
 - DOS7/D4 lint suite: 28 passed.
 - Clippy: passed with `-D warnings`.
 - Diff hygiene: passed.
+- L3 storage addendum: check passed; four cutover-gate focused tests passed; service-backed plain-SQLite replay proof passed.
 
 ## L2 Review Cycles
 

@@ -77,7 +77,7 @@ impl V2ServerHandler {
     }
 
     /// Construct a local stdio handler whose tool exposure is held in memory.
-    /// This avoids MCP startup/auth writes racing the app-owned SQLCipher DB.
+    /// This avoids MCP startup/auth writes racing the app-owned DB.
     pub fn from_local_stdio(
         gateway: Arc<Gateway>,
         catalog: Arc<dyn TaxonomyCatalog>,

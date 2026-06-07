@@ -1619,14 +1619,6 @@ pub fn get_lock_status(state: State<'_, Arc<AppState>>) -> bool {
     state.lock_state.lock().is_locked
 }
 
-/// Check if the encryption key is missing (recovery screen).
-#[tauri::command]
-pub fn get_encryption_key_status(state: State<'_, Arc<AppState>>) -> bool {
-    state
-        .encryption_key_missing
-        .load(std::sync::atomic::Ordering::Relaxed)
-}
-
 /// Lock the app immediately.
 #[allow(
     clippy::let_underscore_must_use,

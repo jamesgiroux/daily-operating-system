@@ -398,9 +398,6 @@ pub struct AppState {
     pub lock_state: Mutex<AppLockState>,
     /// Placeholder queue for host-driven confirmation prompts.
     pub confirmation_attestations: ConfirmationAttestationState,
-    /// True if the encryption key was not found in the Keychain on startup.
-    /// When set, the frontend shows a recovery screen instead of normal UI.
-    pub encryption_key_missing: AtomicBool,
     /// DB recovery state when migrations/schema integrity fail on startup.
     pub database_recovery_status: Mutex<DatabaseRecoveryStatus>,
     /// Tamper-evident audit log for enterprise observability.
@@ -549,8 +546,11 @@ fn recovery_status_from_db_error(err: &crate::db::DbError) -> DatabaseRecoverySt
         crate::db::DbError::Sqlite(message) => {
             DatabaseRecoveryStatus::required("database_open_failed", message.to_string())
         }
-        crate::db::DbError::Encryption(message) => {
-            DatabaseRecoveryStatus::required("database_encryption_error", message.clone())
+        crate::db::DbError::Secret(message) => {
+            DatabaseRecoveryStatus::required("database_secret_error", message.clone())
+        }
+        crate::db::DbError::UnsupportedStorageState { reason, .. } => {
+            DatabaseRecoveryStatus::required("unsupported_storage_state", reason.clone())
         }
         crate::db::DbError::CreateDir(message) => {
             DatabaseRecoveryStatus::required("database_path_error", message.to_string())
@@ -558,9 +558,11 @@ fn recovery_status_from_db_error(err: &crate::db::DbError) -> DatabaseRecoverySt
         crate::db::DbError::HomeDirNotFound => {
             DatabaseRecoveryStatus::required("database_path_error", "Home directory not found")
         }
-        crate::db::DbError::KeyMissing { .. } => DatabaseRecoveryStatus::not_required(),
         crate::db::DbError::InvalidArgument(message) => {
             DatabaseRecoveryStatus::required("internal_invalid_argument", message.clone())
+        }
+        crate::db::DbError::RebuildCutoverInProgress { .. } => {
+            DatabaseRecoveryStatus::not_required()
         }
         // a deliberate prod-open deny is not a database fault — never
         // trigger recovery (which would misclassify the guard as corruption).
@@ -597,7 +599,6 @@ impl AppState {
             }),
         );
 
-        let mut encryption_key_missing = false;
         let mut database_recovery_status = DatabaseRecoveryStatus::not_required();
         // Open DB for startup validation and context_mode reading only.
         // The connection is NOT stored in AppState -- all runtime DB access goes
@@ -606,61 +607,16 @@ impl AppState {
             crate::db::LocalKeychain::new(),
         )) {
             Ok(db) => {
-                // Distinguish key generation (fresh install) from access (existing DB)
-                let event = if crate::db::encryption::was_key_generated() {
-                    "db_key_generated"
-                } else {
-                    "db_key_accessed"
-                };
                 #[allow(
                     clippy::let_underscore_must_use,
                     reason = "intentional best-effort discard; preserves existing non-blocking behavior"
                 )]
                 let _ = audit_logger.append(
                     "security",
-                    event,
-                    serde_json::json!({"db_encrypted": true}),
+                    "db_storage_boundary_checked",
+                    serde_json::json!({"db_storage": "plain_sqlite", "boundary": "os_user_disk"}),
                 );
-
-                // Log migration events if a plaintext→encrypted migration happened
-                if crate::db::encryption::was_migration_performed() {
-                    #[allow(
-                        clippy::let_underscore_must_use,
-                        reason = "intentional best-effort discard; preserves existing non-blocking behavior"
-                    )]
-                    let _ = audit_logger.append(
-                        "security",
-                        "db_migration_started",
-                        serde_json::json!({"migration_type": "plaintext_to_encrypted"}),
-                    );
-                    #[allow(
-                        clippy::let_underscore_must_use,
-                        reason = "intentional best-effort discard; preserves existing non-blocking behavior"
-                    )]
-                    let _ = audit_logger.append(
-                        "security",
-                        "db_migration_completed",
-                        serde_json::json!({"migration_type": "plaintext_to_encrypted"}),
-                    );
-                }
                 Some(db)
-            }
-            Err(crate::db::DbError::KeyMissing { ref db_path }) => {
-                log::error!(
-                    "Encryption key missing for database at {db_path}. \
-                     Showing recovery screen."
-                );
-                #[allow(
-                    clippy::let_underscore_must_use,
-                    reason = "intentional best-effort discard; preserves existing non-blocking behavior"
-                )]
-                let _ = audit_logger.append(
-                    "security",
-                    "db_key_missing",
-                    serde_json::json!({"recovery_screen": true}),
-                );
-                encryption_key_missing = true;
-                None
             }
             Err(e) => {
                 log::warn!("Failed to open actions database: {e}. DB features disabled.");
@@ -761,7 +717,7 @@ impl AppState {
             "app_started",
             serde_json::json!({
                 "version": env!("CARGO_PKG_VERSION"),
-                "db_encrypted": !encryption_key_missing && startup_db.is_some(),
+                "db_storage": if startup_db.is_some() { "plain_sqlite" } else { "unavailable" },
                 "db_recovery_required": database_recovery_status.required,
             }),
         );
@@ -909,7 +865,6 @@ impl AppState {
             },
             lock_state: Mutex::new(AppLockState::default()),
             confirmation_attestations: ConfirmationAttestationState::default(),
-            encryption_key_missing: AtomicBool::new(encryption_key_missing),
             database_recovery_status: Mutex::new(database_recovery_status),
             audit_log,
             aggregate_telemetry: Arc::new(
@@ -1012,7 +967,6 @@ impl AppState {
             },
             lock_state: Mutex::new(AppLockState::default()),
             confirmation_attestations: ConfirmationAttestationState::default(),
-            encryption_key_missing: AtomicBool::new(false),
             database_recovery_status: Mutex::new(DatabaseRecoveryStatus::not_required()),
             audit_log: Arc::new(Mutex::new(audit_logger)),
             aggregate_telemetry: Arc::new(
@@ -1427,8 +1381,8 @@ impl AppState {
     /// Initialize the unified DbService pool. Called from Tauri setup and on
     /// dev-mode transitions. Also installs the pool as the process-wide
     /// singleton so sync `ActionDb::open()` routes through it instead of
-    /// opening a fresh `rusqlite::Connection` (which races the pool writer
-    /// mid-commit under SQLCipher).
+    /// opening a fresh `rusqlite::Connection` that can race the pool writer
+    /// mid-commit.
     pub async fn init_db_service(&self) -> Result<(), String> {
         let svc = crate::db_service::DbService::open(std::sync::Arc::new(
             crate::db::LocalKeychain::new(),
@@ -1454,10 +1408,10 @@ impl AppState {
         self.init_db_service().await
     }
 
-    /// Reopen the shared DB pool after a connection-local SQLCipher failure.
+    /// Reopen the shared DB pool after a connection-local storage access failure.
     ///
-    /// SQLCipher can report SQLITE_NOTADB when a long-lived connection observes
-    /// an invalid WAL frame from an external process. The main DB can still pass
+    /// A long-lived connection can report SQLITE_NOTADB when it observes an
+    /// invalid WAL frame from an external process. The main DB can still pass
     /// integrity checks after reopening, so background workers should refresh
     /// the pool once instead of logging the same failure forever.
     pub async fn recover_db_service_after_access_error(
@@ -1479,7 +1433,7 @@ impl AppState {
         }
 
         let _guard = self.db_service_reinit_lock.lock().await;
-        log::warn!("{context}: refreshing DbService after SQLCipher connection error: {error}");
+        log::warn!("{context}: refreshing DbService after storage access error: {error}");
         match self.reinit_db_service().await {
             Ok(()) => true,
             Err(reinit_error) => {
@@ -1633,14 +1587,13 @@ fn db_access_error_needs_pool_reopen(error: &DbAccessError) -> bool {
 
 fn db_access_error_requires_manual_recovery(error: &DbAccessError) -> bool {
     // Only true btree corruption sets the process-wide
-    // `database_recovery_required` flag. Transient SQLCipher key-verification
-    // failures and the disk-I/O class fire from bypass-site fresh-open paths
-    // (documented at `db_service.rs:5-9` and ADR-0133) racing the pool
-    // writer's in-flight WAL frame. Those are recoverable on retry;
-    // classifying them as manual-recovery wedged `task_supervisor`'s 2 s
-    // restart loop on every affected worker (IntelProcessor, Claim recompute,
-    // EmbeddingProcessor) because the flag never cleared and each restart
-    // re-broke immediately.
+    // `database_recovery_required` flag. Disk-I/O failures can still fire from
+    // bypass-site fresh-open paths (documented at `db_service.rs:5-9` and
+    // ADR-0133) racing the pool writer's in-flight WAL frame. Those are
+    // recoverable on retry; classifying them as manual-recovery wedged
+    // `task_supervisor`'s 2 s restart loop on every affected worker
+    // (IntelProcessor, Claim recompute, EmbeddingProcessor) because the flag
+    // never cleared and each restart re-broke immediately.
     //
     // The structural close for the bypass-race itself is W1-C (migrate every
     // bypass-site to `state.db_write`). Until that lands, the workers just
@@ -2262,27 +2215,26 @@ mod tests {
 
     #[test]
     fn manual_recovery_predicate_only_fires_on_btree_malformation() {
-        // Regression: the predicate previously matched
-        // "disk i/o error" and "sqlcipher key verification failed", which
-        // are produced by transient bypass-site SQLCipher WAL races (the
-        // documented anti-pattern at db_service.rs:5-9). That over-match
-        // wedged the IntelProcessor / Claim recompute / EmbeddingProcessor
-        // workers in a 2 s supervisor restart loop because the recovery
-        // flag never cleared. Only true btree corruption should set it.
+        // Regression: the predicate previously matched disk I/O errors from
+        // transient bypass-site WAL races (the documented anti-pattern at
+        // db_service.rs:5-9). That over-match wedged the IntelProcessor /
+        // Claim recompute / EmbeddingProcessor workers in a 2 s supervisor
+        // restart loop because the recovery flag never cleared. Only true
+        // btree corruption should set it.
         let bypass_race: DbAccessError = DbAccessError::Other(
-            "Failed to open DbService: Encryption error: SQLCipher primary key verification failed: SQLCipher key verification query failed: disk I/O error; no staged rotation key was available".to_string(),
+            "Failed to open DbService: storage open failed with disk I/O error".to_string(),
         );
         assert!(
             !db_access_error_requires_manual_recovery(&bypass_race),
             "transient bypass-race must not trigger manual recovery"
         );
 
-        let key_verify_only: DbAccessError = DbAccessError::Other(
-            "SQLCipher key verification failed (database unreadable)".to_string(),
+        let retired_key_only: DbAccessError = DbAccessError::Other(
+            "DB key material is retired for the v1.4.9 plain-SQLite storage boundary".to_string(),
         );
         assert!(
-            !db_access_error_requires_manual_recovery(&key_verify_only),
-            "SQLCipher key-verify alone must not trigger manual recovery"
+            !db_access_error_requires_manual_recovery(&retired_key_only),
+            "retired DB-key errors alone must not trigger manual recovery"
         );
 
         let disk_io_only: DbAccessError = DbAccessError::Other("disk I/O error".to_string());

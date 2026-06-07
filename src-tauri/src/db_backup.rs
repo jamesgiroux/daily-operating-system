@@ -75,18 +75,10 @@ fn manual_backup_path(db_path: &Path) -> Result<PathBuf, String> {
 /// Read schema version (PRAGMA user_version) from a SQLite file.
 /// Returns None if the file cannot be opened or read.
 fn read_schema_version(path: &Path) -> Option<i64> {
+    crate::db::ActionDb::validate_plain_sqlite_storage(path).ok()?;
     let conn =
         rusqlite::Connection::open_with_flags(path, rusqlite::OpenFlags::SQLITE_OPEN_READ_ONLY)
             .ok()?;
-    // Apply an existing encryption key only for encrypted-looking files.
-    // Schema reads must not create Keychain entries as a side effect.
-    if !crate::db::encryption::is_database_plaintext(path) {
-        if let Ok(encryption_key) = crate::db::encryption::get_existing_db_key() {
-            if let Err(e) = conn.execute_batch(&encryption_key.to_pragma()) {
-                log::warn!("apply encryption key while reading backup schema failed: {e}");
-            }
-        }
-    }
     conn.pragma_query_value(None, "user_version", |row| row.get(0))
         .ok()
 }
@@ -203,7 +195,7 @@ fn prune_restore_snapshots(db_path: &Path, keep: usize) -> Result<(), String> {
 /// Copying happens in chunks of [`BACKUP_PAGES_PER_STEP`] pages with
 /// busy/locked retry, mirroring `migrations.rs::create_backup_via_api`. The
 /// previous one-shot `step(-1)` path returned `Ok(StepResult::Done)` on the
-/// 400 MB encrypted DBs we see in production but did not actually produce a
+/// 400 MB DBs we see in production but did not actually produce a
 /// consistent file — restored `.bak` files surfaced as
 /// `database disk image is malformed` on first open. The fix replicates the
 /// chunked pattern the pre-migration backup path already documents and uses.
@@ -213,15 +205,6 @@ pub fn backup_database(db: &ActionDb) -> Result<String, String> {
 
     let mut backup_conn = rusqlite::Connection::open(&backup_path)
         .map_err(|e| format!("Failed to open backup file: {}", e))?;
-
-    // Apply encryption key to backup destination so.bak is also encrypted
-    let provider = crate::db::LocalKeychain::new();
-    let user = crate::db::UserIdentity::local(backup_path.clone());
-    let encryption_key = crate::db::DbKeyProvider::get_or_create_key(&provider, &user)
-        .map_err(|e| format!("Failed to get encryption key for backup: {e}"))?;
-    backup_conn
-        .execute_batch(&encryption_key.to_pragma())
-        .map_err(|e| format!("Failed to set backup encryption key: {e}"))?;
 
     run_chunked_backup(db.conn_ref(), &mut backup_conn)
         .map_err(|e| format!("Backup failed: {e}"))?;
@@ -236,10 +219,9 @@ pub fn backup_database(db: &ActionDb) -> Result<String, String> {
 /// Pages copied per `Backup::step` iteration.
 ///
 /// Matches `migrations.rs::PAGES_PER_STEP`. Single `step(-1)` calls on 100+ MB
-/// SQLCipher DBs returned `Ok(StepResult::Done)` while leaving the destination
-/// silently inconsistent (the historic "not an error" mapping); chunked
-/// stepping does not exhibit that pathology and gives us progress logging on
-/// large copies.
+/// DBs returned `Ok(StepResult::Done)` while leaving the destination silently
+/// inconsistent (the historic "not an error" mapping); chunked stepping does
+/// not exhibit that pathology and gives us progress logging on large copies.
 const BACKUP_PAGES_PER_STEP: i32 = 1024;
 
 /// Cap consecutive Busy/Locked retries during a chunked backup. At 50 ms per
@@ -331,14 +313,6 @@ pub(crate) fn clone_database_to_staged_path(
 
     let mut destination_conn = rusqlite::Connection::open(staged_db_path)
         .map_err(|e| format!("Failed to open database clone staged file: {e}"))?;
-    let destination_key = crate::db::DbKeyProvider::get_or_create_key(
-        provider.as_ref(),
-        &crate::db::UserIdentity::local(destination_db_path.to_path_buf()),
-    )
-    .map_err(|e| format!("Failed to resolve database clone key: {e}"))?;
-    destination_conn
-        .execute_batch(&destination_key.to_pragma())
-        .map_err(|e| format!("Failed to key database clone staged file: {e}"))?;
 
     run_chunked_backup(source_db.conn_ref(), &mut destination_conn)?;
     drop(destination_conn);
@@ -648,36 +622,14 @@ fn restore_database_from_backup_for_path(db_path: &Path, backup_path: &Path) -> 
 
 /// Validate a backup file's integrity before restoring.
 ///
-/// Tries with the encryption key first. If that fails (e.g. backup is
-/// unencrypted), falls back to a plain connection.
 pub fn validate_backup(path: &Path) -> Result<(), String> {
-    // Attempt 1: with encryption key
-    let result = (|| -> Option<String> {
-        let conn =
-            rusqlite::Connection::open_with_flags(path, rusqlite::OpenFlags::SQLITE_OPEN_READ_ONLY)
-                .ok()?;
-        let provider = crate::db::LocalKeychain::new();
-        let user = crate::db::UserIdentity::local(path.to_path_buf());
-        if let Ok(encryption_key) = crate::db::DbKeyProvider::get_or_create_key(&provider, &user) {
-            conn.execute_batch(&encryption_key.to_pragma()).ok()?;
-        }
-        conn.pragma_query_value(None, "integrity_check", |row| row.get::<_, String>(0))
-            .ok()
-    })();
-
-    // Attempt 2: without encryption (plain SQLite)
-    let result = match result {
-        Some(ref r) if r == "ok" => return Ok(()),
-        _ => {
-            let conn = rusqlite::Connection::open_with_flags(
-                path,
-                rusqlite::OpenFlags::SQLITE_OPEN_READ_ONLY,
-            )
+    crate::db::ActionDb::validate_plain_sqlite_storage(path).map_err(|error| error.to_string())?;
+    let conn =
+        rusqlite::Connection::open_with_flags(path, rusqlite::OpenFlags::SQLITE_OPEN_READ_ONLY)
             .map_err(|e| format!("Cannot open backup file: {e}"))?;
-            conn.pragma_query_value(None, "integrity_check", |row| row.get::<_, String>(0))
-                .map_err(|e| format!("Integrity check failed: {e}"))?
-        }
-    };
+    let result = conn
+        .pragma_query_value(None, "integrity_check", |row| row.get::<_, String>(0))
+        .map_err(|e| format!("Integrity check failed: {e}"))?;
 
     if result != "ok" {
         return Err(format!("Backup integrity check failed: {result}"));
@@ -1029,14 +981,14 @@ mod tests {
     }
 
     #[test]
-    fn clone_database_to_path_produces_readable_encrypted_clone_and_clears_stale_sidecars() {
+    fn clone_database_to_path_produces_readable_plain_clone_and_clears_stale_sidecars() {
         let dir = tempfile::tempdir().expect("tempdir");
         let source_path = dir.path().join("source.db");
         let destination_path = dir.path().join("dailyos-replica.db");
         let provider = Arc::new(crate::db::LocalKeychain::new());
 
         let source_db =
-            ActionDb::open_at(source_path.clone(), provider).expect("open encrypted source");
+            ActionDb::open_at(source_path.clone(), provider).expect("open plain source");
         source_db
             .conn_ref()
             .execute_batch(
@@ -1061,7 +1013,7 @@ mod tests {
             destination_path.clone(),
             Arc::new(crate::db::LocalKeychain::new()),
         )
-        .expect("open old encrypted destination");
+        .expect("open old plain destination");
         old_destination
             .conn_ref()
             .execute_batch(
@@ -1093,7 +1045,7 @@ mod tests {
             &destination_path,
             Arc::new(crate::db::LocalKeychain::new()),
         )
-        .expect("open encrypted clone");
+        .expect("open plain clone");
         let label: String = cloned
             .conn_ref()
             .query_row("SELECT label FROM replica_clone_marker", [], |row| {
@@ -1132,7 +1084,7 @@ mod tests {
         // Regression test for the silent-malformation pattern: source DB
         // larger than BACKUP_PAGES_PER_STEP must produce a destination that
         // passes integrity_check and has the same content. The historic
-        // `step(-1)` path on encrypted DBs at this size returned
+        // `step(-1)` path on large DBs at this size returned
         // `Ok(StepResult::Done)` without copying every page.
         let dir = tempfile::tempdir().expect("tempdir");
         let src_path = dir.path().join("src.db");

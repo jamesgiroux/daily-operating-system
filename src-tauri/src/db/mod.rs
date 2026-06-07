@@ -15,7 +15,6 @@ pub mod claims;
 pub mod content;
 pub mod data_lifecycle;
 pub mod emails;
-pub mod encryption;
 pub mod entities;
 pub mod entity_linking;
 pub mod feedback;
@@ -34,5 +33,5 @@ pub mod success_plans;
 pub mod types;
 
 pub use core::*;
-pub use key_provider::{DbKeyProvider, EncryptionKey, LocalKeychain, UserIdentity};
+pub use key_provider::{DbKeyProvider, KeychainSecret, LocalKeychain, UserIdentity};
 pub use types::*;

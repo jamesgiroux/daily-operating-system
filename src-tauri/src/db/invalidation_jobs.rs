@@ -1266,48 +1266,11 @@ fn map_invalidation_job(row: &rusqlite::Row<'_>) -> rusqlite::Result<Invalidatio
 
 #[cfg(test)]
 mod tests {
-    use std::sync::Arc;
-
-    use parking_lot::Mutex;
     use tempfile::tempdir;
 
     use super::*;
-    use crate::db::key_provider::{rekey_database, DbKeyProvider, EncryptionKey, UserIdentity};
     use crate::db::test_utils::test_db;
-
-    #[derive(Debug)]
-    struct RotatingFixtureKeyProvider {
-        current: Mutex<EncryptionKey>,
-        next: EncryptionKey,
-    }
-
-    impl RotatingFixtureKeyProvider {
-        fn new(current: &str, next: &str) -> Self {
-            Self {
-                current: Mutex::new(EncryptionKey::from_hex(current.to_string())),
-                next: EncryptionKey::from_hex(next.to_string()),
-            }
-        }
-    }
-
-    impl DbKeyProvider for RotatingFixtureKeyProvider {
-        fn get_or_create_key(
-            &self,
-            _user: &UserIdentity,
-        ) -> crate::db::key_provider::Result<EncryptionKey> {
-            Ok(self.current.lock().clone())
-        }
-
-        fn rotate_key(
-            &self,
-            user: &UserIdentity,
-        ) -> crate::db::key_provider::Result<EncryptionKey> {
-            let mut current = self.current.lock();
-            rekey_database(user.db_path(), &current, &self.next)?;
-            *current = self.next.clone();
-            Ok(current.clone())
-        }
-    }
+    use crate::db::{DbKeyProvider, UserIdentity};
 
     fn seed_account(db: &ActionDb, account_id: &str, claim_version: i64) {
         db.conn_ref()
@@ -1789,45 +1752,44 @@ mod tests {
     }
 
     #[test]
-    fn pending_job_survives_simulated_key_rotation_reopen() {
+    fn pending_job_survives_reopen_after_retired_key_rotation_is_rejected() {
         let dir = tempdir().expect("tempdir");
-        let path = dir.path().join("restart-rotated.db");
-        let provider = Arc::new(RotatingFixtureKeyProvider::new(
-            "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef",
-            "abcdef0123456789abcdef0123456789abcdef0123456789abcdef0123456789",
-        ));
+        let path = dir.path().join("restart-plain.db");
 
         {
-            let db = ActionDb::open_at(path.clone(), provider.clone()).expect("open first");
-            seed_account(&db, "acct-rotated-restart", 1);
+            let db = ActionDb::open_at_unencrypted(path.clone()).expect("open first");
+            seed_account(&db, "acct-plain-restart", 1);
             db.conn_ref()
                 .execute(
                     "INSERT INTO signal_events (
                         id, entity_type, entity_id, signal_type, data_source,
                         confidence, decay_half_life_days, created_at
                      ) VALUES (
-                        'sig-rotated-1', 'account', 'acct-rotated-restart',
+                        'sig-plain-1', 'account', 'acct-plain-restart',
                         'claim_trust_changed', 'test', 1.0, 30,
                         '2026-05-08T00:00:00Z'
                      )",
                     [],
                 )
                 .expect("seed signal");
-            db.enqueue_invalidation_job(claim_input("sig-rotated-1", "acct-rotated-restart", 1))
+            db.enqueue_invalidation_job(claim_input("sig-plain-1", "acct-plain-restart", 1))
                 .expect("enqueue");
         }
 
-        provider
+        let provider = crate::db::LocalKeychain::new();
+        let error = provider
             .rotate_key(&UserIdentity::local(path.clone()))
-            .expect("rotate key");
+            .expect_err("DB key rotation is retired");
+        assert!(error.contains("plain-SQLite storage boundary"));
 
         {
-            let db = ActionDb::open_at(path, provider).expect("open second after rotation");
+            let db =
+                ActionDb::open_at_unencrypted(path).expect("open second after rejected rotation");
             let claimed = db
-                .claim_next_claim_recompute_job("worker-after-rotation-restart", 30)
+                .claim_next_claim_recompute_job("worker-after-plain-restart", 30)
                 .expect("claim")
-                .expect("job survived restart after key rotation");
-            assert_eq!(claimed.subject_id, "acct-rotated-restart");
+                .expect("job survived restart after rejected rotation");
+            assert_eq!(claimed.subject_id, "acct-plain-restart");
             assert_eq!(claimed.status, STATUS_RUNNING);
         }
     }

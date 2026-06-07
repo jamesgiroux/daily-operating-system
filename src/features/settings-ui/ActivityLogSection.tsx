@@ -51,8 +51,6 @@ const EVENT_NAMES: Record<string, EventTranslation> = {
   app_started: "App started",
   audit_log_rotated: "Log maintenance",
   db_key_accessed: "Database opened",
-  db_key_generated: "Encryption key created",
-  db_key_missing: "Database key missing",
   db_migration_started: "Database migration started",
   db_migration_completed: "Database migration completed",
   oauth_connected: "Google account connected",

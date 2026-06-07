@@ -1,11 +1,18 @@
 //! First-class rebuild replay helpers.
 //!
-//! This module owns rebuild replay planning and reporting. The L1a slice is
-//! deliberately scoped to current-encrypted/Replica proof: it replays W3 claim
-//! file correction sidecars through the claim service, and it records which
-//! storage/cutover claims remain outside this proof slice.
+//! This module owns rebuild replay planning, reporting, and cutover access
+//! gating. The correction-replay slice replays W3 claim-file correction
+//! sidecars through the claim service, while the storage addendum proves
+//! service-backed plain-SQLite replay and cutover exclusivity at the DB access
+//! boundary.
 
 use std::collections::{HashMap, HashSet};
+use std::fs::{File, OpenOptions};
+use std::io;
+#[cfg(unix)]
+use std::os::fd::AsRawFd;
+use std::path::{Path, PathBuf};
+use std::sync::LazyLock;
 
 use chrono::{DateTime, SecondsFormat, Utc};
 use rusqlite::{params, OptionalExtension};
@@ -14,7 +21,7 @@ use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
 
 use crate::abilities::feedback::FeedbackAction;
-use crate::db::ActionDb;
+use crate::db::{ActionDb, DbError};
 use crate::services::claim_files::{
     semantic_identity_for_loaded_claim, source_content_hash_for_claim,
     validate_replay_sidecar_projection_db, ClaimFileClaim, ClaimFileContradictionEdge,
@@ -30,6 +37,256 @@ use crate::services::claims::{
 use crate::services::context::ServiceContext;
 
 const LEGACY_V282_UNSET_FEEDBACK_CONTENT_HASH: &str = "legacy-v282-unset";
+
+static REBUILD_DB_GATE: LazyLock<parking_lot::Mutex<RebuildGateState>> =
+    LazyLock::new(|| parking_lot::Mutex::new(RebuildGateState::default()));
+
+#[cfg(test)]
+static REBUILD_TEST_LOCK: parking_lot::Mutex<()> = parking_lot::const_mutex(());
+
+#[cfg(test)]
+pub(crate) fn rebuild_test_lock() -> parking_lot::MutexGuard<'static, ()> {
+    REBUILD_TEST_LOCK.lock()
+}
+
+#[derive(Debug, Default)]
+struct RebuildGateState {
+    active_access_guards_by_path: HashMap<PathBuf, usize>,
+    active_cutovers_by_path: HashSet<PathBuf>,
+}
+
+/// Shared DB access token used by normal app, MCP, and maintenance opens.
+///
+/// Holding this guard blocks Live rebuild cutover for the same DB path in the
+/// current process and holds a compatible OS-level file lock so sibling
+/// processes cannot swap the DB while this process is opening or owning a pool.
+#[must_use = "dropping the guard releases rebuild DB access"]
+pub struct RebuildDbAccessGuard {
+    _process_guard: RebuildProcessAccessGuard,
+    _file_lock: RebuildFileLock,
+}
+
+/// Exclusive Live cutover token.
+///
+/// This is intentionally scoped: cutover orchestration must acquire it only
+/// after normal DB pools are closed, then release it before reopening public
+/// shared access.
+#[must_use = "dropping the guard releases rebuild cutover exclusivity"]
+pub struct RebuildCutoverGuard {
+    _process_guard: RebuildProcessCutoverGuard,
+    _file_lock: RebuildFileLock,
+}
+
+struct RebuildProcessAccessGuard {
+    db_path: PathBuf,
+}
+
+impl Drop for RebuildProcessAccessGuard {
+    fn drop(&mut self) {
+        let mut state = REBUILD_DB_GATE.lock();
+        if let Some(count) = state.active_access_guards_by_path.get_mut(&self.db_path) {
+            *count = count.saturating_sub(1);
+            if *count == 0 {
+                state.active_access_guards_by_path.remove(&self.db_path);
+            }
+        }
+    }
+}
+
+struct RebuildProcessCutoverGuard {
+    db_path: PathBuf,
+}
+
+impl Drop for RebuildProcessCutoverGuard {
+    fn drop(&mut self) {
+        let mut state = REBUILD_DB_GATE.lock();
+        state.active_cutovers_by_path.remove(&self.db_path);
+    }
+}
+
+struct RebuildFileLock {
+    file: File,
+}
+
+#[cfg(unix)]
+impl Drop for RebuildFileLock {
+    fn drop(&mut self) {
+        unsafe {
+            libc::flock(self.file.as_raw_fd(), libc::LOCK_UN);
+        }
+    }
+}
+
+#[cfg(not(unix))]
+impl Drop for RebuildFileLock {
+    fn drop(&mut self) {}
+}
+
+pub fn acquire_db_access_guard(db_path: &Path) -> Result<RebuildDbAccessGuard, DbError> {
+    let process_guard = acquire_process_access_guard(db_path)?;
+    let file_lock = match acquire_rebuild_file_lock(db_path, RebuildFileLockMode::Shared) {
+        Ok(file_lock) => file_lock,
+        Err(error) => {
+            drop(process_guard);
+            return Err(error);
+        }
+    };
+    Ok(RebuildDbAccessGuard {
+        _process_guard: process_guard,
+        _file_lock: file_lock,
+    })
+}
+
+pub fn try_begin_live_cutover(db_path: &Path) -> Result<RebuildCutoverGuard, DbError> {
+    let process_guard = acquire_process_cutover_guard(db_path)?;
+    let file_lock = match acquire_rebuild_file_lock(db_path, RebuildFileLockMode::Exclusive) {
+        Ok(file_lock) => file_lock,
+        Err(error) => {
+            drop(process_guard);
+            return Err(error);
+        }
+    };
+    Ok(RebuildCutoverGuard {
+        _process_guard: process_guard,
+        _file_lock: file_lock,
+    })
+}
+
+fn acquire_process_access_guard(db_path: &Path) -> Result<RebuildProcessAccessGuard, DbError> {
+    let db_path = gate_db_path_key(db_path);
+    let mut state = REBUILD_DB_GATE.lock();
+    if state.active_cutovers_by_path.contains(&db_path) {
+        return Err(rebuild_cutover_error(
+            &db_path,
+            "Live rebuild cutover is active in this process",
+        ));
+    }
+    let count = state
+        .active_access_guards_by_path
+        .entry(db_path.clone())
+        .or_insert(0);
+    *count = count.saturating_add(1);
+    Ok(RebuildProcessAccessGuard { db_path })
+}
+
+fn acquire_process_cutover_guard(db_path: &Path) -> Result<RebuildProcessCutoverGuard, DbError> {
+    let db_path_key = gate_db_path_key(db_path);
+    let mut state = REBUILD_DB_GATE.lock();
+    if state.active_cutovers_by_path.contains(&db_path_key) {
+        return Err(rebuild_cutover_error(
+            db_path,
+            "Live rebuild cutover is already active in this process",
+        ));
+    }
+    if state
+        .active_access_guards_by_path
+        .get(&db_path_key)
+        .copied()
+        .unwrap_or(0)
+        > 0
+    {
+        return Err(rebuild_cutover_error(
+            db_path,
+            "open DB access guards are still active in this process",
+        ));
+    }
+    state.active_cutovers_by_path.insert(db_path_key.clone());
+    Ok(RebuildProcessCutoverGuard {
+        db_path: db_path_key,
+    })
+}
+
+#[derive(Clone, Copy)]
+enum RebuildFileLockMode {
+    Shared,
+    Exclusive,
+}
+
+fn acquire_rebuild_file_lock(
+    db_path: &Path,
+    mode: RebuildFileLockMode,
+) -> Result<RebuildFileLock, DbError> {
+    let lock_path = rebuild_lock_path(db_path);
+    if let Some(parent) = lock_path.parent() {
+        if !parent.exists() {
+            std::fs::create_dir_all(parent).map_err(DbError::CreateDir)?;
+        }
+    }
+    let file = OpenOptions::new()
+        .read(true)
+        .write(true)
+        .create(true)
+        .truncate(false)
+        .open(&lock_path)
+        .map_err(|error| {
+            DbError::Migration(format!(
+                "failed to open rebuild cutover lock {}: {error}",
+                lock_path.display()
+            ))
+        })?;
+    let lock_result = match mode {
+        RebuildFileLockMode::Shared => try_lock_file_shared(&file),
+        RebuildFileLockMode::Exclusive => try_lock_file_exclusive(&file),
+    };
+    match lock_result {
+        Ok(()) => Ok(RebuildFileLock { file }),
+        Err(error) if error.kind() == io::ErrorKind::WouldBlock => Err(rebuild_cutover_error(
+            db_path,
+            "another DailyOS process holds the rebuild cutover lock",
+        )),
+        Err(error) => Err(DbError::Migration(format!(
+            "failed to acquire rebuild cutover lock {}: {error}",
+            lock_path.display()
+        ))),
+    }
+}
+
+fn rebuild_lock_path(db_path: &Path) -> PathBuf {
+    let mut lock_path = db_path.to_path_buf();
+    let file_name = db_path
+        .file_name()
+        .map(|name| name.to_string_lossy().into_owned())
+        .unwrap_or_else(|| "dailyos.db".to_string());
+    lock_path.set_file_name(format!("{file_name}.rebuild.lock"));
+    lock_path
+}
+
+#[cfg(unix)]
+fn try_lock_file_shared(file: &File) -> io::Result<()> {
+    let result = unsafe { libc::flock(file.as_raw_fd(), libc::LOCK_SH | libc::LOCK_NB) };
+    if result == 0 {
+        Ok(())
+    } else {
+        Err(io::Error::last_os_error())
+    }
+}
+
+#[cfg(unix)]
+fn try_lock_file_exclusive(file: &File) -> io::Result<()> {
+    let result = unsafe { libc::flock(file.as_raw_fd(), libc::LOCK_EX | libc::LOCK_NB) };
+    if result == 0 {
+        Ok(())
+    } else {
+        Err(io::Error::last_os_error())
+    }
+}
+
+#[cfg(not(unix))]
+fn try_lock_file_shared(_file: &File) -> io::Result<()> {
+    Ok(())
+}
+
+#[cfg(not(unix))]
+fn try_lock_file_exclusive(_file: &File) -> io::Result<()> {
+    Ok(())
+}
+
+fn rebuild_cutover_error(db_path: &Path, reason: &str) -> DbError {
+    DbError::RebuildCutoverInProgress {
+        path: db_path.display().to_string(),
+        reason: reason.to_string(),
+    }
+}
 
 #[derive(Debug, thiserror::Error)]
 pub enum RebuildError {
@@ -255,6 +512,8 @@ pub fn replay_claim_file_sidecar_corrections(
         .iter()
         .filter(|event| event.status == ReplayEventStatus::Failed)
         .count();
+    let plain_sqlite_recovery_proven = replay_plain_sqlite_recovery_proven(db);
+    let live_cutover_proven = plain_sqlite_recovery_proven && replay_live_cutover_proven(db);
 
     Ok(CorrectionReplayReport {
         run_id: run_id.to_string(),
@@ -264,9 +523,64 @@ pub fn replay_claim_file_sidecar_corrections(
         orphaned_count,
         failed_count,
         events,
-        plain_sqlite_recovery_proven: false,
-        live_cutover_proven: false,
+        plain_sqlite_recovery_proven,
+        live_cutover_proven,
     })
+}
+
+fn replay_plain_sqlite_recovery_proven(db: &ActionDb) -> bool {
+    main_db_file_path(db)
+        .as_deref()
+        .is_some_and(|path| ActionDb::validate_plain_sqlite_storage(path).is_ok())
+}
+
+fn replay_live_cutover_proven(db: &ActionDb) -> bool {
+    let Some(path) = main_db_file_path(db) else {
+        return false;
+    };
+    if !process_has_active_access_guard_for_path(&path) {
+        return false;
+    }
+    matches!(
+        try_begin_live_cutover(&path),
+        Err(DbError::RebuildCutoverInProgress { .. })
+    )
+}
+
+fn main_db_file_path(db: &ActionDb) -> Option<PathBuf> {
+    let path = db
+        .conn_ref()
+        .query_row("PRAGMA database_list", [], |row| row.get::<_, String>(2))
+        .ok()?;
+    let path = path.trim();
+    if path.is_empty() {
+        None
+    } else {
+        Some(PathBuf::from(path))
+    }
+}
+
+fn process_has_active_access_guard_for_path(db_path: &Path) -> bool {
+    let db_path = gate_db_path_key(db_path);
+    REBUILD_DB_GATE
+        .lock()
+        .active_access_guards_by_path
+        .get(&db_path)
+        .copied()
+        .unwrap_or(0)
+        > 0
+}
+
+fn gate_db_path_key(db_path: &Path) -> PathBuf {
+    if let Ok(path) = db_path.canonicalize() {
+        return path;
+    }
+    if let (Some(parent), Some(file_name)) = (db_path.parent(), db_path.file_name()) {
+        if let Ok(parent) = parent.canonicalize() {
+            return parent.join(file_name);
+        }
+    }
+    db_path.to_path_buf()
 }
 
 fn verified_sidecar_checksum(
@@ -1749,6 +2063,16 @@ mod tests {
         replay_claim_file_sidecar_corrections(ctx, db, run_id, sidecar, &checksum)
     }
 
+    fn assert_cutover_in_progress(error: crate::db::DbError, expected_reason: &str) {
+        match error {
+            crate::db::DbError::RebuildCutoverInProgress { reason, .. } => assert!(
+                reason.contains(expected_reason),
+                "expected reason containing {expected_reason:?}, got {reason:?}"
+            ),
+            other => panic!("expected RebuildCutoverInProgress, got {other:?}"),
+        }
+    }
+
     fn feedback_count_for_replay(db: &ActionDb, replay_event_id: &str) -> i64 {
         db.conn_ref()
             .query_row(
@@ -1888,6 +2212,75 @@ mod tests {
     }
 
     #[test]
+    fn live_cutover_gate_blocks_new_shared_access_until_released() {
+        let _test_lock = rebuild_test_lock();
+        let dir = tempfile::tempdir().expect("tempdir");
+        let path = dir.path().join("cutover-active.db");
+        let cutover = try_begin_live_cutover(&path).expect("begin cutover");
+
+        let error = match acquire_db_access_guard(&path) {
+            Ok(_) => panic!("shared access should fail while cutover is active"),
+            Err(error) => error,
+        };
+        assert_cutover_in_progress(error, "cutover is active");
+
+        drop(cutover);
+        let access = acquire_db_access_guard(&path).expect("shared access after cutover release");
+        drop(access);
+    }
+
+    #[test]
+    fn live_cutover_gate_allows_unrelated_db_path_access() {
+        let _test_lock = rebuild_test_lock();
+        let dir = tempfile::tempdir().expect("tempdir");
+        let cutover_path = dir.path().join("cutover-active.db");
+        let unrelated_path = dir.path().join("unrelated.db");
+        let cutover = try_begin_live_cutover(&cutover_path).expect("begin cutover");
+
+        let access =
+            acquire_db_access_guard(&unrelated_path).expect("unrelated shared access remains open");
+
+        drop(access);
+        drop(cutover);
+    }
+
+    #[test]
+    fn shared_access_guard_blocks_live_cutover_until_released() {
+        let _test_lock = rebuild_test_lock();
+        let dir = tempfile::tempdir().expect("tempdir");
+        let path = dir.path().join("access-active.db");
+        let access = acquire_db_access_guard(&path).expect("shared access");
+
+        let error = match try_begin_live_cutover(&path) {
+            Ok(_) => panic!("cutover should fail while shared access is active"),
+            Err(error) => error,
+        };
+        assert_cutover_in_progress(error, "access guards are still active");
+
+        drop(access);
+        let cutover = try_begin_live_cutover(&path).expect("cutover after shared access release");
+        drop(cutover);
+    }
+
+    #[test]
+    fn action_db_open_at_fails_while_live_cutover_active() {
+        let _test_lock = rebuild_test_lock();
+        let dir = tempfile::tempdir().expect("tempdir");
+        let path = dir.path().join("direct-open.db");
+        let cutover = try_begin_live_cutover(&path).expect("begin cutover");
+
+        let error = match ActionDb::open_at_unencrypted(path.clone()) {
+            Ok(_) => panic!("direct ActionDb open should fail during cutover"),
+            Err(error) => error,
+        };
+        assert_cutover_in_progress(error, "cutover is active");
+
+        drop(cutover);
+        let db = ActionDb::open_at_unencrypted(path).expect("direct open after cutover release");
+        drop(db);
+    }
+
+    #[test]
     fn dos832_replay_sidecar_resolves_fresh_claim_by_semantic_identity_not_runtime_uuid() {
         let db = test_db();
         let (clock, rng, external) = ctx_parts();
@@ -1928,6 +2321,51 @@ mod tests {
         assert_eq!(verification_state, "contested");
         assert_eq!(claim_version, 2);
         assert_eq!(targeted_repair_job_count(&db, &fresh_claim_id), 1);
+    }
+
+    #[test]
+    fn dos832_replay_report_proves_plain_sqlite_and_cutover_when_service_backed() {
+        let _test_lock = rebuild_test_lock();
+        let runtime = tokio::runtime::Builder::new_current_thread()
+            .enable_all()
+            .build()
+            .expect("tokio runtime");
+        runtime.block_on(async {
+            let dir = tempfile::tempdir().expect("tempdir");
+            let path = dir.path().join("service-backed-replay.db");
+            let svc = crate::db_service::DbService::open_at_unencrypted(path.clone())
+                .await
+                .expect("open service");
+
+            let report = svc
+                .writer()
+                .call(|conn| {
+                    let db = ActionDb::from_conn(conn);
+                    let (clock, rng, external) = ctx_parts();
+                    let ctx = ServiceContext::test_live(&clock, &rng, &external);
+                    seed_account(db);
+                    let fresh_claim_id = inserted_claim_id(
+                        commit_claim(&ctx, db, proposal("Renewal risk is elevated"))
+                            .expect("commit fresh claim"),
+                    );
+                    let sidecar = sidecar_for_claim(
+                        db,
+                        &fresh_claim_id,
+                        &fresh_claim_id,
+                        "service-feedback-1",
+                    );
+                    replay_authorized(&ctx, db, "run-service-proof", &sidecar)
+                        .map_err(|error| rusqlite::Error::InvalidParameterName(error.to_string()))
+                })
+                .await
+                .expect("writer replay proof");
+
+            assert_eq!(report.applied_count, 1);
+            assert!(report.plain_sqlite_recovery_proven);
+            assert!(report.live_cutover_proven);
+            crate::db::ActionDb::validate_plain_sqlite_storage(&path)
+                .expect("service replay ran on a plain SQLite DB");
+        });
     }
 
     #[test]

@@ -527,11 +527,7 @@ pub fn run() {
 
             // Initialize async DbService (read/write separated connections).
             // Skip when startup recovery screens are active.
-            if !state
-                .encryption_key_missing
-                .load(std::sync::atomic::Ordering::Relaxed)
-                && !state.is_database_recovery_required()
-            {
+            if !state.is_database_recovery_required() {
                 match tauri::async_runtime::block_on(state.init_db_service()) {
                     Ok(()) => {
                         log::info!("DbService initialized before startup workers (1 writer + 2 readers)");
@@ -1377,7 +1373,6 @@ pub fn run() {
             commands::dismiss_icloud_warning,
             // App Lock
             commands::get_lock_status,
-            commands::get_encryption_key_status,
             commands::lock_app,
             commands::unlock_app,
             commands::set_lock_timeout,
