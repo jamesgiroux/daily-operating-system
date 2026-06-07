@@ -33,12 +33,12 @@
 <section class="plans-cover">
   <p class="plans-eyebrow">DailyOS · v1.4.9 · Wave Plan</p>
   <h1 class="plans-title">I correct it once, and it stays corrected — everywhere.</h1>
-  <p class="plans-kicker">Substrate Reset &amp; Judgment Maturation. W1-W5 implementation has reached <code>dev</code>; L3 remediation is active before tag.</p>
+  <p class="plans-kicker">Substrate Reset &amp; Judgment Maturation. W1-W5 implementation has reached <code>dev</code>; W6 PR #447 is green and L3 remediation remains before tag.</p>
   <p class="plans-lede">
     A claim carries provenance and a trust band. The user dismisses, contradicts, or re-scopes it — in the app or by editing the claim's readable file — and the source's reliability updates, derived claims invalidate, and what surfaces next visibly changes across the macOS app and MCP, surviving re-enrichment and rebuild. Single-writer is the only hard gate for that loop; storage hardening, security, and transcript run parallel.
   </p>
   <div class="plans-meta">
-    <span>2026 (IN FLIGHT, L3 remediation active)</span>
+    <span>2026 (IN FLIGHT, W6 PR #447 green; L3 pending)</span>
     <span>Waves: 6</span>
     <span>Linear: 874a7361</span>
     <span>Critical path: single-writer → W3 → W4 → W5</span>
@@ -48,8 +48,8 @@
 <section class="plans-section" aria-labelledby="progress">
   <header class="plans-section-header">
     <p class="plans-section-eyebrow">Progress snapshot · refreshed 2026-06-07</p>
-    <h2 id="progress" class="plans-section-title">W1a, W2, W3, W4, and W5 are merged; W6 implementation and L3 remediation remain before the v1.4.9 tag.</h2>
-    <p class="plans-section-lede">This snapshot reflects GitHub PR state through #445, local <code>dev</code> at <code>79a99ec5</code>, and the current remediation worktree <code>codex/v1.4.9-l3-remediation</code>. PR merge is not wave closure: the integrated L3 pass is still in remediation. W5 is judged only against its registered MCP-eligible parity slice; storage reset, rebuild/cutover proof, and W6 transcript-substrate implementation are version tag blockers, not W5 ACs.</p>
+    <h2 id="progress" class="plans-section-title">W1a, W2, W3, W4, and W5 are merged; W6 implementation PR #447 is open and green; integrated L3 remains before the v1.4.9 tag.</h2>
+    <p class="plans-section-lede">This snapshot reflects GitHub PR state through #447, local <code>dev</code> at <code>79a99ec5</code>, and the current remediation branch <code>codex/v1.4.9-l3-remediation</code>. PR merge is not wave closure: the integrated L3 pass still runs after the branch lands on <code>dev</code>. W5 is judged only against its registered MCP-eligible parity slice; storage reset, rebuild/cutover proof, and integrated W6 transcript-substrate proof remain version tag blockers, not W5 ACs.</p>
   </header>
   <table class="reviewer-matrix">
     <thead><tr><th>Wave</th><th>L0 / PR state</th><th>L2 / implementation state</th><th>Current read</th></tr></thead>
@@ -75,26 +75,26 @@
       <tr>
         <td>W4</td>
         <td>W4 L0 #438 merged after challenge cycle 7 approval. W4 implementation #444 merged to <code>dev</code>.</td>
-        <td>#444 carried the correction-loop substrate to <code>dev</code>. Current L3 remediation patches bounded findings around named helper stubs, DOS-338 MCP stickiness, and replay-scan performance. Targeted blocker tests are green; the latest full <code>cargo test</code> rerun was interrupted during integration tests and is not claimed as current full-gate proof.</td>
-        <td>Merged at PR/L2; current remediation branch still needs review/commit before this wave is L3-clear.</td>
+        <td>#444 carried the correction-loop substrate to <code>dev</code>. Current L3 remediation for named helper stubs, MCP stickiness, and replay-scan performance is included in #447 with local full-gate proof and green remote checks.</td>
+        <td>Merged at PR/L2; integrated L3 remains after #447 lands.</td>
       </tr>
       <tr>
         <td>W5</td>
         <td>W5 L0 #439 merged and approved. W5 implementation #445 merged to <code>dev</code>.</td>
-        <td>#445 completes the registered W5 public MCP parity runtime slice: account/status read cleanup, source-aware/provenance reads, pagination, typed claim feedback, submit-class note/action/action-status writes, and eval/E2E. Current L3 remediation fixes W5-relevant hostile-evidence wrapping and registered-handler diagnostic egress. Daily briefing, meeting briefing, portfolio attention, workspace-memory search, <code>dailyos.write.place_document</code>, and DOS-173 resources are out of W5.</td>
-        <td>Merged at PR/L2; AC-bounded L3 hardening active before tag.</td>
+        <td>#445 completes the registered W5 public MCP parity runtime slice: account/status read cleanup, source-aware/provenance reads, pagination, typed claim feedback, submit-class note/action/action-status writes, and eval/E2E. #447 carries AC-bounded L3 hardening for hostile-evidence wrapping and registered-handler diagnostic egress. Daily briefing, meeting briefing, portfolio attention, workspace-memory search, <code>dailyos.write.place_document</code>, and DOS-173 resources are out of W5.</td>
+        <td>Merged at PR/L2; integrated L3 remains after #447 lands.</td>
       </tr>
       <tr>
         <td>W6</td>
-        <td>W6 DOS-511 L0 #440 merged and approved.</td>
-        <td>No remote W6 implementation PR found. Local L1 work is now active on <code>codex/v1.4.9-l3-remediation</code>: transcript claim producer, source lifecycle registration, runtime provenance, and claim-backed quote consumption are in progress.</td>
-        <td>Implementation is in the v1.4.9 completion path: AC2-AC23 from the approved DOS-511 packet still need final focused verification, L2, PR, and integrated L3 proof.</td>
+        <td>W6 DOS-511 L0 #440 merged and approved. W6 implementation PR #447 is open against <code>dev</code>.</td>
+        <td>#447 implements the transcript claim producer, source lifecycle registration, runtime provenance, claim-backed quote consumption, provider redaction, and quote feedback proof. Local L2 passed, full local gates passed, and remote checks are green.</td>
+        <td>PR/L2 is complete for the implementation branch. Remaining tag work is landing #447 and running integrated L3 proof on merged <code>dev</code>.</td>
       </tr>
     </tbody>
   </table>
   <div class="callout-grid">
-    <article class="callout"><h3 class="callout-title">Blocker buckets</h3><p class="callout-prose"><strong>W5 blockers:</strong> registered MCP-eligible parity failures, including unsafe hostile evidence or diagnostics crossing MCP. <strong>Version tag blockers:</strong> storage reset, rebuild/cutover proof, DOS-338 proof, W6 transcript-substrate implementation, and no-stub shipped waves. <strong>Maintenance:</strong> broader MCP hardening that does not affect the registered W5 slice.</p></article>
-    <article class="callout"><h3 class="callout-title">Current local remediation</h3><p class="callout-prose"><code>codex/v1.4.9-l3-remediation</code> has uncommitted patches for registered W5 handler diagnostic hardening, hostile-evidence wrapping, DOS-338 MCP stickiness scoring, meeting-prep replay indexing/resolution, real helpers for previously named stub modules, and W6 transcript-substrate implementation. Targeted blocker tests are green; full gates and AC-bounded L2/L3 re-review still need to run on this diff after blocker classification is locked.</p></article>
+    <article class="callout"><h3 class="callout-title">Blocker buckets</h3><p class="callout-prose"><strong>W5 blockers:</strong> registered MCP-eligible parity failures, including unsafe hostile evidence or diagnostics crossing MCP. <strong>Version tag blockers:</strong> storage reset, rebuild/cutover proof, integrated DOS-338 proof, W6 PR landing, integrated L3 proof, and no-stub shipped waves. <strong>Maintenance:</strong> broader MCP hardening that does not affect the registered W5 slice.</p></article>
+    <article class="callout"><h3 class="callout-title">Current remediation</h3><p class="callout-prose"><code>codex/v1.4.9-l3-remediation</code> is pushed as PR #447. It carries registered W5 handler diagnostic hardening, hostile-evidence wrapping, DOS-338 MCP stickiness scoring, meeting-prep replay indexing/resolution, real helpers for previously named stub modules, and W6 transcript-substrate implementation. Full local gates and current remote checks are green; the integrated L3 pass still needs to run after merge.</p></article>
   </div>
 </section>
 
@@ -221,7 +221,7 @@
 
 <div class="finis">
   <div class="finis-mark">W1 · W2 · W3 · W4 · W5 · W6</div>
-  <div class="finis-date">v1.4.9 Wave Plan · W5 merged, W6 implementation pending, L3 remediation active · refreshed 2026-06-07</div>
+  <div class="finis-date">v1.4.9 Wave Plan · W5 merged, W6 PR #447 green, integrated L3 pending · refreshed 2026-06-07</div>
   <div class="finis-caption">Mechanism-depth design routes to the per-wave L0 packets; progress state routes to PRs, proof bundles, and the L3 wave-review record.</div>
 </div>
 
