@@ -1807,7 +1807,10 @@ fn local_stdio_exposure_for(side: Side, tool_name: &ScopedName) -> McpExposure {
 fn local_stdio_submit_correction_allowed(tool_name: &ScopedName) -> bool {
     matches!(
         tool_name.as_str(),
-        "dailyos.submit.note" | "dailyos.submit.action" | "dailyos.submit.action_status"
+        "dailyos.submit.claim_feedback"
+            | "dailyos.submit.note"
+            | "dailyos.submit.action"
+            | "dailyos.submit.action_status"
     )
 }
 
@@ -2019,6 +2022,13 @@ mod tests {
     fn local_stdio_exposure_keeps_write_handlers_non_invocable() {
         assert!(matches!(
             local_stdio_exposure_for(Side::Read, &ScopedName::new("dailyos.read.account_status")),
+            McpExposure::Invocable
+        ));
+        assert!(matches!(
+            local_stdio_exposure_for(
+                Side::SubmitCorrection,
+                &ScopedName::new("dailyos.submit.claim_feedback")
+            ),
             McpExposure::Invocable
         ));
         assert!(matches!(

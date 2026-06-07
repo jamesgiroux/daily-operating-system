@@ -21,6 +21,8 @@ use super::local_runtime;
 
 pub const PARAM_PAYLOAD_KEYS: &[&str] = &["params", "parameters"];
 pub const RESPONSE_PAYLOAD_KEYS: &[&str] = &["response", "response_or_error", "result"];
+const EXTRA_SENSITIVE_DETAIL_KEYS: &[&str] =
+    &["client_id", "conversation_handle", "mutation_cursor"];
 
 /// MCP-specific audit write failures.
 #[derive(Debug, thiserror::Error)]
@@ -97,10 +99,8 @@ pub fn write_with_conn(
 }
 
 fn detail_with_attribution(actor: &Actor, detail: Value, side: Side) -> Result<Value, AuditError> {
-    let mut detail = match side {
-        Side::Read => digest_payload_detail(detail)?,
-        Side::Write | Side::SubmitCorrection => sanitize_detail(detail),
-    };
+    let _side = side;
+    let mut detail = digest_payload_detail(detail)?;
     add_actor_attribution(actor, &mut detail);
     Ok(Value::Object(detail))
 }
@@ -112,28 +112,16 @@ fn object_detail(detail: Value) -> Map<String, Value> {
     }
 }
 
-fn sanitize_detail(detail: Value) -> Map<String, Value> {
-    let mut map = object_detail(detail);
-    for key in PARAM_PAYLOAD_KEYS
-        .iter()
-        .chain(RESPONSE_PAYLOAD_KEYS.iter())
-        .copied()
-    {
-        map.remove(key);
-    }
-    map
-}
-
 fn digest_payload_detail(detail: Value) -> Result<Map<String, Value>, AuditError> {
     let mut map = object_detail(detail);
     for key in PARAM_PAYLOAD_KEYS
         .iter()
         .chain(RESPONSE_PAYLOAD_KEYS.iter())
+        .chain(EXTRA_SENSITIVE_DETAIL_KEYS.iter())
         .copied()
     {
         if let Some(payload) = map.remove(key) {
-            let digest = local_runtime::digest_json_value_hex(&payload)
-                .map_err(|error| AuditError::Digest(error.to_string()))?;
+            let digest = digest_value(&payload)?;
             map.insert(format!("{key}_digest"), Value::String(digest));
             map.insert(
                 format!("{key}_digest_algorithm"),
@@ -144,6 +132,11 @@ fn digest_payload_detail(detail: Value) -> Result<Map<String, Value>, AuditError
     Ok(map)
 }
 
+fn digest_value(value: &Value) -> Result<String, AuditError> {
+    local_runtime::digest_json_value_hex(value)
+        .map_err(|error| AuditError::Digest(error.to_string()))
+}
+
 fn add_actor_attribution(actor: &Actor, detail: &mut Map<String, Value>) {
     if let Actor::McpClient {
         client_id,
@@ -151,16 +144,29 @@ fn add_actor_attribution(actor: &Actor, detail: &mut Map<String, Value>) {
     } = actor
     {
         detail
-            .entry("client_id".to_string())
-            .or_insert_with(|| Value::String(client_id.as_str().to_string()));
-        detail
-            .entry("conversation_handle".to_string())
+            .entry("actor_client_id_digest".to_string())
             .or_insert_with(|| {
-                conversation_handle
+                digest_value(&Value::String(client_id.as_str().to_string()))
+                    .map(Value::String)
+                    .unwrap_or_else(|_| Value::String("digest_error".to_string()))
+            });
+        detail
+            .entry("actor_client_id_digest_algorithm".to_string())
+            .or_insert_with(|| Value::String(local_runtime::AUDIT_DIGEST_ALGORITHM.to_string()));
+        detail
+            .entry("actor_conversation_handle_digest".to_string())
+            .or_insert_with(|| {
+                let value = conversation_handle
                     .as_ref()
                     .map(|handle| Value::String(handle.as_str().to_string()))
-                    .unwrap_or(Value::Null)
+                    .unwrap_or(Value::Null);
+                digest_value(&value)
+                    .map(Value::String)
+                    .unwrap_or_else(|_| Value::String("digest_error".to_string()))
             });
+        detail
+            .entry("actor_conversation_handle_digest_algorithm".to_string())
+            .or_insert_with(|| Value::String(local_runtime::AUDIT_DIGEST_ALGORITHM.to_string()));
     }
 }
 
@@ -287,23 +293,55 @@ mod tests {
                 out["params_digest_algorithm"],
                 local_runtime::AUDIT_DIGEST_ALGORITHM
             );
-            assert_eq!(out["client_id"], "client-a");
+            assert!(out.get("client_id").is_none());
+            assert!(out.get("conversation_handle").is_none());
+            assert_eq!(out["actor_client_id_digest"].as_str().unwrap().len(), 64);
+            assert_eq!(
+                out["actor_client_id_digest_algorithm"],
+                local_runtime::AUDIT_DIGEST_ALGORITHM
+            );
         });
     }
 
     #[test]
-    fn write_detail_masks_payload_keys() {
-        let detail = json!({
-            "tool_name": "dailyos.submit.note",
-            "params": { "text": "sensitive note" },
-            "response": { "note_id": "note-1" },
-            "mutation_cursor": { "note_id": "note-1" }
+    fn write_detail_persists_hashes_not_raw_payload_or_handles() {
+        local_runtime::with_audit_digest_key_for_tests([9_u8; 32], || {
+            let detail = json!({
+                "tool_name": "dailyos.submit.note",
+                "client_id": "client-a",
+                "conversation_handle": "conv-a",
+                "params": { "text": "sensitive note", "entity_handle": "mth_public" },
+                "response": { "note_id": "note-1", "status": "ok" },
+                "result_status": "ok",
+                "mutation_cursor": { "note_id": "note-1" }
+            });
+            let out = detail_with_attribution(&actor(), detail, Side::SubmitCorrection).unwrap();
+            let serialized = serde_json::to_string(&out).expect("serialize audit detail");
+
+            for raw in [
+                "sensitive note",
+                "note-1",
+                "mth_public",
+                "conv-a",
+                "client-a",
+            ] {
+                assert!(
+                    !serialized.contains(raw),
+                    "audit detail must not contain raw {raw}"
+                );
+            }
+            assert_eq!(out["result_status"], "ok");
+            assert_eq!(out["params_digest"].as_str().unwrap().len(), 64);
+            assert_eq!(out["response_digest"].as_str().unwrap().len(), 64);
+            assert_eq!(out["mutation_cursor_digest"].as_str().unwrap().len(), 64);
+            assert_eq!(
+                out["actor_conversation_handle_digest"]
+                    .as_str()
+                    .unwrap()
+                    .len(),
+                64
+            );
         });
-        let out = detail_with_attribution(&actor(), detail, Side::SubmitCorrection).unwrap();
-        assert!(out.get("params").is_none());
-        assert!(out.get("response").is_none());
-        assert_eq!(out["mutation_cursor"]["note_id"], "note-1");
-        assert_eq!(out["conversation_handle"], "conv-a");
     }
 
     #[test]

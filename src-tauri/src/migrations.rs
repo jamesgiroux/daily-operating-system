@@ -1162,6 +1162,13 @@ const MIGRATIONS: &[Migration] = &[
         version: 287,
         sql: include_str!("migrations/287_correction_stickiness_eval.sql"),
     },
+    // v1.4.9 W5 — registry-backed opaque MCP target handles. The W5 packet
+    // reserved registered schema version 290; current v1.4.9 migrations use
+    // same-number SQL filenames for this range.
+    Migration::Sql {
+        version: 290,
+        sql: include_str!("migrations/290_mcp_target_handles.sql"),
+    },
 ];
 
 const V155_SHADOW_TRUST_VERSION: i64 = 1_401_003;

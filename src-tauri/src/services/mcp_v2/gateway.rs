@@ -630,6 +630,15 @@ impl Gateway {
                     }
                     eprintln!("mcp_v2 audit single-failure: {err}");
                 }
+                if let Some(owned) = self.connection.as_ref() {
+                    let connection = owned.connection();
+                    let guard = connection
+                        .lock()
+                        .unwrap_or_else(std::sync::PoisonError::into_inner);
+                    if let Err(error) = super::target_handles::cleanup_target_handles(&guard) {
+                        eprintln!("mcp_v2 target handle cleanup failed: {error}");
+                    }
+                }
 
                 self.emitter.emit_invoked(
                     asserted_client_id,
@@ -831,6 +840,10 @@ fn build_audit_detail(
         "conversation_handle": conversation_handle.as_str(),
         "tool_name": tool_name.as_str(),
         "params": params,
+        "result_status": response
+            .and_then(|value| value.get("status"))
+            .and_then(serde_json::Value::as_str)
+            .unwrap_or("ok"),
     });
     if let Some(value) = response {
         detail["response"] = value.clone();

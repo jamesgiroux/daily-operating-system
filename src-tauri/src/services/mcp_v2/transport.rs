@@ -175,7 +175,7 @@ impl ServerHandler for V2ServerHandler {
             },
             instructions: Some(
                 "DailyOS MCP v2. Personal working intelligence for the paired user — \
-                 accounts, briefings, attention, working memory, notes, actions. \
+                 account status, source provenance, claim feedback, notes, and actions. \
                  Not for broad enterprise or web corpus search."
                     .to_string(),
             ),
@@ -390,12 +390,11 @@ fn tool_error_to_mcp_error(err: ToolError) -> ErrorData {
                 "retry_after_seconds": retry_after_seconds,
             })),
         ),
-        ToolError::ExposureForbidden { tool_name } => ErrorData::new(
+        ToolError::ExposureForbidden { tool_name: _ } => ErrorData::new(
             ErrorCode::METHOD_NOT_FOUND,
             "tool is not exposed to your pairing".to_string(),
             Some(json!({
                 "kind": "exposure_forbidden",
-                "tool_name": tool_name.as_str(),
             })),
         ),
         ToolError::PairingRevoked => ErrorData::invalid_request(
@@ -771,6 +770,47 @@ mod tests {
         );
     }
 
+    #[tokio::test]
+    async fn call_tool_exposure_error_does_not_echo_hidden_requested_name() {
+        let visible_tool_name = "dailyos.read.account_status";
+        let hidden_tool_name = "dailyos.read.daily_briefing";
+        let description = fake_desc(visible_tool_name);
+        let invocations = Arc::new(Mutex::new(Vec::new()));
+        let conversation_dir = tempfile::tempdir().expect("conversation tempdir");
+        let mut gateway = Gateway::new().with_local_conversation_store_for_tests(
+            LocalConversationStore::new(conversation_dir.path().join("handles.json")),
+        );
+        gateway.register(Arc::new(RecordingHandler {
+            description: description.clone(),
+            invocations,
+        }));
+        let handler = V2ServerHandler::from_local_stdio(
+            Arc::new(gateway),
+            Arc::new(SingleToolCatalog {
+                description: description.clone(),
+            }),
+            vec![local_stdio_grant(&description.name)],
+            McpClientId::new("local-client-a"),
+        );
+
+        let err = handler
+            .call_tool(
+                CallToolRequestParam {
+                    name: Cow::Borrowed(hidden_tool_name),
+                    arguments: Some(JsonObject::new()),
+                },
+                request_context(),
+            )
+            .await
+            .expect_err("hidden tool call must be rejected");
+        assert_eq!(err.code, ErrorCode::METHOD_NOT_FOUND);
+        let wire = serde_json::to_string(&err.data).unwrap_or_default();
+        assert!(
+            !wire.contains(hidden_tool_name) && !err.message.contains(hidden_tool_name),
+            "hidden tool name must not be echoed on the public wire error: data={wire}"
+        );
+    }
+
     #[test]
     fn tool_description_composes_summary_when_to_call_when_not() {
         let desc = fake_desc("dailyos.read.account_status");
@@ -831,6 +871,10 @@ mod tests {
         assert_eq!(err.code, ErrorCode::METHOD_NOT_FOUND);
         let data = err.data.as_ref().expect("data present");
         assert_eq!(data["kind"], "exposure_forbidden");
+        assert!(
+            data.get("tool_name").is_none(),
+            "exposure errors must not echo probed tool names"
+        );
     }
 
     #[test]

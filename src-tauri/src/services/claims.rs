@@ -246,6 +246,13 @@ pub struct VerifiedSurfaceFeedbackDelegation<'a> {
     pub trusted_surface: Option<&'a str>,
 }
 
+#[derive(Debug, Clone, Copy)]
+pub struct McpFeedbackDelegation<'a> {
+    pub client_id_hash: &'a str,
+    pub conversation_handle_hash: &'a str,
+    pub tool_name: &'a str,
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
 pub struct ClaimFeedbackReplayInput {
     pub feedback: ClaimFeedbackInput,
@@ -273,6 +280,7 @@ pub struct ClaimFileFeedbackApplyInput {
 struct ClaimFeedbackReplayWrite {
     event_id: String,
     submitted_at: String,
+    compare_submitted_at: bool,
 }
 
 /// Claim-generation contract boundary.
@@ -5559,7 +5567,7 @@ fn actor_class_for_actor(actor: &str) -> Option<ClaimActorClass> {
         .next()
         .unwrap_or(normalized.as_str());
     match head {
-        "user" | "human" => Some(ClaimActorClass::User),
+        "user" | "human" | "mcp" | "mcp_client" => Some(ClaimActorClass::User),
         "system" | "system_backfill" | "backfill" | "migration" | "repair" => {
             Some(ClaimActorClass::System)
         }
@@ -5569,6 +5577,14 @@ fn actor_class_for_actor(actor: &str) -> Option<ClaimActorClass> {
 }
 
 fn validate_feedback_actor(actor: &str) -> Result<(), ClaimError> {
+    let normalized = actor.trim().to_ascii_lowercase();
+    let head = normalized
+        .split([':', '/', '@'])
+        .next()
+        .unwrap_or(normalized.as_str());
+    if matches!(head, "user" | "human") {
+        return Ok(());
+    }
     let actor_class = actor_class_for_actor(actor).ok_or_else(|| {
         ClaimError::InvalidFeedback(format!(
             "actor '{}' does not map to a registered actor class",
@@ -5582,6 +5598,22 @@ fn validate_feedback_actor(actor: &str) -> Result<(), ClaimError> {
             "feedback actor '{}' maps to {}, but feedback is only accepted from user actors",
             actor,
             actor_class.as_str()
+        )))
+    }
+}
+
+fn validate_mcp_feedback_actor(actor: &str) -> Result<(), ClaimError> {
+    let normalized = actor.trim().to_ascii_lowercase();
+    let head = normalized
+        .split([':', '/', '@'])
+        .next()
+        .unwrap_or(normalized.as_str());
+    if matches!(head, "mcp" | "mcp_client") {
+        Ok(())
+    } else {
+        Err(ClaimError::InvalidFeedback(format!(
+            "MCP feedback actor must be mcp_client, got '{}'",
+            actor
         )))
     }
 }
@@ -5667,14 +5699,15 @@ fn validate_feedback_invocation(
     input: &ClaimFeedbackInput,
     invocation: FeedbackInvocation<'_>,
 ) -> Result<(), ClaimError> {
-    validate_feedback_actor(&input.actor)?;
     match invocation {
         FeedbackInvocation::Direct => {
+            validate_feedback_actor(&input.actor)?;
             crate::services::correction_artifacts::authorize_lifecycle_actor(service_actor)
                 .map_err(|error| ClaimError::Mode(error.to_string()))?;
             Ok(())
         }
         FeedbackInvocation::VerifiedSurface(delegation) => {
+            validate_feedback_actor(&input.actor)?;
             let normalized = service_actor.trim().to_ascii_lowercase();
             if normalized != "surface_client" {
                 return Err(ClaimError::Mode(format!(
@@ -5691,12 +5724,56 @@ fn validate_feedback_invocation(
             }
             Ok(())
         }
+        FeedbackInvocation::McpClient(delegation) => {
+            validate_mcp_feedback_actor(&input.actor)?;
+            let normalized = service_actor.trim().to_ascii_lowercase();
+            if normalized != "mcp_client" && normalized != "mcp" {
+                return Err(ClaimError::Mode(format!(
+                    "MCP feedback requires mcp_client service actor, got {service_actor}"
+                )));
+            }
+            if delegation.client_id_hash.trim().is_empty()
+                || delegation.conversation_handle_hash.trim().is_empty()
+                || delegation.tool_name.trim().is_empty()
+            {
+                return Err(ClaimError::InvalidFeedback(
+                    "MCP feedback requires client, conversation, and tool attribution hashes"
+                        .to_string(),
+                ));
+            }
+            Ok(())
+        }
         FeedbackInvocation::Replay => {
+            validate_feedback_actor(&input.actor)?;
             crate::services::correction_artifacts::authorize_service_lifecycle_actor(service_actor)
                 .map_err(|error| ClaimError::Mode(error.to_string()))?;
             Ok(())
         }
     }
+}
+
+fn attach_mcp_feedback_delegation_payload(
+    payload_json: Option<String>,
+    delegation: McpFeedbackDelegation<'_>,
+) -> Result<Option<String>, ClaimError> {
+    let mut payload = match payload_json {
+        Some(raw) => serde_json::from_str::<serde_json::Value>(&raw).map_err(|error| {
+            ClaimError::InvalidFeedback(format!("payload_json must be valid JSON: {error}"))
+        })?,
+        None => serde_json::json!({}),
+    };
+    let object = payload.as_object_mut().ok_or_else(|| {
+        ClaimError::InvalidFeedback("payload_json must be a JSON object".to_string())
+    })?;
+    object.insert(
+        "_mcp_delegation".to_string(),
+        serde_json::json!({
+            "client_id_hash": delegation.client_id_hash,
+            "conversation_handle_hash": delegation.conversation_handle_hash,
+            "tool_name": delegation.tool_name,
+        }),
+    );
+    Ok(Some(payload.to_string()))
 }
 
 fn attach_verified_surface_delegation_payload(
@@ -7442,6 +7519,60 @@ pub fn record_claim_feedback_from_verified_surface(
     )
 }
 
+pub fn record_claim_feedback_from_mcp(
+    ctx: &ServiceContext<'_>,
+    db: &ActionDb,
+    mut input: ClaimFeedbackInput,
+    delegation: McpFeedbackDelegation<'_>,
+) -> Result<ClaimFeedbackOutcome, ClaimError> {
+    load_claim_by_id(db.conn_ref(), &input.claim_id)?
+        .ok_or_else(|| ClaimError::UnknownClaimId(input.claim_id.clone()))?;
+    input.payload_json =
+        attach_mcp_feedback_delegation_payload(input.payload_json.take(), delegation)?;
+    record_claim_feedback_inner(
+        ctx,
+        db,
+        input,
+        None,
+        None,
+        FeedbackInvocation::McpClient(delegation),
+    )
+}
+
+pub fn record_claim_feedback_replay_from_mcp(
+    ctx: &ServiceContext<'_>,
+    db: &ActionDb,
+    mut input: ClaimFeedbackReplayInput,
+    delegation: McpFeedbackDelegation<'_>,
+) -> Result<ClaimFeedbackOutcome, ClaimError> {
+    load_claim_by_id(db.conn_ref(), &input.feedback.claim_id)?
+        .ok_or_else(|| ClaimError::UnknownClaimId(input.feedback.claim_id.clone()))?;
+    input.feedback.payload_json =
+        attach_mcp_feedback_delegation_payload(input.feedback.payload_json.take(), delegation)?;
+    let replay = prepare_mcp_claim_feedback_replay(&input)?;
+    record_claim_feedback_inner(
+        ctx,
+        db,
+        input.feedback,
+        None,
+        Some(replay),
+        FeedbackInvocation::McpClient(delegation),
+    )
+}
+
+pub fn recorded_claim_feedback_replay_outcome_from_mcp(
+    db: &ActionDb,
+    mut input: ClaimFeedbackReplayInput,
+    delegation: McpFeedbackDelegation<'_>,
+) -> Result<Option<ClaimFeedbackOutcome>, ClaimError> {
+    load_claim_by_id(db.conn_ref(), &input.feedback.claim_id)?
+        .ok_or_else(|| ClaimError::UnknownClaimId(input.feedback.claim_id.clone()))?;
+    input.feedback.payload_json =
+        attach_mcp_feedback_delegation_payload(input.feedback.payload_json.take(), delegation)?;
+    let replay = prepare_mcp_claim_feedback_replay(&input)?;
+    existing_feedback_replay_outcome(db, &input.feedback, &replay)
+}
+
 fn validate_verified_surface_payload_for_writer(
     claim: &IntelligenceClaim,
     action: FeedbackAction,
@@ -7555,6 +7686,7 @@ enum FeedbackInvocation<'a> {
     Direct,
     Replay,
     VerifiedSurface(VerifiedSurfaceFeedbackDelegation<'a>),
+    McpClient(McpFeedbackDelegation<'a>),
 }
 
 pub fn record_claim_feedback_replay(
@@ -7594,6 +7726,24 @@ fn prepare_claim_feedback_replay(
     Ok(ClaimFeedbackReplayWrite {
         event_id: replay_event_id.to_string(),
         submitted_at: normalize_replay_submitted_at(&input.submitted_at)?,
+        compare_submitted_at: true,
+    })
+}
+
+fn prepare_mcp_claim_feedback_replay(
+    input: &ClaimFeedbackReplayInput,
+) -> Result<ClaimFeedbackReplayWrite, ClaimError> {
+    validate_mcp_feedback_actor(&input.feedback.actor)?;
+    let replay_event_id = input.replay_event_id.trim();
+    if replay_event_id.is_empty() {
+        return Err(ClaimError::InvalidFeedback(
+            "replay_event_id is required for MCP feedback replay".to_string(),
+        ));
+    }
+    Ok(ClaimFeedbackReplayWrite {
+        event_id: replay_event_id.to_string(),
+        submitted_at: normalize_replay_submitted_at(&input.submitted_at)?,
+        compare_submitted_at: false,
     })
 }
 
@@ -7651,7 +7801,12 @@ fn record_claim_feedback_inner(
             }
         }
         ensure_feedback_target_active(&claim)?;
-        validate_feedback_actor(&input.actor)?;
+        match invocation {
+            FeedbackInvocation::McpClient(_) => validate_mcp_feedback_actor(&input.actor)?,
+            FeedbackInvocation::Direct
+            | FeedbackInvocation::Replay
+            | FeedbackInvocation::VerifiedSurface(_) => validate_feedback_actor(&input.actor)?,
+        }
         let metadata = feedback_metadata_for_claim(&claim, &input, metadata.clone())?;
         let subject_value: serde_json::Value = serde_json::from_str(&claim.subject_ref)?;
         let subject = subject_ref_from_json(&subject_value)?;
@@ -7937,12 +8092,17 @@ fn existing_feedback_replay_outcome_conn(
         payload_json.as_deref(),
         &submitted_at,
     )?;
+    let input_submitted_at = if replay.compare_submitted_at {
+        replay.submitted_at.as_str()
+    } else {
+        submitted_at.as_str()
+    };
     let input_content_hash = claim_feedback_replay_content_hash(
         input.action,
         &input.actor,
         input.actor_id.as_deref(),
         input.payload_json.as_deref(),
-        &replay.submitted_at,
+        input_submitted_at,
     )?;
     if existing_content_hash != input_content_hash {
         return Err(ClaimError::InvalidFeedback(format!(
@@ -14058,6 +14218,24 @@ mod tests {
         }
     }
 
+    fn mcp_feedback_input(claim_id: &str, action: FeedbackAction) -> ClaimFeedbackInput {
+        ClaimFeedbackInput {
+            claim_id: claim_id.to_string(),
+            action,
+            actor: "mcp_client".to_string(),
+            actor_id: Some("mcp-client-hash-fixture".to_string()),
+            payload_json: feedback_payload_for(action),
+        }
+    }
+
+    fn mcp_delegation() -> McpFeedbackDelegation<'static> {
+        McpFeedbackDelegation {
+            client_id_hash: "mcp-client-hash-fixture",
+            conversation_handle_hash: "mcp-conversation-hash-fixture",
+            tool_name: "dailyos.submit.claim_feedback",
+        }
+    }
+
     #[test]
     fn w4_surface_client_feedback_requires_verified_delegation() {
         let db = test_db();
@@ -19074,6 +19252,54 @@ mod tests {
             .unwrap();
         assert_eq!(submitted_at, REPLAY_TS_CANONICAL);
         assert_eq!(repair_job_count(&db, &claim_id), 1);
+        assert_eq!(signal_count(&db, "claim_feedback_recorded"), 1);
+    }
+
+    #[test]
+    fn record_claim_feedback_mcp_replay_is_idempotent_across_retry_timestamps() {
+        let db = test_db();
+        seed_account(&db);
+        let (clock, rng, external) = ctx_parts();
+        let user_ctx = live_ctx(&clock, &rng, &external);
+        let mcp_ctx = ServiceContext::test_live(&clock, &rng, &external).with_actor("mcp_client");
+        let claim_id = inserted_claim_id(
+            commit_claim(&user_ctx, &db, proposal("Risk replay event from MCP")).unwrap(),
+        );
+        let replay_event_id = "mcp-replay-event-idempotent-1";
+
+        let first = record_claim_feedback_replay_from_mcp(
+            &mcp_ctx,
+            &db,
+            ClaimFeedbackReplayInput {
+                feedback: mcp_feedback_input(&claim_id, FeedbackAction::CannotVerify),
+                replay_event_id: replay_event_id.to_string(),
+                submitted_at: REPLAY_TS.to_string(),
+            },
+            mcp_delegation(),
+        )
+        .unwrap();
+        let second = record_claim_feedback_replay_from_mcp(
+            &mcp_ctx,
+            &db,
+            ClaimFeedbackReplayInput {
+                feedback: mcp_feedback_input(&claim_id, FeedbackAction::CannotVerify),
+                replay_event_id: replay_event_id.to_string(),
+                submitted_at: "2026-04-01T09:16:00+00:00".to_string(),
+            },
+            mcp_delegation(),
+        )
+        .unwrap();
+
+        assert_eq!(second.feedback_id, first.feedback_id);
+        let feedback_count: i64 = db
+            .conn_ref()
+            .query_row(
+                "SELECT count(*) FROM claim_feedback WHERE replay_event_id = ?1",
+                params![replay_event_id],
+                |row| row.get(0),
+            )
+            .unwrap();
+        assert_eq!(feedback_count, 1);
         assert_eq!(signal_count(&db, "claim_feedback_recorded"), 1);
     }
 
