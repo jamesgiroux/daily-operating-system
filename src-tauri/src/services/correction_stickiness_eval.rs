@@ -141,7 +141,7 @@ pub struct StickinessRunReport {
 }
 
 pub fn classify_stickiness_result(
-    entry_point: StickinessEntryPoint,
+    _entry_point: StickinessEntryPoint,
     correction_applied: bool,
     indirect_surface_changed: bool,
     direct_surface_rerendered: bool,
@@ -151,9 +151,6 @@ pub fn classify_stickiness_result(
 ) -> StickinessObservationResult {
     if !no_forbidden_surface_leak {
         return StickinessObservationResult::BlockedByPrivacyGate;
-    }
-    if entry_point == StickinessEntryPoint::Mcp {
-        return StickinessObservationResult::BlockedByW5;
     }
     if correction_applied
         && indirect_surface_changed
@@ -190,24 +187,22 @@ pub fn record_stickiness_harness_run(
             continue;
         };
         validate_case_matches_envelope(&case, &envelope)?;
-        if input.entry_point != StickinessEntryPoint::Mcp {
-            validate_harness_phase_progress(
-                &input.snapshots.after_reenrichment,
-                &case.feedback_id,
-                "after_reenrichment",
-            )?;
-            validate_harness_phase_progress(
-                &input.snapshots.after_rebuild,
-                &case.feedback_id,
-                "after_rebuild",
-            )?;
-            validate_rebuild_surface_proof(
-                &input.snapshots.after_rebuild,
-                &case.feedback_id,
-                &case.indirect_surface,
-                &envelope,
-            )?;
-        }
+        validate_harness_phase_progress(
+            &input.snapshots.after_reenrichment,
+            &case.feedback_id,
+            "after_reenrichment",
+        )?;
+        validate_harness_phase_progress(
+            &input.snapshots.after_rebuild,
+            &case.feedback_id,
+            "after_rebuild",
+        )?;
+        validate_rebuild_surface_proof(
+            &input.snapshots.after_rebuild,
+            &case.feedback_id,
+            &case.indirect_surface,
+            &envelope,
+        )?;
 
         let proof = capture_harness_proof(&input.snapshots, &case, &envelope)?;
         let correction_applied = envelope.lifecycle_state == "active";
@@ -387,8 +382,31 @@ fn validate_rebuild_surface_proof(
                 ));
             }
         }
-        StickinessSurfaceProbe::ClaimReceipt { .. }
-        | StickinessSurfaceProbe::MeetingPrepStatus { .. } => {}
+        StickinessSurfaceProbe::MeetingPrepStatus { meeting_id } => {
+            let replayed_count: i64 = db
+                .conn_ref()
+                .query_row(
+                    "SELECT count(*)
+                       FROM meeting_prep_correction_journal journal
+                       JOIN claim_feedback feedback
+                         ON feedback.id = ?2
+                      WHERE journal.meeting_id = ?1
+                        AND journal.replayed_at IS NOT NULL
+                        AND journal.replay_attempt_count > 0
+                        AND journal.rebuild_replay_id IS NOT NULL
+                        AND datetime(journal.replayed_at) >= datetime(COALESCE(feedback.applied_at, feedback.submitted_at))",
+                    params![meeting_id, feedback_id],
+                    |row| row.get(0),
+                )
+                .map_err(|error| StickinessEvalError::Db(error.to_string()))?;
+            if replayed_count == 0 {
+                return Err(StickinessEvalError::InvalidObservation(
+                    "DOS-338 harness after_rebuild missing post-feedback meeting prep replay proof"
+                        .to_string(),
+                ));
+            }
+        }
+        StickinessSurfaceProbe::ClaimReceipt { .. } => {}
     }
     Ok(())
 }
@@ -1057,17 +1075,6 @@ fn validate_run_input(input: &StickinessRunInput) -> Result<(), StickinessEvalEr
         ));
     }
     for observation in &input.observations {
-        if input.entry_point == StickinessEntryPoint::Mcp
-            && !matches!(
-                observation.result,
-                StickinessObservationResult::BlockedByW5
-                    | StickinessObservationResult::BlockedByPrivacyGate
-            )
-        {
-            return Err(StickinessEvalError::InvalidObservation(
-                "W4 cannot claim MCP stickiness before W5".to_string(),
-            ));
-        }
         if observation.direct_surface.trim().is_empty()
             || observation.indirect_surface.trim().is_empty()
             || observation.subject_kind.trim().is_empty()
@@ -1473,14 +1480,14 @@ mod tests {
     }
 
     #[test]
-    fn mcp_observation_cannot_claim_w4_pass() {
+    fn mcp_observation_can_claim_pass_after_w5() {
         let db = test_db();
         let clock = crate::services::context::SystemClock;
         let rng = crate::services::context::SystemRng;
         let external = crate::services::context::ExternalClients::default();
         let ctx = live_ctx(&clock, &rng, &external);
 
-        let error = record_stickiness_run(
+        let report = record_stickiness_run(
             &ctx,
             &db,
             StickinessRunInput {
@@ -1489,9 +1496,10 @@ mod tests {
                 observations: vec![observation(StickinessObservationResult::Passed)],
             },
         )
-        .expect_err("W4 must not claim MCP parity");
+        .expect("W5 MCP parity can be measured by the same stickiness gate");
 
-        assert!(error.to_string().contains("before W5"));
+        assert_eq!(report.status, "completed");
+        assert_eq!(report.passed_observations, 1);
     }
 
     #[test]
@@ -1716,6 +1724,73 @@ mod tests {
     }
 
     #[test]
+    fn w4_dos338_harness_rejects_stale_meeting_prep_rebuild_proof() {
+        let (after_db, _, feedback_id) = corrected_snapshot(FeedbackAction::MarkFalse);
+        let envelope = feedback_correction_envelope(after_db.as_ref(), &feedback_id)
+            .expect("load feedback envelope")
+            .expect("feedback envelope exists");
+        let probe = StickinessSurfaceProbe::MeetingPrepStatus {
+            meeting_id: "meeting-fixture-1".to_string(),
+        };
+
+        let error = validate_rebuild_surface_proof(&after_db, &feedback_id, &probe, &envelope)
+            .expect_err("meeting prep rebuild proof must require post-feedback replay evidence");
+
+        assert!(error
+            .to_string()
+            .contains("missing post-feedback meeting prep replay proof"));
+
+        after_db
+            .conn_ref()
+            .execute(
+                "INSERT INTO meeting_prep_correction_journal (
+                    id,
+                    feedback_id,
+                    meeting_stable_key,
+                    meeting_id,
+                    field_path,
+                    actor,
+                    surface,
+                    source_asof,
+                    sensitivity,
+                    replay_key,
+                    payload_json,
+                    payload_hash,
+                    lifecycle_state,
+                    replay_attempt_count,
+                    rebuild_replay_id,
+                    replayed_at,
+                    created_at,
+                    updated_at
+                 ) VALUES (
+                    'journal-dos338-meeting-proof',
+                    ?1,
+                    'stable-key-dos338',
+                    'meeting-fixture-1',
+                    'user_notes',
+                    'user',
+                    'tauri',
+                    '2026-06-05T12:10:00+00:00',
+                    'user_only',
+                    'replay-key-dos338',
+                    '{\"value\":\"Replayed meeting prep note\"}',
+                    'payload-hash-dos338',
+                    'active',
+                    1,
+                    'rebuild-dos338-meeting-proof',
+                    '2026-06-05T12:10:00+00:00',
+                    '2026-06-05T12:10:00+00:00',
+                    '2026-06-05T12:10:00+00:00'
+                 )",
+                params![&feedback_id],
+            )
+            .expect("insert post-feedback meeting prep replay proof");
+
+        validate_rebuild_surface_proof(&after_db, &feedback_id, &probe, &envelope)
+            .expect("post-feedback meeting prep replay proof satisfies rebuild gate");
+    }
+
+    #[test]
     fn w4_dos338_harness_rejects_active_coalesced_parent_job() {
         let (after_db, _, feedback_id) = corrected_snapshot(FeedbackAction::MarkFalse);
         after_db
@@ -1806,11 +1881,11 @@ mod tests {
     }
 
     #[test]
-    fn w4_dos338_harness_reports_mcp_blocked_by_w5() {
+    fn w5_dos338_harness_scores_mcp_with_stickiness_criteria() {
         let before_db = uncorrected_snapshot();
-        let (after_db, ctx, feedback_id) = corrected_snapshot(FeedbackAction::ConfirmCurrent);
-        let (after_reenrichment_db, _, _) = corrected_snapshot(FeedbackAction::ConfirmCurrent);
-        let (after_rebuild_db, _, _) = corrected_snapshot(FeedbackAction::ConfirmCurrent);
+        let (after_db, ctx, feedback_id) = corrected_snapshot(FeedbackAction::MarkFalse);
+        let after_reenrichment_db = reenriched_snapshot(&after_db, &ctx, &feedback_id);
+        let after_rebuild_db = rebuilt_claim_file_snapshot(&after_reenrichment_db, &feedback_id);
 
         let report = record_stickiness_harness_run(
             &ctx,
@@ -1824,14 +1899,18 @@ mod tests {
                     after_reenrichment: Arc::clone(&after_reenrichment_db),
                     after_rebuild: Arc::clone(&after_rebuild_db),
                 },
-                cases: vec![harness_case(&feedback_id)],
+                cases: vec![harness_case_with_action(
+                    &feedback_id,
+                    FeedbackAction::MarkFalse,
+                )],
             },
         )
         .expect("record mcp harness run");
 
         assert_eq!(report.status, "completed");
-        assert_eq!(report.blocked_observations, 1);
-        let (result, reason_code): (String, String) = after_db
+        assert_eq!(report.passed_observations, 1);
+        assert_eq!(report.blocked_observations, 0);
+        let (result, reason_code): (String, Option<String>) = after_db
             .conn_ref()
             .query_row(
                 "SELECT result, reason_code
@@ -1841,8 +1920,8 @@ mod tests {
                 |row| Ok((row.get(0)?, row.get(1)?)),
             )
             .expect("read mcp observation");
-        assert_eq!(result, "blocked_by_w5");
-        assert_eq!(reason_code, "blocked_by_w5");
+        assert_eq!(result, "passed");
+        assert_eq!(reason_code, None);
     }
 
     #[test]

@@ -10,7 +10,8 @@ use crate::services::mcp_v2::target_handles::{
 };
 
 use super::tool_utils::{
-    reject_raw_id_params, required_str, source_provenance_watermark, unavailable_payload,
+    internal_trace, reject_raw_id_params, required_str, source_provenance_watermark,
+    unavailable_payload,
 };
 
 const SCHEMA_VERSION: &str = "mcp.workspace_source_provenance.v1";
@@ -58,17 +59,13 @@ impl McpToolHandler for WorkspaceSourceProvenanceHandler {
                     ));
                 }
                 Err(TargetHandleResolutionError::Internal(detail)) => {
-                    return Err(ToolError::Internal {
-                        trace_id: format!("mcp_source_handle_resolve:{detail}"),
-                    });
+                    return Err(internal_trace("mcp_source_handle_resolve", detail));
                 }
             };
             let current_source_watermark = source_provenance_watermark(&resolved.target_ref);
-            if !resolved_target_watermark_matches(&resolved, &current_source_watermark).map_err(
-                |error| ToolError::Internal {
-                    trace_id: format!("mcp_source_handle_watermark:{error}"),
-                },
-            )? {
+            if !resolved_target_watermark_matches(&resolved, &current_source_watermark)
+                .map_err(|error| internal_trace("mcp_source_handle_watermark", error))?
+            {
                 return Ok(unavailable_payload(
                     SCHEMA_VERSION,
                     &self.description.name,
@@ -88,6 +85,21 @@ impl McpToolHandler for WorkspaceSourceProvenanceHandler {
                 "redactionApplied": resolved.target_ref.get("redaction_applied").and_then(Value::as_bool).unwrap_or(true),
             });
             if let Some(object) = source.as_object_mut() {
+                if let Some(workspace_file_kind) = resolved
+                    .target_ref
+                    .get("workspace_file_kind")
+                    .or_else(|| resolved.target_ref.get("workspaceFileKind"))
+                    .and_then(Value::as_str)
+                {
+                    object.insert(
+                        "workspace_file_kind".to_string(),
+                        Value::String(workspace_file_kind.to_string()),
+                    );
+                    object.insert(
+                        "workspaceFileKind".to_string(),
+                        Value::String(workspace_file_kind.to_string()),
+                    );
+                }
                 object.remove("source_id");
                 object.remove("path");
                 object.remove("file_path");
@@ -191,6 +203,57 @@ mod tests {
 
             assert_eq!(payload["status"], "unavailable");
             assert_eq!(payload["refresh_required"], true);
+        });
+    }
+
+    #[test]
+    fn source_provenance_preserves_workspace_file_kind() {
+        local_runtime::with_target_handle_key_for_tests([42_u8; 32], || {
+            let dir = tempfile::tempdir().expect("tempdir");
+            let db = ActionDb::open_at_unencrypted(dir.path().join("source-provenance-kind.db"))
+                .expect("open db");
+            let actor = actor();
+            let target_ref = json!({
+                "label": "Workspace file (Quill transcript)",
+                "source_type": "workspace_file",
+                "source_asof": "2026-06-01T00:00:00Z",
+                "trust_band": "needs_verification",
+                "redaction_applied": true,
+                "workspace_file_kind": "quill_transcript",
+                "workspaceFileKind": "quill_transcript",
+            });
+            let watermark = source_provenance_watermark(&target_ref);
+            let handle = mint_target_handle(
+                &db,
+                MintTargetHandle {
+                    actor: &actor,
+                    originating_tool: &ScopedName::new("dailyos.read.account_status"),
+                    result_item_path: "/provenance/sources/0",
+                    target_kind: TargetKind::SourceProvenance,
+                    target_ref,
+                    sensitivity_tier: "internal",
+                    provenance_material: &watermark,
+                    watermark_material: &watermark,
+                },
+            )
+            .expect("mint source handle");
+            let db = Arc::new(Mutex::new(db));
+            let ctx = McpHandlerContext::with_owned_connection(db);
+            let payload = WorkspaceSourceProvenanceHandler::new(description())
+                .invoke(&ctx, &actor, json!({ "source_provenance_handle": handle }))
+                .expect("handler response");
+
+            assert_eq!(payload["status"], "ok");
+            assert_eq!(
+                payload["source"]["workspace_file_kind"],
+                json!("quill_transcript")
+            );
+            assert_eq!(
+                payload["source"]["workspaceFileKind"],
+                json!("quill_transcript")
+            );
+            assert!(payload["source"].get("path").is_none());
+            assert!(payload["source"].get("source_id").is_none());
         });
     }
 }

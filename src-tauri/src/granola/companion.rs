@@ -23,15 +23,15 @@ const MAX_NOTES_PER_SCAN: usize = 500;
 pub enum CompanionError {
     #[error("Granola companion access is not enabled")]
     NotConfigured,
-    #[error("Granola companion metadata is invalid: {0}")]
+    #[error("Granola companion metadata is invalid")]
     MetadataInvalid(String),
     #[error("Granola companion socket is not available")]
     SocketMissing,
-    #[error("Granola companion connection failed: {0}")]
+    #[error("Granola companion connection failed")]
     ConnectionFailed(String),
-    #[error("Granola companion request failed: {code}: {message}")]
+    #[error("Granola companion request failed")]
     RequestFailed { code: String, message: String },
-    #[error("Granola companion response was invalid: {0}")]
+    #[error("Granola companion response was invalid")]
     InvalidResponse(String),
     #[error("Granola note has no transcript or notes content")]
     NoContent,

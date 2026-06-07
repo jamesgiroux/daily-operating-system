@@ -116,8 +116,8 @@ pub fn notify_workflow_complete(
 /// Also respects the user's `transcript_ready` toggle and quiet hours.
 pub fn notify_transcript_ready(
     app: &AppHandle,
-    meeting_title: &str,
-    account: Option<&str>,
+    _meeting_title: &str,
+    _account: Option<&str>,
     state: &AppState,
 ) -> Result<(), String> {
     let config = load_notification_config(state);
@@ -132,8 +132,7 @@ pub fn notify_transcript_ready(
         if let Some(prev) = *last {
             if prev.elapsed() < TRANSCRIPT_NOTIFICATION_COOLDOWN {
                 log::debug!(
-                    "Suppressing transcript notification for '{}' (cooldown: {}s remaining)",
-                    meeting_title,
+                    "Suppressing transcript notification (cooldown: {}s remaining)",
                     (TRANSCRIPT_NOTIFICATION_COOLDOWN - prev.elapsed()).as_secs()
                 );
                 return Ok(());
@@ -142,11 +141,11 @@ pub fn notify_transcript_ready(
         *last = Some(Instant::now());
     }
 
-    let body = match account {
-        Some(a) if !a.is_empty() => format!("{} — {}", meeting_title, a),
-        _ => meeting_title.to_string(),
-    };
-    send_notification(app, "Meeting notes ready", &body)
+    send_notification(
+        app,
+        "Meeting notes ready",
+        "DailyOS has prepared a meeting record.",
+    )
 }
 
 /// Send a native notification when Google OAuth token expires.

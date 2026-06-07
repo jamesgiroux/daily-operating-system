@@ -146,9 +146,9 @@ async fn process_sync_row(
             }
             Err(e) => {
                 log::warn!(
-                    "Quill sync: failed to get meeting {}: {}",
-                    row.meeting_id,
-                    e
+                    "Quill sync: failed to get meeting: meeting_ref={}, error_ref={}",
+                    crate::processor::transcript::transcript_audit_id(&row.meeting_id),
+                    crate::processor::transcript::digest_token(&e.to_string())
                 );
                 #[allow(
                     clippy::let_underscore_must_use,
@@ -179,7 +179,11 @@ async fn process_sync_row(
     let client = match QuillClient::connect(bridge_path).await {
         Ok(c) => c,
         Err(e) => {
-            log::warn!("Quill sync: failed to connect: {}", e);
+            log::warn!(
+                "Quill sync: failed to connect: meeting_ref={}, error_ref={}",
+                crate::processor::transcript::transcript_audit_id(&row.meeting_id),
+                crate::processor::transcript::digest_token(&e.to_string())
+            );
             if let Ok(db) =
                 crate::db::ActionDb::open(std::sync::Arc::new(crate::db::LocalKeychain::new()))
             {
@@ -195,7 +199,7 @@ async fn process_sync_row(
                     None,
                     None,
                     None,
-                    Some(&format!("Connection failed: {}", e)),
+                    Some("Connection failed"),
                 );
             }
             return;
@@ -215,7 +219,11 @@ async fn process_sync_row(
     {
         Ok(meetings) => meetings,
         Err(e) => {
-            log::warn!("Quill sync: search_meetings failed: {}", e);
+            log::warn!(
+                "Quill sync: search_meetings failed: meeting_ref={}, error_ref={}",
+                crate::processor::transcript::transcript_audit_id(&row.meeting_id),
+                crate::processor::transcript::digest_token(&e.to_string())
+            );
             client.disconnect().await;
             if let Ok(db) =
                 crate::db::ActionDb::open(std::sync::Arc::new(crate::db::LocalKeychain::new()))
@@ -244,8 +252,8 @@ async fn process_sync_row(
         Some(m) => m,
         None => {
             log::info!(
-                "Quill sync: no match for meeting '{}', will retry",
-                meeting.title
+                "Quill sync: no match for meeting_ref={}, will retry",
+                crate::processor::transcript::transcript_audit_id(&row.meeting_id)
             );
             client.disconnect().await;
             if let Ok(db) =
@@ -263,9 +271,9 @@ async fn process_sync_row(
     };
 
     log::info!(
-        "Quill sync: matched '{}' → quill:{} (confidence: {:.2})",
-        meeting.title,
-        matched.quill_meeting_id,
+        "Quill sync: matched meeting_ref={} to provider_ref={} (confidence: {:.2})",
+        crate::processor::transcript::transcript_audit_id(&row.meeting_id),
+        crate::processor::transcript::digest_token(&matched.quill_meeting_id),
         matched.confidence
     );
 
@@ -294,7 +302,12 @@ async fn process_sync_row(
     let transcript = match client.get_transcript(&matched.quill_meeting_id).await {
         Ok(t) => t,
         Err(e) => {
-            log::warn!("Quill sync: get_transcript failed: {}", e);
+            log::warn!(
+                "Quill sync: get_transcript failed: meeting_ref={}, provider_ref={}, error_ref={}",
+                crate::processor::transcript::transcript_audit_id(&row.meeting_id),
+                crate::processor::transcript::digest_token(&matched.quill_meeting_id),
+                crate::processor::transcript::digest_token(&e.to_string())
+            );
             client.disconnect().await;
             if let Ok(db) =
                 crate::db::ActionDb::open(std::sync::Arc::new(crate::db::LocalKeychain::new()))
@@ -311,7 +324,7 @@ async fn process_sync_row(
                     Some(&matched.quill_meeting_id),
                     Some(matched.confidence),
                     None,
-                    Some(&format!("Transcript fetch failed: {}", e)),
+                    Some("Transcript fetch failed"),
                 );
                 #[allow(
                     clippy::let_underscore_must_use,
@@ -415,6 +428,39 @@ async fn process_sync_row(
                         tr.summary.as_deref(),
                     );
 
+                    let clock = crate::services::context::SystemClock;
+                    let rng = crate::services::context::SystemRng;
+                    let ext = crate::services::context::ExternalClients::default();
+                    let ctx =
+                        crate::services::context::ServiceContext::new_live(&clock, &rng, &ext);
+                    match crate::processor::transcript::commit_provider_transcript_claims_from_result(
+                        &ctx,
+                        &db,
+                        &workspace,
+                        &calendar_event,
+                        &transcript,
+                        tr,
+                        abilities_runtime::abilities::provenance::source::WorkspaceFileKind::QuillTranscript,
+                    ) {
+                        Ok(report) => {
+                            log::info!(
+                                "Quill transcript claim production: meeting_ref={}, attempted={}, inserted={}, skipped_duplicates={}, warnings={}",
+                                crate::processor::transcript::transcript_audit_id(&calendar_event.id),
+                                report.attempted,
+                                report.inserted,
+                                report.skipped_duplicates,
+                                report.warnings.len()
+                            );
+                        }
+                        Err(error) => {
+                            log::warn!(
+                                "Quill transcript claim production failed: meeting_ref={}, error_ref={}",
+                                crate::processor::transcript::transcript_audit_id(&calendar_event.id),
+                                crate::processor::transcript::digest_token(&error.to_string())
+                            );
+                        }
+                    }
+
                     // Write captures (wins, risks, decisions) that were extracted by AI
                     // but couldn't be written during pipeline (db was None).
                     let meeting_account_id = resolve_meeting_account_id(&db, &calendar_event.id);
@@ -510,19 +556,20 @@ async fn process_sync_row(
                             Ok(()) => written += 1,
                             Err(e) => {
                                 log::warn!(
-                                    "Quill: failed to write action '{}': {}",
-                                    db_action.title,
-                                    e
+                                    "Quill: failed to write action: meeting_ref={}, action_ref={}, error_ref={}",
+                                    crate::processor::transcript::transcript_audit_id(&calendar_event.id),
+                                    crate::processor::transcript::digest_token(&db_action.title),
+                                    crate::processor::transcript::digest_token(&e.to_string())
                                 );
                             }
                         }
                     }
                     if !tr.actions.is_empty() {
                         log::info!(
-                            "Quill: wrote {}/{} suggested actions for '{}'",
+                            "Quill: wrote {}/{} suggested actions for meeting_ref={}",
                             written,
                             tr.actions.len(),
-                            calendar_event.title
+                            crate::processor::transcript::transcript_audit_id(&calendar_event.id)
                         );
                     }
 
@@ -530,9 +577,9 @@ async fn process_sync_row(
                         tr.wins.len() + tr.risks.len() + tr.decisions.len() + tr.actions.len();
                     if capture_count > 0 {
                         log::info!(
-                            "Quill sync: wrote {} captures for '{}'",
+                            "Quill sync: wrote {} captures for meeting_ref={}",
                             capture_count,
-                            calendar_event.title
+                            crate::processor::transcript::transcript_audit_id(&calendar_event.id)
                         );
                     }
 
@@ -551,7 +598,7 @@ async fn process_sync_row(
                         None,
                     );
                 }
-                Err(error) => {
+                Err(_error) => {
                     #[allow(
                         clippy::let_underscore_must_use,
                         reason = "intentional best-effort discard; preserves existing non-blocking behavior"
@@ -564,7 +611,7 @@ async fn process_sync_row(
                         None,
                         None,
                         None,
-                        Some(error),
+                        Some("Transcript processing failed"),
                     );
                 }
             }
@@ -574,17 +621,20 @@ async fn process_sync_row(
     match &result {
         Ok(tr) => {
             log::info!(
-                "Quill sync: transcript processed for '{}' → {} ({} chars)",
-                meeting.title,
-                tr.destination.as_deref().unwrap_or(""),
+                "Quill sync: transcript processed: meeting_ref={}, destination_ref={}, input_bytes={}",
+                crate::processor::transcript::transcript_audit_id(&row.meeting_id),
+                tr.destination
+                    .as_deref()
+                    .map(crate::processor::transcript::redacted_path_ref)
+                    .unwrap_or_else(|| "none".to_string()),
                 transcript.len()
             );
         }
         Err(e) => {
             log::warn!(
-                "Quill sync: transcript processing failed for '{}': {}",
-                meeting.title,
-                e
+                "Quill sync: transcript processing failed: meeting_ref={}, error_ref={}",
+                crate::processor::transcript::transcript_audit_id(&row.meeting_id),
+                crate::processor::transcript::digest_token(&e.to_string())
             );
         }
     }
@@ -621,9 +671,9 @@ async fn process_sync_row(
         {
             Ok(_) => {}
             Err(e) => log::warn!(
-                "entity_linking after Quill ingest failed (non-fatal) for {}: {}",
-                calendar_event.id,
-                e
+                "entity_linking after Quill ingest failed (non-fatal): meeting_ref={}, error_ref={}",
+                crate::processor::transcript::transcript_audit_id(&calendar_event.id),
+                crate::processor::transcript::digest_token(&e.to_string())
             ),
         }
     }
@@ -636,31 +686,14 @@ fn get_pending_syncs(_state: &AppState) -> Option<Vec<DbQuillSyncState>> {
     db.get_pending_quill_syncs().ok()
 }
 
-/// Emit transcript-processed event with full MeetingOutcomeData payload when available.
+/// Emit transcript-processed as a refresh signal. Quill sync deliberately avoids
+/// pushing transcript-derived snippets over the event channel.
 fn emit_transcript_processed(_state: &AppState, app_handle: &AppHandle, meeting_id: &str) {
-    let payload = crate::db::ActionDb::open(std::sync::Arc::new(crate::db::LocalKeychain::new()))
-        .ok()
-        .and_then(|db| {
-            let meeting = db.get_meeting_by_id(meeting_id).ok()??;
-            crate::services::meetings::collect_meeting_outcomes_from_db(&db, &meeting)
-        });
-
-    match payload {
-        Some(outcome) => {
-            #[allow(
-                clippy::let_underscore_must_use,
-                reason = "intentional best-effort discard; preserves existing non-blocking behavior"
-            )]
-            let _ = app_handle.emit("transcript-processed", &outcome);
-        }
-        None => {
-            #[allow(
-                clippy::let_underscore_must_use,
-                reason = "intentional best-effort discard; preserves existing non-blocking behavior"
-            )]
-            let _ = app_handle.emit("transcript-processed", &meeting_id.to_string());
-        }
-    }
+    #[allow(
+        clippy::let_underscore_must_use,
+        reason = "intentional best-effort discard; preserves existing non-blocking behavior"
+    )]
+    let _ = app_handle.emit("transcript-processed", &meeting_id.to_string());
 }
 
 /// Resolve the primary account_id for a meeting.

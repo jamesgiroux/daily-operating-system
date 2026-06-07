@@ -33,6 +33,7 @@ use crate::services::context::{
 };
 use crate::services::mcp_v2::actor_policy::{project_actor, ToolGrant, ToolRateLimit};
 use crate::services::mcp_v2::contracts::{McpActor, McpToolHandler, ToolDescription, ToolError};
+use crate::services::mcp_v2::diagnostics::log_detail;
 use crate::services::mcp_v2::handler_context::{McpHandlerContext, OwnedConnection};
 use crate::services::workspace_ingestion::workspace_intake_impl::place_document_sync_with_db_and_target_key;
 use crate::signals::propagation::PropagationEngine;
@@ -304,7 +305,7 @@ fn mcp_safe_response(mut value: Value) -> Value {
 }
 
 fn map_invoke_error(err: AbilityInvokeError) -> ToolError {
-    eprintln!("mcp_v2 {TOOL_NAME} invoke failed: {err:?}");
+    log_detail("placement_invoke_failed", format!("{TOOL_NAME}:{err:?}"));
 
     match err {
         AbilityInvokeError::Surface(BridgeSurfaceError::InputSchemaInvalid)

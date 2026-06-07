@@ -15,7 +15,7 @@ use crate::services::mcp_v2::target_handles::{
 use crate::signals::propagation::PropagationEngine;
 
 use super::tool_utils::{
-    bad_params, current_entity_watermark, deterministic_uuid_from_replay_key,
+    bad_params, current_entity_watermark, deterministic_uuid_from_replay_key, internal_trace,
     mcp_submit_replay_key, mutation_cursor_for_target, reject_raw_id_params, required_str,
     source_provenance_watermark, unavailable_payload, validate_bounded_string,
 };
@@ -75,9 +75,7 @@ impl McpToolHandler for NoteHandler {
                     ));
                 }
                 Err(TargetHandleResolutionError::Internal(detail)) => {
-                    return Err(ToolError::Internal {
-                        trace_id: format!("mcp_note_entity_handle_resolve:{detail}"),
-                    });
+                    return Err(internal_trace("mcp_note_entity_handle_resolve", detail));
                 }
             };
             let Some(current_entity_watermark) =
@@ -91,9 +89,7 @@ impl McpToolHandler for NoteHandler {
                 ));
             };
             if !resolved_target_watermark_matches(&resolved_entity, &current_entity_watermark)
-                .map_err(|error| ToolError::Internal {
-                    trace_id: format!("mcp_note_entity_handle_watermark:{error}"),
-                })?
+                .map_err(|error| internal_trace("mcp_note_entity_handle_watermark", error))?
             {
                 return Ok(unavailable_payload(
                     SCHEMA_VERSION,
@@ -131,8 +127,8 @@ impl McpToolHandler for NoteHandler {
                             &resolved_source,
                             &current_source_watermark,
                         )
-                        .map_err(|error| ToolError::Internal {
-                            trace_id: format!("mcp_note_source_handle_watermark:{error}"),
+                        .map_err(|error| {
+                            internal_trace("mcp_note_source_handle_watermark", error)
                         })? {
                             return Ok(unavailable_payload(
                                 SCHEMA_VERSION,
@@ -141,10 +137,9 @@ impl McpToolHandler for NoteHandler {
                                 Some(handle),
                             ));
                         }
-                        let handle_hash =
-                            public_handle_hash(handle).map_err(|error| ToolError::Internal {
-                                trace_id: format!("mcp_note_source_handle_hash:{error}"),
-                            })?;
+                        let handle_hash = public_handle_hash(handle).map_err(|error| {
+                            internal_trace("mcp_note_source_handle_hash", error)
+                        })?;
                         Some(
                             json!({
                                 "kind": "mcp_source_provenance_handle",
@@ -162,9 +157,7 @@ impl McpToolHandler for NoteHandler {
                         ));
                     }
                     Err(TargetHandleResolutionError::Internal(detail)) => {
-                        return Err(ToolError::Internal {
-                            trace_id: format!("mcp_note_source_handle_resolve:{detail}"),
-                        });
+                        return Err(internal_trace("mcp_note_source_handle_resolve", detail));
                     }
                 }
             } else {
@@ -226,9 +219,7 @@ impl McpToolHandler for NoteHandler {
                     watermark_material: &watermark,
                 },
             )
-            .map_err(|error| ToolError::Internal {
-                trace_id: format!("mcp_note_handle_mint:{error}"),
-            })?;
+            .map_err(|error| internal_trace("mcp_note_handle_mint", error))?;
             let feedback_target_handle = mint_replacing_target_handle(
                 db,
                 MintTargetHandle {
@@ -242,9 +233,7 @@ impl McpToolHandler for NoteHandler {
                     watermark_material: &watermark,
                 },
             )
-            .map_err(|error| ToolError::Internal {
-                trace_id: format!("mcp_note_feedback_handle_mint:{error}"),
-            })?;
+            .map_err(|error| internal_trace("mcp_note_feedback_handle_mint", error))?;
             Ok(json!({
                 "schema_version": SCHEMA_VERSION,
                 "tool_name": self.description.name.as_str(),

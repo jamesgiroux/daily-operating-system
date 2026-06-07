@@ -4941,11 +4941,11 @@ pub async fn reprocess_meeting_transcript(
             let meeting = db
                 .get_meeting_intelligence_row(&mid)
                 .map_err(|e| e.to_string())?
-                .ok_or_else(|| format!("Meeting not found: {}", mid))?;
+                .ok_or_else(|| "Meeting not found".to_string())?;
             let transcript_path = meeting
                 .transcript_path
                 .clone()
-                .ok_or_else(|| format!("No transcript attached to meeting {}", mid))?;
+                .ok_or_else(|| "No transcript attached to meeting".to_string())?;
             Ok((meeting, transcript_path))
         })
         .await?;
@@ -4961,9 +4961,9 @@ pub async fn reprocess_meeting_transcript(
         })
         .await?;
     log::info!(
-        "Reprocess: cleared {} extraction records for meeting {}",
+        "Reprocess: cleared {} extraction records for meeting_ref={}",
         cleared,
-        meeting_id
+        crate::processor::transcript::transcript_audit_id(meeting_id)
     );
 
     // Remove the TOCTOU guard so attach_meeting_transcript doesn't reject
@@ -4972,19 +4972,21 @@ pub async fn reprocess_meeting_transcript(
         guard.remove(meeting_id);
     }
 
-    // Build a CalendarEvent from the DB row for the pipeline
+    // Build a CalendarEvent from the DB row for the pipeline.
+    let meeting_start = chrono::DateTime::parse_from_rfc3339(&meeting_row.start_time)
+        .map(|dt| dt.with_timezone(&chrono::Utc))
+        .unwrap_or_else(|_| ctx.clock.now());
+    let meeting_end = meeting_row
+        .end_time
+        .as_deref()
+        .and_then(|t| chrono::DateTime::parse_from_rfc3339(t).ok())
+        .map(|dt| dt.with_timezone(&chrono::Utc))
+        .unwrap_or(meeting_start);
     let cal_event = crate::types::CalendarEvent {
         id: meeting_row.id.clone(),
         title: meeting_row.title.clone(),
-        start: chrono::DateTime::parse_from_rfc3339(&meeting_row.start_time)
-            .map(|dt| dt.with_timezone(&chrono::Utc))
-            .unwrap_or_else(|_| ctx.clock.now()),
-        end: meeting_row
-            .end_time
-            .as_deref()
-            .and_then(|t| chrono::DateTime::parse_from_rfc3339(t).ok())
-            .map(|dt| dt.with_timezone(&chrono::Utc))
-            .unwrap_or_else(|| ctx.clock.now()),
+        start: meeting_start,
+        end: meeting_end,
         meeting_type: crate::parser::parse_meeting_type(&meeting_row.meeting_type),
         attendees: Vec::new(),
         is_all_day: false,
@@ -4995,8 +4997,32 @@ pub async fn reprocess_meeting_transcript(
         scored_classified_entities: None,
     };
 
-    // Re-run the full pipeline via the existing attach path
-    attach_meeting_transcript(ctx, transcript_path, cal_event, state, app_handle).await
+    let manifest = crate::services::transcript_claims::TranscriptReprocessManifest {
+        manifest_id: format!(
+            "transcript-reprocess-{}-{}",
+            crate::processor::transcript::digest_token(meeting_id),
+            ctx.clock.now().timestamp_millis()
+        ),
+        reason: "explicit_single_meeting_reprocess".to_string(),
+        prior_claims_preserved: true,
+        tombstones_preserved: true,
+        feedback_preserved: true,
+        omitted_prior_claim_ids: Vec::new(),
+    };
+
+    // Re-run the full pipeline via the existing attach path using explicit
+    // W6 reprocess mode so transcript claims keep prior lifecycle/feedback.
+    attach_meeting_transcript_with_claim_mode(
+        ctx,
+        transcript_path,
+        cal_event,
+        state,
+        app_handle,
+        crate::services::transcript_claims::TranscriptClaimProductionMode::ExplicitSingleMeetingReprocess {
+            manifest,
+        },
+    )
+    .await
 }
 
 /// Attach a meeting transcript with TOCTOU guard, async processing, and event emission.
@@ -5006,6 +5032,26 @@ pub async fn attach_meeting_transcript(
     meeting: crate::types::CalendarEvent,
     state: &std::sync::Arc<AppState>,
     app_handle: tauri::AppHandle,
+) -> Result<crate::types::TranscriptResult, String> {
+    attach_meeting_transcript_with_claim_mode(
+        ctx,
+        file_path,
+        meeting,
+        state,
+        app_handle,
+        crate::services::transcript_claims::TranscriptClaimProductionMode::FreshSingleTranscript,
+    )
+    .await
+}
+
+/// Attach a meeting transcript with an explicit W6 claim-production mode.
+pub async fn attach_meeting_transcript_with_claim_mode(
+    ctx: &ServiceContext<'_>,
+    file_path: String,
+    meeting: crate::types::CalendarEvent,
+    state: &std::sync::Arc<AppState>,
+    app_handle: tauri::AppHandle,
+    claim_production_mode: crate::services::transcript_claims::TranscriptClaimProductionMode,
 ) -> Result<crate::types::TranscriptResult, String> {
     ctx.check_mutation_allowed().map_err(|e| e.to_string())?;
     {
@@ -5041,6 +5087,7 @@ pub async fn attach_meeting_transcript(
     let meeting_clone = meeting.clone();
     let file_path_for_record = file_path.clone();
     let progress_handle = app_handle.clone();
+    let claim_production_mode_for_worker = claim_production_mode.clone();
 
     let result = match tauri::async_runtime::spawn_blocking(move || {
         let workspace = std::path::Path::new(&workspace_path);
@@ -5055,7 +5102,7 @@ pub async fn attach_meeting_transcript(
         if let Some(ref db_ref) = db {
             crate::processor::transcript::enrich_meeting_from_db(&mut meeting_clone, db_ref);
         }
-        crate::processor::transcript::process_transcript(
+        crate::processor::transcript::process_transcript_with_kind_and_claim_mode(
             workspace,
             &file_path,
             &meeting_clone,
@@ -5063,6 +5110,8 @@ pub async fn attach_meeting_transcript(
             db.as_ref(),
             &profile,
             Some(&ai_config),
+            crate::processor::transcript::TranscriptContentKind::Transcript,
+            claim_production_mode_for_worker,
         )
     })
     .await
@@ -5117,8 +5166,10 @@ pub async fn attach_meeting_transcript(
         if has_outcomes {
             let record = crate::types::TranscriptRecord {
                 meeting_id: meeting_id.clone(),
-                file_path: file_path_for_record,
-                destination: transcript_destination.clone(),
+                file_path: crate::processor::transcript::redacted_path_ref(&file_path_for_record),
+                destination: crate::processor::transcript::redacted_path_ref(
+                    &transcript_destination,
+                ),
                 summary: result.summary.clone(),
                 processed_at: processed_at.clone(),
             };
@@ -5392,9 +5443,9 @@ pub async fn attach_meeting_transcript(
         {
             Ok(_) => {}
             Err(e) => log::warn!(
-                "entity_linking after transcript attach failed (non-fatal) for {}: {}",
-                meeting.id,
-                e
+                "entity_linking after transcript attach failed (non-fatal): meeting_ref={}, error_ref={}",
+                crate::processor::transcript::transcript_audit_id(&meeting.id),
+                crate::processor::transcript::digest_token(&e.to_string())
             ),
         }
     }

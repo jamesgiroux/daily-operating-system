@@ -451,6 +451,9 @@ fn representative_data_sources() -> Vec<DataSource> {
             kind: WorkspaceFileKind::UserAttachment,
         },
         DataSource::WorkspaceFile {
+            kind: WorkspaceFileKind::GenericTranscript,
+        },
+        DataSource::WorkspaceFile {
             kind: WorkspaceFileKind::GranolaTranscript,
         },
         DataSource::WorkspaceFile {

@@ -16,7 +16,6 @@ use sha2::{Digest, Sha256};
 use uuid::Uuid;
 
 use crate::abilities::registry::AbilityRegistry;
-use crate::db::ActionDb;
 use crate::harness::{
     compute_default_fixtures_hash, run_harness_suite, BundleLoader, HarnessReport, RunnerDeps,
     Severity,
@@ -411,10 +410,14 @@ pub struct ActionDbManualReader;
 
 impl ManualDbReader for ActionDbManualReader {
     fn open_readonly_schema_version(&self, path: &Path) -> Result<String, String> {
-        let db =
-            ActionDb::open_readonly_at(path, std::sync::Arc::new(crate::db::LocalKeychain::new()))
-                .map_err(|error| error.to_string())?;
-        schema_version_from_db(&db)
+        storage_reset_plain_sqlite_preflight(path)?;
+        let flags =
+            rusqlite::OpenFlags::SQLITE_OPEN_READ_ONLY | rusqlite::OpenFlags::SQLITE_OPEN_NO_MUTEX;
+        let conn = rusqlite::Connection::open_with_flags(path, flags) // db-open-guard-allowed: release-gate manual evidence reads a caller-supplied DB read-only after storage-reset preflight
+        .map_err(|error| format!("plain SQLite read-only open failed: {error}"))?;
+        conn.execute_batch("PRAGMA query_only = ON;")
+            .map_err(|error| format!("plain SQLite query_only setup failed: {error}"))?;
+        schema_version_from_plain_connection(&conn)
     }
 }
 
@@ -2020,9 +2023,30 @@ fn validate_manual_evidence(evidence: &ManualDogfoodEvidence) -> Result<(), Stri
     Ok(())
 }
 
-fn schema_version_from_db(db: &ActionDb) -> Result<String, String> {
-    let user_version = db
-        .conn_ref()
+const SQLITE_DATABASE_HEADER: &[u8; 16] = b"SQLite format 3\0";
+
+fn storage_reset_plain_sqlite_preflight(path: &Path) -> Result<(), String> {
+    let mut file = fs::File::open(path)
+        .map_err(|error| format!("storage reset DB preflight could not open path: {error}"))?;
+    let mut header = [0_u8; 16];
+    let bytes_read = file
+        .read(&mut header)
+        .map_err(|error| format!("storage reset DB preflight could not read header: {error}"))?;
+
+    if bytes_read == 0 {
+        return Err("storage reset DB preflight failed: active DB is empty".to_string());
+    }
+    if bytes_read < SQLITE_DATABASE_HEADER.len() {
+        return Err("storage reset DB preflight failed: active DB is truncated".to_string());
+    }
+    if &header != SQLITE_DATABASE_HEADER {
+        return Err("storage reset DB preflight failed: active DB is not plain SQLite".to_string());
+    }
+    Ok(())
+}
+
+fn schema_version_from_plain_connection(conn: &rusqlite::Connection) -> Result<String, String> {
+    let user_version = conn
         .query_row("PRAGMA user_version", [], |row| row.get::<_, i64>(0))
         .map_err(|error| error.to_string())?;
     Ok(format!("sqlite_user_version:{user_version}"))

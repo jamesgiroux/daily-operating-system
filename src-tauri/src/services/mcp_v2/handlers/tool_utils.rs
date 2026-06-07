@@ -320,11 +320,8 @@ pub fn deterministic_uuid_from_replay_key(
     kind: &str,
     replay_key: &str,
 ) -> Result<String, ToolError> {
-    let namespace = uuid::Uuid::parse_str(MCP_SUBMIT_REPLAY_NAMESPACE).map_err(|error| {
-        ToolError::Internal {
-            trace_id: format!("mcp_submit_replay_namespace:{error}"),
-        }
-    })?;
+    let namespace = uuid::Uuid::parse_str(MCP_SUBMIT_REPLAY_NAMESPACE)
+        .map_err(|error| internal_trace("mcp_submit_replay_namespace", error))?;
     Ok(uuid::Uuid::new_v5(&namespace, format!("{kind}:{replay_key}").as_bytes()).to_string())
 }
 

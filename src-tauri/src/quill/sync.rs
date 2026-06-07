@@ -73,13 +73,19 @@ pub fn transition_state(
     transcript_path: Option<&str>,
     error_message: Option<&str>,
 ) -> Result<(), String> {
+    let provider_ref = quill_meeting_id
+        .map(crate::processor::transcript::digest_token)
+        .map(|digest| format!("provider:{}", digest));
+    let transcript_path_ref = transcript_path.map(crate::processor::transcript::redacted_path_ref);
+    let safe_error_message =
+        error_message.map(|_| "Meeting notes could not be prepared.".to_string());
     db.update_quill_sync_state(
         sync_id,
         new_state,
-        quill_meeting_id,
+        provider_ref.as_deref(),
         match_confidence,
-        error_message,
-        transcript_path,
+        safe_error_message.as_deref(),
+        transcript_path_ref.as_deref(),
     )
     .map_err(|e| format!("Failed to transition state: {}", e))
 }
@@ -298,9 +304,9 @@ pub fn process_fetched_transcript(
         let _ = transition_state(db, sync_id, "completed", None, None, Some(&dest), None);
 
         log::info!(
-            "Quill sync: transcript processed for '{}' → {}",
-            meeting.title,
-            dest
+            "Quill sync: transcript processed: meeting_ref={}, destination_ref={}",
+            crate::processor::transcript::transcript_audit_id(&meeting.id),
+            crate::processor::transcript::redacted_path_ref(&dest)
         );
         Ok(dest)
     } else {
@@ -319,6 +325,7 @@ pub fn process_fetched_transcript(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::db::test_utils::test_db;
     use chrono::{TimeZone, Utc};
 
     fn make_event(
@@ -383,5 +390,42 @@ mod tests {
     fn test_all_hands_ineligible() {
         let event = make_event(MeetingType::AllHands, 60, false);
         assert!(!should_sync_meeting(&event));
+    }
+
+    #[test]
+    fn w6_quill_sync_state_redacts_provider_path_and_error_details() {
+        let db = test_db();
+        let sync_id = db
+            .insert_quill_sync_state_with_source("meeting-sync-redaction", "quill")
+            .expect("insert sync state");
+
+        transition_state(
+            &db,
+            &sync_id,
+            "failed",
+            Some("quill-provider-private-id"),
+            Some(0.91),
+            Some("/Users/example/Workspace/private-transcript.md"),
+            Some("failed to parse /Users/example/Workspace/private-transcript.md"),
+        )
+        .expect("transition state");
+
+        let state = db
+            .get_quill_sync_state_by_source("meeting-sync-redaction", "quill")
+            .expect("read sync state")
+            .expect("sync state exists");
+
+        assert_eq!(state.state, "failed");
+        assert_eq!(
+            state.error_message.as_deref(),
+            Some("Meeting notes could not be prepared.")
+        );
+        let provider_ref = state.quill_meeting_id.as_deref().unwrap_or_default();
+        assert!(provider_ref.starts_with("provider:"));
+        assert!(!provider_ref.contains("quill-provider-private-id"));
+        let transcript_ref = state.transcript_path.as_deref().unwrap_or_default();
+        assert!(transcript_ref.starts_with("local-path:"));
+        assert!(!transcript_ref.contains("/Users/example"));
+        assert!(!transcript_ref.contains("private-transcript.md"));
     }
 }

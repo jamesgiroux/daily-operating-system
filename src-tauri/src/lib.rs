@@ -78,6 +78,11 @@ pub mod command_test_api {
         process_inbox_file_for_tests, reveal_sensitive_claim_text, update_entity_context_entry,
     };
 }
+#[cfg(any(feature = "test-harness", debug_assertions))]
+#[doc(hidden)]
+pub mod transcript_processor_test_api {
+    pub use crate::processor::transcript::{process_transcript_with_kind, TranscriptContentKind};
+}
 #[cfg(any(feature = "test-harness", feature = "bench-harness", debug_assertions))]
 #[doc(hidden)]
 pub mod migration_test_api {

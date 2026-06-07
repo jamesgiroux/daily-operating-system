@@ -386,6 +386,60 @@ pub struct QuillStatus {
     pub poll_interval_minutes: u32,
 }
 
+fn sanitized_quill_error_message(value: Option<String>) -> Option<String> {
+    value.map(|_| "Transcript sync failed".to_string())
+}
+
+fn redacted_status_path_ref(path: &str) -> String {
+    if path.trim().is_empty() {
+        String::new()
+    } else {
+        crate::processor::transcript::redacted_path_ref(path)
+    }
+}
+
+fn redacted_optional_status_path_ref(path: Option<&std::path::Path>) -> String {
+    path.map(|path| redacted_status_path_ref(path.to_string_lossy().as_ref()))
+        .unwrap_or_default()
+}
+
+#[cfg(test)]
+mod provider_status_tests {
+    use super::*;
+    use std::path::Path;
+
+    #[test]
+    fn quill_status_path_ref_does_not_expose_raw_bridge_path() {
+        let raw = "/Users/example/private/quill-bridge/index.js";
+        let redacted = redacted_status_path_ref(raw);
+
+        assert!(redacted.starts_with("local-path:"));
+        assert!(!redacted.contains("/Users/example"));
+        assert!(!redacted.contains("quill-bridge"));
+        assert!(!redacted.contains("index.js"));
+    }
+
+    #[test]
+    fn granola_status_path_ref_does_not_expose_raw_cache_path() {
+        let raw = Path::new("/Users/example/Library/Application Support/Granola/cache-v3.json");
+        let redacted = redacted_optional_status_path_ref(Some(raw));
+
+        assert!(redacted.starts_with("local-path:"));
+        assert!(!redacted.contains("/Users/example"));
+        assert!(!redacted.contains("Granola"));
+        assert!(!redacted.contains("cache-v3.json"));
+    }
+}
+
+fn sanitize_quill_sync_state_for_response(
+    mut row: crate::db::DbQuillSyncState,
+) -> crate::db::DbQuillSyncState {
+    row.quill_meeting_id = None;
+    row.error_message = sanitized_quill_error_message(row.error_message);
+    row.transcript_path = None;
+    row
+}
+
 /// Get the current status of the Quill integration.
 #[allow(
     clippy::let_underscore_must_use,
@@ -461,12 +515,12 @@ pub async fn get_quill_status(state: State<'_, Arc<AppState>>) -> Result<QuillSt
     Ok(QuillStatus {
         enabled: quill_config.enabled,
         bridge_exists,
-        bridge_path: quill_config.bridge_path,
+        bridge_path: redacted_status_path_ref(&quill_config.bridge_path),
         pending_syncs: pending,
         failed_syncs: failed,
         completed_syncs: completed,
         last_sync_at: last_sync,
-        last_error,
+        last_error: sanitized_quill_error_message(last_error),
         last_error_at,
         abandoned_syncs: abandoned,
         poll_interval_minutes: quill_config.poll_interval_minutes,
@@ -559,7 +613,13 @@ pub async fn test_quill_connection(state: State<'_, Arc<AppState>>) -> Result<bo
 
     let client = crate::quill::client::QuillClient::connect(&bridge_path)
         .await
-        .map_err(|e| format!("Connection failed: {}", e))?;
+        .map_err(|e| {
+            log::warn!(
+                "Quill connection test failed: error_ref={}",
+                crate::processor::transcript::digest_token(&e.to_string())
+            );
+            "Connection failed".to_string()
+        })?;
 
     client.disconnect().await;
     Ok(true)
@@ -666,9 +726,19 @@ pub async fn get_quill_sync_states(
                 let row = db
                     .get_quill_sync_state_by_source(mid, "quill")
                     .map_err(|e| e.to_string())?;
-                Ok(row.into_iter().collect())
+                Ok(row
+                    .into_iter()
+                    .map(sanitize_quill_sync_state_for_response)
+                    .collect())
             }
-            None => db.get_pending_quill_syncs().map_err(|e| e.to_string()),
+            None => db
+                .get_pending_quill_syncs()
+                .map(|rows| {
+                    rows.into_iter()
+                        .map(sanitize_quill_sync_state_for_response)
+                        .collect()
+                })
+                .map_err(|e| e.to_string()),
         })
         .await
         .map_err(String::from)
@@ -774,10 +844,7 @@ pub async fn get_granola_status(state: State<'_, Arc<AppState>>) -> Result<Grano
     Ok(GranolaStatus {
         enabled: granola_config.enabled,
         cache_exists,
-        cache_path: resolved_path
-            .as_ref()
-            .map(|p| p.to_string_lossy().to_string())
-            .unwrap_or_default(),
+        cache_path: redacted_optional_status_path_ref(resolved_path.as_deref()),
         source: source.to_string(),
         companion_available: companion_status.available,
         companion_message: companion_status.message,
@@ -817,7 +884,13 @@ pub async fn trigger_granola_sync_for_meeting(
         )
     })
     .await
-    .map_err(|e| format!("Granola sync task failed: {}", e))??;
+    .map_err(|e| {
+        log::warn!(
+            "Granola sync task failed: error_ref={}",
+            crate::processor::transcript::digest_token(&e.to_string())
+        );
+        "Granola sync task failed".to_string()
+    })??;
 
     // Re-run entity linking with the post-transcript context.
     // Best-effort — failure here never blocks the manual-sync response.
@@ -835,9 +908,9 @@ pub async fn trigger_granola_sync_for_meeting(
         .await
         {
             log::warn!(
-                "entity_linking after manual Granola sync failed (non-fatal) for {}: {}",
-                event.id,
-                e
+                "entity_linking after manual Granola sync failed (non-fatal): meeting_ref={}, error_ref={}",
+                crate::processor::transcript::transcript_audit_id(&event.id),
+                crate::processor::transcript::digest_token(&e.to_string())
             );
         }
     }
@@ -857,7 +930,7 @@ pub async fn trigger_granola_sync_for_meeting(
     Ok(GranolaManualSyncResponse {
         status: status.to_string(),
         message: result.message,
-        document_title: result.document_title,
+        document_title: None,
         content_type,
     })
 }

@@ -18,8 +18,9 @@ use crate::services::mcp_v2::target_handles::{
 use crate::services::sensitivity::{renderable_claim_text, RenderActor, RenderSurface};
 
 use super::tool_utils::{
-    actor_origin_hashes, bad_params, mutation_cursor_for_target, reject_raw_id_params,
-    required_str, source_provenance_watermark, unavailable_payload, validate_bounded_string,
+    actor_origin_hashes, bad_params, internal_trace, mutation_cursor_for_target,
+    reject_raw_id_params, required_str, source_provenance_watermark, unavailable_payload,
+    validate_bounded_string,
 };
 
 const SCHEMA_VERSION: &str = "mcp.claim_feedback.v1";
@@ -71,9 +72,7 @@ impl McpToolHandler for ClaimFeedbackHandler {
                     ));
                 }
                 Err(TargetHandleResolutionError::Internal(detail)) => {
-                    return Err(ToolError::Internal {
-                        trace_id: format!("mcp_feedback_handle_resolve:{detail}"),
-                    });
+                    return Err(internal_trace("mcp_feedback_handle_resolve", detail));
                 }
             };
             let claim_id = resolved
@@ -83,9 +82,8 @@ impl McpToolHandler for ClaimFeedbackHandler {
                 .ok_or_else(|| bad_params("feedback target handle is unavailable"))?
                 .to_string();
             let claim = match crate::services::claims::load_claim_by_id(db.conn_ref(), &claim_id)
-                .map_err(|error| ToolError::Internal {
-                    trace_id: format!("mcp_feedback_claim_load:{error}"),
-                })? {
+                .map_err(|error| internal_trace("mcp_feedback_claim_load", error))?
+            {
                 Some(claim) => claim,
                 None => {
                     return Ok(unavailable_payload(
@@ -97,11 +95,9 @@ impl McpToolHandler for ClaimFeedbackHandler {
                 }
             };
             let current_watermark = claim_watermark_for_handle(&claim);
-            if !resolved_target_watermark_matches(&resolved, &current_watermark).map_err(
-                |error| ToolError::Internal {
-                    trace_id: format!("mcp_feedback_handle_watermark:{error}"),
-                },
-            )? {
+            if !resolved_target_watermark_matches(&resolved, &current_watermark)
+                .map_err(|error| internal_trace("mcp_feedback_handle_watermark", error))?
+            {
                 return Ok(unavailable_payload(
                     SCHEMA_VERSION,
                     &self.description.name,
@@ -257,9 +253,7 @@ impl McpToolHandler for ClaimFeedbackHandler {
                     watermark_material: &watermark,
                 },
             )
-            .map_err(|error| ToolError::Internal {
-                trace_id: format!("mcp_feedback_handle_mint:{error}"),
-            })?;
+            .map_err(|error| internal_trace("mcp_feedback_handle_mint", error))?;
 
             Ok(json!({
                 "schema_version": SCHEMA_VERSION,
@@ -451,24 +445,19 @@ fn materialize_mcp_feedback_metadata(
             return Ok(MetadataMaterialization::Unavailable { refresh_required });
         }
         Err(TargetHandleResolutionError::Internal(detail)) => {
-            return Err(ToolError::Internal {
-                trace_id: format!("mcp_feedback_source_handle_resolve:{detail}"),
-            });
+            return Err(internal_trace("mcp_feedback_source_handle_resolve", detail));
         }
     };
     let current_watermark = source_provenance_watermark(&resolved.target_ref);
-    if !resolved_target_watermark_matches(&resolved, &current_watermark).map_err(|error| {
-        ToolError::Internal {
-            trace_id: format!("mcp_feedback_source_watermark:{error}"),
-        }
-    })? {
+    if !resolved_target_watermark_matches(&resolved, &current_watermark)
+        .map_err(|error| internal_trace("mcp_feedback_source_watermark", error))?
+    {
         return Ok(MetadataMaterialization::Unavailable {
             refresh_required: true,
         });
     }
-    let handle_hash = public_handle_hash(source_handle).map_err(|error| ToolError::Internal {
-        trace_id: format!("mcp_feedback_source_handle_hash:{error}"),
-    })?;
+    let handle_hash = public_handle_hash(source_handle)
+        .map_err(|error| internal_trace("mcp_feedback_source_handle_hash", error))?;
     Ok(MetadataMaterialization::Available(Some(json!({
         "source_ref": json!({
             "kind": "mcp_source_provenance_handle",
@@ -615,9 +604,8 @@ fn mcp_feedback_replay_event_id(
     conversation_handle_hash: &str,
     tool_name: &str,
 ) -> Result<String, ToolError> {
-    let handle_hash = public_handle_hash(handle).map_err(|error| ToolError::Internal {
-        trace_id: format!("mcp_feedback_replay_handle_hash:{error}"),
-    })?;
+    let handle_hash = public_handle_hash(handle)
+        .map_err(|error| internal_trace("mcp_feedback_replay_handle_hash", error))?;
     let mut hasher = Sha256::new();
     update_replay_hash_part(&mut hasher, &handle_hash);
     update_replay_hash_part(&mut hasher, action.as_str());

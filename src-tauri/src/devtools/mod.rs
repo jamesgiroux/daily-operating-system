@@ -33,6 +33,9 @@
 //! MCP target handles follow the same rule: they are conversation-scoped
 //! operational receipts minted by the MCP runtime from already-rendered output,
 //! not stable mock data or a user-facing fixture surface.
+//! Correction stickiness observations and meeting prep replay scan indexes are
+//! likewise service-owned evaluation/replay records; dev fixtures exercise them
+//! through the correction and meeting-prep services instead of static seeds.
 
 use std::path::Path;
 

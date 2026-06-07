@@ -41,8 +41,7 @@ CREATE TABLE IF NOT EXISTS dos338_stickiness_observations (
     sensitivity_gate_result TEXT NOT NULL,
     result TEXT NOT NULL CHECK (result IN ('passed', 'failed', 'blocked_by_w5', 'blocked_by_privacy_gate')),
     reason_code TEXT,
-    observed_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
-    CHECK (entry_point != 'mcp' OR result IN ('blocked_by_w5', 'blocked_by_privacy_gate'))
+    observed_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
 );
 
 CREATE INDEX IF NOT EXISTS idx_dos338_stickiness_observations_run

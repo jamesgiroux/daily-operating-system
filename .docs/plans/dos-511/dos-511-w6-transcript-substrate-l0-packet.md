@@ -15,7 +15,9 @@
 
 **Origination class:** Extension. W6 turns an existing transcript extraction pipeline into a first-class claim producer with provenance, trust, correction, and source typing semantics. The current pipeline already extracts useful outcomes, but much of the output lands in capture/read-model tables or side tables instead of the claim substrate.
 
-**Release-valve contract:** W6 is not a v1.4.9 tag gate. The v1.4.9 wave plan says DOS-511 closes when this L0 packet passes review, independent of whether DOS-343/DOS-327 code lands in v1.4.9 or slips to v1.5.0. W6 claims feed DOS-338 additively when they land; DOS-338 must still prove the correction loop on existing claim types without waiting for transcript claims.
+**2026-06-07 steering override:** James moved W6 implementation into the v1.4.9 completion path. The original release-valve contract below remains historical L0 context only; the current v1.4.9 tag gate requires DOS-511 AC2-AC23 implementation, AC-bounded L2, PR, and integrated L3 proof.
+
+**Original release-valve contract, superseded for v1.4.9 tag gating:** W6 was not a v1.4.9 tag gate. The original wave plan said DOS-511 closed when this L0 packet passed review, independent of whether DOS-343/DOS-327 code landed in v1.4.9 or slipped to v1.5.0. W6 claims fed DOS-338 additively when they landed; DOS-338 still had to prove the correction loop on existing claim types without waiting for transcript claims.
 
 **Headline contract:** A processed meeting transcript can produce claim-substrate rows whose assertion, source, source-as-of, sensitivity, trust band, provenance, correction path, and surface behavior are indistinguishable from other first-class DailyOS claims. Quote Wall readiness is source/provenance readiness over those claims, not a second authority layer.
 
@@ -281,7 +283,7 @@ Known current leaks that W6 must explicitly close before code shipment:
 
 ## Section 3 - Acceptance Criteria
 
-**AC1 - L0 release-valve closure.** DOS-511 closes when this packet passes L0 review and the verdict is recorded on Linear. W6 implementation may slip without blocking the v1.4.9 tag.
+**AC1 - L0 closure and current tag status.** DOS-511 L0 closes when this packet passes L0 review and the verdict is recorded on Linear. Per the 2026-06-07 steering override, W6 implementation no longer slips past the v1.4.9 tag: AC2-AC23 are now required in the version completion path.
 
 **AC2 - Service-owned producer.** Transcript-derived claims are committed through a new or existing service wrapper that calls `services::claims::commit_claim`. No transcript code directly writes claim tables. The producer accepts only typed parsed items, verified quote snippets/locators, source identity, and resolved subjects; it does not accept raw transcript text or raw model output.
 
@@ -374,7 +376,7 @@ Exact test module names may change in L1; the proof bundle must name the command
 
 | Source | Relevance to W6 |
 | --- | --- |
-| `.docs/plans/v1.4.9-waves.md` | Defines W6 as transcript substrate release valve; DOS-343/DOS-327/DOS-511 scope; point-in-time and one-source rules; proof requirement. |
+| `.docs/plans/v1.4.9-waves.md` | Defines W6 as transcript substrate and, after the 2026-06-07 steering override, a v1.4.9 version-tag gate; DOS-343/DOS-327/DOS-511 scope; point-in-time and one-source rules; proof requirement. |
 | `.docs/decisions/0044-meeting-scoped-transcript-intake.md` | Transcript intake is meeting-scoped, immutable, and not reprocessed on briefing reruns. |
 | `.docs/decisions/0125-claim-anatomy-temporal-sensitivity-typeregistry.md` | Claim temporal scope, sensitivity tiers, and registry metadata contract. Internal can cross MCP; Confidential/UserOnly cannot. |
 | `.docs/decisions/0126-memory-substrate-invariants.md` | Claim immutability, feedback through `claim_feedback`, fork-not-winner contradiction handling, and source diversity over volume. |

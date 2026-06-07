@@ -23,6 +23,7 @@ use super::contracts::{
     McpActor, McpClientId, McpToolHandler, McpToolRequestEnvelope, McpToolResponseEnvelope,
     McpToolResult, OpaqueConversationHandle, Scope, ScopedName, Side, ToolError,
 };
+use super::diagnostics::{digest_token, log_detail, log_event, sanitized_category};
 #[cfg(test)]
 use super::handler_context::OwnedConnection;
 use super::handler_context::{McpHandlerContext, OwnedSidecarConnection};
@@ -109,9 +110,9 @@ impl SignalEmitter for StderrSignalEmitter {
         tool_name: &ScopedName,
     ) {
         eprintln!(
-            "mcp.signal.invoked client_id={} conversation_handle={} tool_name={}",
-            client_id.as_str(),
-            conversation_handle.as_str(),
+            "mcp.signal.invoked client_digest={} conversation_digest={} tool_name={}",
+            digest_token(client_id.as_str()),
+            digest_token(conversation_handle.as_str()),
             tool_name.as_str()
         );
     }
@@ -122,10 +123,12 @@ impl SignalEmitter for StderrSignalEmitter {
         tool_name: Option<&ScopedName>,
         reject_reason: &str,
     ) {
-        let client = client_id.map(|c| c.as_str()).unwrap_or("unresolved");
+        let client = client_id
+            .map(|c| digest_token(c.as_str()))
+            .unwrap_or_else(|| "unresolved".to_string());
         let tool = tool_name.map(|t| t.as_str()).unwrap_or("unresolved");
         eprintln!(
-            "mcp.signal.rejected client_id={client} tool_name={tool} reject_reason={reject_reason}"
+            "mcp.signal.rejected client_digest={client} tool_name={tool} reject_reason={reject_reason}"
         );
     }
 
@@ -137,9 +140,9 @@ impl SignalEmitter for StderrSignalEmitter {
         warning_reason: &str,
     ) {
         eprintln!(
-            "mcp.signal.warning client_id={} conversation_handle={} tool_name={} warning_reason={warning_reason}",
-            client_id.as_str(),
-            conversation_handle.as_str(),
+            "mcp.signal.warning client_digest={} conversation_digest={} tool_name={} warning_reason={warning_reason}",
+            digest_token(client_id.as_str()),
+            digest_token(conversation_handle.as_str()),
             tool_name.as_str()
         );
     }
@@ -618,7 +621,7 @@ impl Gateway {
                         };
                     }
                     if matches!(side, Side::Read) {
-                        eprintln!("mcp_v2 read audit failure: {err}");
+                        log_detail("read_audit_failure", err.to_string());
                         return Dispatched {
                             result: McpToolResult::Error {
                                 error: ToolError::Internal {
@@ -628,7 +631,7 @@ impl Gateway {
                             conversation_handle,
                         };
                     }
-                    eprintln!("mcp_v2 audit single-failure: {err}");
+                    log_detail("audit_single_failure", err.to_string());
                 }
                 if let Some(owned) = self.connection.as_ref() {
                     let connection = owned.connection();
@@ -636,7 +639,7 @@ impl Gateway {
                         .lock()
                         .unwrap_or_else(std::sync::PoisonError::into_inner);
                     if let Err(error) = super::target_handles::cleanup_target_handles(&guard) {
-                        eprintln!("mcp_v2 target handle cleanup failed: {error}");
+                        log_detail("target_handle_cleanup_failed", error.to_string());
                     }
                 }
 
@@ -810,16 +813,9 @@ fn reject_caller_asserted_params(
 /// The detail is logged to stderr server-side so operators can grep by
 /// trace_id.
 fn opaque_trace_id(category: &str, detail: &str) -> String {
-    use ring::digest;
-    let digest = digest::digest(&digest::SHA256, detail.as_bytes());
-    let hex = digest
-        .as_ref()
-        .iter()
-        .take(6)
-        .map(|b| format!("{b:02x}"))
-        .collect::<String>();
-    let trace_id = format!("{category}-{hex}");
-    eprintln!("mcp_v2 internal: trace_id={trace_id} detail={detail}");
+    let category = sanitized_category(category);
+    let trace_id = format!("{category}-{}", digest_token(detail));
+    log_detail(category, detail);
     trace_id
 }
 
@@ -908,7 +904,7 @@ fn reserve_rate_limit(
     );
     if prune_outcome.is_err() {
         if let Err(rollback_err) = conn.execute_batch("ROLLBACK") {
-            eprintln!("mcp_v2 rate-limit ROLLBACK failed: {rollback_err}");
+            log_detail("rate_limit_rollback_failed", rollback_err.to_string());
         }
         return Err(RATE_LIMIT_RETRY_DEFAULT_SECONDS);
     }
@@ -924,16 +920,19 @@ fn reserve_rate_limit(
     ) {
         Ok(value) => value,
         Err(err) => {
-            eprintln!("mcp_v2 rate-limit SELECT COUNT failed: {err}");
+            log_detail("rate_limit_select_count_failed", err.to_string());
             if let Err(rollback_err) = conn.execute_batch("ROLLBACK") {
-                eprintln!("mcp_v2 rate-limit ROLLBACK after SELECT err: {rollback_err}");
+                log_detail(
+                    "rate_limit_rollback_after_select_failed",
+                    rollback_err.to_string(),
+                );
             }
             return Err(RATE_LIMIT_RETRY_DEFAULT_SECONDS);
         }
     };
     if count as u32 >= grant.rate_limit.max_calls {
         if let Err(rollback_err) = conn.execute_batch("ROLLBACK") {
-            eprintln!("mcp_v2 rate-limit ROLLBACK failed: {rollback_err}");
+            log_detail("rate_limit_rollback_failed", rollback_err.to_string());
         }
         return Err(grant.rate_limit.window_seconds);
     }
@@ -945,7 +944,7 @@ fn reserve_rate_limit(
     );
     if insert_outcome.is_err() {
         if let Err(rollback_err) = conn.execute_batch("ROLLBACK") {
-            eprintln!("mcp_v2 rate-limit ROLLBACK failed: {rollback_err}");
+            log_detail("rate_limit_rollback_failed", rollback_err.to_string());
         }
         return Err(RATE_LIMIT_RETRY_DEFAULT_SECONDS);
     }
@@ -953,9 +952,12 @@ fn reserve_rate_limit(
     // L2 cycle-2 code-reviewer NEW: COMMIT failure must roll back the
     // pending tx to avoid leaving a long-held writer lock open.
     if let Err(commit_err) = conn.execute_batch("COMMIT") {
-        eprintln!("mcp_v2 rate-limit COMMIT failed; rolling back: {commit_err}");
+        log_detail("rate_limit_commit_failed", commit_err.to_string());
         if let Err(rollback_err) = conn.execute_batch("ROLLBACK") {
-            eprintln!("mcp_v2 rate-limit ROLLBACK after COMMIT failure: {rollback_err}");
+            log_detail(
+                "rate_limit_rollback_after_commit_failed",
+                rollback_err.to_string(),
+            );
         }
         return Err(RATE_LIMIT_RETRY_DEFAULT_SECONDS);
     }
@@ -978,7 +980,7 @@ fn envelope_handle_str(envelope: &McpToolRequestEnvelope) -> &str {
 }
 
 fn emit_double_failure_alert() {
-    eprintln!("mcp.alert.audit_double_failure: handler effects preserved, audit lost");
+    log_event("audit_double_failure");
 }
 
 #[cfg(test)]

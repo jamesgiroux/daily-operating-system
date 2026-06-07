@@ -203,6 +203,7 @@ pub enum WorkspaceFileKind {
     EntityDoc,
     DriveSync,
     UserAttachment,
+    GenericTranscript,
     GranolaTranscript,
     QuillTranscript,
     McpPlacement,
@@ -215,10 +216,24 @@ impl WorkspaceFileKind {
             "entity_doc" => Some(Self::EntityDoc),
             "drive_sync" => Some(Self::DriveSync),
             "user_attachment" => Some(Self::UserAttachment),
+            "generic_transcript" => Some(Self::GenericTranscript),
             "granola_transcript" => Some(Self::GranolaTranscript),
             "quill_transcript" => Some(Self::QuillTranscript),
             "mcp_placement" => Some(Self::McpPlacement),
             _ => None,
+        }
+    }
+
+    pub fn slug(&self) -> &'static str {
+        match self {
+            Self::Inbox => "inbox",
+            Self::EntityDoc => "entity_doc",
+            Self::DriveSync => "drive_sync",
+            Self::UserAttachment => "user_attachment",
+            Self::GenericTranscript => "generic_transcript",
+            Self::GranolaTranscript => "granola_transcript",
+            Self::QuillTranscript => "quill_transcript",
+            Self::McpPlacement => "mcp_placement",
         }
     }
 
@@ -228,11 +243,47 @@ impl WorkspaceFileKind {
             WorkspaceFileKind::EntityDoc => "entity document",
             WorkspaceFileKind::DriveSync => "drive sync",
             WorkspaceFileKind::UserAttachment => "user attachment",
+            WorkspaceFileKind::GenericTranscript => "generic transcript",
             WorkspaceFileKind::GranolaTranscript => "Granola transcript",
             WorkspaceFileKind::QuillTranscript => "Quill transcript",
             WorkspaceFileKind::McpPlacement => "MCP placement",
         }
     }
+}
+
+pub fn workspace_file_kind_from_source_key(raw: &str) -> Option<WorkspaceFileKind> {
+    let key = raw.trim().to_ascii_lowercase();
+    let kind = key.strip_prefix("workspace_file:")?;
+    WorkspaceFileKind::from_slug(kind)
+}
+
+pub fn data_source_from_key(raw: &str) -> DataSource {
+    if let Some(kind) = workspace_file_kind_from_source_key(raw) {
+        return DataSource::WorkspaceFile { kind };
+    }
+    let trimmed = raw.trim();
+    match trimmed.to_ascii_lowercase().as_str() {
+        "user" | "human" | "manual" => DataSource::User,
+        "google" => DataSource::Google,
+        "clay" => DataSource::Clay,
+        "ai" | "agent" => DataSource::Ai,
+        "co_attendance" => DataSource::CoAttendance,
+        "local_enrichment" => DataSource::LocalEnrichment,
+        "legacy_unattributed" => DataSource::LegacyUnattributed,
+        _ => DataSource::Other(SourceName::new(trimmed)),
+    }
+}
+
+pub fn workspace_file_id_from_source_ref(raw: &str) -> Option<&str> {
+    let file_id = raw.trim().strip_prefix("workspace_file:")?;
+    if file_id.is_empty()
+        || file_id.contains('/')
+        || file_id.contains('\\')
+        || WorkspaceFileKind::from_slug(file_id).is_some()
+    {
+        return None;
+    }
+    Some(file_id)
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
@@ -444,6 +495,7 @@ mod tests {
             WorkspaceFileKind::EntityDoc,
             WorkspaceFileKind::DriveSync,
             WorkspaceFileKind::UserAttachment,
+            WorkspaceFileKind::GenericTranscript,
             WorkspaceFileKind::GranolaTranscript,
             WorkspaceFileKind::QuillTranscript,
             WorkspaceFileKind::McpPlacement,
@@ -454,6 +506,40 @@ mod tests {
             assert!(!ds.is_structured_trusted_source());
             assert!(ds.display_name().starts_with("Workspace file ("));
         }
+    }
+
+    #[test]
+    fn workspace_file_source_key_parser_preserves_transcript_kinds() {
+        assert_eq!(
+            data_source_from_key("workspace_file:generic_transcript"),
+            DataSource::WorkspaceFile {
+                kind: WorkspaceFileKind::GenericTranscript,
+            }
+        );
+        assert_eq!(
+            data_source_from_key("workspace_file:granola_transcript"),
+            DataSource::WorkspaceFile {
+                kind: WorkspaceFileKind::GranolaTranscript,
+            }
+        );
+        assert_eq!(
+            data_source_from_key("workspace_file:quill_transcript"),
+            DataSource::WorkspaceFile {
+                kind: WorkspaceFileKind::QuillTranscript,
+            }
+        );
+        assert_eq!(
+            data_source_from_key("workspace_file:not_registered"),
+            DataSource::Other(SourceName::new("workspace_file:not_registered"))
+        );
+        assert_eq!(
+            workspace_file_id_from_source_ref("workspace_file:file_abc123"),
+            Some("file_abc123")
+        );
+        assert_eq!(
+            workspace_file_id_from_source_ref("workspace_file:granola_transcript"),
+            None
+        );
     }
 
     #[test]
