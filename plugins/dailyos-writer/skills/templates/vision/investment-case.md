@@ -197,10 +197,10 @@ When quantifying opportunity:
 ## Example
 
 ```markdown
-# Investment Case: Agentforce Partnership Formalization
+# Investment Case: Aura Partnership Formalization
 
 ## The Ask
-I'm requesting $50K budget allocation and 0.5 FTE (Riley) for Q1 to formalize the Globex Agentforce partnership. This investment positions us for the enterprise AI ecosystem where Globex generated $100M in year one bookings.
+I'm requesting $50K budget allocation and 0.5 FTE (Riley) for Q1 to formalize the Globex Aura partnership. This investment positions us for the enterprise AI ecosystem where Globex generated $100M in year one bookings.
 
 ---
 
@@ -209,7 +209,7 @@ I'm requesting $50K budget allocation and 0.5 FTE (Riley) for Q1 to formalize th
 ### Business Impact
 **Direct pipeline**: Three enterprise opportunities ($800K combined) are specifically asking about Globex integration. Vertex alone is $400K.
 
-**Market access**: AppExchange listing reaches thousands of Globex customers. Conservative estimate: 5 qualified leads per quarter at current conversion rates = $500K additional pipeline annually.
+**Market access**: Globex Marketplace listing reaches thousands of Globex customers. Conservative estimate: 5 qualified leads per quarter at current conversion rates = $500K additional pipeline annually.
 
 **Competitive positioning**: Early partner status in forming ecosystem. Waiting means competing against established partners.
 
@@ -222,7 +222,7 @@ Directly supports enterprise AI positioning strategy. Validates "open platform" 
 
 | Component | Investment | Delivers |
 |-----------|------------|----------|
-| Partnership fees | $30K | ISV partner status, AppExchange listing |
+| Partnership fees | $30K | ISV partner status, Globex Marketplace listing |
 | Legal review | $10K | Partnership agreements |
 | Riley allocation | 0.5 FTE Q1 | Partnership lead, coordination |
 | Engineering support | $10K | Partner certification, testing |
@@ -238,7 +238,7 @@ Directly supports enterprise AI positioning strategy. Validates "open platform" 
 ## Risks and Assumptions
 
 ### Key Assumptions
-- Globex partnership program accepts our application (High confidence - validated at Dreamforce)
+- Globex partnership program accepts our application (High confidence - validated at GlobexWorld)
 - Keystone lighthouse remains committed (High confidence - POC complete, pilot approved)
 - Market demand sustains (Medium confidence - based on early signals, not proven at scale)
 
@@ -250,7 +250,7 @@ Directly supports enterprise AI positioning strategy. Validates "open platform" 
 | Lower demand than expected | Lower ROI | Phase investment, prove before scaling |
 
 ### What We Don't Know
-- Exact conversion rate from AppExchange leads
+- Exact conversion rate from Globex Marketplace leads
 - Globex co-sell support level we'll receive
 - Competitor timing (are others also pursuing?)
 
@@ -263,8 +263,8 @@ Directly supports enterprise AI positioning strategy. Validates "open platform" 
 **If approved**: Riley initiates partnership application Jan 16, targets February legal close
 
 ### Return Timeline
-- **Q1**: Partnership active, AppExchange listed
+- **Q1**: Partnership active, Globex Marketplace listed
 - **Q2**: First partner-sourced deal closed
 - **Q2+**: Pipeline impact measurable
-- **Leading indicators**: AppExchange views, AE introductions, demo requests
+- **Leading indicators**: Globex Marketplace views, AE introductions, demo requests
 ```

@@ -22,7 +22,6 @@ What type of content are we creating?
 - Video Script (Documentary, thought leadership video)
 - Podcast Outline (Interview, discussion)
 - Customer Communication (QBR, renewal, executive briefing)
-- Blog Post (Long-form blog content)
 - Other (describe it)
 ```
 
@@ -37,7 +36,6 @@ What type of content are we creating?
 | Video Script | `skills/voices/narrative.yaml` | `skills/templates/narrative/` |
 | Podcast Outline | `skills/voices/narrative.yaml` | `skills/templates/podcast/` |
 | Customer Communication | `skills/voices/customer.yaml` | `skills/templates/customer/` |
-| Blog Post | `skills/voices/blog.yaml` | `skills/templates/thought-leadership/` |
 
 ### Step 2: Activate Writer Core
 

@@ -40,11 +40,11 @@ Guidance for adapting content across channels, formats, and audiences—includin
 **Example transformation** (P2 → Slack):
 ```
 P2 Version (800 words):
-"Keystone Automotive approved the Agentforce pilot expansion yesterday.
+"Keystone Automotive approved the Aura pilot expansion yesterday.
 This represents our first formal commitment beyond POC scope..."
 
 Slack Version (50 words):
-🎯 Keystone approved Agentforce pilot expansion
+🎯 Keystone approved Aura pilot expansion
 
 50 dealers, February launch. This is our first formal commitment
 beyond POC and validates the co-sell model we've been building.
@@ -85,7 +85,7 @@ Next step: Dealer selection finalized by Jan 17.
 **Example transformation** (Internal insight → LinkedIn):
 ```
 Internal:
-"Keystone's Agentforce pilot showed 60% reduction in dealer inquiry
+"Keystone's Aura pilot showed 60% reduction in dealer inquiry
 response time. This validates our thesis that AI-powered
 customer support on CMS platforms is a differentiator."
 
@@ -174,8 +174,8 @@ Content created for P2s, internal updates, or customer-specific docs can often b
 | "Keystone Automotive" | "A Fortune 500 automotive company" |
 | "$400K deal" | "Six-figure partnership" |
 | "Summit ring customer" | "Strategic account" |
-| "Our Agentforce connector" | "AI integration capabilities" |
-| "Beating Contentful" | "Competing effectively in enterprise evaluations" |
+| "Our Aura connector" | "AI integration capabilities" |
+| "Beating Riverbed" | "Competing effectively in enterprise evaluations" |
 
 **Step 3: Reframe perspective**
 
@@ -266,7 +266,7 @@ When creating content, consider upfront:
 ```
 Primary: P2 post on Foundation ring management philosophy
 Secondary potential:
-- LinkedIn post (needs generalization, remove VIP-specific terms)
+- LinkedIn post (needs generalization, remove platform-specific terms)
 - Blog post (needs expansion, industry framing)
 - Slack summary (needs compression to key insight)
 

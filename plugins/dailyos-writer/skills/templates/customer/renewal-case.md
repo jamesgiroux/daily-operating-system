@@ -99,7 +99,7 @@ This isn't "please stay with us." It's "here's what you've accomplished and what
 
 | Avoid | Prefer |
 |-------|--------|
-| "WordPress VIP delivered..." | "Your team achieved..." |
+| "Northwind delivered..." | "Your team achieved..." |
 | "Our platform provides..." | "You now have the capability to..." |
 | "Renewing ensures continued access to..." | "Continuing positions you to..." |
 | "Switching would require..." | "Building on this foundation..." |

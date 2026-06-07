@@ -160,17 +160,17 @@ A strategy memo isn't a summary—it's a persuasive argument. You're not reporti
 ## Example
 
 ```markdown
-# WordPress VIP Should Formalize the Globex Partnership in Q1
+# Northwind Should Formalize the Globex Partnership in Q1
 
 ## The Proposal
-We should invest in formalizing our Globex partnership before the ecosystem matures. Early movers in the Agentforce partner program get preferential positioning. We have validated technology and a lighthouse customer ready—the risk is in waiting, not acting.
+We should invest in formalizing our Globex partnership before the ecosystem matures. Early movers in the Aura partner program get preferential positioning. We have validated technology and a lighthouse customer ready—the risk is in waiting, not acting.
 
 ---
 
 ## The Situation
-Globex generated $100M in Agentforce bookings in year one. Their partner ecosystem is actively forming. Three enterprise accounts in our pipeline are specifically asking about Globex integration capability.
+Globex generated $100M in Aura bookings in year one. Their partner ecosystem is actively forming. Three enterprise accounts in our pipeline are specifically asking about Globex integration capability.
 
-We demonstrated a working connector at Dreamforce. Keystone Automotive is deploying as a lighthouse customer. The technical validation phase is behind us.
+We demonstrated a working connector at GlobexWorld. Keystone Automotive is deploying as a lighthouse customer. The technical validation phase is behind us.
 
 The window is now. Globex is building their preferred partner list. Waiting six months means competing against entrenched partners rather than establishing as an early mover.
 
@@ -178,7 +178,7 @@ The window is now. Globex is building their preferred partner list. Waiting six 
 Formalize the partnership through Globex's ISV partner program with target completion in Q1.
 
 ### Partner Program Enrollment
-Complete AppExchange listing and ISV partnership paperwork. Riley to lead, with target legal close in February.
+Complete Globex Marketplace listing and ISV partnership paperwork. Riley to lead, with target legal close in February.
 
 ### Co-Sell Infrastructure
 Establish joint pipeline management with Globex AEs. Define shared success metrics and lead routing process.
@@ -193,7 +193,7 @@ Current deals require custom coordination on each opportunity. Partnership infra
 **Why now vs. Q2 or later?**
 Partner ecosystem forming now. Vertex opportunity ($400K) is testing a model we can't scale without partnership infrastructure. Three additional opportunities waiting on partnership clarity.
 
-**Alternative considered**: Continue ad-hoc deals. Rejected because: unsustainable coordination overhead, miss AppExchange distribution, lose to partners who can execute formal co-sell.
+**Alternative considered**: Continue ad-hoc deals. Rejected because: unsustainable coordination overhead, miss Globex Marketplace distribution, lose to partners who can execute formal co-sell.
 
 ---
 

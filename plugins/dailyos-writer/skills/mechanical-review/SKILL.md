@@ -27,8 +27,7 @@ When this skill activates:
 | Em dashes | No em dashes in prose | Replace with parentheses, periods, or restructure |
 | Quotation marks | Use curly quotes in prose | Replace straight quotes with curly |
 | Oxford comma | Always use serial comma | Add comma before "and" in lists |
-| WordPress VIP | Capital P in WordPress | Fix capitalization |
-| Salesforce products | Agentforce, Data Cloud | Fix product name styling |
+| Project terminology | Product/brand spellings defined in TERMINOLOGY.md | Fix capitalization and styling |
 
 ### Anti-Patterns (via detect_patterns.py)
 
@@ -85,7 +84,7 @@ python3 skills/scripts/detect_patterns.py <file>
 
 Some issues can be automatically corrected:
 - Em dashes -> parentheses (simple cases)
-- Terminology corrections (WordPress, Agentforce, etc.)
+- Terminology corrections (per TERMINOLOGY.md, if configured)
 - Straight quotes -> curly quotes
 
 Others require human judgment:
@@ -118,7 +117,7 @@ Always structure your response as:
 #### Terminology ([count])
 | Line | Found | Correct |
 |------|-------|---------|
-| [num] | "Wordpress" | "WordPress" |
+| [num] | "[found spelling]" | "[correct spelling]" |
 
 #### Other Typography ([count])
 | Line | Issue | Fix |

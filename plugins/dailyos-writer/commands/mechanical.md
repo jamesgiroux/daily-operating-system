@@ -34,7 +34,7 @@ python3 skills/scripts/detect_patterns.py <file>
 | Em dashes | No em dashes in prose | Replace with parentheses, periods, or restructure |
 | Quotation marks | Use curly quotes in prose | Replace straight quotes with curly |
 | Oxford comma | Always use serial comma | Add comma before "and" in lists |
-| Product names | WordPress, Agentforce, Data Cloud | Fix capitalization and styling |
+| Project terminology | Product/brand spellings from TERMINOLOGY.md | Fix capitalization and styling |
 
 ### Step 5: Anti-Pattern Detection
 

@@ -23,7 +23,7 @@ Customer-centric quarterly review narrative. Frames everything in their terms, t
 
 | Platform-Centric (Avoid) | Customer-Centric (Prefer) |
 |--------------------------|---------------------------|
-| WordPress VIP delivered 99.99% uptime | Your critical launches had zero revenue-impacting outages |
+| Northwind delivered 99.99% uptime | Your critical launches had zero revenue-impacting outages |
 | Our CDN improved performance by 23% | Your Core Web Vitals improved 23%, supporting your SEO goals |
 | We resolved 50 support tickets | Your team's questions were resolved with 99% SLA compliance |
 
@@ -103,7 +103,7 @@ Customer-centric quarterly review narrative. Frames everything in their terms, t
 ## Anti-Patterns
 
 - **Feature dumping**: Listing what we did without their outcome
-- **VIP-centric framing**: "WordPress VIP enabled..." instead of "Your team achieved..."
+- **platform-centric framing**: "Northwind enabled..." instead of "Your team achieved..."
 - **Generic value props**: "Enterprise-grade reliability" without their specific evidence
 - **Ignoring challenges**: Not acknowledging known issues
 - **Vendor positioning**: Sounding like we're selling, not partnering
@@ -174,7 +174,7 @@ Based on your [stated priority], we recommend:
 
 ## Executive Summary
 
-Keystone Automotive achieved zero revenue-impacting outages during your highest-traffic quarter, supporting $2.3B in vehicle transactions processed through your digital platforms. The NADA project kicked off successfully, positioning Keystone for AI-powered customer experiences in 2026.
+Keystone Automotive achieved zero revenue-impacting outages during your highest-traffic quarter, supporting $2.3B in vehicle transactions processed through your digital platforms. The DealerExpo project kicked off successfully, positioning Keystone for AI-powered customer experiences in 2026.
 
 ---
 
@@ -184,19 +184,19 @@ At our September kickoff, you identified three priorities:
 
 | Goal | Status | Evidence |
 |------|--------|----------|
-| Platform stability for Q4 traffic peak | Achieved | Zero outages during NADA season |
-| Agentforce POC launch | Achieved | POC environment live, demo ready for NADA |
+| Platform stability for Q4 traffic peak | Achieved | Zero outages during DealerExpo season |
+| Aura POC launch | Achieved | POC environment live, demo ready for DealerExpo |
 | Reduce time-to-publish for dealer content | In Progress | 30% improvement; targeting 50% by Q1 |
 
-The Agentforce POC represents a significant milestone. Keystone is now the lighthouse customer for WordPress VIP's Globex integration, with direct access to the product team during development.
+The Aura POC represents a significant milestone. Keystone is now the lighthouse customer for Northwind's Globex integration, with direct access to the product team during development.
 
 ## Value Delivered
 
 ### Zero Revenue-Impacting Outages During Peak Season
 Your November traffic was 40% above baseline. Despite this, all customer-facing platforms maintained 99.99% availability. No dealer transactions were impacted.
 
-### Agentforce POC Operational
-The NADA use case is live in POC environment. Initial demos show 60% reduction in common dealer inquiry resolution time. Full deployment planned for Q1.
+### Aura POC Operational
+The DealerExpo use case is live in POC environment. Initial demos show 60% reduction in common dealer inquiry resolution time. Full deployment planned for Q1.
 
 ### Dealer Content Velocity Improved 30%
 Time from content creation to publish reduced from 4 days to 2.8 days. Remaining friction identified; roadmap in place for Q1 improvements.
@@ -212,16 +212,16 @@ Time from content creation to publish reduced from 4 days to 2.8 days. Remaining
 ## Looking Ahead: Q1 2026
 
 ### Your Priorities
-You've identified NADA Conference (January) as the critical milestone for Agentforce demonstration, with full dealer rollout targeted for Q2.
+You've identified DealerExpo (January) as the critical milestone for Aura demonstration, with full dealer rollout targeted for Q2.
 
 ### Our Recommendations
 
-1. **Accelerate Agentforce deployment post-NADA**: Based on POC results, we recommend moving to production pilot with 50 dealers in February. This builds momentum before Q2 rollout.
+1. **Accelerate Aura deployment post-DealerExpo**: Based on POC results, we recommend moving to production pilot with 50 dealers in February. This builds momentum before Q2 rollout.
 
 2. **Content velocity sprint**: Addressing remaining friction in the publish workflow could get you to your 50% improvement target by end of Q1.
 
 ### Next Steps
-- **January 15**: NADA Agentforce demo (James supporting)
+- **January 15**: DealerExpo Aura demo (our team supporting)
 - **January 22**: Q1 planning call to finalize pilot dealer selection
-- **February 1**: Production pilot kickoff (pending NADA results)
+- **February 1**: Production pilot kickoff (pending DealerExpo results)
 ```

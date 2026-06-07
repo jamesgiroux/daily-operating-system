@@ -95,7 +95,7 @@ Bottom Line Up Front structure for strategic communications. Best for busy execu
 | Topic Header (Bad) | Action Title (Good) |
 |-------------------|---------------------|
 | Partnership Update | Globex partnership advances to legal review |
-| Vertex Opportunity | Vertex deal validates Agentforce positioning |
+| Vertex Opportunity | Vertex deal validates Aura positioning |
 | Q4 Results | Q4 exceeded targets: $2.1M closed |
 
 ---
@@ -138,14 +138,14 @@ Bottom Line Up Front structure for strategic communications. Best for busy execu
 ```markdown
 # Globex Partnership Advances to Legal Review
 
-**BLUF**: After three months of technical validation, the Agentforce WordPress Connector partnership is moving to legal review with a target close of February 2026.
+**BLUF**: After three months of technical validation, the Aura Northwind Connector partnership is moving to legal review with a target close of February 2026.
 
 ---
 
 ## What Happened
 
 On January 8, Jared (Globex Partner Manager) confirmed legal engagement would begin this week. This follows:
-- Successful Dreamforce theater session (October 2025)
+- Successful GlobexWorld theater session (October 2025)
 - MCP Beta Program enrollment (January 2026)
 - Vertex co-sell opportunity identified ($400K potential)
 
@@ -154,7 +154,7 @@ Technical validation is complete. Both teams have aligned on the connector archi
 ## What This Means
 
 This moves us from proof-of-concept to formal partnership status. Once signed:
-- VIP gains access to AppExchange distribution
+- Northwind gains access to Globex Marketplace distribution
 - Globex sellers can formally include us in deals
 - Marketing co-investment becomes available
 

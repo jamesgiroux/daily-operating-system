@@ -114,9 +114,9 @@ Don't list what you did—show what changed because of what you did. Transform t
 
 | Activity | Outcome |
 |----------|---------|
-| "Had weekly calls with Keystone" | "Keystone approved Agentforce pilot expansion (50 dealers, Feb launch)" |
+| "Had weekly calls with Keystone" | "Keystone approved Aura pilot expansion (50 dealers, Feb launch)" |
 | "Worked on renewal prep" | "Meridian Hotels renewal secured ($450K, 2-year term) with 15% uplift" |
-| "Attended Agentforce meetings" | "Defined co-sell motion with Globex for Q1 pipeline" |
+| "Attended Aura meetings" | "Defined co-sell motion with Globex for Q1 pipeline" |
 | "Responded to support escalations" | "Zero revenue-impacting issues across Summit accounts" |
 
 ## Template
@@ -162,14 +162,14 @@ Don't list what you did—show what changed because of what you did. Transform t
 # October 2025 Impact Summary
 
 ## The Month in Brief
-Dreamforce validated the Agentforce strategy with live customer demo and three enterprise leads generated. Meanwhile, Foundation ring accounts stabilized with zero escalations.
+GlobexWorld validated the Aura strategy with live customer demo and three enterprise leads generated. Meanwhile, Foundation ring accounts stabilized with zero escalations.
 
 ---
 
 ## Impact Highlights
 
-### Agentforce Launched Successfully at Dreamforce
-Led live demo at Dreamforce booth with Keystone Automotive use case. Generated immediate interest from three enterprise prospects (Vertex, Crestline, ServiceNow). Partnership positioning with Globex team confirmed for Q1 formalization.
+### Aura Launched Successfully at GlobexWorld
+Led live demo at GlobexWorld booth with Keystone Automotive use case. Generated immediate interest from three enterprise prospects (Vertex, Crestline, Meridian). Partnership positioning with Globex team confirmed for Q1 formalization.
 
 ### Keystone Automotive POC Moved to Production-Ready
 POC environment validated all core use cases. 60% reduction in dealer inquiry time demonstrated. Keystone committed to February pilot with 50 dealers and identified internal budget sponsor.
@@ -184,7 +184,7 @@ Two-year renewal closed at $450K (15% uplift from previous term). Added newsroom
 
 ## Themes & Patterns
 
-Agentforce is creating new conversation opportunities with Globex-invested accounts. Three of my top expansion targets (Vertex, Crestline, Keystone) are engaging specifically because of AI capabilities. This validates the strategic bet and suggests we should probe Globex investment early in account discovery.
+Aura is creating new conversation opportunities with Globex-invested accounts. Three of my top expansion targets (Vertex, Crestline, Keystone) are engaging specifically because of AI capabilities. This validates the strategic bet and suggests we should probe Globex investment early in account discovery.
 
 Foundation ring proactive model is working. The shift from reactive to quarterly proactive touchpoints reduced noise (fewer surprise escalations) and is creating early expansion signals in accounts we'd previously ignored.
 
@@ -194,5 +194,5 @@ Key priorities: Close Vertex opportunity ($400K), prepare Keystone for pilot kic
 
 Risk to watch: Crestline stakeholder change—new VP of Digital starting, need to rebuild relationship.
 
-Opportunity: NADA Conference (January) could be significant for Keystone visibility if pilot goes well.
+Opportunity: DealerExpo (January) could be significant for Keystone visibility if pilot goes well.
 ```

@@ -140,10 +140,10 @@ Executives scan, they don't read. Structure for skimmability. Every word must ea
 ## Example
 
 ```markdown
-# Keystone Automotive: Agentforce Pilot Approval Needed
+# Keystone Automotive: Aura Pilot Approval Needed
 
 ## Context
-Keystone's Agentforce POC is complete and validated. They're asking to move to production pilot with 50 dealers in February. This requires our approval to expand beyond POC scope.
+Keystone's Aura POC is complete and validated. They're asking to move to production pilot with 50 dealers in February. This requires our approval to expand beyond POC scope.
 
 ## Key Points
 - **POC validated core use case**: 60% reduction in dealer inquiry resolution time
@@ -152,7 +152,7 @@ Keystone's Agentforce POC is complete and validated. They're asking to move to p
 - **Our readiness**: Connector MVP is production-ready; support model defined
 
 ## Implications
-A successful pilot positions Keystone as our Agentforce lighthouse customer for the Globex partnership launch. Delay risks losing momentum and potentially the customer's internal champion.
+A successful pilot positions Keystone as our Aura lighthouse customer for the Globex partnership launch. Delay risks losing momentum and potentially the customer's internal champion.
 
 ## The Ask
 Please approve expansion from POC to 50-dealer pilot by January 20. This lets Keystone start deployment in February and builds our case study before the partnership announcement.

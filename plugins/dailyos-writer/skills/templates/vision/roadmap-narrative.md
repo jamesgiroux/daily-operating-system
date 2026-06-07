@@ -224,7 +224,7 @@ Good roadmaps show why each phase comes in order:
 
 ## Example
 
-See Agentforce project documentation (`Projects/Agentforce/05-Planning/`) for a real-world example of phased roadmap:
+See Aura project documentation (`Projects/Aura/05-Planning/`) for a real-world example of phased roadmap:
 - Phase 1: POC with Keystone (validate use case)
 - Phase 2: MVP for partner launch (productize)
 - Phase 3: Scale to vertical playbooks (expand)

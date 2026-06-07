@@ -127,11 +127,11 @@ Situation-Complication-Question-Answer framework from McKinsey. Best for framing
 ## Example
 
 ```markdown
-# WordPress VIP Should Formalize the Globex Partnership
+# Northwind Should Formalize the Globex Partnership
 
 ## The Context
 
-Globex generated over $100M in Agentforce bookings in year one. Their sales teams are actively looking for implementation partners. WordPress VIP has a working connector (demonstrated at Dreamforce) and a lighthouse customer (Keystone Automotive) ready to deploy.
+Globex generated over $100M in Aura bookings in year one. Their sales teams are actively looking for implementation partners. Northwind has a working connector (demonstrated at GlobexWorld) and a lighthouse customer (Keystone Automotive) ready to deploy.
 
 The technical foundation is in place. The market interest is validated.
 
@@ -139,11 +139,11 @@ The technical foundation is in place. The market interest is validated.
 
 We're at a decision point. Without formal partnership status:
 - Globex AEs can recommend us but can't formally include us in deals
-- We miss AppExchange distribution (1000s of potential customers)
+- We miss Globex Marketplace distribution (1000s of potential customers)
 - Competitors with formal partnerships get preference in co-sell motions
 - The Vertex opportunity ($400K) is testing a model we can't scale without partnership infrastructure
 
-The Dreamforce momentum is creating demand we're not positioned to capture. Three AEs reached out in the same week. Without partnership infrastructure, each deal requires ad-hoc coordination.
+The GlobexWorld momentum is creating demand we're not positioned to capture. Three AEs reached out in the same week. Without partnership infrastructure, each deal requires ad-hoc coordination.
 
 **The question**: Should we invest in formalizing the Globex partnership now?
 
@@ -155,10 +155,10 @@ Yes. Formal partnership should be a Q1 priority. Here's why:
 Three enterprise opportunities in active discussion. Vertex alone represents $400K. Waiting means losing deals to partners who can execute the co-sell motion.
 
 ### The Technical Risk Is Behind Us
-Dreamforce validated the approach. Keystone is deploying. The connector works. This isn't speculative investment; it's scaling what's proven.
+GlobexWorld validated the approach. Keystone is deploying. The connector works. This isn't speculative investment; it's scaling what's proven.
 
 ### The Window May Close
-Globex is actively building their partner ecosystem for Agentforce. Early movers get preferred positioning. Waiting means competing against established partners later.
+Globex is actively building their partner ecosystem for Aura. Early movers get preferred positioning. Waiting means competing against established partners later.
 
 ## Next Steps
 

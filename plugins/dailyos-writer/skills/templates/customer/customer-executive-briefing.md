@@ -138,20 +138,20 @@ Shorter is almost always better.
 # Q4 Strategic Review: Briefing for Sarah Chen
 
 **Meeting**: January 15, 2:00 PM ET, 60 min
-**Attendees**: Sarah Chen (VP Digital), Your Name (WordPress VIP), Lisa Park (Marketing Ops)
+**Attendees**: Sarah Chen (VP Digital), Your Name (Northwind), Lisa Park (Marketing Ops)
 
 ---
 
 ## Context
-We're reviewing Q4 results and planning Q1 priorities. The Agentforce pilot decision needs your approval before the meeting concludes—Keystone is waiting on our timeline confirmation.
+We're reviewing Q4 results and planning Q1 priorities. The Aura pilot decision needs your approval before the meeting concludes—Keystone is waiting on our timeline confirmation.
 
 ## Key Points
 - **Q4 results exceeded targets**: Zero outages during peak season, 40% improvement in content velocity
-- **Agentforce pilot is ready**: POC validated, 50-dealer scope defined, February launch possible
+- **Aura pilot is ready**: POC validated, 50-dealer scope defined, February launch possible
 - **Renewal is due in March**: Current terms, no price increase proposed
 
 ## For Discussion
-- **Pilot approval**: Do we proceed with the 50-dealer Agentforce pilot in February?
+- **Pilot approval**: Do we proceed with the 50-dealer Aura pilot in February?
 - **Q1 priorities**: Which of the three proposed initiatives should we focus on?
 - **Renewal timing**: Any concerns we should address before March?
 

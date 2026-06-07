@@ -85,10 +85,10 @@ transformation_examples:
       outcome: "Globex partnership advanced to legal review (targeting Feb close)"
 
     - activity: "Worked on Keystone account"
-      outcome: "Keystone NADA project greenlit - $150K expansion opportunity identified"
+      outcome: "Keystone DealerExpo project greenlit - $150K expansion opportunity identified"
 
-    - activity: "Made progress on Agentforce"
-      outcome: "Agentforce MVP scope finalized - on track for Feb launch"
+    - activity: "Made progress on Aura"
+      outcome: "Aura MVP scope finalized - on track for Feb launch"
 
 metrics_guidance:
   include_when_available:
@@ -107,7 +107,7 @@ example_phrases:
   good:
     - "Closed $250K renewal with 15% expansion"
     - "Advanced Vertex deal to technical evaluation (next: POC week of Jan 20)"
-    - "Identified $400K cross-sell opportunity at Keystone (NADA project)"
+    - "Identified $400K cross-sell opportunity at Keystone (DealerExpo project)"
 
   avoid:
     - "Had a productive week"
