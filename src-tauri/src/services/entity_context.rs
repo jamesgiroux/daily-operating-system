@@ -89,38 +89,117 @@ pub async fn create_entry(
             let ext = crate::services::context::ExternalClients::default();
             let write_ctx = crate::services::context::ServiceContext::new_live(&clock, &rng, &ext)
                 .with_actor("user");
-            let proposal = user_note_claim_proposal(UserNoteProposal {
-                id: None,
-                supersedes: None,
-                entity_type: &entity_type,
-                entity_id: &entity_id,
-                title: &title,
-                content: &content,
-                actor: "user",
-                observed_at: &observed_at,
-                source_ref: None,
-                provenance_json: user_note_provenance_json(None),
-            })?;
-            let committed = commit_claim(&write_ctx, db, proposal)
-                .map_err(|error| format!("Failed to create entity context note claim: {error}"))?;
-            let claim = inserted_claim(committed)?;
-
-            crate::services::signals::emit_and_propagate_or_log(
+            create_entry_with_db(
                 &write_ctx,
                 db,
                 &engine,
                 &entity_type,
                 &entity_id,
-                "user_note_added",
-                "user_note",
-                Some(&title),
-                0.85,
-            );
-
-            entity_context_entry_for_claim(claim)
+                &title,
+                &content,
+                "user",
+                &observed_at,
+                None,
+            )
         })
         .await
         .map_err(String::from)
+}
+
+#[allow(clippy::too_many_arguments)]
+pub fn create_entry_with_db(
+    ctx: &crate::services::context::ServiceContext<'_>,
+    db: &crate::db::ActionDb,
+    engine: &crate::signals::propagation::PropagationEngine,
+    entity_type: &str,
+    entity_id: &str,
+    title: &str,
+    content: &str,
+    actor: &str,
+    observed_at: &str,
+    source_ref: Option<&str>,
+) -> Result<EntityContextEntry, String> {
+    create_entry_with_db_with_claim_id(
+        ctx,
+        db,
+        engine,
+        entity_type,
+        entity_id,
+        title,
+        content,
+        actor,
+        observed_at,
+        source_ref,
+        None,
+    )
+}
+
+#[allow(clippy::too_many_arguments)]
+pub fn create_entry_with_db_with_claim_id(
+    ctx: &crate::services::context::ServiceContext<'_>,
+    db: &crate::db::ActionDb,
+    engine: &crate::signals::propagation::PropagationEngine,
+    entity_type: &str,
+    entity_id: &str,
+    title: &str,
+    content: &str,
+    actor: &str,
+    observed_at: &str,
+    source_ref: Option<&str>,
+    deterministic_claim_id: Option<&str>,
+) -> Result<EntityContextEntry, String> {
+    ctx.check_mutation_allowed().map_err(|e| e.to_string())?;
+
+    let entity_type = normalize_entity_type(entity_type)?;
+    crate::util::validate_id_slug(entity_id, "entity_id")?;
+    crate::util::validate_bounded_string(title, "title", 1, 200)?;
+    crate::util::validate_bounded_string(content, "content", 1, 2000)?;
+    crate::util::validate_bounded_string(actor, "actor", 1, 120)?;
+    if let Some(claim_id) = deterministic_claim_id {
+        crate::util::validate_id_slug(claim_id, "claim_id")?;
+        if let Some(existing) = load_claim_by_id(db.conn_ref(), claim_id).map_err(|error| {
+            format!("Failed to load deterministic entity context claim: {error}")
+        })? {
+            ensure_user_note_claim(&existing)?;
+            return entity_context_entry_for_claim(existing);
+        }
+    }
+
+    let proposal = user_note_claim_proposal(UserNoteProposal {
+        id: None,
+        supersedes: None,
+        entity_type,
+        entity_id,
+        title,
+        content,
+        actor,
+        observed_at,
+        source_ref,
+        provenance_json: user_note_provenance_json(None),
+    })?;
+    let committed = match deterministic_claim_id {
+        Some(claim_id) => {
+            let wrapped = DeterministicInsertProposal::new(claim_id.to_string(), proposal);
+            commit_claim(ctx, db, wrapped)
+        }
+        None => commit_claim(ctx, db, proposal),
+    }
+    .map_err(|error| format!("Failed to create entity context note claim: {error}"))?;
+    let claim = inserted_claim(committed)?;
+
+    crate::services::signals::emit_and_propagate_or_log(
+        ctx,
+        db,
+        engine,
+        entity_type,
+        entity_id,
+        "user_note_added",
+        "user_note",
+        Some(title),
+        0.85,
+    );
+
+    entity_context_entry_for_claim(claim)
 }
 
 /// Update an existing user note by superseding the old immutable claim.

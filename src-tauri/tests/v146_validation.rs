@@ -4,7 +4,6 @@ use std::sync::Arc;
 use chrono::{DateTime, Duration, Utc};
 use dailyos_lib::abilities::provenance::source::EntityId;
 use dailyos_lib::abilities::provenance::trust::claim_trust_band_from_score;
-use dailyos_lib::abilities::registry::McpExposure;
 use dailyos_lib::abilities::source_management_ledger::contracts::{
     SourceManagementActionInput, SourceManagementActionKind, SourceManagementActionRequest,
     SourceManagementLedgerInput, SourceManagementLedgerPrivacyProfile,
@@ -35,10 +34,7 @@ use dailyos_lib::services::context::{ClaimDismissalSurface, FixedClock, Seedable
 #[cfg(feature = "test-harness")]
 use dailyos_lib::services::context::{EntityContextClaimReadFuture, EntityContextClaimReadHandle};
 use dailyos_lib::services::context::{ExternalClients, ServiceContext, SystemClock, SystemRng};
-use dailyos_lib::services::mcp_v2::actor_policy::{ToolGrant, ToolRateLimit};
-use dailyos_lib::services::mcp_v2::contracts::{
-    McpClientId, McpToolRequestEnvelope, McpToolResult, ScopedName, ToolError,
-};
+use dailyos_lib::services::mcp_v2::contracts::ScopedName;
 use dailyos_lib::services::mcp_v2::gateway::Gateway;
 use dailyos_lib::services::mcp_v2::handlers::registration::register_v147_handlers;
 use dailyos_lib::services::mcp_v2::taxonomy::{TaxonomyCatalog, YamlTaxonomyCatalog};
@@ -66,7 +62,7 @@ use rusqlite::{params, Connection};
 use serde_json::json;
 
 #[test]
-fn mcp_placement_handler_registered_but_not_local_stdio_invocable() {
+fn mcp_w5_registers_only_public_six_tools_and_hides_placement() {
     let runtime = tokio::runtime::Runtime::new().expect("runtime");
     let catalog: Arc<dyn TaxonomyCatalog> =
         Arc::new(YamlTaxonomyCatalog::load_embedded().expect("catalog"));
@@ -81,35 +77,25 @@ fn mcp_placement_handler_registered_but_not_local_stdio_invocable() {
     .expect("register v2 handlers");
     gateway.seal().expect("registered handlers validate");
 
-    let tool_name = ScopedName::new("dailyos.write.place_document");
-    assert!(gateway.registered_tools().any(|name| name == &tool_name));
+    let registered: std::collections::BTreeSet<_> = gateway
+        .registered_tools()
+        .map(|name| name.as_str().to_string())
+        .collect();
+    let expected = std::collections::BTreeSet::from([
+        "dailyos.read.account_status".to_string(),
+        "dailyos.read.workspace_source_provenance".to_string(),
+        "dailyos.submit.claim_feedback".to_string(),
+        "dailyos.submit.note".to_string(),
+        "dailyos.submit.action".to_string(),
+        "dailyos.submit.action_status".to_string(),
+    ]);
 
-    let response = gateway.handle_local_stdio_tool_call(
-        &McpClientId::new("validation-client"),
-        McpToolRequestEnvelope {
-            conversation_handle: None,
-            tool_name: tool_name.clone(),
-            params: serde_json::json!({}),
-        },
-        &[ToolGrant {
-            tool_name: tool_name.clone(),
-            scopes_granted: vec![],
-            exposure: McpExposure::None,
-            rate_limit: ToolRateLimit {
-                max_calls: 0,
-                window_seconds: 0,
-            },
-        }],
-    );
-
-    assert_eq!(
-        response.result,
-        McpToolResult::Error {
-            error: ToolError::ExposureForbidden {
-                tool_name: tool_name.clone()
-            }
-        },
-        "registered placement handler should stay unavailable to local stdio until ADR-0128 expands write exposure"
+    assert_eq!(registered, expected);
+    assert!(
+        catalog
+            .description_for(&ScopedName::new("dailyos.write.place_document"))
+            .is_none(),
+        "W5 hides placement entirely until it is re-authorized by a later packet"
     );
 }
 

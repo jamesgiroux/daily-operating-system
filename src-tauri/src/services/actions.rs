@@ -8,6 +8,7 @@ use crate::db::ActionDb;
 use crate::services::context::ServiceContext;
 use crate::state::AppState;
 use crate::types::{Action, Priority};
+use rusqlite::params;
 
 /// Emit a propagation signal and warn-log on failure instead of dropping
 /// the Result silently. Action signals feed downstream callouts and
@@ -185,6 +186,97 @@ pub fn complete_action(
     }
 
     Ok(())
+}
+
+/// Complete an action through MCP only when the row is still in an open stored
+/// status at the write boundary.
+pub fn complete_action_for_mcp(
+    ctx: &ServiceContext<'_>,
+    db: &ActionDb,
+    engine: &crate::signals::propagation::PropagationEngine,
+    id: &str,
+) -> Result<Option<String>, String> {
+    ctx.check_mutation_allowed().map_err(|e| e.to_string())?;
+    crate::util::validate_id_slug(id, "id")?;
+    let Some(action) = db.get_action_by_id(id).map_err(|e| e.to_string())? else {
+        return Ok(None);
+    };
+    if action.status == crate::action_status::COMPLETED {
+        return Ok(Some(crate::action_status::COMPLETED.to_string()));
+    }
+    if !matches!(
+        action.status.as_str(),
+        crate::action_status::UNSTARTED | crate::action_status::STARTED
+    ) {
+        return Ok(None);
+    }
+
+    let now = ctx.clock.now().to_rfc3339();
+    let changed = db
+        .conn_ref()
+        .execute(
+            "UPDATE actions
+                SET status = ?1, completed_at = ?2, updated_at = ?2
+              WHERE id = ?3
+                AND status IN (?4, ?5)",
+            params![
+                crate::action_status::COMPLETED,
+                now,
+                id,
+                crate::action_status::UNSTARTED,
+                crate::action_status::STARTED,
+            ],
+        )
+        .map_err(|e| e.to_string())?;
+    if changed == 0 {
+        return Ok(None);
+    }
+
+    sync_action_claim_after_mutation(ctx, db, id, "complete");
+    emit_action_composition_field_changed_signal(
+        ctx,
+        db,
+        id,
+        "status",
+        serde_json::Value::from(crate::action_status::COMPLETED),
+    );
+
+    let (entity_type, entity_id) = action_entity_info(&action, id);
+    emit_action_signal(
+        ctx,
+        db,
+        engine,
+        entity_type,
+        &entity_id,
+        "action_completed",
+        action.source_type.as_deref().unwrap_or("unknown"),
+        Some(&format!("{{\"action_id\":\"{}\"}}", id)),
+        0.7,
+    );
+
+    if action.action_kind == crate::action_status::KIND_COMMITMENT {
+        emit_action_signal(
+            ctx,
+            db,
+            engine,
+            entity_type,
+            &entity_id,
+            "commitment_delivered",
+            action.source_type.as_deref().unwrap_or("commitment"),
+            Some(&format!(
+                "{{\"action_id\":\"{}\",\"title\":\"{}\"}}",
+                id,
+                action.title.replace('"', "\\\"")
+            )),
+            0.8,
+        );
+        if let Err(e) = crate::services::commitment_bridge::tombstone_commitment_bridge(ctx, db, id)
+        {
+            log::warn!("commitment_bridge tombstone on complete failed (non-fatal): {e}");
+        }
+    }
+
+    Ok(Some(crate::action_status::COMPLETED.to_string()))
 }
 
 /// Reopen a completed action, setting it back to pending.
@@ -497,10 +589,24 @@ pub async fn get_all_actions(state: &AppState) -> ActionsResult {
 }
 
 /// Create a new action with validation and signal emission.
-pub async fn create_action(
+pub fn create_action_with_db(
     ctx: &ServiceContext<'_>,
     request: CreateActionRequest,
-    state: &Arc<AppState>,
+    db: &ActionDb,
+    engine: &crate::signals::propagation::PropagationEngine,
+) -> Result<String, String> {
+    create_action_with_db_with_id(ctx, request, db, engine, None)
+}
+
+/// Create a new action, optionally using a caller-supplied deterministic ID for
+/// server-side MCP replay. When the deterministic row already exists, this
+/// returns it without re-emitting create signals.
+pub fn create_action_with_db_with_id(
+    ctx: &ServiceContext<'_>,
+    request: CreateActionRequest,
+    db: &ActionDb,
+    engine: &crate::signals::propagation::PropagationEngine,
+    deterministic_id: Option<&str>,
 ) -> Result<String, String> {
     ctx.check_mutation_allowed().map_err(|e| e.to_string())?;
     let CreateActionRequest {
@@ -541,9 +647,21 @@ pub async fn create_action(
     if let Some(ref value) = source_label {
         crate::util::validate_bounded_string(value, "source_label", 1, 200)?;
     }
+    if let Some(id) = deterministic_id {
+        crate::util::validate_id_slug(id, "action_id")?;
+        if db
+            .get_action_by_id(id)
+            .map_err(|error| error.to_string())?
+            .is_some()
+        {
+            return Ok(id.to_string());
+        }
+    }
 
     let now = ctx.clock.now().to_rfc3339();
-    let id = uuid::Uuid::new_v4().to_string();
+    let id = deterministic_id
+        .map(str::to_string)
+        .unwrap_or_else(|| uuid::Uuid::new_v4().to_string());
 
     let action_kind = action_kind
         .filter(|k| !k.trim().is_empty())
@@ -588,49 +706,58 @@ pub async fn create_action(
         linear_url: None,
     };
 
+    db.upsert_action(&action).map_err(|e| e.to_string())?;
+    sync_action_claim_after_mutation(ctx, db, &action.id, "create");
+
+    // Emit signal for manually created actions.
+    let (entity_type, entity_id) = action_entity_info(&action, &action.id);
+    emit_action_signal(
+        ctx,
+        db,
+        engine,
+        entity_type,
+        &entity_id,
+        "action_created_manually",
+        "user_action",
+        Some(&format!(
+            "{{\"action_id\":\"{}\",\"title\":\"{}\"}}",
+            action.id,
+            action.title.replace('"', "\\\"")
+        )),
+        1.0,
+    );
+
+    // Scan for decision-indicating keywords after creation.
+    #[allow(
+        clippy::let_underscore_must_use,
+        reason = "intentional best-effort discard; preserves existing non-blocking behavior"
+    )]
+    let _ = db.scan_and_flag_decisions();
+
+    // Best-effort auto-link to matching objectives.
+    if let Some(ref acct_id) = action.account_id {
+        if let Err(e) = auto_link_action_to_objectives(ctx, db, &action.id, &action.title, acct_id)
+        {
+            log::warn!("Auto-link action to objectives failed (non-fatal): {}", e);
+        }
+    }
+
+    Ok(id)
+}
+
+/// Create a new action with validation and signal emission.
+pub async fn create_action(
+    ctx: &ServiceContext<'_>,
+    request: CreateActionRequest,
+    state: &Arc<AppState>,
+) -> Result<String, String> {
+    ctx.check_mutation_allowed().map_err(|e| e.to_string())?;
     let engine = state.signals.engine.clone();
     let state_for_ctx = state.clone();
     state
         .db_write(move |db| {
             let ctx = state_for_ctx.live_service_context();
-            db.upsert_action(&action).map_err(|e| e.to_string())?;
-            sync_action_claim_after_mutation(&ctx, db, &action.id, "create");
-
-            // Emit signal for manually created actions
-            let (entity_type, entity_id) = action_entity_info(&action, &action.id);
-            emit_action_signal(
-                &ctx,
-                db,
-                &engine,
-                entity_type,
-                &entity_id,
-                "action_created_manually",
-                "user_action",
-                Some(&format!(
-                    "{{\"action_id\":\"{}\",\"title\":\"{}\"}}",
-                    action.id,
-                    action.title.replace('"', "\\\"")
-                )),
-                1.0,
-            );
-
-            // Scan for decision-indicating keywords after creation
-            #[allow(
-                clippy::let_underscore_must_use,
-                reason = "intentional best-effort discard; preserves existing non-blocking behavior"
-            )]
-            let _ = db.scan_and_flag_decisions();
-
-            // Best-effort auto-link to matching objectives
-            if let Some(ref acct_id) = action.account_id {
-                if let Err(e) =
-                    auto_link_action_to_objectives(&ctx, db, &action.id, &action.title, acct_id)
-                {
-                    log::warn!("Auto-link action to objectives failed (non-fatal): {}", e);
-                }
-            }
-
-            Ok(id)
+            create_action_with_db(&ctx, request, db, &engine)
         })
         .await
         .map_err(String::from)
@@ -869,6 +996,207 @@ pub(crate) fn apply_update_action(
         emit_action_composition_field_changed_signal(ctx, db, &action.id, field, value);
     }
     Ok(())
+}
+
+/// Apply MCP's semantic `deferred` status without creating a new stored
+/// status. The action remains in its current open status and only the due date
+/// and optional context are updated through the normal update path.
+pub fn defer_action_for_mcp(
+    ctx: &ServiceContext<'_>,
+    db: &ActionDb,
+    engine: &crate::signals::propagation::PropagationEngine,
+    id: &str,
+    defer_date: &str,
+    reason: Option<&str>,
+) -> Result<Option<String>, String> {
+    ctx.check_mutation_allowed().map_err(|e| e.to_string())?;
+    crate::util::validate_id_slug(id, "id")?;
+    crate::util::validate_yyyy_mm_dd(defer_date, "defer_date")?;
+    if let Some(reason) = reason {
+        crate::util::validate_bounded_string(reason, "reason", 1, 500)?;
+    }
+
+    let action = db
+        .get_action_by_id(id)
+        .map_err(|e| e.to_string())?
+        .ok_or_else(|| format!("Action not found: {id}"))?;
+    match action.status.as_str() {
+        crate::action_status::UNSTARTED | crate::action_status::STARTED => {}
+        _ => return Ok(None),
+    }
+
+    let context = reason.map(|reason| {
+        if let Some(existing) = action
+            .context
+            .as_deref()
+            .filter(|value| !value.trim().is_empty())
+        {
+            format!("{existing}\n\nDeferred via MCP: {reason}")
+        } else {
+            format!("Deferred via MCP: {reason}")
+        }
+    });
+    let now = ctx.clock.now().to_rfc3339();
+    let changed = db
+        .conn_ref()
+        .execute(
+            "UPDATE actions
+                SET due_date = ?1,
+                    context = COALESCE(?2, context),
+                    updated_at = ?3
+              WHERE id = ?4
+                AND status IN (?5, ?6)",
+            params![
+                defer_date,
+                context.as_deref(),
+                now,
+                id,
+                crate::action_status::UNSTARTED,
+                crate::action_status::STARTED,
+            ],
+        )
+        .map_err(|e| e.to_string())?;
+    if changed == 0 {
+        return Ok(None);
+    }
+    sync_action_claim_after_mutation(ctx, db, id, "defer");
+    emit_action_composition_field_changed_signal(
+        ctx,
+        db,
+        id,
+        "due_date",
+        serde_json::Value::from(defer_date),
+    );
+    if let Some(context) = context.as_deref() {
+        emit_action_composition_field_changed_signal(
+            ctx,
+            db,
+            id,
+            "context",
+            serde_json::Value::from(context),
+        );
+    }
+
+    let refreshed = db
+        .get_action_by_id(id)
+        .map_err(|e| e.to_string())?
+        .ok_or_else(|| format!("Action not found after defer: {id}"))?;
+    let (entity_type, entity_id) = action_entity_info(&refreshed, id);
+    emit_action_signal(
+        ctx,
+        db,
+        engine,
+        entity_type,
+        &entity_id,
+        "action_deferred",
+        "mcp_action_status",
+        Some(&format!(
+            "{{\"action_id\":\"{}\",\"defer_date\":\"{}\"}}",
+            id, defer_date
+        )),
+        0.7,
+    );
+    Ok(Some(refreshed.status))
+}
+
+/// Apply MCP's semantic `dropped` status through service-owned behavior.
+///
+/// Suggested/backlog rows keep the existing dismissal semantics and archive.
+/// Accepted/open rows become `cancelled` and still sync action claims and emit
+/// propagation signals from the service layer.
+pub fn drop_action_for_mcp(
+    ctx: &ServiceContext<'_>,
+    db: &ActionDb,
+    engine: &crate::signals::propagation::PropagationEngine,
+    id: &str,
+    reason: Option<&str>,
+) -> Result<Option<String>, String> {
+    ctx.check_mutation_allowed().map_err(|e| e.to_string())?;
+    crate::util::validate_id_slug(id, "id")?;
+    if let Some(reason) = reason {
+        crate::util::validate_bounded_string(reason, "reason", 1, 500)?;
+    }
+
+    let mut action = db
+        .get_action_by_id(id)
+        .map_err(|e| e.to_string())?
+        .ok_or_else(|| format!("Action not found: {id}"))?;
+    match action.status.as_str() {
+        crate::action_status::BACKLOG => {
+            match dismiss_suggested_action(ctx, db, engine, id, "mcp_action_status") {
+                Ok(()) => Ok(Some(crate::action_status::ARCHIVED.to_string())),
+                Err(error) if conditional_update_missed(&error) => Ok(None),
+                Err(error) => Err(error),
+            }
+        }
+        crate::action_status::UNSTARTED | crate::action_status::STARTED => {
+            action.status = crate::action_status::CANCELLED.to_string();
+            action.updated_at = ctx.clock.now().to_rfc3339();
+            if let Some(reason) = reason {
+                action.context = Some(
+                    if let Some(existing) = action
+                        .context
+                        .as_deref()
+                        .filter(|value| !value.trim().is_empty())
+                    {
+                        format!("{existing}\n\nDropped via MCP: {reason}")
+                    } else {
+                        format!("Dropped via MCP: {reason}")
+                    },
+                );
+            }
+            let changed = db
+                .conn_ref()
+                .execute(
+                    "UPDATE actions
+                        SET status = ?1,
+                            context = ?2,
+                            updated_at = ?3
+                      WHERE id = ?4
+                        AND status IN (?5, ?6)",
+                    params![
+                        crate::action_status::CANCELLED,
+                        action.context.as_deref(),
+                        action.updated_at.as_str(),
+                        id,
+                        crate::action_status::UNSTARTED,
+                        crate::action_status::STARTED,
+                    ],
+                )
+                .map_err(|e| e.to_string())?;
+            if changed == 0 {
+                return Ok(None);
+            }
+            sync_action_claim_after_mutation(ctx, db, id, "drop");
+            emit_action_composition_field_changed_signal(
+                ctx,
+                db,
+                id,
+                "status",
+                serde_json::Value::from(crate::action_status::CANCELLED),
+            );
+            let (entity_type, entity_id) = action_entity_info(&action, id);
+            emit_action_signal(
+                ctx,
+                db,
+                engine,
+                entity_type,
+                &entity_id,
+                "action_dropped",
+                "mcp_action_status",
+                Some(&format!("{{\"action_id\":\"{}\"}}", id)),
+                0.5,
+            );
+            Ok(Some(crate::action_status::CANCELLED.to_string()))
+        }
+        crate::action_status::CANCELLED => Ok(Some(crate::action_status::CANCELLED.to_string())),
+        crate::action_status::ARCHIVED => Ok(Some(crate::action_status::ARCHIVED.to_string())),
+        _ => Ok(None),
+    }
+}
+
+fn conditional_update_missed(error: &str) -> bool {
+    error.contains("QueryReturnedNoRows") || error.contains("query returned no rows")
 }
 
 /// Get full detail for a single action, with resolved relationships.
@@ -1161,6 +1489,40 @@ mod tests {
                 },
             )
             .unwrap()
+    }
+
+    #[test]
+    fn complete_action_for_mcp_refuses_non_open_status_at_write_boundary() {
+        let db = test_db();
+        make_ctx!(ctx);
+        db.conn_ref()
+            .execute(
+                "INSERT INTO actions
+                 (id, title, priority, status, created_at, updated_at, action_kind)
+                 VALUES ('action-cancelled', 'Cancelled action', 3, 'cancelled',
+                         '2026-01-01', '2026-01-01', 'task')",
+                [],
+            )
+            .unwrap();
+
+        let outcome = complete_action_for_mcp(
+            &ctx,
+            &db,
+            &crate::signals::propagation::PropagationEngine::new(),
+            "action-cancelled",
+        )
+        .unwrap();
+
+        assert_eq!(outcome, None);
+        let status: String = db
+            .conn_ref()
+            .query_row(
+                "SELECT status FROM actions WHERE id = 'action-cancelled'",
+                [],
+                |row| row.get(0),
+            )
+            .unwrap();
+        assert_eq!(status, crate::action_status::CANCELLED);
     }
 
     #[test]

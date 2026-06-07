@@ -11,7 +11,11 @@ use crate::services::mcp_v2::taxonomy::TaxonomyCatalog;
 use crate::signals::propagation::PropagationEngine;
 
 use super::tool_account_status::AccountStatusHandler;
-use super::tool_placement::PlacementHandler;
+use super::tool_claim_feedback::ClaimFeedbackHandler;
+use super::tool_create_action::CreateActionHandler;
+use super::tool_note::NoteHandler;
+use super::tool_update_action_status::UpdateActionStatusHandler;
+use super::tool_workspace_source_provenance::WorkspaceSourceProvenanceHandler;
 
 /// Errors registering wave-scoped handlers at boot.
 #[derive(Debug)]
@@ -38,12 +42,11 @@ impl std::fmt::Display for RegistrationError {
 
 impl std::error::Error for RegistrationError {}
 
-/// Register all v1.4.7 W2-A Phase-A handlers on the gateway.
+/// Register the W5 MCP parity handler set on the gateway.
 ///
-/// Current registered scope includes the account status read tool plus the
-/// v1.4.5 workspace placement write tool once its placement substrate is
-/// present on the rebased base. Phase-B (daily_briefing) adds its handler via
-/// this same helper once its sub-ticket lands.
+/// Hidden W5 tools stay absent from this registry. In particular,
+/// `dailyos.write.place_document` remains implemented elsewhere but is not
+/// advertised or invocable through the W5 MCP parity surface.
 pub fn register_v147_handlers(
     gateway: &mut Gateway,
     catalog: &Arc<dyn TaxonomyCatalog>,
@@ -60,15 +63,46 @@ pub fn register_v147_handlers(
         .map_err(RegistrationError::AbilityRegistry)?;
     gateway.register(Arc::new(handler));
 
-    let placement_name = ScopedName::new("dailyos.write.place_document");
-    let description = catalog
-        .description_for(&placement_name)
-        .ok_or_else(|| RegistrationError::CatalogEntryMissing(placement_name.clone()))?
-        .clone();
-
-    let handler = PlacementHandler::from_runtime(description, runtime, Arc::clone(&signal_engine))
-        .map_err(RegistrationError::AbilityRegistry)?;
-    gateway.register(Arc::new(handler));
+    for name in [
+        "dailyos.read.workspace_source_provenance",
+        "dailyos.submit.claim_feedback",
+        "dailyos.submit.note",
+        "dailyos.submit.action",
+        "dailyos.submit.action_status",
+    ] {
+        let scoped = ScopedName::new(name);
+        let description = catalog
+            .description_for(&scoped)
+            .ok_or_else(|| RegistrationError::CatalogEntryMissing(scoped.clone()))?
+            .clone();
+        match name {
+            "dailyos.read.workspace_source_provenance" => {
+                gateway.register(Arc::new(WorkspaceSourceProvenanceHandler::new(description)));
+            }
+            "dailyos.submit.claim_feedback" => {
+                gateway.register(Arc::new(ClaimFeedbackHandler::new(description)));
+            }
+            "dailyos.submit.note" => {
+                gateway.register(Arc::new(NoteHandler::new(
+                    description,
+                    Arc::clone(&signal_engine),
+                )));
+            }
+            "dailyos.submit.action" => {
+                gateway.register(Arc::new(CreateActionHandler::new(
+                    description,
+                    Arc::clone(&signal_engine),
+                )));
+            }
+            "dailyos.submit.action_status" => {
+                gateway.register(Arc::new(UpdateActionStatusHandler::new(
+                    description,
+                    Arc::clone(&signal_engine),
+                )));
+            }
+            _ => unreachable!("registered W5 tool name is exhaustive"),
+        }
+    }
 
     Ok(())
 }
@@ -85,7 +119,7 @@ mod tests {
     use super::*;
 
     #[test]
-    fn registers_workspace_placement_handler_from_catalog() {
+    fn registers_w5_handlers_from_catalog() {
         let runtime = tokio::runtime::Runtime::new().expect("runtime");
         let catalog: Arc<dyn TaxonomyCatalog> =
             Arc::new(YamlTaxonomyCatalog::load_embedded().expect("catalog"));
@@ -101,12 +135,24 @@ mod tests {
         .expect("register handlers");
 
         let registered = gateway.registered_tools().cloned().collect::<Vec<_>>();
-        assert!(registered.contains(&ScopedName::new("dailyos.read.account_status")));
-        assert!(registered.contains(&ScopedName::new("dailyos.write.place_document")));
+        for name in [
+            "dailyos.read.account_status",
+            "dailyos.read.workspace_source_provenance",
+            "dailyos.submit.claim_feedback",
+            "dailyos.submit.note",
+            "dailyos.submit.action",
+            "dailyos.submit.action_status",
+        ] {
+            assert!(
+                registered.contains(&ScopedName::new(name)),
+                "missing registered W5 tool: {name}"
+            );
+        }
+        assert!(!registered.contains(&ScopedName::new("dailyos.write.place_document")));
         let pending = gateway.seal().expect("registered handlers match catalog");
         assert!(
-            !pending.contains(&ScopedName::new("dailyos.write.place_document")),
-            "placement handler should no longer be a catalog-only placeholder"
+            pending.is_empty(),
+            "W5 catalog entries should all have registered handlers: {pending:?}"
         );
     }
 }

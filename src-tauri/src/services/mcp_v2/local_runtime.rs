@@ -24,6 +24,7 @@ use super::contracts::{McpClientId, OpaqueConversationHandle};
 const KEYCHAIN_SERVICE: &str = "com.dailyos.desktop.mcp-local";
 const CLIENT_ID_ACCOUNT: &str = "local-stdio-client-id-v1";
 const AUDIT_DIGEST_KEY_ACCOUNT: &str = "read-audit-digest-key-v1";
+const TARGET_HANDLE_KEY_ACCOUNT: &str = "target-handle-aead-key-v1";
 const DIGEST_KEY_BYTES: usize = 32;
 const CONVERSATION_STORE_RELATIVE_PATH: &str = "mcp/conversation-handles.json";
 const DEFAULT_CONVERSATION_TTL: Duration = Duration::from_secs(60 * 60 * 24);
@@ -306,6 +307,37 @@ pub fn digest_json_value_hex(value: &serde_json::Value) -> Result<String, LocalR
     let encoded = load_or_seed_keychain_string(AUDIT_DIGEST_KEY_ACCOUNT, generate_digest_key)?;
     let key = decode_digest_key(&encoded)?;
     hmac_sha256_json_hex_for_key(&key, value).map_err(LocalRuntimeError::Serialization)
+}
+
+/// HMAC-SHA256 over a server-local target-handle value. Target handle lookup,
+/// audit correlation, and watermark checks use this instead of storing public
+/// handles or internal ids in plaintext.
+pub(crate) fn target_handle_hmac_hex(value: &str) -> Result<String, LocalRuntimeError> {
+    let key = target_handle_key_v1()?;
+    let mut mac = Hmac::<Sha256>::new_from_slice(&key).expect("HMAC accepts 32-byte keys");
+    mac.update(value.as_bytes());
+    Ok(hex::encode(mac.finalize().into_bytes()))
+}
+
+pub(crate) fn target_handle_key_v1() -> Result<[u8; DIGEST_KEY_BYTES], LocalRuntimeError> {
+    let encoded = load_or_seed_keychain_string(TARGET_HANDLE_KEY_ACCOUNT, generate_digest_key)?;
+    decode_digest_key(&encoded)
+}
+
+#[cfg(test)]
+pub(crate) fn with_target_handle_key_for_tests<R>(
+    key: [u8; DIGEST_KEY_BYTES],
+    f: impl FnOnce() -> R,
+) -> R {
+    let keychain = Arc::new(TestKeychain::default());
+    keychain
+        .upsert(
+            KEYCHAIN_SERVICE,
+            TARGET_HANDLE_KEY_ACCOUNT,
+            &base64::engine::general_purpose::STANDARD.encode(key),
+        )
+        .expect("seed target handle key");
+    with_test_keychain(keychain, f)
 }
 
 pub fn hmac_sha256_json_hex_for_key(

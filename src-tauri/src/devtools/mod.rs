@@ -30,6 +30,9 @@
 //! Composition layout overlays are also not statically seeded: they are local
 //! presentation preferences produced through `services::composition_layout`,
 //! not intelligence substrate or demo content.
+//! MCP target handles follow the same rule: they are conversation-scoped
+//! operational receipts minted by the MCP runtime from already-rendered output,
+//! not stable mock data or a user-facing fixture surface.
 
 use std::path::Path;
 

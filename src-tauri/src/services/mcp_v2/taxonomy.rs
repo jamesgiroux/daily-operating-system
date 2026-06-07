@@ -566,22 +566,22 @@ mod tests {
     }
 
     #[test]
-    fn embedded_catalog_loads_clean_with_ten_entries() {
+    fn embedded_catalog_loads_clean_with_w5_entries() {
         let catalog = YamlTaxonomyCatalog::load_embedded().expect("embedded catalog loads");
-        assert_eq!(catalog.len(), 10, "expected 10 tool entries per DOS-478 §5");
+        assert_eq!(
+            catalog.len(),
+            6,
+            "W5 advertises only the approved MCP parity tools"
+        );
     }
 
     #[test]
-    fn embedded_catalog_contains_required_inventory() {
+    fn embedded_catalog_contains_w5_inventory() {
         let catalog = YamlTaxonomyCatalog::load_embedded().expect("embedded catalog loads");
         for name in [
             "dailyos.read.account_status",
-            "dailyos.read.daily_briefing",
-            "dailyos.read.meeting_briefing",
-            "dailyos.read.portfolio_attention",
-            "dailyos.search.workspace_memory",
             "dailyos.read.workspace_source_provenance",
-            "dailyos.write.place_document",
+            "dailyos.submit.claim_feedback",
             "dailyos.submit.note",
             "dailyos.submit.action",
             "dailyos.submit.action_status",
@@ -590,6 +590,49 @@ mod tests {
                 catalog.description_for(&ScopedName::new(name)).is_some(),
                 "missing required tool: {name}",
             );
+        }
+        for hidden in [
+            "dailyos.read.daily_briefing",
+            "dailyos.read.meeting_briefing",
+            "dailyos.read.portfolio_attention",
+            "dailyos.search.workspace_memory",
+            "dailyos.write.place_document",
+        ] {
+            assert!(
+                catalog.description_for(&ScopedName::new(hidden)).is_none(),
+                "W5 hidden tool leaked into catalog: {hidden}",
+            );
+        }
+    }
+
+    #[test]
+    fn embedded_catalog_visible_descriptions_do_not_name_hidden_categories() {
+        let catalog = YamlTaxonomyCatalog::load_embedded().expect("embedded catalog loads");
+        let forbidden = [
+            "daily schedule",
+            "briefing",
+            "meeting prep",
+            "portfolio",
+            "memory search",
+            "document lookup",
+            "file search",
+            "place document",
+            "file placement",
+            "resources",
+        ];
+        for (_name, description, _) in catalog.entries_with_fixtures() {
+            let published_description = format!(
+                "{}\n{}\n{}",
+                description.summary, description.when_to_call, description.when_not_to_call
+            )
+            .to_lowercase();
+            for term in forbidden {
+                assert!(
+                    !published_description.contains(term),
+                    "visible MCP description for `{}` leaks hidden category `{term}`",
+                    description.name,
+                );
+            }
         }
     }
 
@@ -678,7 +721,7 @@ mod tests {
                 && fixture.expected_tool_class.as_deref() == Some("external")
         }));
         assert!(fixtures.negative_adjacent_tool.iter().any(|fixture| {
-            fixture.expected_tool == ScopedName::new("dailyos.search.workspace_memory")
+            fixture.expected_tool == ScopedName::new("dailyos.read.workspace_source_provenance")
         }));
     }
 

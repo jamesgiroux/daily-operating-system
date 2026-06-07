@@ -10,7 +10,7 @@
 //! See `.docs/plans/v1.4.7-w1-foundation/dos-175-l0-plan.md` for the L0
 //! contract.
 
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet};
 use std::sync::Arc;
 
 use abilities_runtime::abilities::registry::{AbilityRegistry, McpExposure};
@@ -22,6 +22,7 @@ use crate::bridges::types::{
     BRIDGE_NOOP_INTELLIGENCE_PROVIDER,
 };
 use crate::bridges::{BridgeActor, BridgeSurface};
+use crate::db::claims::{ClaimState, IntelligenceClaim, SurfacingState};
 use crate::db::{ActionDb, DbAccount, DbError, LocalKeychain};
 use crate::helpers::normalize_key;
 use crate::services::context::{
@@ -35,6 +36,10 @@ use crate::services::mcp_v2::runtime_projection::{
     compact_text, evidence_suffix, humanize_token, open_loop_suffix, project_runtime_evidence,
     string_at, RuntimeEvidenceProjection,
 };
+use crate::services::mcp_v2::target_handles::{mint_target_handle, MintTargetHandle, TargetKind};
+use crate::services::sensitivity::{renderable_claim_text, RenderActor, RenderSurface};
+
+use super::tool_utils::{current_entity_watermark, source_provenance_watermark};
 
 const ACTOR_LABEL: &str = concat!("agent:dailyos-mcp-v2:", env!("CARGO_PKG_VERSION"));
 
@@ -169,6 +174,7 @@ impl McpToolHandler for AccountStatusHandler {
             .await
             .map_err(map_invoke_error)?;
             let invocation_id = response.invocation_id.0.to_string();
+            let raw_envelope = response.data.clone();
             let mut payload = present_account_status_response_with_context(
                 &resolved_subject.entity_id,
                 response.data,
@@ -177,6 +183,13 @@ impl McpToolHandler for AccountStatusHandler {
                 None,
             );
             attach_account_subject_resolution(&mut payload, &resolved_subject);
+            handleize_account_status_payload(
+                ctx,
+                actor,
+                &mut payload,
+                &resolved_subject,
+                &raw_envelope,
+            )?;
             Ok(payload)
         })
     }
@@ -264,31 +277,19 @@ fn resolve_account_subject_with_db(
     subject: &str,
 ) -> Result<AccountSubjectResolution, ToolError> {
     if let Some(account) = db
-        .get_account(subject)
-        .map_err(map_subject_resolution_db_error)?
-    {
-        return Ok(resolved_account_subject(
-            subject,
-            AccountSubjectCandidate::from(account),
-            "account_id",
-            "id",
-            "exact",
-            1.0,
-        ));
-    }
-
-    if let Some(account) = db
         .get_account_by_name(subject)
         .map_err(map_subject_resolution_db_error)?
     {
-        return Ok(resolved_account_subject(
-            subject,
-            AccountSubjectCandidate::from(account),
-            "account_name",
-            "name",
-            "exact",
-            1.0,
-        ));
+        if !account.archived {
+            return Ok(resolved_account_subject(
+                subject,
+                AccountSubjectCandidate::from(account),
+                "account_name",
+                "name",
+                "exact",
+                1.0,
+            ));
+        }
     }
 
     let accounts = db
@@ -305,10 +306,6 @@ fn resolve_account_subject_from_accounts(
     accounts: &[AccountSubjectCandidate],
 ) -> AccountSubjectResolution {
     let input = subject.trim().to_string();
-
-    if let Some(account) = accounts.iter().find(|account| account.id == input) {
-        return resolved_account_subject(&input, account.clone(), "account_id", "id", "exact", 1.0);
-    }
 
     if let Some(account) = accounts
         .iter()
@@ -331,9 +328,8 @@ fn resolve_account_subject_from_accounts(
 
     let mut matches = BTreeMap::new();
     for account in accounts.iter().cloned() {
-        let id_matches = normalize_key(&account.id) == normalized_input;
         let name_matches = normalize_key(&account.name) == normalized_input;
-        if id_matches || name_matches {
+        if name_matches {
             matches.entry(account.id.clone()).or_insert(account);
         }
     }
@@ -345,7 +341,7 @@ fn resolve_account_subject_from_accounts(
             &input,
             account.clone(),
             "normalized_slug",
-            "normalized_id_or_name",
+            "normalized_name",
             "high",
             0.95,
         ),
@@ -379,7 +375,6 @@ fn attach_account_subject_resolution(payload: &mut Value, subject: &ResolvedAcco
     }
     if let Some(subject_object) = payload.get_mut("subject").and_then(Value::as_object_mut) {
         subject_object.insert("input".to_string(), Value::String(subject.input.clone()));
-        subject_object.insert("id".to_string(), Value::String(subject.entity_id.clone()));
         subject_object.insert(
             "displayLabel".to_string(),
             Value::String(subject.display_label.clone()),
@@ -396,6 +391,7 @@ fn attach_account_subject_resolution(payload: &mut Value, subject: &ResolvedAcco
             "matchConfidenceScore".to_string(),
             json!(subject.match_confidence_score),
         );
+        strip_public_entity_identifier_keys(subject_object);
     }
 }
 
@@ -403,7 +399,6 @@ fn account_subject_resolution_json(subject: &ResolvedAccountSubject) -> Value {
     json!({
         "input": subject.input,
         "entityType": "account",
-        "resolvedEntityId": subject.entity_id,
         "displayLabel": subject.display_label,
         "resolutionKind": subject.resolution_kind,
         "matchBasis": subject.match_basis,
@@ -417,16 +412,15 @@ fn account_subject_not_found_response(input: &str) -> Value {
     account_subject_resolution_response(
         "not_found",
         input,
-        "DailyOS could not resolve the requested subject to an account in the local workspace. Try an exact account name or account id.",
+        "DailyOS could not resolve the requested subject to an account in the local workspace. Try an exact account name or normalized account slug.",
         json!({
             "input": input,
             "entityType": "account",
-            "resolvedEntityId": Value::Null,
             "resolutionKind": "not_found",
             "matchConfidence": "none",
             "matchConfidenceScore": 0.0,
             "candidates": [],
-            "caveats": ["No matching account id, exact account name, or normalized account slug was found."],
+            "caveats": ["No matching exact account name or normalized account slug was found."],
         }),
     )
 }
@@ -440,7 +434,6 @@ fn account_subject_ambiguous_response(
         .take(5)
         .map(|candidate| {
             json!({
-                "entityId": candidate.id,
                 "displayLabel": candidate.name,
             })
         })
@@ -448,11 +441,10 @@ fn account_subject_ambiguous_response(
     account_subject_resolution_response(
         "clarification_required",
         input,
-        "DailyOS found multiple local accounts matching the requested subject. Retry with an exact account id.",
+        "DailyOS found multiple local accounts matching the requested subject. Retry with an exact account name.",
         json!({
             "input": input,
             "entityType": "account",
-            "resolvedEntityId": Value::Null,
             "resolutionKind": "ambiguous",
             "matchConfidence": "none",
             "matchConfidenceScore": 0.0,
@@ -480,6 +472,7 @@ fn account_subject_resolution_response(
         .unwrap_or("Subject resolution did not produce a single local account.");
     json!({
         "schemaVersion": ACCOUNT_STATUS_RESPONSE_SCHEMA_VERSION,
+        "schema_version": "mcp.account_status.v2",
         "toolName": TOOL_NAME,
         "surface": TOOL_NAME,
         "producer": ABILITY_NAME,
@@ -490,6 +483,7 @@ fn account_subject_resolution_response(
             "kind": "account",
             "input": input,
             "displayLabel": input,
+            "rawEntityIdsIncluded": false,
         },
         "resolution": resolution,
         "answer": answer,
@@ -513,6 +507,8 @@ fn account_subject_resolution_response(
             "sources": [],
             "redactionApplied": false,
             "rawClaimIdsIncluded": false,
+            "rawEntityIdsIncluded": false,
+            "rawSourceIdsIncluded": false,
         },
         "sectionStates": {
             "facts": section_state,
@@ -572,17 +568,10 @@ pub fn present_account_status_response_with_context(
             subject_value
                 .get("displayLabel")
                 .and_then(Value::as_str)
-                .map(compact_text)
-                .filter(|value| !value.is_empty())
+                .and_then(public_display_label_candidate)
         })
         .unwrap_or_else(|| subject.to_string());
-    let subject_value = if display_label_override.is_some() {
-        let mut subject_map = subject_value.as_object().cloned().unwrap_or_default();
-        subject_map.insert("displayLabel".to_string(), Value::String(label.clone()));
-        Value::Object(subject_map)
-    } else {
-        subject_value
-    };
+    let subject_value = public_subject_value(subject, subject_value, Some(label.as_str()));
 
     let projection = project_runtime_evidence(&envelope);
     let answer = build_account_status_answer(&label, &projection, &envelope);
@@ -600,6 +589,7 @@ pub fn present_account_status_response_with_context(
 
     json!({
         "schemaVersion": ACCOUNT_STATUS_RESPONSE_SCHEMA_VERSION,
+        "schema_version": "mcp.account_status.v2",
         "toolName": TOOL_NAME,
         "surface": TOOL_NAME,
         "producer": ABILITY_NAME,
@@ -633,9 +623,444 @@ pub fn present_account_status_response_with_context(
 fn fallback_subject(subject: &str) -> Value {
     json!({
         "kind": "account",
-        "id": subject,
         "displayLabel": subject,
+        "rawEntityIdsIncluded": false,
     })
+}
+
+fn public_subject_value(
+    subject: &str,
+    subject_value: Value,
+    display_label_override: Option<&str>,
+) -> Value {
+    let mut subject_map = subject_value.as_object().cloned().unwrap_or_default();
+    subject_map
+        .entry("kind".to_string())
+        .or_insert_with(|| Value::String("account".to_string()));
+    subject_map
+        .entry("displayLabel".to_string())
+        .or_insert_with(|| Value::String(subject.to_string()));
+    if let Some(label) = display_label_override {
+        subject_map.insert("displayLabel".to_string(), Value::String(label.to_string()));
+    }
+    strip_public_entity_identifier_keys(&mut subject_map);
+    Value::Object(subject_map)
+}
+
+fn public_display_label_candidate(value: &str) -> Option<String> {
+    let value = compact_text(value);
+    if value.is_empty() || looks_like_internal_entity_label(&value) {
+        None
+    } else {
+        Some(value)
+    }
+}
+
+fn looks_like_internal_entity_label(value: &str) -> bool {
+    let lower = value.trim().to_ascii_lowercase();
+    ["account:", "project:", "person:", "meeting:"]
+        .iter()
+        .any(|prefix| lower.starts_with(prefix))
+}
+
+fn strip_public_entity_identifier_keys(subject_object: &mut serde_json::Map<String, Value>) {
+    for key in [
+        "id",
+        "subjectRef",
+        "subject_ref",
+        "entityId",
+        "entity_id",
+        "resolvedEntityId",
+        "resolved_entity_id",
+        "accountId",
+        "account_id",
+    ] {
+        subject_object.remove(key);
+    }
+    subject_object.insert("rawEntityIdsIncluded".to_string(), Value::Bool(false));
+}
+
+fn handleize_account_status_payload(
+    ctx: &McpHandlerContext,
+    actor: &McpActor,
+    payload: &mut Value,
+    subject: &ResolvedAccountSubject,
+    raw_envelope: &Value,
+) -> Result<(), ToolError> {
+    if let Some(object) = payload.as_object_mut() {
+        object.insert(
+            "schema_version".to_string(),
+            Value::String("mcp.account_status.v2".to_string()),
+        );
+        object.insert("invocationId".to_string(), Value::Null);
+        object.insert("provenanceHandle".to_string(), Value::Null);
+    }
+    if let Some(provenance) = payload.get_mut("provenance").and_then(Value::as_object_mut) {
+        provenance.insert("rawClaimIdsIncluded".to_string(), Value::Bool(false));
+        provenance.insert("rawEntityIdsIncluded".to_string(), Value::Bool(false));
+        provenance.insert("rawActionIdsIncluded".to_string(), Value::Bool(false));
+        provenance.insert("rawSourceIdsIncluded".to_string(), Value::Bool(false));
+    }
+
+    let Some(result) = ctx.with_conn(|db| {
+        let entity_target_ref = json!({
+            "entity_type": "account",
+            "entity_id": subject.entity_id,
+        });
+        let Some(entity_watermark) = current_entity_watermark(db, &entity_target_ref)? else {
+            attach_source_handles(db, actor, payload, raw_envelope)?;
+            attach_feedback_handles(db, actor, payload, raw_envelope)?;
+            return Ok(());
+        };
+        let entity_handle = mint_target_handle(
+            db,
+            MintTargetHandle {
+                actor,
+                originating_tool: &crate::services::mcp_v2::contracts::ScopedName::new(TOOL_NAME),
+                result_item_path: "/subject",
+                target_kind: TargetKind::Entity,
+                target_ref: entity_target_ref,
+                sensitivity_tier: "internal",
+                provenance_material: &format!("account:{}", subject.entity_id),
+                watermark_material: &entity_watermark,
+            },
+        )
+        .map_err(|error| ToolError::Internal {
+            trace_id: format!("mcp_account_entity_handle_mint:{error}"),
+        })?;
+        attach_entity_handle(payload, &entity_handle);
+        attach_source_handles(db, actor, payload, raw_envelope)?;
+        attach_feedback_handles(db, actor, payload, raw_envelope)?;
+        Ok(())
+    }) else {
+        return Ok(());
+    };
+    result
+}
+
+fn attach_entity_handle(payload: &mut Value, entity_handle: &str) {
+    if let Some(subject_object) = payload.get_mut("subject").and_then(Value::as_object_mut) {
+        strip_public_entity_identifier_keys(subject_object);
+        subject_object.insert(
+            "entity_handle".to_string(),
+            Value::String(entity_handle.to_string()),
+        );
+        subject_object.insert(
+            "entityHandle".to_string(),
+            Value::String(entity_handle.to_string()),
+        );
+        subject_object.insert(
+            "entityType".to_string(),
+            Value::String("account".to_string()),
+        );
+    }
+    if let Some(resolution_object) = payload.get_mut("resolution").and_then(Value::as_object_mut) {
+        strip_public_entity_identifier_keys(resolution_object);
+        resolution_object.insert(
+            "entity_handle".to_string(),
+            Value::String(entity_handle.to_string()),
+        );
+        resolution_object.insert(
+            "entityHandle".to_string(),
+            Value::String(entity_handle.to_string()),
+        );
+    }
+}
+
+fn attach_source_handles(
+    db: &ActionDb,
+    actor: &McpActor,
+    payload: &mut Value,
+    raw_envelope: &Value,
+) -> Result<(), ToolError> {
+    let raw_sources = raw_envelope
+        .pointer("/provenance/sources")
+        .and_then(Value::as_array)
+        .cloned()
+        .unwrap_or_default();
+    let Some(projected_sources) = payload
+        .pointer_mut("/provenance/sources")
+        .and_then(Value::as_array_mut)
+    else {
+        return Ok(());
+    };
+
+    for (index, source) in projected_sources.iter_mut().enumerate() {
+        let Some(source_object) = source.as_object_mut() else {
+            continue;
+        };
+        let raw_source = raw_sources.get(index).cloned().unwrap_or_else(|| json!({}));
+        let label = source_object
+            .get("label")
+            .and_then(Value::as_str)
+            .unwrap_or("DailyOS source")
+            .to_string();
+        let source_type = source_object
+            .get("sourceType")
+            .or_else(|| source_object.get("source_type"))
+            .and_then(Value::as_str)
+            .unwrap_or("source")
+            .to_string();
+        let as_of = source_object
+            .get("asOf")
+            .or_else(|| source_object.get("as_of"))
+            .cloned()
+            .unwrap_or(Value::Null);
+        let redaction_applied = source_object
+            .get("redacted")
+            .and_then(Value::as_bool)
+            .unwrap_or(false);
+        let source_target_ref = json!({
+            "label": label,
+            "source_type": source_type,
+            "source_asof": as_of,
+            "trust_band": raw_source.get("trustBand").or_else(|| raw_source.get("trust_band")).cloned().unwrap_or(Value::Null),
+            "redaction_applied": redaction_applied,
+        });
+        let source_watermark = source_provenance_watermark(&source_target_ref);
+        let handle = mint_target_handle(
+            db,
+            MintTargetHandle {
+                actor,
+                originating_tool: &crate::services::mcp_v2::contracts::ScopedName::new(TOOL_NAME),
+                result_item_path: &format!("/provenance/sources/{index}"),
+                target_kind: TargetKind::SourceProvenance,
+                target_ref: source_target_ref,
+                sensitivity_tier: "internal",
+                provenance_material: &source_watermark,
+                watermark_material: &source_watermark,
+            },
+        )
+        .map_err(|error| ToolError::Internal {
+            trace_id: format!("mcp_account_source_handle_mint:{error}"),
+        })?;
+        source_object.insert(
+            "source_provenance_handle".to_string(),
+            Value::String(handle.clone()),
+        );
+        source_object.insert("sourceProvenanceHandle".to_string(), Value::String(handle));
+    }
+    Ok(())
+}
+
+fn attach_feedback_handles(
+    db: &ActionDb,
+    actor: &McpActor,
+    payload: &mut Value,
+    raw_envelope: &Value,
+) -> Result<(), ToolError> {
+    attach_feedback_handles_for_section(
+        db,
+        actor,
+        payload,
+        "/assessment/facts",
+        raw_envelope
+            .pointer("/facts/items")
+            .and_then(Value::as_array)
+            .cloned()
+            .unwrap_or_default(),
+        feedback_candidate_from_fact,
+        projected_fact_text,
+    )?;
+    attach_feedback_handles_for_section(
+        db,
+        actor,
+        payload,
+        "/assessment/openLoops",
+        raw_envelope
+            .pointer("/openLoops/items")
+            .or_else(|| raw_envelope.pointer("/open_loops/items"))
+            .and_then(Value::as_array)
+            .cloned()
+            .unwrap_or_default(),
+        feedback_candidate_from_open_loop,
+        projected_open_loop_text,
+    )?;
+    attach_feedback_handles_for_section(
+        db,
+        actor,
+        payload,
+        "/assessment/recordEntries",
+        raw_envelope
+            .pointer("/recordEntries/items")
+            .or_else(|| raw_envelope.pointer("/record_entries/items"))
+            .and_then(Value::as_array)
+            .cloned()
+            .unwrap_or_default(),
+        feedback_candidate_from_record_entry,
+        projected_fact_text,
+    )
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+struct FeedbackTargetCandidate {
+    claim_id: String,
+    match_text: String,
+}
+
+fn attach_feedback_handles_for_section(
+    db: &ActionDb,
+    actor: &McpActor,
+    payload: &mut Value,
+    projected_pointer: &str,
+    raw_items: Vec<Value>,
+    candidate_for: fn(&Value) -> Option<FeedbackTargetCandidate>,
+    projected_text_for: fn(&Value) -> Option<String>,
+) -> Result<(), ToolError> {
+    let Some(projected_items) = payload
+        .pointer_mut(projected_pointer)
+        .and_then(Value::as_array_mut)
+    else {
+        return Ok(());
+    };
+    let candidates = raw_items
+        .iter()
+        .enumerate()
+        .filter_map(|(index, item)| candidate_for(item).map(|candidate| (index, candidate)))
+        .collect::<Vec<_>>();
+    let mut used_raw_indexes = BTreeSet::new();
+    for (index, projected) in projected_items.iter_mut().enumerate() {
+        let Some(projected_text) = projected_text_for(projected) else {
+            continue;
+        };
+        let Some((raw_index, candidate)) = candidates.iter().find(|(raw_index, candidate)| {
+            !used_raw_indexes.contains(raw_index) && candidate.match_text == projected_text
+        }) else {
+            continue;
+        };
+        used_raw_indexes.insert(*raw_index);
+        let claim_id = candidate.claim_id.clone();
+        let Some(watermark) = claim_watermark(db, &claim_id)? else {
+            continue;
+        };
+        let handle = mint_target_handle(
+            db,
+            MintTargetHandle {
+                actor,
+                originating_tool: &crate::services::mcp_v2::contracts::ScopedName::new(TOOL_NAME),
+                result_item_path: &format!("{projected_pointer}/{index}"),
+                target_kind: TargetKind::Claim,
+                target_ref: json!({ "claim_id": claim_id }),
+                sensitivity_tier: "internal",
+                provenance_material: &format!("{projected_pointer}:{index}"),
+                watermark_material: &watermark,
+            },
+        )
+        .map_err(|error| ToolError::Internal {
+            trace_id: format!("mcp_account_feedback_handle_mint:{error}"),
+        })?;
+        if let Some(object) = projected.as_object_mut() {
+            object.insert(
+                "feedback_target_handle".to_string(),
+                Value::String(handle.clone()),
+            );
+            object.insert("feedbackTargetHandle".to_string(), Value::String(handle));
+        }
+    }
+    Ok(())
+}
+
+fn feedback_candidate_from_fact(item: &Value) -> Option<FeedbackTargetCandidate> {
+    Some(FeedbackTargetCandidate {
+        claim_id: claim_id_from_fact(item)?,
+        match_text: rendered_fact_text(item)?,
+    })
+}
+
+fn feedback_candidate_from_record_entry(item: &Value) -> Option<FeedbackTargetCandidate> {
+    Some(FeedbackTargetCandidate {
+        claim_id: claim_id_from_fact(item)?,
+        match_text: rendered_record_entry_text(item)?,
+    })
+}
+
+fn feedback_candidate_from_open_loop(item: &Value) -> Option<FeedbackTargetCandidate> {
+    let open_loop = item
+        .get("openLoop")
+        .or_else(|| item.get("open_loop"))
+        .unwrap_or(item);
+    Some(FeedbackTargetCandidate {
+        claim_id: claim_id_from_open_loop(item)?,
+        match_text: string_at(open_loop, "/description")
+            .map(compact_text)
+            .filter(|value| !value.is_empty())?,
+    })
+}
+
+fn rendered_fact_text(item: &Value) -> Option<String> {
+    string_at(item, "/renderedText/text")
+        .map(compact_text)
+        .filter(|value| !value.is_empty())
+}
+
+fn rendered_record_entry_text(item: &Value) -> Option<String> {
+    string_at(item, "/renderedText/text")
+        .or_else(|| string_at(item, "/rendered_text/text"))
+        .map(compact_text)
+        .filter(|value| !value.is_empty())
+}
+
+fn projected_fact_text(item: &Value) -> Option<String> {
+    string_at(item, "/text")
+        .map(compact_text)
+        .filter(|value| !value.is_empty())
+}
+
+fn projected_open_loop_text(item: &Value) -> Option<String> {
+    string_at(item, "/description")
+        .map(compact_text)
+        .filter(|value| !value.is_empty())
+}
+
+fn claim_id_from_fact(item: &Value) -> Option<String> {
+    item.get("claimId")
+        .or_else(|| item.get("claim_id"))
+        .and_then(Value::as_str)
+        .map(str::to_string)
+}
+
+fn claim_id_from_open_loop(item: &Value) -> Option<String> {
+    item.get("openLoop")
+        .or_else(|| item.get("open_loop"))
+        .unwrap_or(item)
+        .get("id")
+        .or_else(|| item.get("claimId"))
+        .or_else(|| item.get("claim_id"))
+        .and_then(Value::as_str)
+        .map(str::to_string)
+}
+
+fn claim_watermark(db: &ActionDb, claim_id: &str) -> Result<Option<String>, ToolError> {
+    match crate::services::claims::load_claim_by_id(db.conn_ref(), claim_id) {
+        Ok(Some(claim)) if claim_is_public_mcp_feedback_target(&claim) => {
+            Ok(Some(claim_watermark_for_handle(&claim)))
+        }
+        Ok(Some(_)) | Ok(None) => Ok(None),
+        Err(error) => {
+            eprintln!("mcp_v2 dailyos.read.account_status feedback target load failed: {error:?}");
+            Err(ToolError::Internal {
+                trace_id: "mcp_account_feedback_claim_load".to_string(),
+            })
+        }
+    }
+}
+
+fn claim_is_public_mcp_feedback_target(claim: &IntelligenceClaim) -> bool {
+    claim.claim_state == ClaimState::Active
+        && claim.surfacing_state == SurfacingState::Active
+        && renderable_claim_text(
+            claim,
+            RenderSurface::McpTool,
+            &RenderActor::agent("agent:mcp"),
+        )
+        .is_some()
+}
+
+fn claim_watermark_for_handle(claim: &IntelligenceClaim) -> String {
+    format!(
+        "claim:{}:{}:{:?}:{:?}",
+        claim.id, claim.claim_version, claim.claim_state, claim.verification_state
+    )
 }
 
 fn build_account_status_answer(
@@ -833,9 +1258,13 @@ mod tests {
     use super::*;
     use std::sync::Mutex;
 
+    use crate::db::claims::{ClaimSensitivity, TemporalScope};
+    use crate::services::claims::{commit_claim, ClaimProposal, CommittedClaim};
     use crate::services::mcp_v2::contracts::{
         McpClientId, OpaqueConversationHandle, ParamSchema, ReturnSpec, Scope, ScopedName, Side,
     };
+    use crate::services::mcp_v2::local_runtime;
+    use crate::services::mcp_v2::target_handles::{resolve_target_handle, ResolveTargetHandle};
 
     fn stub_actor() -> McpActor {
         McpActor::Client {
@@ -893,6 +1322,41 @@ mod tests {
             ..Default::default()
         })
         .expect("seed account");
+    }
+
+    fn seed_renderable_claim(db: &ActionDb, claim_type: &str, text: &str) -> IntelligenceClaim {
+        seed_account(db, "acct-feedback-route", "Feedback Route Account");
+        let clock = SystemClock;
+        let rng = SystemRng;
+        let external = ExternalClients::default();
+        let ctx = ServiceContext::new_live(&clock, &rng, &external).with_actor("user:test");
+        let proposal = ClaimProposal {
+            id: None,
+            expected_claim_version: None,
+            subject_ref: r#"{"kind":"account","id":"acct-feedback-route"}"#.to_string(),
+            claim_type: claim_type.to_string(),
+            field_path: Some("health.summary".to_string()),
+            topic_key: None,
+            text: text.to_string(),
+            actor: "agent:test".to_string(),
+            data_source: "unit_test".to_string(),
+            source_ref: None,
+            source_asof: Some("2026-06-01T12:00:00Z".to_string()),
+            observed_at: "2026-06-01T12:00:00Z".to_string(),
+            provenance_json: "{}".to_string(),
+            metadata_json: None,
+            thread_id: None,
+            temporal_scope: Some(TemporalScope::State),
+            sensitivity: Some(ClaimSensitivity::Internal),
+            supersedes: None,
+            tombstone: None,
+        };
+        match commit_claim(&ctx, db, proposal).expect("commit renderable claim") {
+            CommittedClaim::Inserted { claim }
+            | CommittedClaim::Reinforced { claim, .. }
+            | CommittedClaim::Tombstoned { claim } => claim,
+            CommittedClaim::Forked { primary_claim, .. } => primary_claim,
+        }
     }
 
     fn test_description() -> ToolDescription {
@@ -997,23 +1461,18 @@ mod tests {
     }
 
     #[test]
-    fn account_subject_resolver_prefers_exact_id() {
+    fn account_subject_resolver_rejects_raw_account_id_subjects() {
         let accounts = vec![
             account_candidate("example-account", "Different Name"),
-            account_candidate("other-account", "Example Account"),
+            account_candidate("other-account", "Other Account"),
         ];
 
         let resolved = resolve_account_subject_from_accounts("example-account", &accounts);
 
-        match resolved {
-            AccountSubjectResolution::Resolved(subject) => {
-                assert_eq!(subject.entity_id, "example-account");
-                assert_eq!(subject.display_label, "Different Name");
-                assert_eq!(subject.resolution_kind, "account_id");
-                assert_eq!(subject.match_confidence, "exact");
-            }
-            other => panic!("expected resolved subject, got {other:?}"),
-        }
+        assert!(
+            matches!(resolved, AccountSubjectResolution::NotFound { .. }),
+            "raw account ids must not resolve through MCP subject lookup: {resolved:?}"
+        );
     }
 
     #[test]
@@ -1082,15 +1541,13 @@ mod tests {
             account_candidate("example-account", "Example Account"),
             account_candidate("exampleaccount", "ExampleAccount"),
             account_candidate("another-account", "Another Account"),
+            account_candidate("raw-id-only", "Unrelated Label"),
         ];
 
-        let exact_id = resolve_account_subject_from_accounts("another-account", &accounts);
+        let exact_id = resolve_account_subject_from_accounts("raw-id-only", &accounts);
         assert!(matches!(
             exact_id,
-            AccountSubjectResolution::Resolved(ResolvedAccountSubject {
-                resolution_kind: "account_id",
-                ..
-            })
+            AccountSubjectResolution::NotFound { .. }
         ));
 
         let exact_name = resolve_account_subject_from_accounts("example account", &accounts);
@@ -1144,8 +1601,11 @@ mod tests {
                 "schemaVersion": 2,
                 "subject": {
                     "kind": "account",
-                    "id": "example-account",
-                    "displayLabel": "account:example-account"
+                    "id": "acct-raw-123",
+                    "entityId": "acct-raw-456",
+                    "subjectRef": { "account": "acct-raw-789" },
+                    "subject_ref": { "account": "acct-raw-snake" },
+                    "displayLabel": "account:acct-raw-123"
                 },
                 "facts": { "items": [] },
                 "openLoops": { "items": [] },
@@ -1169,17 +1629,139 @@ mod tests {
             entity_id: "example-account".to_string(),
             display_label: "Example Account".to_string(),
             resolution_kind: "normalized_slug",
-            match_basis: "normalized_id_or_name",
+            match_basis: "normalized_name",
             match_confidence: "high",
             match_confidence_score: 0.95,
         };
 
         attach_account_subject_resolution(&mut payload, &subject);
 
-        assert_eq!(payload["resolution"]["resolvedEntityId"], "example-account");
+        assert!(payload["resolution"].get("resolvedEntityId").is_none());
+        assert!(payload["subject"].get("id").is_none());
+        assert!(payload["subject"].get("entityId").is_none());
+        assert!(payload["subject"].get("subjectRef").is_none());
+        assert!(payload["subject"].get("subject_ref").is_none());
         assert_eq!(payload["subject"]["input"], "Example Account");
         assert_eq!(payload["subject"]["displayLabel"], "Example Account");
         assert_eq!(payload["subject"]["resolutionKind"], "normalized_slug");
+        let serialized = serde_json::to_string(&payload).expect("payload serializes");
+        assert!(!serialized.contains("acct-raw-123"));
+        assert!(!serialized.contains("acct-raw-456"));
+        assert!(!serialized.contains("acct-raw-789"));
+        assert!(!serialized.contains("acct-raw-snake"));
+    }
+
+    #[test]
+    fn feedback_handle_minting_skips_missing_claim_targets() {
+        let dir = tempfile::tempdir().expect("tempdir");
+        let db = ActionDb::open_at_unencrypted(dir.path().join("missing-feedback-claim.db"))
+            .expect("open db");
+        let actor = stub_actor();
+        let mut payload = json!({
+            "assessment": {
+                "facts": [{
+                    "text": "Visible fact from runtime projection"
+                }]
+            }
+        });
+
+        attach_feedback_handles_for_section(
+            &db,
+            &actor,
+            &mut payload,
+            "/assessment/facts",
+            vec![json!({ "claimId": "missing-claim-id" })],
+            feedback_candidate_from_fact,
+            projected_fact_text,
+        )
+        .expect("missing claim should not be an internal mint error");
+
+        assert!(
+            payload["assessment"]["facts"][0]
+                .get("feedback_target_handle")
+                .is_none(),
+            "MCP must not mint live-looking feedback handles for missing claim rows"
+        );
+        assert!(
+            payload["assessment"]["facts"][0]
+                .get("feedbackTargetHandle")
+                .is_none(),
+            "camel-case feedback handle must also stay absent"
+        );
+    }
+
+    #[test]
+    fn feedback_handle_minting_targets_visible_filtered_claim_not_raw_index() {
+        local_runtime::with_target_handle_key_for_tests([41_u8; 32], || {
+            let dir = tempfile::tempdir().expect("tempdir");
+            let db = ActionDb::open_at_unencrypted(dir.path().join("feedback-route.db"))
+                .expect("open db");
+            let hidden_claim = seed_renderable_claim(
+                &db,
+                "risk",
+                "Hidden filtered fact should not receive visible feedback.",
+            );
+            let visible_claim = seed_renderable_claim(
+                &db,
+                "risk",
+                "Visible fact should receive the feedback handle.",
+            );
+            let actor = stub_actor();
+            let mut payload = json!({
+                "assessment": {
+                    "facts": [{
+                        "text": "Visible fact should receive the feedback handle."
+                    }]
+                }
+            });
+
+            attach_feedback_handles_for_section(
+                &db,
+                &actor,
+                &mut payload,
+                "/assessment/facts",
+                vec![
+                    json!({
+                        "claimId": hidden_claim.id,
+                        "claimType": "risk"
+                    }),
+                    json!({
+                        "claimId": visible_claim.id,
+                        "claimType": "risk",
+                        "renderedText": {
+                            "text": "Visible fact should receive the feedback handle.",
+                            "policy": {}
+                        }
+                    }),
+                ],
+                feedback_candidate_from_fact,
+                projected_fact_text,
+            )
+            .expect("feedback handle mint");
+
+            let handle = payload["assessment"]["facts"][0]["feedback_target_handle"]
+                .as_str()
+                .expect("feedback handle");
+            let resolved = resolve_target_handle(
+                &db,
+                ResolveTargetHandle {
+                    actor: &actor,
+                    handle,
+                    expected_kind: TargetKind::Claim,
+                    current_watermark_material: Some(&claim_watermark_for_handle(&visible_claim)),
+                },
+            )
+            .expect("visible claim handle resolves");
+
+            let resolved_claim_id = resolved.target_ref["claim_id"]
+                .as_str()
+                .expect("resolved claim id");
+            assert_eq!(resolved_claim_id, visible_claim.id);
+            assert_ne!(
+                resolved_claim_id, hidden_claim.id,
+                "filtered raw rows must not receive handles by projected index"
+            );
+        });
     }
 
     #[test]
