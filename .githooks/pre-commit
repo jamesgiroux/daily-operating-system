@@ -141,6 +141,10 @@ is_doc_path() {
   case "$1" in
     docs/solutions/*|.docs/decisions/*|.docs/plans/*|docs/*) return 0 ;;
     .githooks/*) return 0 ;;
+    # Plugin skill/command markdown and READMEs are documentation surfaces:
+    # they legitimately name pipeline phases (e.g. "Phase 2: Research") and
+    # quote patterns while documenting them, same as docs/*.
+    plugins/*/skills/*|plugins/*/commands/*|plugins/*/README.md) return 0 ;;
   esac
   return 1
 }
