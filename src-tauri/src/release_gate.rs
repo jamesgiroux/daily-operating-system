@@ -412,6 +412,7 @@ impl ManualDbReader for ActionDbManualReader {
     fn open_readonly_schema_version(&self, path: &Path) -> Result<String, String> {
         storage_reset_plain_sqlite_preflight(path)?;
         let conn = rusqlite::Connection::open_with_flags(
+            // db-open-guard-allowed: release-gate manual evidence reads a caller-supplied DB read-only after storage-reset preflight
             path,
             rusqlite::OpenFlags::SQLITE_OPEN_READ_ONLY | rusqlite::OpenFlags::SQLITE_OPEN_NO_MUTEX,
         )
