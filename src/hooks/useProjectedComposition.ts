@@ -103,7 +103,24 @@ export function useProjectedComposition(input: UseProjectedCompositionInput): Us
     } catch (err) {
       if (!isActiveRequest()) return;
       loadedCompositionIdRef.current = compositionId;
-      setError(err instanceof Error ? err.message : String(err));
+      // Tauri commands that return a structured error (e.g. BridgeSurfaceError)
+      // reject with an object, not a string — String(object) is "[object Object]".
+      // Surface a readable message instead.
+      let message: string;
+      if (err instanceof Error) {
+        message = err.message;
+      } else if (typeof err === "string") {
+        message = err;
+      } else if (err && typeof err === "object" && typeof (err as { message?: unknown }).message === "string") {
+        message = (err as { message: string }).message;
+      } else {
+        try {
+          message = JSON.stringify(err);
+        } catch {
+          message = String(err);
+        }
+      }
+      setError(message);
     } finally {
       if (isActiveRequest()) setLoading(false);
     }
