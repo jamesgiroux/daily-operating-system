@@ -1834,6 +1834,7 @@ mod tests {
         services: &'a ServiceContext<'a>,
         provider: &'a StaticProvider,
     ) -> AbilityContext<'a> {
+        crate::abilities::registry::install_full_producer_test_allowlist();
         AbilityContext::new(
             services,
             provider,

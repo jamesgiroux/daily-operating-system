@@ -2067,6 +2067,7 @@ mod tests {
         services: &'a ServiceContext<'a>,
         provider: &'a StaticProvider,
     ) -> AbilityContext<'a> {
+        crate::abilities::registry::install_full_producer_test_allowlist();
         AbilityContext::new(
             services,
             provider,
@@ -2094,6 +2095,7 @@ mod tests {
         }
     }
 
+    #[allow(clippy::too_many_arguments)]
     fn claim(
         id: &str,
         subject_ref: Value,

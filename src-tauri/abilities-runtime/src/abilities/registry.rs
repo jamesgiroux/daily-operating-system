@@ -1050,6 +1050,30 @@ fn seeded_scope_allowlist(
     union
 }
 
+/// Install a comprehensive test allowlist covering every shipped detail-
+/// composition producer plus the common surface vocabulary.
+///
+/// The process-global `SCOPE_ALLOWLIST` is shared across the whole test
+/// binary, and several modules (`markdown_preview`, `workspace_graph`,
+/// `recommendations`, `source_management_ledger`) intentionally install
+/// *limited* allowlists to exercise scope-denial. A producer test that relies
+/// on lenient bootstrap then fails once one of those installers has run first.
+/// Producer tests call this in their fixture so their `ScopeSet` construction
+/// is order-independent under a full `cargo test` run; the set is
+/// comprehensive so it never makes a sibling producer's scope unknown.
+#[cfg(test)]
+pub(crate) fn install_full_producer_test_allowlist() {
+    ScopeSet::set_allowlist_for_tests([
+        SurfaceScope::new("read.account_overview"),
+        SurfaceScope::new("read.project_overview"),
+        SurfaceScope::new("read.person_overview"),
+        SurfaceScope::new("read.action_detail"),
+        SurfaceScope::new("read.composition"),
+        SurfaceScope::new("read.entity_names"),
+        SurfaceScope::new("submit.feedback"),
+    ]);
+}
+
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct SchemaClosureError {
     pub ability_name: String,
