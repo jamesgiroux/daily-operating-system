@@ -358,17 +358,17 @@ fn validate_provenance_ownership(
         }));
 
         if coherence.value < policy.trust_config.likely_current_min {
-            if matches!(
-                policy.requested_render_policy,
-                OwnershipRenderPolicy::Confident
-            ) {
-                return Err(OwnershipError::ConfidentRenderLowCrossEntityCoherence {
-                    field_path: rendered_path.clone(),
-                    value: coherence.value,
-                    threshold: policy.trust_config.likely_current_min,
-                    hit_count: coherence.hits.len(),
-                });
-            }
+            // A single field's low cross-entity coherence is a per-field quality
+            // signal, not grounds to fail the whole composition. Previously a
+            // Confident render hard-errored here (ConfidentRenderLowCrossEntityCoherence),
+            // which blanked entire account surfaces when Glean's broad search pulled
+            // adjacent-entity content into one field. Degrade to NeedsVerification so
+            // the page renders with the questionable content flagged via its trust
+            // band (per-field hits are recorded in cross_entity_coherence_hits).
+            // Cross-subject / canonical-merge violations above remain hard errors.
+            // A stricter mode that drops the low-coherence field outright (per-field
+            // suppression) would require threading suppressed paths into the projection
+            // consumer, which the OwnershipReport does not yet carry.
             if !matches!(render_policy, OwnershipRenderPolicy::Suppressed) {
                 render_policy = OwnershipRenderPolicy::NeedsVerification;
             }
