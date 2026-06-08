@@ -29,8 +29,10 @@ use crate::types::AiModelConfig;
 /// Debounce window for content-triggered enrichment requests.
 const CONTENT_DEBOUNCE_SECS: u64 = 30;
 const CALENDAR_DEBOUNCE_SECS: u64 = 600;
-/// Background enrichment timeout — raised from 20s to the v1.2.1 floor of 90s.
-const BACKGROUND_ENRICHMENT_TIMEOUT_SECS: u64 = 90;
+/// Background enrichment timeout — raised to 150s for Claude Code 2.x, whose
+/// agentic CLI startup plus large account-context prompts run slower than the
+/// prior 90s floor (observed timeouts/parse-misses on real accounts).
+const BACKGROUND_ENRICHMENT_TIMEOUT_SECS: u64 = 150;
 /// Per-dimension manual-refresh timeout. Large accounts with deep context
 /// (e.g. Globex-scale) need >90s for some dimensions; 90s caused half
 /// the dimensions to time out and return empty arrays, which silently wiped
@@ -2295,7 +2297,7 @@ fn run_consistency_repair_retry(
                 .with_trigger("post_write_repair")
                 .with_tier(ModelTier::Extraction),
         )
-        .with_timeout(90)
+        .with_timeout(150)
         .with_nice_priority(10);
     let output = pty
         .spawn_claude(&input.workspace, &prompt)

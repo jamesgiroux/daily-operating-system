@@ -3242,6 +3242,17 @@ pub fn parse_intelligence_response(
         Ok(Some(parsed)) => parsed,
         Err(msg) => return Err(msg),
         Ok(None) => {
+            // No JSON object found. Log a bounded preview so a non-conforming
+            // model response (e.g. conversational/agentic narration from an
+            // interactive CLI, a refusal, or a truncated reply) is diagnosable
+            // instead of surfacing only an opaque "No INTELLIGENCE block" error.
+            let preview: String = response.chars().take(300).collect();
+            log::warn!(
+                "parse_intelligence_response[{entity_id}]: no JSON object found \
+                 (response_len={}, has_brace={}, preview={preview:?})",
+                response.len(),
+                response.contains('{'),
+            );
             // Fall back to pipe-delimited format (backwards compat).
             // Run anomaly detection on the raw response even for non-JSON.
             crate::intelligence::validation::check_anomalies_public(response);
