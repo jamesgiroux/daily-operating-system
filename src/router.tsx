@@ -69,7 +69,6 @@ import { WhatsNewModal, useWhatsNewAutoShow } from "@/components/notifications/W
 import { ICloudWarningModal } from "@/components/ICloudWarningModal";
 import { LockOverlay } from "@/components/LockOverlay";
 import { useAppLock } from "@/hooks/useAppLock";
-import { EncryptionRecovery, useEncryptionStatus } from "@/components/EncryptionRecovery";
 import { DatabaseRecovery } from "@/components/DatabaseRecovery";
 import { AppStateCtx, useAppStateProvider } from "@/hooks/useAppState";
 import { ClaudeStatusCtx, useClaudeStatusProvider } from "@/hooks/useClaudeStatus";
@@ -119,7 +118,6 @@ function RootLayout() {
   const [whatsNewOpen, setWhatsNewOpen] = useState(false);
   const { autoShowOpen, dismissAutoShow } = useWhatsNewAutoShow();
   const { isLocked, setIsLocked } = useAppLock();
-  const encryptionKeyMissing = useEncryptionStatus();
   const { status: dbRecoveryStatus } = useDatabaseRecoveryStatus();
   const appStateCtx = useAppStateProvider();
   const claudeStatusCtx = useClaudeStatusProvider();
@@ -192,7 +190,6 @@ function RootLayout() {
 
   const startupGate = resolveStartupGate({
     checkingConfig,
-    encryptionKeyMissing,
     dbRecoveryRequired: dbRecoveryStatus.required,
     isLocked,
     needsOnboarding,
@@ -322,14 +319,6 @@ function RootLayout() {
       <ThemeProvider>
         <StartupBriefingScreen />
         <DevToolsPanelStandalone />
-      </ThemeProvider>
-    );
-  }
-
-  if (startupGate === "encryption-recovery") {
-    return (
-      <ThemeProvider>
-        <EncryptionRecovery />
       </ThemeProvider>
     );
   }

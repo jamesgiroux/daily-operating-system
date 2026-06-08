@@ -12,6 +12,19 @@ import {
   formRowStyles,
 } from "@/features/settings-ui/FormRow";
 
+const UNSUPPORTED_BACKUP_ERROR_PREFIX =
+  "Backup is not a supported plain SQLite DailyOS backup.";
+
+function displayRecoveryError(error: unknown, fallback: string): string {
+  if (
+    typeof error === "string" &&
+    error.startsWith(UNSUPPORTED_BACKUP_ERROR_PREFIX)
+  ) {
+    return error;
+  }
+  return fallback;
+}
+
 function formatBytes(bytes: number): string {
   if (bytes < 1024) return `${bytes} B`;
   if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
@@ -32,7 +45,7 @@ export default function DatabaseRecoveryCard() {
       const files = await invoke<BackupInfo[]>("list_database_backups");
       setBackups(files);
     } catch (e) {
-      toast.error(typeof e === "string" ? e : "Failed to load backups");
+      toast.error(displayRecoveryError(e, "Backup list unavailable"));
     } finally {
       setLoadingBackups(false);
     }
@@ -56,13 +69,12 @@ export default function DatabaseRecoveryCard() {
     if (creatingBackup) return;
     setCreatingBackup(true);
     try {
-      const path = await invoke<string>("backup_database");
+      await invoke("backup_database");
       toast.success("Backup created");
-      console.info("Backup created at", path);
       await loadBackups();
       await loadDbInfo();
-    } catch (e) {
-      toast.error(typeof e === "string" ? e : "Backup failed");
+    } catch {
+      toast.error("Backup failed");
     } finally {
       setCreatingBackup(false);
     }
@@ -82,7 +94,7 @@ export default function DatabaseRecoveryCard() {
       toast.success("Backup restored. Relaunching...");
       setTimeout(() => void relaunch(), 300);
     } catch (e) {
-      toast.error(typeof e === "string" ? e : "Restore failed");
+      toast.error(displayRecoveryError(e, "Restore failed"));
     } finally {
       setRestoringPath(null);
     }
@@ -97,8 +109,8 @@ export default function DatabaseRecoveryCard() {
       if (!destination) return;
       await invoke("export_database_copy", { destination });
       toast.success("Database exported");
-    } catch (e) {
-      toast.error(typeof e === "string" ? e : "Export failed");
+    } catch {
+      toast.error("Export failed");
     }
   }
 
@@ -118,7 +130,7 @@ export default function DatabaseRecoveryCard() {
         >
           <div style={{ display: "flex", flexDirection: "column", gap: 4 }}>
             <div className={formRowStyles.descriptionSmall}>
-              <strong>Path:</strong>{" "}
+              <strong>File:</strong>{" "}
               <span style={{ fontFamily: "var(--font-mono)", fontSize: 11 }}>{dbInfo.path}</span>
             </div>
             <div className={formRowStyles.descriptionSmall}>

@@ -2705,21 +2705,12 @@ fn prune_old_migration_backups(db_path: &Path, keep: usize) -> Result<(), String
     Ok(())
 }
 
-fn create_backup_via_api(
-    conn: &Connection,
-    backup_path: &Path,
-    destination_key: Option<&crate::db::EncryptionKey>,
-) -> Result<(), String> {
+fn create_backup_via_api(conn: &Connection, backup_path: &Path) -> Result<(), String> {
     let mut backup_conn = rusqlite::Connection::open(backup_path)
         .map_err(|e| format!("Failed to open backup file: {e}"))?;
-    if let Some(encryption_key) = destination_key {
-        backup_conn
-            .execute_batch(&encryption_key.to_pragma())
-            .map_err(|e| format!("Failed to set pre-migration backup encryption key: {e}"))?;
-    }
     let backup = rusqlite::backup::Backup::new(conn, &mut backup_conn)
         .map_err(|e| format!("Failed to initialize pre-migration backup: {e}"))?;
-    // Single step(-1) copies every page in one shot. On encrypted DBs in the
+    // Single step(-1) copies every page in one shot. On large DBs in the
     // hundreds of megabytes that path returned Err with the canonical
     // "not an error" string — the underlying extended code had been cleared
     // but the rusqlite wrapper still mapped to Err, blocking migrations until
@@ -2773,33 +2764,6 @@ fn create_backup_via_api(
         }
     }
     Ok(())
-}
-
-fn create_backup_via_sqlcipher_export(
-    conn: &Connection,
-    backup_path: &Path,
-    hex_key: &str,
-) -> Result<(), String> {
-    // sqlcipher_export must run inside BEGIN IMMEDIATE so that WAL frames are
-    // included in the snapshot. Without the transaction, SQLCipher copies only
-    // the base page state and produces an 8KB hollow file.
-    let backup_path_s = backup_path.to_string_lossy().replace('\'', "''");
-    conn.execute_batch(&format!(
-        "ATTACH DATABASE '{backup_path_s}' AS premigration KEY \"x'{hex_key}'\";"
-    ))
-    .map_err(|e| format!("Failed to attach fallback pre-migration backup DB: {e}"))?;
-    conn.execute_batch("BEGIN IMMEDIATE; SELECT sqlcipher_export('premigration'); COMMIT;")
-        .map_err(|e| format!("Fallback pre-migration backup export failed: {e}"))?;
-    conn.execute_batch("DETACH DATABASE premigration;")
-        .map_err(|e| format!("Failed to detach fallback pre-migration backup DB: {e}"))?;
-    Ok(())
-}
-
-fn should_try_encrypted_backup_fallback(encrypted: bool, err: &str) -> bool {
-    encrypted
-        && (err.contains("backup is not supported with encrypted databases")
-            || err.contains("encrypted databases")
-            || err.contains("not an error"))
 }
 
 fn is_no_such_actions_table_error(err: &SqliteError) -> bool {
@@ -4400,10 +4364,7 @@ fn bootstrap_existing_db(conn: &Connection) -> Result<bool, String> {
 ///
 /// Uses SQLite's online backup API to create a hot copy at
 /// `<db_path>.pre-migration.bak`. Only called when there are pending migrations.
-fn backup_before_migration(
-    conn: &Connection,
-    encryption_key: Option<&crate::db::EncryptionKey>,
-) -> Result<PathBuf, String> {
+fn backup_before_migration(conn: &Connection) -> Result<PathBuf, String> {
     let db_path: String = conn
         .query_row("PRAGMA database_list", [], |row| row.get(2))
         .map_err(|e| format!("Failed to get database path: {}", e))?;
@@ -4429,52 +4390,13 @@ fn backup_before_migration(
         backup_path.to_string_lossy()
     );
 
-    let encrypted = db_path.exists() && !crate::db::encryption::is_database_plaintext(&db_path);
-    let encryption_key = if encrypted {
-        Some(match encryption_key {
-            Some(key) => key.clone(),
-            None => {
-                let provider = crate::db::LocalKeychain::new();
-                let user = crate::db::UserIdentity::local(db_path.clone());
-                crate::db::DbKeyProvider::get_or_create_key(&provider, &user)
-                    .map_err(|e| format!("Failed to get DB encryption key for backup: {e}"))?
-            }
-        })
-    } else {
-        None
-    };
-
-    // For encrypted DBs: use the Backup API with the key applied to the
-    // destination — the same pattern backup_database() uses successfully.
-    // Both sides use the same key so encrypted pages copy verbatim.
-    //
-    // The previous sqlcipher_export-first approach produced 8KB hollow files
-    // because sqlcipher_export without a transaction only copies base pages,
-    // not the WAL. The Backup API reads through the WAL correctly.
-    let backup_result = if encrypted {
-        let key = encryption_key
-            .as_ref()
-            .ok_or_else(|| "Missing encryption key for backup".to_string())?;
-        create_backup_via_api(conn, &backup_path, Some(key))
-    } else {
-        create_backup_via_api(conn, &backup_path, None)
-    };
-    if let Err(err) = backup_result {
+    if let Err(err) = create_backup_via_api(conn, &backup_path) {
         #[allow(
             clippy::let_underscore_must_use,
             reason = "intentional best-effort discard; preserves existing non-blocking behavior"
         )]
         let _ = std::fs::remove_file(&backup_path);
-        // Last resort: sqlcipher_export (now transaction-wrapped). Only reached
-        // if the Backup API itself reports an encryption incompatibility.
-        if should_try_encrypted_backup_fallback(encrypted, &err) {
-            let key = encryption_key
-                .as_ref()
-                .ok_or_else(|| "Missing encryption key for fallback backup".to_string())?;
-            create_backup_via_sqlcipher_export(conn, &backup_path, key.as_hex())?;
-        } else {
-            return Err(err);
-        }
+        return Err(err);
     }
 
     // Sanity-check: a real backup of a multi-MB database must be more than a
@@ -4556,7 +4478,7 @@ fn apply_migration_141_user_note_backfill(
 /// Forward-compat guard: if the database has a higher version than the highest
 /// known migration, returns an error telling the user to update DailyOS.
 pub fn run_migrations(conn: &Connection) -> Result<usize, String> {
-    run_migrations_with_key(conn, None)
+    run_migrations_inner(conn)
 }
 
 #[cfg(test)]
@@ -4581,10 +4503,7 @@ pub(crate) fn migrated_in_memory_for_tests() -> Connection {
     conn
 }
 
-pub(crate) fn run_migrations_with_key(
-    conn: &Connection,
-    encryption_key: Option<&crate::db::EncryptionKey>,
-) -> Result<usize, String> {
+fn run_migrations_inner(conn: &Connection) -> Result<usize, String> {
     ensure_schema_version_table(conn)?;
     bootstrap_existing_db(conn)?;
 
@@ -4642,7 +4561,7 @@ pub(crate) fn run_migrations_with_key(
     }
 
     // Backup before applying any migrations
-    let backup_path = backup_before_migration(conn, encryption_key)?;
+    let backup_path = backup_before_migration(conn)?;
     if backup_path.to_string_lossy() != ":memory:" {
         log::info!(
             "Migration safety backup ready at {}",
@@ -7142,34 +7061,6 @@ mod tests {
                 rows
             );
         }
-    }
-
-    #[test]
-    fn test_should_try_encrypted_backup_fallback_matches_expected_errors() {
-        assert!(should_try_encrypted_backup_fallback(
-            true,
-            "backup is not supported with encrypted databases"
-        ));
-        assert!(should_try_encrypted_backup_fallback(
-            true,
-            "sqlite error: encrypted databases"
-        ));
-        assert!(should_try_encrypted_backup_fallback(
-            true,
-            "Pre-migration backup failed: not an error"
-        ));
-        assert!(!should_try_encrypted_backup_fallback(
-            false,
-            "backup is not supported with encrypted databases"
-        ));
-        assert!(!should_try_encrypted_backup_fallback(
-            false,
-            "Pre-migration backup failed: not an error"
-        ));
-        assert!(!should_try_encrypted_backup_fallback(
-            true,
-            "disk I/O error"
-        ));
     }
 
     #[test]

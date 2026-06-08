@@ -2,37 +2,35 @@
 
 **Status:** Proposed
 **Date:** 2026-04-19
-**Target:** v1.4.0 (DbKeyProvider trait seam) / v2.x (enterprise BYOK, control plane activation)
-**Extends:** [ADR-0092](0092-data-security-at-rest-and-operational-hardening.md)
+**Target:** v1.4.0 historical DB-key seam (retired by v1.4.9) / v2.x (control plane activation)
+**Extends:** ADR-0092 historically; v1.4.9 supersedes the DB-key storage contract
 **Related:** [ADR-0099](0099-remote-first-server-canonical-architecture.md), [ADR-0104](0104-execution-mode-and-mode-aware-services.md)
-**Consumed by:** [DOS-234](https://linear.app/a8c/issue/DOS-234) DbKeyProvider trait seam + LocalKeychain default
+**Consumed by:** [DOS-234](https://linear.app/a8c/issue/DOS-234) historical DbKeyProvider seam + LocalKeychain default
 
 ## Context
 
-DailyOS today is a single-user native macOS app. Every user's SQLite database is encrypted at rest with a key held in the macOS Keychain ([ADR-0092](0092-data-security-at-rest-and-operational-hardening.md)). There is no server-side component holding user content. This is a strong posture — it lets us tell a prospective customer "your content stays on your laptop" as a precise claim about *DailyOS's own server-side components* (which are none, in v1.4.0).
+DailyOS today is a single-user native macOS app. User content is stored locally in the app's SQLite database and workspace files; v1.4.9 retired the active DailyOS-managed DB-key contract, so encryption-at-rest claims depend on the user's OS/FileVault posture rather than a DailyOS-managed DB key. There is no server-side component holding user content. This lets us tell a prospective customer "your content stays on your laptop" as a precise claim about *DailyOS's own server-side components* (which are none, in v1.4.0).
 
 **Precise wording required — 2026-04-20 update (outside voice finding #2).** "Stays on your laptop" is not accurate without qualification when Glean is the intelligence provider (per [ADR-0100](0100-glean-first-intelligence-architecture.md)). Glean's MCP chat tool receives prompts, returns completions, and sees the user's Glean-connected source data (REDACTED, Zendesk, Gong, Slack) in the Glean infrastructure the customer has already contracted with. That is not DailyOS control-plane — it is the user's pre-existing relationship with Glean — but it's also not "on the laptop."
 
 The precise claims that survive enterprise security review:
 
 - **DailyOS's own server-side components** see no user content (not now; never without ADR amendment).
-- **DailyOS's local app** stores all user content encrypted on the user's device ([ADR-0092](0092-data-security-at-rest-and-operational-hardening.md)).
+- **DailyOS's local app** stores user content on the user's device; local at-rest protection is the OS/FileVault/file-permission boundary, not a DailyOS-managed DB key.
 - **Third-party intelligence providers** (Glean today, Anthropic/OpenAI/Ollama potentially via [ADR-0091](0091-intelligence-provider-abstraction.md)) see whatever the user's session sends them — prompts, partial context, completions. The user contracts with these providers independently. DailyOS routes to whichever provider the user has configured; DailyOS itself never stores the provider's responses beyond what lives locally.
 
-Sales conversations should use the precise claim ("DailyOS never sees your content server-side; your content is stored encrypted on your device; intelligence computation runs through providers you already trust"), not the shorter claim that was imprecise about Glean's role.
+Sales conversations should use the precise claim ("DailyOS never sees your content server-side; your content is stored locally on your device; intelligence computation runs through providers you already trust"), not the shorter claim that was imprecise about Glean's role.
 
 Two forces are now pushing on that posture simultaneously:
 
-1. **Enterprise BYOK.** When DailyOS sells to enterprise, customers will require that encryption keys live in their own KMS (AWS, GCP, Azure, or on-prem HSM), not in individual user keychains. This means the DB key must be fetched via a customer-controlled wrapping key on session start. It also means we must be able to revoke a user's access by breaking the lease on that wrapping key, without touching the user's laptop.
+1. **Enterprise storage control.** When DailyOS sells to enterprise, customers may require tenant-controlled at-rest policy and revocation semantics. The v1.4.0 DB-key lease design is no longer the active answer: v1.4.9 stores local state in plain SQLite under the OS/FileVault/file-permission boundary. Any future BYOK or cryptographic revocation model requires a fresh ADR amendment.
 2. **Multi-user coordination.** Features like cross-analyst claim review ([ADR-0113](0113-human-and-agent-analysis-as-first-class-claim-sources.md) human claim sources), shared team intelligence, and cross-device sync require some server-side component that knows "these two sessions belong to the same org." That component is a control plane.
 
 Both forces push toward a control plane existing. The architectural question is: **what can the control plane see, and what must it never see?**
 
 If DailyOS is not careful here, the answer drifts. A multi-tenant server gets stood up to coordinate logins. Then someone adds a "team intelligence" feature that routes claims through the server for cross-analyst visibility. Then the server is caching user content "for performance." Six months later the "your content stays on your laptop" promise is technically false. This happens to many local-first products.
 
-This ADR establishes the boundary now, before the control plane exists, so that every future control-plane feature is measured against a hard rule. It also introduces the one substrate change that v1.4.0 must land so the boundary is physically enforceable later: a `DbKeyProvider` trait seam that lets enterprise BYOK slot in without a database schema migration.
-
-Doing the trait seam now is almost free. Doing it alongside a KMS integration in v2.x would bundle a disruptive schema change with an already-complex enterprise feature.
+This ADR establishes the boundary now, before the control plane exists, so that every future control-plane feature is measured against a hard rule. The historical v1.4.0 DB-key seam described below is retained for traceability, but v1.4.9 retires it as active storage substrate.
 
 ## Decision
 
@@ -46,7 +44,7 @@ The control plane — whatever server component DailyOS eventually operates for 
 - Capability grants: ability categories allowed for this user / org.
 - License state: plan tier, seat count, entitlements.
 - Audit facts: counts of ability invocations per day, aggregate cost signals. Counts, not contents.
-- Encryption metadata: key version, rotation timestamp. **Never the key or key material itself.**
+- Storage-policy metadata: local storage posture, policy version, rotation timestamp where applicable. **Never user content or key material.**
 
 **Content** (forbidden on the control plane, now and in all future iterations):
 - Any row from any local table: `intelligence_claims`, `signal_events`, `meetings`, `accounts`, `persons`, everything.
@@ -96,70 +94,33 @@ For clarity, these are explicitly permitted server-side capabilities, all metada
 
 - Authenticate a user and issue a session token.
 - Verify a session token and return user identity / org / capability grants.
-- Store and rotate per-org key-wrapping metadata (key version, rotation timestamp, revocation list — not key material).
-- Broker a key-unwrapping request to the customer's KMS (enterprise BYOK), receiving a wrapped key and forwarding it to the client; the plaintext key never reaches the server.
+- Store enterprise storage-policy metadata (policy version, rotation timestamp, revocation list where applicable — not user content or key material).
 - Issue license / entitlement information.
-- Revoke a user by breaking the key lease (§6).
+- Revoke a user's session or capability grants without reading local content.
 - Collect aggregate operational telemetry (counts, error rates, no entity references).
 - Coordinate device enrollment (device ID, public key, enrollment timestamp).
 
 Anything beyond this list requires an ADR amendment.
 
-### 4. DbKeyProvider — the substrate seam for v1.4.0
+### 4. Local storage substrate status (v1.4.9)
 
-The one thing v1.4.0 must ship is the trait seam that makes future BYOK integration a non-disruptive drop-in.
+The v1.4.0 `DbKeyProvider` seam was a historical plan for DailyOS-managed DB-key storage. It is not an active v1.4.9 contract. DailyOS now stores local state in plain SQLite and relies on the user's OS/FileVault/file-permission boundary for at-rest protection.
 
-Current state: `get_or_create_db_key(&user) -> EncryptionKey` is a concrete function calling the macOS Keychain.
-
-Post-v1.4.0 state:
-
-```rust
-pub trait DbKeyProvider: Send + Sync {
-    fn get_or_create_key(&self, user: &UserIdentity) -> Result<EncryptionKey>;
-    fn rotate_key(&self, user: &UserIdentity) -> Result<EncryptionKey>;
-}
-
-pub struct LocalKeychain { /* existing behavior, unchanged */ }
-
-impl DbKeyProvider for LocalKeychain {
-    fn get_or_create_key(&self, user: &UserIdentity) -> Result<EncryptionKey> { /* ... */ }
-    fn rotate_key(&self, user: &UserIdentity) -> Result<EncryptionKey> { /* ... */ }
-}
-```
-
-`ActionDb::open` (and every DB open site) takes `Arc<dyn DbKeyProvider>`. `LocalKeychain` is the default implementation in v1.4.0 and is the only one that ships. Every existing caller passes `Arc::new(LocalKeychain::new())`.
-
-**Behaviorally this is a no-op in v1.4.0.** Zero new features, zero user-visible change, zero performance impact. The only change is that the function is dispatched through a trait. The point is the shape of the call site, so that the enterprise BYOK implementation can land later without touching DB open code or changing the schema.
-
-Future implementations (v2.x and beyond, requiring ADR amendment to the registry):
-
-- `TenantKmsWrapped { kms_provider, wrapping_key_ref, control_plane }` — fetches a wrapping key reference from the control plane, calls the tenant's KMS to unwrap the DB key, caches it in memory only for the session, zeroes on logout or revocation.
-- `HardwareToken { yubikey_handle }` — alternative for high-security single-user scenarios.
-
-Each future implementation honors the boundary from §1: it MAY talk to the control plane for metadata (which KMS, which key version), MUST unwrap locally, and MUST NEVER send content or key material over the wire.
+Future enterprise BYOK, tenant KMS, hardware-token, or cryptographic offboarding designs must land through a new ADR amendment. They cannot cite the v1.4.0 DB-key seam below as shipped substrate.
 
 ### 5. Schema stability
 
-Because the seam is trait-level and `EncryptionKey` stays an opaque type at the call site, no DB schema change is ever required when a new `DbKeyProvider` implementation lands. The database is encrypted with the key the provider hands back; the DB does not know or care where the key came from.
+The active v1.4.9 invariant is simpler: local SQLite schema changes are driven by product data needs, not by DB-key provider swaps. Storage-policy metadata may exist in a future control-plane design, but it must not cause user content to cross the metadata-only boundary.
 
-This is the single most important property this ADR establishes. Any design that would require a schema change to accommodate a different key provider is wrong and must be reworked.
+### 6. Revocation
 
-### 6. Revocation via key lease
-
-In a future enterprise scenario, access revocation works through key-lease revocation, not device wipe:
-
-- The control plane holds a lease record on the wrapping-key reference for the user.
-- On revocation, the control plane invalidates the lease.
-- Next session start, the `DbKeyProvider` call to the control plane returns "revoked" and the client refuses to open the DB.
-- The existing local DB file remains encrypted with a key the client can no longer obtain — effectively inaccessible without ever touching the user's device.
-
-This is cryptographic offboarding. It works because the control plane holds the key lease, not the key. The content never left the device; the ability to decrypt it did.
+In v1.4.9, revocation is session/capability revocation, not cryptographic DB-key lease revocation. A future enterprise cryptographic revocation model requires a new ADR amendment with explicit user-content, local-storage, and control-plane boundary analysis.
 
 ### 7. Execution mode interaction
 
-Under `ExecutionMode::Evaluate` ([ADR-0104](0104-execution-mode-and-mode-aware-services.md)), the DB is either an in-memory SQLite (fixture-loaded) or an unencrypted test database. The `DbKeyProvider` is either a `NoEncryption` stub or a `StaticKey` with a fixture-provided key. Tests do not hit the Keychain or any real control plane.
+Under `ExecutionMode::Evaluate` ([ADR-0104](0104-execution-mode-and-mode-aware-services.md)), the DB is either an in-memory SQLite fixture or an isolated test database. Tests do not hit the Keychain or any real control plane.
 
-Under `ExecutionMode::Live`, the provider is `LocalKeychain` today and will be a production implementation in future tenant-aware builds.
+Under `ExecutionMode::Live`, local state uses the v1.4.9 plain SQLite storage boundary unless a future ADR explicitly replaces it.
 
 ### 8. Out of scope for v1.4.0
 
@@ -170,30 +131,28 @@ Under `ExecutionMode::Live`, the provider is `LocalKeychain` today and will be a
 - No cross-device sync.
 - No administrative surfaces.
 
-The v1.4.0 shipment is the trait seam and nothing else. The boundary (§1) is a principle documented in this ADR; its structural enforcement arrives with the control plane in v2.x.
+The v1.4.0 DB-key seam plan is historical. The active boundary (§1) remains: the control plane may coordinate metadata, sessions, and capabilities, but it must not read user content.
 
 ## Consequences
 
 ### Positive
 
 - **The boundary exists in writing before it is tested in practice.** Future feature proposals have a rule to be measured against. "The server never sees content" is a single sentence that stops a large class of compromises.
-- **Zero-cost seam now saves a disruptive migration later.** Enterprise BYOK in v2.x lands as a new `DbKeyProvider` implementation without touching the DB schema or existing code paths.
-- **Cryptographic offboarding becomes possible.** Revocation by key-lease works because the key is wrapped upstream, not stored on the device.
+- **Storage-policy changes require explicit design.** Future BYOK or cryptographic offboarding work cannot silently inherit an outdated DB-key seam.
 - **Local-first promise is defensible.** We can point to this ADR when customers, reviewers, or future contributors ask how we enforce the boundary.
-- **Schema stays stable across key-provider changes.** The DB knows nothing about where its key comes from. A strong invariant.
+- **Schema stays focused on local product data.** Storage-policy metadata remains a separate concern from user content.
 
 ### Negative / risks
 
-- **The trait seam costs a line of code at every DB open site, forever.** Accepted — it is how the boundary stays cheap.
 - **"Metadata only" is sometimes debatable in practice.** "Approximate token counts" could theoretically leak patterns if an attacker had side-channel access. Accepted tradeoff — operational telemetry is essential; if specific fields become risky, they get removed. Every new metadata field added to the control plane must be reviewed against this ADR.
-- **Enterprise BYOK integration is future work with unknown surface area.** The trait seam does not solve KMS integration; it only ensures the shape of the call doesn't change. Real integration will require a v2.x ADR.
+- **Enterprise BYOK integration is future work with unknown surface area.** Real integration will require a v2.x ADR.
 - **A future contributor may be tempted to "just add a small cache" on the server.** This ADR is the thing reviewers cite to reject that PR. The boundary is defended by convention backed by this document.
 
 ### Neutral
 
-- No user-visible change in v1.4.0.
-- No performance impact in v1.4.0.
-- [ADR-0092](0092-data-security-at-rest-and-operational-hardening.md) remains authoritative on at-rest encryption specifics; this ADR extends it with a forward-compatible seam.
+- No user-visible change in v1.4.9.
+- No performance impact in v1.4.9.
+- [ADR-0092](0092-data-security-at-rest-and-operational-hardening.md) historically governed DB-key storage; v1.4.9 supersedes that active contract with the local SQLite + OS boundary.
 - [ADR-0099](0099-remote-first-server-canonical-architecture.md) — if/when a canonical server arrives, this ADR governs what it may do. The two ADRs are intended to compose.
 
 ---
@@ -236,6 +195,8 @@ That second path is open architecture. Filed as [ADR-0121](0121-team-intelligenc
 - The next commercial touchpoint asking for team intelligence triggers [ADR-0121](0121-team-intelligence-architecture.md) work, not an ADR-0116 softening.
 
 ---
+
+**v1.4.9 supersession note:** Revision R1 below is historical. Its DB-key provider, key-lease, key-cache, and key-metadata amendments document the v1.4.0 managed-key plan and are not active v1.4.9 storage requirements. Future enterprise BYOK or cryptographic revocation work needs a fresh ADR amendment.
 
 ## Revision R1 — 2026-04-19 — Reality Check
 

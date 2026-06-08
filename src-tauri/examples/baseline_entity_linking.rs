@@ -9,17 +9,19 @@
 //!     --days-meetings 90 --days-emails 30 \
 //!     --output .docs/migrations/entity-linking-baseline.json
 //!
-//! The DB is opened using the macOS Keychain key (same path as the app).
+//! The DB is opened as plain SQLite. Retired encrypted DB files are unsupported.
 //! Output JSON schema:
 //!   { "captured_at": "...", "meetings": [...], "emails": [...] }
 //! Each entry: { "id", "primary_entity_id", "primary_entity_type", "source" }
 
+use std::io::Read;
 use std::path::PathBuf;
 
-use dailyos_lib::db::{encryption, DbKeyProvider, LocalKeychain, UserIdentity};
 use rusqlite::Connection;
 use serde::Serialize;
 use serde_json::json;
+
+const SQLITE_DATABASE_HEADER: &[u8; 16] = b"SQLite format 3\0";
 
 #[derive(Serialize)]
 struct EntityRow {
@@ -30,17 +32,23 @@ struct EntityRow {
 }
 
 fn open_db(db_path: &PathBuf) -> Result<Connection, String> {
+    if db_path.exists() {
+        let mut file = std::fs::File::open(db_path)
+            .map_err(|e| format!("Failed to inspect DB at {}: {e}", db_path.display()))?;
+        let mut header = [0u8; 16];
+        let bytes_read = file
+            .read(&mut header)
+            .map_err(|e| format!("Failed to read DB header at {}: {e}", db_path.display()))?;
+        if bytes_read < header.len() || &header != SQLITE_DATABASE_HEADER {
+            return Err(format!(
+                "Unsupported storage state at {}: expected plain SQLite database",
+                db_path.display()
+            ));
+        }
+    }
+
     let conn = Connection::open(db_path)
         .map_err(|e| format!("Failed to open DB at {}: {e}", db_path.display()))?;
-
-    if !encryption::is_database_plaintext(db_path) {
-        let provider = LocalKeychain::new();
-        let user = UserIdentity::local(db_path.clone());
-        let encryption_key = DbKeyProvider::get_or_create_key(&provider, &user)
-            .map_err(|e| format!("Failed to get DB encryption key: {e}"))?;
-        conn.execute_batch(&encryption_key.to_pragma())
-            .map_err(|e| format!("Failed to apply encryption key: {e}"))?;
-    }
 
     conn.execute_batch("PRAGMA foreign_keys = ON; PRAGMA journal_mode = WAL;")
         .map_err(|e| format!("Failed to configure DB connection: {e}"))?;

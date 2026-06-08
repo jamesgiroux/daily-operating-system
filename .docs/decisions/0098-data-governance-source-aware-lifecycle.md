@@ -73,9 +73,9 @@ When a data source's authorization is revoked (detected by token refresh failure
 
 **Purge is cascading but respects source priority:** If a person's `role` field has `enrichment_sources.role.source = "glean"` and Glean is revoked, the role field is cleared. But if the user subsequently set the role manually (`source = "user"`), the user's value is preserved — the purge only clears fields still attributed to the revoked source.
 
-### Principle 3: Encryption at Rest
+### Principle 3: Local Storage Boundary
 
-SQLCipher (planned v0.15.1, I462) encrypts the entire database. This covers all locally stored data including Glean-sourced records. Combined with macOS Keychain for token storage, the data-at-rest protection is consistent regardless of source.
+v1.4.9 stores the active database as a plain local SQLite file and relies on OS account isolation, file permissions, Time Machine exclusion, FileVault posture, and macOS Keychain for non-DB secrets and provider tokens. Source lifecycle rules therefore must not assume a DB-key recovery or rekey path; revocation and purge still operate at the source/claim lifecycle layer.
 
 ### Principle 4: Audit Trail
 

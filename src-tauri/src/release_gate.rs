@@ -208,8 +208,10 @@ pub struct GateConfig {
     pub harness_report: Option<PathBuf>,
     pub db_path: Option<PathBuf>,
     pub manual_evidence: Option<PathBuf>,
+    pub storage_cutover_evidence: Option<PathBuf>,
     pub run_tests: bool,
     pub git_sha: String,
+    pub build_id: String,
     #[serde(default = "default_dos288_timeout_secs")]
     pub dos288_timeout_secs: u64,
 }
@@ -241,6 +243,8 @@ pub struct GateEvidenceV1 {
     pub mandatory_bundles: Vec<String>,
     pub tracked_bundles: Vec<String>,
     pub manual: Option<ManualDogfoodEvidence>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub storage_cutover: Option<StorageCutoverEvidence>,
     pub latency: LatencySummary,
     pub summary_markdown: String,
 }
@@ -288,6 +292,38 @@ pub struct ManualDogfoodEvidence {
     pub attached_artifacts: Vec<ManualArtifactRef>,
     pub dos411_claim_backed_lifecycle_green: bool,
     pub dos412_sensitivity_rendering_green: bool,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum StorageCutoverState {
+    Dos832Validated,
+    StorageResetApproved,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct StorageCutoverEvidence {
+    pub state: StorageCutoverState,
+    pub target_environment: String,
+    pub git_sha: String,
+    pub build_id: String,
+    pub db_path: String,
+    pub db_path_class: String,
+    pub active_db_header_state: String,
+    pub wal_shm_disposition: String,
+    pub app_quiesced: bool,
+    pub mcp_sidecar_quiesced: bool,
+    pub approver: HashOnly,
+    pub approved_at: String,
+    pub evidence_ref: HashOnly,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub dos832_proof_ref: Option<HashOnly>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub user_version: Option<i64>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub integrity_check: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub unsafe_state_rejection: Option<String>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -440,6 +476,8 @@ struct CliArgs {
     db_path: Option<PathBuf>,
     #[arg(long = "manual-evidence")]
     manual_evidence: Option<PathBuf>,
+    #[arg(long = "storage-cutover-evidence")]
+    storage_cutover_evidence: Option<PathBuf>,
     #[arg(long = "no-run-tests")]
     no_run_tests: bool,
     #[arg(long = "dos288-timeout-secs", default_value_t = DEFAULT_DOS288_TIMEOUT_SECS)]
@@ -449,6 +487,11 @@ struct CliArgs {
         help = "Optional assertion. The canonical SHA is embedded at build time; if provided, it must match the embedded SHA."
     )]
     git_sha: Option<String>,
+    #[arg(
+        long = "build-id",
+        help = "Optional release build id asserted by manual storage-cutover evidence. Defaults to the resolved git SHA."
+    )]
+    build_id: Option<String>,
 }
 
 pub fn run_from_args<I>(args: I) -> Result<GateOutcome, GateError>
@@ -484,6 +527,20 @@ where
             "--mode manual requires --manual-evidence <path>",
         ));
     }
+    if cli.mode == GateMode::Manual && cli.storage_cutover_evidence.is_none() {
+        return Err(GateError::config(
+            "--mode manual requires --storage-cutover-evidence <path>",
+        ));
+    }
+
+    let git_sha = resolve_git_sha(cli.git_sha)?;
+    let build_id = cli
+        .build_id
+        .as_deref()
+        .map(str::trim)
+        .filter(|value| !value.is_empty())
+        .unwrap_or(&git_sha)
+        .to_string();
 
     Ok(GateConfig {
         mode: cli.mode,
@@ -502,8 +559,10 @@ where
         harness_report,
         db_path: cli.db_path,
         manual_evidence: cli.manual_evidence,
+        storage_cutover_evidence: cli.storage_cutover_evidence,
         run_tests: !cli.no_run_tests,
-        git_sha: resolve_git_sha(cli.git_sha)?,
+        git_sha,
+        build_id,
         dos288_timeout_secs: cli.dos288_timeout_secs,
     })
 }
@@ -648,6 +707,17 @@ pub fn validate_manual_evidence_json(value: &Value) -> Result<ManualDogfoodEvide
     Ok(evidence)
 }
 
+pub fn validate_storage_cutover_evidence_json(
+    value: &Value,
+    config: &GateConfig,
+    db_path: &Path,
+) -> Result<StorageCutoverEvidence, String> {
+    let evidence: StorageCutoverEvidence =
+        serde_json::from_value(value.clone()).map_err(|error| error.to_string())?;
+    validate_storage_cutover_evidence(&evidence, config, db_path)?;
+    Ok(evidence)
+}
+
 fn build_hermetic_evidence(config: &GateConfig) -> Result<GateEvidenceV1, GateError> {
     let mut suites = Vec::new();
     let loader = BundleLoader::from_default_fixture_root();
@@ -720,6 +790,7 @@ fn build_hermetic_evidence(config: &GateConfig) -> Result<GateEvidenceV1, GateEr
         suites,
         invariants,
         None,
+        None,
         latency,
     ))
 }
@@ -753,6 +824,26 @@ fn build_manual_evidence(
     })?;
     let manual = validate_manual_evidence_json(&manual_value)
         .map_err(|error| GateError::infra(format!("manual evidence invalid: {error}")))?;
+    let storage_cutover_path = config.storage_cutover_evidence.as_ref().ok_or_else(|| {
+        GateError::config("--mode manual requires --storage-cutover-evidence <path>")
+    })?;
+    let storage_cutover_json = fs::read_to_string(storage_cutover_path).map_err(|error| {
+        GateError::infra(format!(
+            "failed to read storage cutover evidence {}: {error}",
+            storage_cutover_path.display()
+        ))
+    })?;
+    let storage_cutover_value: Value =
+        serde_json::from_str(&storage_cutover_json).map_err(|error| {
+            GateError::infra(format!(
+                "failed to parse storage cutover evidence {}: {error}",
+                storage_cutover_path.display()
+            ))
+        })?;
+    let storage_cutover =
+        validate_storage_cutover_evidence_json(&storage_cutover_value, config, db_path).map_err(
+            |error| GateError::infra(format!("storage cutover evidence invalid: {error}")),
+        )?;
 
     let suites = vec![SuiteResult {
         name: "manual_dogfood".to_string(),
@@ -789,6 +880,12 @@ fn build_manual_evidence(
             "tauri_mcp",
             "dos412_sensitivity_rendering_green",
         ),
+        manual_invariant(
+            "manual.storage_cutover",
+            true,
+            "storage",
+            "storage_cutover_evidence",
+        ),
     ];
 
     Ok(base_evidence(
@@ -797,6 +894,7 @@ fn build_manual_evidence(
         suites,
         invariants,
         Some(manual),
+        Some(storage_cutover),
         LatencySummary {
             source: "manual_mode_not_measured".to_string(),
             sample_count: 0,
@@ -812,6 +910,7 @@ fn base_evidence(
     suites: Vec<SuiteResult>,
     invariants: Vec<InvariantResult>,
     manual: Option<ManualDogfoodEvidence>,
+    storage_cutover: Option<StorageCutoverEvidence>,
     latency: LatencySummary,
 ) -> GateEvidenceV1 {
     GateEvidenceV1 {
@@ -826,6 +925,7 @@ fn base_evidence(
         mandatory_bundles: config.mandatory_bundles.clone(),
         tracked_bundles: config.tracked_bundles.clone(),
         manual,
+        storage_cutover,
         latency,
         summary_markdown: String::new(),
     }
@@ -2023,6 +2123,83 @@ fn validate_manual_evidence(evidence: &ManualDogfoodEvidence) -> Result<(), Stri
     Ok(())
 }
 
+fn validate_storage_cutover_evidence(
+    evidence: &StorageCutoverEvidence,
+    config: &GateConfig,
+    db_path: &Path,
+) -> Result<(), String> {
+    if evidence.target_environment.trim().is_empty() {
+        return Err("target_environment is required".to_string());
+    }
+    if evidence.build_id.trim().is_empty() {
+        return Err("build_id is required".to_string());
+    }
+    if evidence.build_id != config.build_id {
+        return Err("build_id must match the release gate build id".to_string());
+    }
+    if evidence.approved_at.trim().is_empty() {
+        return Err("approved_at is required".to_string());
+    }
+    if evidence.git_sha != config.git_sha {
+        return Err("git_sha must match the release gate git sha".to_string());
+    }
+    let expected_db_path = db_path.to_string_lossy();
+    if evidence.db_path.as_str() != expected_db_path.as_ref() {
+        return Err("db_path must match the release gate --db path".to_string());
+    }
+    if evidence.db_path_class.trim().is_empty() {
+        return Err("db_path_class is required".to_string());
+    }
+    if !accepted_storage_header_state(&evidence.active_db_header_state) {
+        return Err("active_db_header_state must be an accepted plain-storage state".to_string());
+    }
+    if !accepted_wal_shm_disposition(&evidence.wal_shm_disposition) {
+        return Err("wal_shm_disposition must show no live writers".to_string());
+    }
+    if !evidence.app_quiesced || !evidence.mcp_sidecar_quiesced {
+        return Err("app_quiesced and mcp_sidecar_quiesced must both be true".to_string());
+    }
+
+    match evidence.state {
+        StorageCutoverState::Dos832Validated => {
+            if evidence.dos832_proof_ref.is_none() {
+                return Err("dos832_proof_ref is required for dos832_validated".to_string());
+            }
+        }
+        StorageCutoverState::StorageResetApproved => {
+            if evidence.unsafe_state_rejection.as_deref() != Some("verified") {
+                return Err(
+                    "unsafe_state_rejection must be verified for storage_reset_approved"
+                        .to_string(),
+                );
+            }
+            if evidence.active_db_header_state == "plain_sqlite_ok"
+                || evidence.active_db_header_state == "plain_sqlite_with_wal_ok"
+            {
+                if evidence.user_version.is_none() {
+                    return Err("user_version is required when a plain DB is present".to_string());
+                }
+                if evidence.integrity_check.as_deref() != Some("ok") {
+                    return Err("integrity_check must be ok when a plain DB is present".to_string());
+                }
+            }
+        }
+    }
+
+    Ok(())
+}
+
+fn accepted_storage_header_state(value: &str) -> bool {
+    matches!(
+        value,
+        "plain_sqlite_ok" | "plain_sqlite_with_wal_ok" | "missing_after_reset"
+    )
+}
+
+fn accepted_wal_shm_disposition(value: &str) -> bool {
+    matches!(value, "absent" | "checkpointed" | "absent_or_checkpointed")
+}
+
 const SQLITE_DATABASE_HEADER: &[u8; 16] = b"SQLite format 3\0";
 
 fn storage_reset_plain_sqlite_preflight(path: &Path) -> Result<(), String> {
@@ -2303,6 +2480,24 @@ mod tests {
     }
 
     #[test]
+    fn release_gate_cli_rejects_manual_without_storage_cutover_evidence() {
+        let error = parse_cli_from(
+            [
+                "release-gate",
+                "--mode",
+                "manual",
+                "--manual-evidence",
+                "manual.json",
+            ]
+            .map(OsString::from),
+        )
+        .unwrap_err();
+
+        assert_eq!(error.exit_code(), EXIT_INFRA_FAILURE);
+        assert!(error.to_string().contains("--storage-cutover-evidence"));
+    }
+
+    #[test]
     fn release_gate_cli_accepts_pnpm_separator() {
         let config =
             parse_cli_from(["release-gate", "--", "--mode", "hermetic"].map(OsString::from))
@@ -2389,8 +2584,10 @@ mod tests {
             harness_report: None,
             db_path: None,
             manual_evidence: None,
+            storage_cutover_evidence: None,
             run_tests: true,
             git_sha: "abc123".to_string(),
+            build_id: "abc123".to_string(),
             dos288_timeout_secs: DEFAULT_DOS288_TIMEOUT_SECS,
         };
         let binding = EvidenceBinding {
@@ -2528,6 +2725,13 @@ mod tests {
             serde_json::to_string(&valid_manual_evidence()).unwrap(),
         )
         .unwrap();
+        let db_path = temp.path().join("dailyos-dev.db");
+        let storage_cutover_path = temp.path().join("storage-cutover.json");
+        fs::write(
+            &storage_cutover_path,
+            serde_json::to_string(&valid_storage_cutover_evidence(&db_path, "abc123")).unwrap(),
+        )
+        .unwrap();
         let config = GateConfig {
             mode: GateMode::Manual,
             bundle_filters: Vec::new(),
@@ -2541,10 +2745,12 @@ mod tests {
                 .collect(),
             output_dir: temp.path().join("out"),
             harness_report: None,
-            db_path: Some(temp.path().join("dailyos-dev.db")),
+            db_path: Some(db_path.clone()),
             manual_evidence: Some(manual_path),
+            storage_cutover_evidence: Some(storage_cutover_path),
             run_tests: false,
             git_sha: "abc123".to_string(),
+            build_id: "abc123".to_string(),
             dos288_timeout_secs: DEFAULT_DOS288_TIMEOUT_SECS,
         };
         let reader = MockReader(std::sync::Mutex::new(Vec::new()));
@@ -2552,10 +2758,114 @@ mod tests {
         let outcome = run_gate_with_db_reader(&config, &reader).unwrap();
 
         assert_eq!(outcome.exit_code, EXIT_SUCCESS);
-        assert_eq!(
-            reader.0.lock().unwrap().as_slice(),
-            &[temp.path().join("dailyos-dev.db")]
-        );
+        assert_eq!(reader.0.lock().unwrap().as_slice(), &[db_path]);
+    }
+
+    #[test]
+    fn storage_cutover_evidence_rejects_malformed_json() {
+        let temp = tempdir().unwrap();
+        let db_path = temp.path().join("dailyos-dev.db");
+        let config = storage_cutover_test_config(&db_path, "abc123");
+
+        let error =
+            validate_storage_cutover_evidence_json(&json!({}), &config, &db_path).unwrap_err();
+
+        assert!(error.contains("missing field"));
+    }
+
+    #[test]
+    fn storage_cutover_evidence_rejects_mismatched_sha() {
+        let temp = tempdir().unwrap();
+        let db_path = temp.path().join("dailyos-dev.db");
+        let config = storage_cutover_test_config(&db_path, "abc123");
+        let mut evidence = valid_storage_cutover_evidence(&db_path, "different-sha");
+        evidence.build_id = "abc123".to_string();
+        let value = serde_json::to_value(evidence).unwrap();
+
+        let error = validate_storage_cutover_evidence_json(&value, &config, &db_path).unwrap_err();
+
+        assert!(error.contains("git_sha"));
+    }
+
+    #[test]
+    fn storage_cutover_evidence_rejects_mismatched_build_id() {
+        let temp = tempdir().unwrap();
+        let db_path = temp.path().join("dailyos-dev.db");
+        let config = storage_cutover_test_config(&db_path, "abc123");
+        let mut evidence = valid_storage_cutover_evidence(&db_path, "abc123");
+        evidence.build_id = "different-build".to_string();
+        let value = serde_json::to_value(evidence).unwrap();
+
+        let error = validate_storage_cutover_evidence_json(&value, &config, &db_path).unwrap_err();
+
+        assert!(error.contains("build_id"));
+    }
+
+    #[test]
+    fn storage_cutover_evidence_rejects_wrong_db_path() {
+        let temp = tempdir().unwrap();
+        let db_path = temp.path().join("dailyos-dev.db");
+        let config = storage_cutover_test_config(&db_path, "abc123");
+        let wrong_db_path = temp.path().join("other.db");
+        let value =
+            serde_json::to_value(valid_storage_cutover_evidence(&wrong_db_path, "abc123")).unwrap();
+
+        let error = validate_storage_cutover_evidence_json(&value, &config, &db_path).unwrap_err();
+
+        assert!(error.contains("db_path"));
+    }
+
+    #[test]
+    fn storage_cutover_evidence_rejects_unsafe_header_state() {
+        let temp = tempdir().unwrap();
+        let db_path = temp.path().join("dailyos-dev.db");
+        let config = storage_cutover_test_config(&db_path, "abc123");
+        let mut evidence = valid_storage_cutover_evidence(&db_path, "abc123");
+        evidence.active_db_header_state = "encrypted_or_unknown".to_string();
+        let value = serde_json::to_value(evidence).unwrap();
+
+        let error = validate_storage_cutover_evidence_json(&value, &config, &db_path).unwrap_err();
+
+        assert!(error.contains("active_db_header_state"));
+    }
+
+    #[test]
+    fn storage_cutover_evidence_rejects_live_sidecar_state() {
+        let temp = tempdir().unwrap();
+        let db_path = temp.path().join("dailyos-dev.db");
+        let config = storage_cutover_test_config(&db_path, "abc123");
+        let mut evidence = valid_storage_cutover_evidence(&db_path, "abc123");
+        evidence.wal_shm_disposition = "live_writer_present".to_string();
+        let value = serde_json::to_value(evidence).unwrap();
+
+        let error = validate_storage_cutover_evidence_json(&value, &config, &db_path).unwrap_err();
+
+        assert!(error.contains("wal_shm_disposition"));
+    }
+
+    #[test]
+    fn storage_cutover_evidence_accepts_dos832_validated_state() {
+        let temp = tempdir().unwrap();
+        let db_path = temp.path().join("dailyos-dev.db");
+        let config = storage_cutover_test_config(&db_path, "abc123");
+        let value =
+            serde_json::to_value(valid_storage_cutover_evidence(&db_path, "abc123")).unwrap();
+
+        let evidence = validate_storage_cutover_evidence_json(&value, &config, &db_path).unwrap();
+
+        assert_eq!(evidence.state, StorageCutoverState::Dos832Validated);
+    }
+
+    #[test]
+    fn storage_cutover_evidence_accepts_storage_reset_approved_state() {
+        let temp = tempdir().unwrap();
+        let db_path = temp.path().join("dailyos-dev.db");
+        let config = storage_cutover_test_config(&db_path, "abc123");
+        let value = serde_json::to_value(valid_storage_reset_evidence(&db_path, "abc123")).unwrap();
+
+        let evidence = validate_storage_cutover_evidence_json(&value, &config, &db_path).unwrap();
+
+        assert_eq!(evidence.state, StorageCutoverState::StorageResetApproved);
     }
 
     fn sample_evidence(
@@ -2593,6 +2903,7 @@ mod tests {
                 .map(|bundle| (*bundle).to_string())
                 .collect(),
             manual: None,
+            storage_cutover: None,
             latency: LatencySummary {
                 source: "unit".to_string(),
                 sample_count: 3,
@@ -2620,6 +2931,66 @@ mod tests {
             }],
             dos411_claim_backed_lifecycle_green: true,
             dos412_sensitivity_rendering_green: true,
+        }
+    }
+
+    fn storage_cutover_test_config(db_path: &Path, git_sha: &str) -> GateConfig {
+        GateConfig {
+            mode: GateMode::Manual,
+            bundle_filters: Vec::new(),
+            mandatory_bundles: DEFAULT_MANDATORY_BUNDLES
+                .iter()
+                .map(|bundle| (*bundle).to_string())
+                .collect(),
+            tracked_bundles: DEFAULT_TRACKED_BUNDLES
+                .iter()
+                .map(|bundle| (*bundle).to_string())
+                .collect(),
+            output_dir: db_path
+                .parent()
+                .unwrap_or_else(|| Path::new("."))
+                .join("out"),
+            harness_report: None,
+            db_path: Some(db_path.to_path_buf()),
+            manual_evidence: None,
+            storage_cutover_evidence: None,
+            run_tests: false,
+            git_sha: git_sha.to_string(),
+            build_id: git_sha.to_string(),
+            dos288_timeout_secs: DEFAULT_DOS288_TIMEOUT_SECS,
+        }
+    }
+
+    fn valid_storage_cutover_evidence(db_path: &Path, git_sha: &str) -> StorageCutoverEvidence {
+        StorageCutoverEvidence {
+            state: StorageCutoverState::Dos832Validated,
+            target_environment: "manual_release_gate".to_string(),
+            git_sha: git_sha.to_string(),
+            build_id: git_sha.to_string(),
+            db_path: db_path.to_string_lossy().to_string(),
+            db_path_class: "dailyos_live_db".to_string(),
+            active_db_header_state: "plain_sqlite_ok".to_string(),
+            wal_shm_disposition: "absent_or_checkpointed".to_string(),
+            app_quiesced: true,
+            mcp_sidecar_quiesced: true,
+            approver: HashOnly::new("abcdef1234567890").unwrap(),
+            approved_at: "2026-06-08T12:00:00Z".to_string(),
+            evidence_ref: HashOnly::new("fedcba0987654321").unwrap(),
+            dos832_proof_ref: Some(HashOnly::new("1234567890abcdef").unwrap()),
+            user_version: None,
+            integrity_check: None,
+            unsafe_state_rejection: None,
+        }
+    }
+
+    fn valid_storage_reset_evidence(db_path: &Path, git_sha: &str) -> StorageCutoverEvidence {
+        StorageCutoverEvidence {
+            state: StorageCutoverState::StorageResetApproved,
+            dos832_proof_ref: None,
+            user_version: Some(245),
+            integrity_check: Some("ok".to_string()),
+            unsafe_state_rejection: Some("verified".to_string()),
+            ..valid_storage_cutover_evidence(db_path, git_sha)
         }
     }
 

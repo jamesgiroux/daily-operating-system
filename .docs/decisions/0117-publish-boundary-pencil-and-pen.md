@@ -43,7 +43,7 @@ pub struct PublishDraft {
 
 Characteristics:
 
-- A Draft is a row in `publish_drafts`. It is DailyOS-internal, encrypted like any other table, subject to [ADR-0116](0116-tenant-control-plane-boundary.md) — content never leaves the device during the Pencil phase.
+- A Draft is a row in `publish_drafts`. It is DailyOS-internal, stored inside the local SQLite boundary, subject to [ADR-0116](0116-tenant-control-plane-boundary.md) — content never leaves the device during the Pencil phase.
 - A Draft is inspectable. The user or a policy check can see exactly what will be sent, to whom, with what provenance.
 - A Draft is editable. Most fields (`payload`, `recipients`, `rendered_preview`) can be amended through a companion Maintenance ability before commit. Every edit bumps a `draft_version` and is logged.
 - A Draft is withdrawable. The user (or a policy) can transition state to `Withdrawn`; the Draft row remains for audit but cannot be committed.

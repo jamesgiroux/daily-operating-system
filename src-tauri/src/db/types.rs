@@ -27,11 +27,14 @@ pub enum DbError {
     #[error("Schema migration failed: {0}")]
     Migration(String),
 
-    #[error("Encryption error: {0}")]
-    Encryption(String),
+    #[error("Database secret error: {0}")]
+    Secret(String),
 
-    #[error("Encryption key missing: database at {db_path} is encrypted but the Keychain entry was not found")]
-    KeyMissing { db_path: String },
+    #[error("Unsupported database storage state at {path}: {reason}. Restore from backup or rebuild from canonical files before opening.")]
+    UnsupportedStorageState { path: String, reason: String },
+
+    #[error("Rebuild cutover in progress for database at {path}: {reason}")]
+    RebuildCutoverInProgress { path: String, reason: String },
 
     /// Caller violated an internal API contract (e.g., nested Multi in
     /// SubjectRef, calling bump_entity_claim_version with a Multi/Global

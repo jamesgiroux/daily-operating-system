@@ -15,7 +15,7 @@ DailyOS operates with three existing audit mechanisms:
 
 These cover specific pipelines but leave significant gaps:
 
-- **No security event audit**: DB key access, auth grants/revocations, app unlock, failed DB opens
+- **No security event audit**: local storage boundary checks, auth grants/revocations, app unlock, failed DB opens
 - **No AI operation audit**: what was sent to Claude, what came back, whether schema validation passed
 - **No external API audit**: which third-party services were called, when, with what data category
 - **No configuration change audit**: when workspace path changed, when AI provider switched, when settings were modified
@@ -45,8 +45,8 @@ A JSON-lines file at `~/.dailyos/audit.log`. Each line is one audit record. The 
   "ts": "2026-02-24T10:00:00.123Z",
   "v": 1,
   "category": "security",
-  "event": "db_key_accessed",
-  "detail": {"action": "retrieved_from_keychain"},
+  "event": "db_storage_boundary_checked",
+  "detail": {"db_storage": "plain_sqlite", "boundary": "os_user_disk"},
   "prev_hash": "a3f7c2b8e1d94012..."
 }
 ```
@@ -114,10 +114,9 @@ impl AuditLogger {
 
 | Event | When | Detail fields |
 |-------|------|---------------|
-| `db_key_generated` | First run -- new key generated | `{"action": "generated_and_stored"}` |
-| `db_key_accessed` | DB opened successfully | `{"action": "retrieved_from_keychain"}` |
-| `db_key_missing` | DB exists but key not in Keychain | `{"db_exists": true, "action": "blocked"}` |
-| `db_migration_started` | Plaintext → encrypted migration begins | `{"db_size_bytes": N}` |
+| `db_storage_boundary_checked` | DB opened successfully under the local SQLite + OS disk boundary | `{"db_storage": "plain_sqlite", "boundary": "os_user_disk"}` |
+| `db_storage_unsupported` | Startup found unsupported legacy or corrupt storage | `{"action": "recovery_required"}` |
+| `db_migration_started` | Local SQLite migration begins | `{"db_size_bytes": N}` |
 | `db_migration_completed` | Migration succeeded | `{"duration_ms": N}` |
 | `app_unlock_attempted` | Touch ID / password prompt shown | `{"trigger": "idle_timeout"}` |
 | `app_unlock_succeeded` | Touch ID accepted | `{}` |
@@ -175,7 +174,7 @@ Note: detail fields contain **counts and categories only** -- no names, emails, 
 
 | Event | When | Detail fields |
 |-------|------|---------------|
-| `app_started` | App process started | `{"version": "0.16.1", "db_encrypted": true}` |
+| `app_started` | App process started | `{"version": "0.16.1", "db_storage": "plain_sqlite"}` |
 | `app_stopped` | App process stopping cleanly | `{"uptime_minutes": N}` |
 | `audit_log_rotated` | Log rotation (>90 days entries pruned) | `{"records_pruned": N, "bytes_freed": N}` |
 | `db_backup_completed` | Database backup completed | `{"backup_size_bytes": N}` |
@@ -247,7 +246,7 @@ The export format is the raw JSON-lines file -- no transformation. This is the f
 
 - `AuditLogger` is added to `AppState` as `Arc<Mutex<AuditLogger>>`, initialized on startup after the DB opens.
 - `~/.dailyos/audit.log` is created with `0o600` permissions on first write. The containing `~/.dailyos/` directory is already `0o700` per ADR-0092.
-- Adding a `sha2` dependency (or using the `hex` + `sha2` already referenced in the SQLCipher work). Binary size impact: negligible.
+- Adding a `sha2` dependency (or using the existing `hex` + `sha2` stack). Binary size impact: negligible.
 - All pipeline code that currently generates enrichment events (`intel_queue.rs`, `prepare/email_enrich.rs`, `workflow/deliver.rs`, `executor.rs`) needs an `AuditLogger::append()` call at start and completion. These are fire-and-forget -- audit write failures are logged at WARN but never propagate to the caller.
 - Audit writes are synchronous but append-only and small. Expected overhead: < 1ms per record. Not on the hot path.
 - `_audit/` raw output files are retained. Retention stays at 30 days. The audit log has a separate 90-day retention.

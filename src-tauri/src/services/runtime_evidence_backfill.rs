@@ -205,7 +205,6 @@ pub fn error_indicates_storage_health_failure(message: &str) -> bool {
         || lower.contains("file is not a database")
         || lower.contains("database disk image is malformed")
         || lower.contains("sqlite_notadb")
-        || lower.contains("sqlcipher key verification failed")
 }
 
 fn halt_on_storage_health_errors(
@@ -424,7 +423,6 @@ mod tests {
             "file is not a database",
             "rusqlite error: database disk image is malformed",
             "SQLITE_NOTADB while opening DB",
-            "SQLCipher key verification failed (database unreadable): disk I/O error",
         ] {
             assert!(error_indicates_storage_health_failure(message), "{message}");
         }

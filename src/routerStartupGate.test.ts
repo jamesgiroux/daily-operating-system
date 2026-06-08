@@ -7,7 +7,6 @@ describe("resolveStartupGate", () => {
     expect(
       resolveStartupGate({
         checkingConfig: true,
-        encryptionKeyMissing: true,
         dbRecoveryRequired: true,
         isLocked: true,
         needsOnboarding: true,
@@ -15,23 +14,10 @@ describe("resolveStartupGate", () => {
     ).toBe("checking");
   });
 
-  it("keeps encryption recovery precedence over DB recovery", () => {
-    expect(
-      resolveStartupGate({
-        checkingConfig: false,
-        encryptionKeyMissing: true,
-        dbRecoveryRequired: true,
-        isLocked: false,
-        needsOnboarding: false,
-      })
-    ).toBe("encryption-recovery");
-  });
-
   it("blocks app with database recovery when required", () => {
     expect(
       resolveStartupGate({
         checkingConfig: false,
-        encryptionKeyMissing: false,
         dbRecoveryRequired: true,
         isLocked: false,
         needsOnboarding: false,
@@ -43,7 +29,6 @@ describe("resolveStartupGate", () => {
     expect(
       resolveStartupGate({
         checkingConfig: false,
-        encryptionKeyMissing: false,
         dbRecoveryRequired: false,
         isLocked: true,
         needsOnboarding: true,
@@ -55,7 +40,6 @@ describe("resolveStartupGate", () => {
     expect(
       resolveStartupGate({
         checkingConfig: false,
-        encryptionKeyMissing: false,
         dbRecoveryRequired: false,
         isLocked: false,
         needsOnboarding: false,

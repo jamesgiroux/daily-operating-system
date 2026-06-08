@@ -28,7 +28,7 @@ Three related but distinct questions:
 
 2. **Leadership views.** A VP of CS wants to see health scores, risk signals, and intervention status across all accounts their team owns. Publish can provide a snapshot report, but a *live view* that updates as CSMs interact with accounts requires shared state.
 
-3. **Cross-user continuity.** A CSM leaves the company. Their accounts need to transfer to the new owner with full history intact. Today, their local SQLite goes with them (or stays encrypted on their device); there's no transfer mechanism that doesn't break [ADR-0116](0116-tenant-control-plane-boundary.md).
+3. **Cross-user continuity.** A CSM leaves the company. Their accounts need to transfer to the new owner with full history intact. Today, their local SQLite goes with them; there's no transfer mechanism that doesn't break [ADR-0116](0116-tenant-control-plane-boundary.md).
 
 None of these are solved by publish. Publish solves: "CSM takes a snapshot and puts it in company-controlled storage on a cadence." That's a 2002-era answer to a 2026 problem.
 
@@ -51,7 +51,7 @@ Each of these is a broad class; any specific architecture picks one or a hybrid.
 
 Users explicitly share specific entities (accounts, meetings, projects) with teammates. Sharing happens device-to-device or through a relay that never decrypts. Control plane coordinates sharing permissions (metadata only); content is encrypted end-to-end between users.
 
-- Pros: full alignment with [ADR-0116](0116-tenant-control-plane-boundary.md). Users explicitly consent to share. Content never unencrypted on a server.
+- Pros: full alignment with [ADR-0116](0116-tenant-control-plane-boundary.md). Users explicitly consent to share. Content never lands on a DailyOS server.
 - Cons: complex crypto. Revocation is hard (a former teammate may have already synced a local copy). Doesn't solve leadership/cross-team views — only one-to-one or one-to-few sharing.
 
 ### Option B — Customer-operated shared storage (BYOK team pool)
@@ -65,7 +65,7 @@ The enterprise customer operates their own DailyOS instance on their own infrast
 
 A relay server shuffles encrypted claims between user devices without decrypting. Users who share accounts have a shared decryption key. The relay sees only encrypted blobs routed by team ID; content stays encrypted at rest on the server.
 
-- Pros: DailyOS-hosted simplicity from user's perspective. Content is never unencrypted on DailyOS's server.
+- Pros: DailyOS-hosted simplicity from user's perspective. Content is never exposed in plaintext to DailyOS's server.
 - Cons: crypto is hard to get right. Querying encrypted data is limited. "The relay sees encrypted blobs" is not the same as "stays on the laptop"; enterprise security review still has questions.
 
 ### Option D — Per-team tenant with hard-boundary tenant isolation

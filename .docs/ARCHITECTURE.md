@@ -1,14 +1,14 @@
 # DailyOS Architecture
 
 **Audience:** Any contributor (human or AI session) picking up work. One-click reach from the repo root.
-**Date:** 2026-04-20 | **Reflects:** ADRs 0100–0120, v1.4.0 substrate in progress
+**Date:** 2026-06-08 | **Reflects:** ADRs 0100–0120, v1.4.9 storage boundary
 **Purpose:** Read this first. It will orient you in 10 minutes. Every detail is linked to its source of truth.
 
 ## What DailyOS is
 
 DailyOS is a native macOS app (Tauri + React) acting as a personal chief of staff for Customer Success. The product promise: open the app, your day is already assembled with more context than any competitor. Depth-before-interaction is the moat.
 
-Single user per install. Local-first. Content encrypted at rest ([ADR-0092](decisions/0092-data-security-at-rest-and-operational-hardening.md)). Data plan at scale: **per-user SQLite forever** (founder decision 2026-04-20, [D1](strategy/2026-04-20-v1.4.0-architectural-strategy.md#signature-block)). Team features, if ever needed, accept migration cost.
+Single user per install. Local-first. Content is stored locally in plain SQLite and workspace files under the user's OS/FileVault/file-permission boundary ([ADR-0092](decisions/0092-data-security-at-rest-and-operational-hardening.md), superseded storage posture). Data plan at scale: **per-user SQLite forever** (founder decision 2026-04-20, [D1](strategy/2026-04-20-v1.4.0-architectural-strategy.md#signature-block)). Team features, if ever needed, accept migration cost.
 
 The intelligence layer is built as an **AI harness** — infrastructure around an LLM that assembles context, verifies output, stores trusted claims, and learns from feedback. The harness thesis ([ADR-0118](decisions/0118-dailyos-as-ai-harness-principles-and-residual-gaps.md)) is that harness quality dominates model capability for long-horizon tasks.
 
@@ -33,7 +33,7 @@ The intelligence layer is built as an **AI harness** — infrastructure around a
 │  Source taxonomy (0107) · Prompt fingerprint (0106)        │
 ├────────────────────────────────────────────────────────────┤
 │  Storage                                                   │
-│  Encrypted SQLite (ADR-0092) · LocalKeychain (ADR-0116)    │
+│  Plain SQLite · OS/FileVault/file-permission boundary      │
 └────────────────────────────────────────────────────────────┘
 ```
 

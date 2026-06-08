@@ -10,11 +10,11 @@
 
 `NUM_READERS = 2` has lived in `src-tauri/src/db_service.rs:40` as a bare constant since the reader-pool substrate landed. There is no ADR justifying the value. Code review of any change that hits the readers (the 197 `state.db_read` call sites surveyed by the W0-C feasibility audit) has nothing to point at; the constant has been propagated by inertia.
 
-Today, at twenty entities and a 387 MB encrypted database, the constant is wrong. Four concurrent foreground commands fire on a single navigation: `get_account_detail` + `get_linear_status` + `get_audit_log` + the context-mode command. With two reader slots, two execute and two queue on the readers' mpsc channels. The synchronized "all four release within a 32 ms window" signature in the latency rollups (W0-B will surface this as durable telemetry) is the smoking gun.
+Today, at twenty entities and a 387 MB local database, the constant is wrong. Four concurrent foreground commands fire on a single navigation: `get_account_detail` + `get_linear_status` + `get_audit_log` + the context-mode command. With two reader slots, two execute and two queue on the readers' mpsc channels. The synchronized "all four release within a 32 ms window" signature in the latency rollups (W0-B will surface this as durable telemetry) is the smoking gun.
 
 Two compounding facts make the symptom worse than naive queueing math predicts:
 
-1. **SQLCipher per-page AES decryption cost.** Every page touched by every read decrypts via AES. At 387 MB with `cipher_page_size = 4096`, a full-page-walk hits ~100K pages through AES; even partial scans accumulate CPU. The reader thread that is "busy" is not blocked on I/O — it is busy on encryption work. Adding a third concurrent reader to compete for the same two slots does not just queue; it queues *behind* CPU-bound work.
+1. **Residual query CPU cost.** Every page touched by a large read still consumes CPU for parsing, filtering, joins, projection, and cache churn. At 387 MB, full-page-walk queries can still monopolize a reader even without the retired SQLCipher layer. Adding a third concurrent reader to compete for the same two slots does not just queue; it queues *behind* CPU-bound work.
 
 2. **No tier separation today.** The two reader slots are used round-robin across foreground UI, foreground sync commands, background workers, and maintenance. A long-running background read can occupy one slot while a foreground UI read queues behind it on the other. The observable symptom — foreground latency that correlates with background-worker activity — is not a writer-side contention story; it is head-of-line blocking on undersized readers without ownership.
 
@@ -53,9 +53,9 @@ The floor is 5 (N + 1 = 4 + 1). W0-B raises `NUM_READERS` to **4**, one short, b
 
 W1-D, if W0-B's telemetry earns it, introduces the `ReaderTier` enum (`ForegroundUi`, `ForegroundSync`, `Background`, `Maintenance`), `DbService::reader_for(tier)`, and resizes to 5 with strict ownership. This ADR pre-commits to that shape so the W1-D L0 packet does not have to re-derive it.
 
-### 4. Reader pool sizing is independent of SQLCipher decryption cost
+### 4. Reader pool sizing is independent of residual query CPU
 
-Pool sizing prevents head-of-line blocking from queuing on too few connections. It does not eliminate SQLCipher's per-page AES decryption cost. A 387 MB database with `cipher_page_size = 4096` and a full-table-scan query still hits ~100K pages through AES; that work is real CPU regardless of how many reader slots exist.
+Pool sizing prevents head-of-line blocking from queuing on too few connections. It does not eliminate the CPU cost of large scans, joins, projection, and cache churn. A 387 MB database with a full-table-scan query still does real work regardless of how many reader slots exist.
 
 If the reader pool is correctly sized and reader-CPU still dominates as residual latency, the answer is not "more readers" — it is moving the foreground read path off SQLite entirely (Alternative B in the throughput plan; opens its own L0 packet as WX if earned). This invariant exists to prevent the eighth instance of the recurring lock-storm class from being "we added more readers and called it done."
 
@@ -72,7 +72,7 @@ Per W0-B and ADR-0120's observability contract, the reader pool emits:
 - Per-tier queue depth (once tier ownership lands; until then, a single aggregate queue-depth metric).
 - Per-tier-of-origin label on each reader call **once W1-D earns its way in**. W0-B ships the API (`PooledConnection::with_tier`, `DbService::reader_for_tier`) but does not migrate the 197 `state.db_read` call sites — that migration IS W1-D. Until W1-D, the tier-of-origin rollup namespace exists but is sparsely populated, by design. The plain writer/reader split (also added in W0-B) is sufficient for the W0 close gate.
 - Per-call queue-wait + execution-time, contributing to `get_latency_rollups`.
-- WAL-frame walk cost is *not* attributed to the reader pool; it is a SQLCipher-layer cost and surfaces in execution-time, not queue-wait.
+- WAL-frame walk and query CPU cost are *not* attributed to the reader pool; they surface in execution-time, not queue-wait.
 
 Drift between reader telemetry and writer telemetry (ADR-0133 §7) produces the cross-cutting observability gap ADR-0120 was written to close. Same contract; same NDJSON schema; same invocation-id correlation.
 
@@ -123,7 +123,7 @@ This ADR commits to the *sizing* (4 now, 5 with ownership). It does *not* commit
 | Sizing is structural, not runtime-tunable | Code review on any attempt to parameterize `NUM_READERS` | this ADR §5 |
 | Telemetry conforms to ADR-0120 | ADR-0120 observability contract | W0-B implementation |
 | Tier ownership deferred to W1-D | Per-tier-of-origin telemetry in W0-B as earn signal | `latency.rs` extension |
-| SQLCipher cost is not a sizing problem | This ADR §4; reader-CPU residual routes to WX (B) | W1 hard-gate diagnosis |
+| Residual query CPU is not a sizing problem | This ADR §4; reader-CPU residual routes to WX (B) | W1 hard-gate diagnosis |
 
 ## References
 
@@ -132,7 +132,7 @@ This ADR commits to the *sizing* (4 now, 5 with ownership). It does *not* commit
 - `src-tauri/src/db_service.rs:430` — `DbService::readers` field.
 - `src-tauri/src/db_service.rs:719` — `DbService::reader()` round-robin assignment.
 - ADR-0067 — staged split-lock helpers and the latency-rollups substrate W0-B extends.
-- ADR-0092 — SQLCipher; per-page AES decryption cost cited in §4.
+- ADR-0092 — superseded historical SQLCipher storage contract.
 - ADR-0101 — service-boundary-enforcement; reader-side bypass closure tracked alongside writer-side (ADR-0133 §8).
 - ADR-0120 — observability contract; reader pool emits per its NDJSON + invocation-id schema.
 - ADR-0133 — writer queue responsibility; sibling ADR; same `PooledConnection` substrate.

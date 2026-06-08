@@ -300,7 +300,6 @@ Audited: 2026-03-02. Source: `src/components/` and `src/pages/`.
 | `notifications/UpdateBanner.tsx` | 143 | Y | N | N | router.tsx (RootLayout) |
 | `devtools/DevToolsPanel.tsx` | 574 | Y | N | N | router.tsx (RootLayout) |
 | `ProfileSelector.tsx` | 137 | Y | 1 | N | **GHOST** |
-| `EncryptionRecovery.tsx` | 113 | Y | N | N | router.tsx (RootLayout) |
 | `ICloudWarningModal.tsx` | 110 | Y | 1 | N | router.tsx (RootLayout) |
 | `tour/TourTips.tsx` | 107 | Y | N | N | router.tsx (RootLayout) |
 | `LockOverlay.tsx` | 43 | N | 1 | N | router.tsx (RootLayout) |

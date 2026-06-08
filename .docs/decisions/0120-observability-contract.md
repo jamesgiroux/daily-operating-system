@@ -132,7 +132,7 @@ The observability contract honors [ADR-0108](0108-provenance-rendering-and-priva
 - **Actor strings follow [ADR-0113](0113-human-and-agent-analysis-as-first-class-claim-sources.md) canonical forms.** `user` and `agent:name:version` are permitted; user email addresses are not.
 - **Error kinds are typed enums, not error messages.** `error_kind: "ProviderTimeout"` is permitted; `error_kind: "Timed out waiting for response to 'summarize Alice's...'"` is not.
 
-The distinction: logs carry **the shape of what happened**, not **the content of what happened**. Content lives in the encrypted database with the provenance envelopes and `evaluation_traces`. Debug flows pull content at display time through [ADR-0108](0108-provenance-rendering-and-privacy.md) renderer, not by reading raw logs.
+The distinction: logs carry **the shape of what happened**, not **the content of what happened**. Content lives in the local database with the provenance envelopes and `evaluation_traces`. Debug flows pull content at display time through [ADR-0108](0108-provenance-rendering-and-privacy.md) renderer, not by reading raw logs.
 
 ### 7. Mode awareness
 

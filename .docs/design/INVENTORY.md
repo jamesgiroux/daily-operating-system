@@ -88,7 +88,6 @@ These render at app-shell scale, not inside a page container.
 | Surface | File | JTBD | State | Linear gap | Notes |
 |---|---|---|---|---|---|
 | DatabaseRecovery | `src/components/DatabaseRecovery.tsx` | Recover from unsafe database startup — restore backup, export copy, start fresh, or update app. | `documented` | — | Full-window startup gate; documented in `NAVIGATION-ARCHITECTURE.md` but no reference render. |
-| EncryptionRecovery | `src/components/EncryptionRecovery.tsx` | Explain that encrypted DB can't be opened without macOS Keychain key; offer recovery or fresh-start. | `documented` | — | Full-window startup gate; same status as DatabaseRecovery. |
 | LockOverlay | `src/components/LockOverlay.tsx` | Block app access while locked; unlock with Touch ID. | `documented` | — | Full-window startup gate. |
 | OnboardingFlow | `src/components/onboarding/OnboardingFlow.tsx` | Guide first-run setup — Google, Claude Code, Glean, user context, first account, role, initial briefing. | `referenced+spec` | — | Chapter references exist under `reference/surfaces/onboarding/`; canonical shipped sequence is `surfaces/OnboardingFlow.md`. |
 | StartupBriefingScreen | `src/components/startup/StartupBriefingScreen.tsx` | Hold the cold-start moment with branded splash/progress while DailyOS prepares context. | `referenced+spec` | — | Splash/progress references exist under `reference/surfaces/splash/` and are covered by the manifest fidelity audit; canonical spec is `surfaces/StartupBriefingScreen.md`. |
