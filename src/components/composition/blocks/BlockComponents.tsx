@@ -5,10 +5,7 @@ import { IntelligenceCorrection } from "@/components/ui/IntelligenceCorrection";
 import { ProvenanceTag } from "@/components/ui/ProvenanceTag";
 import { TrustBandBadge } from "@/components/ui/TrustBandBadge";
 import { HealthBadge } from "@/components/shared/HealthBadge";
-import { AccountHero } from "@/components/account/AccountHero";
-import { VitalsStrip } from "@/components/entity/VitalsStrip";
 import { CompositionInlineEdit } from "@/components/composition/CompositionInlineEdit";
-import { buildAccountVitals } from "@/components/account/account-detail-utils";
 import { normalizeTrustBand } from "@/services/composition/contracts";
 import type {
   CompositionFeedbackEntityType,
@@ -17,7 +14,6 @@ import type {
   ProjectedBlock,
   RenderedProvenance,
 } from "@/services/composition/contracts";
-import type { AccountDetail, EntityIntelligence } from "@/types";
 import pageStyles from "@/pages/AccountDetailPage.module.css";
 
 type Payload = Record<string, unknown>;
@@ -25,8 +21,6 @@ type BlockComponentProps = {
   block: ProjectedBlock;
   accountId?: string;
   entityType?: CompositionFeedbackEntityType;
-  accountDetail?: AccountDetail | null;
-  intelligence?: EntityIntelligence | null;
   payload: Payload;
   renderedProvenance?: RenderedProvenance | null;
   editMode?: boolean;
@@ -378,23 +372,6 @@ function AccountOverviewBlock({ block, accountId, entityType, payload, renderedP
   );
 }
 
-function AccountOverviewCuratedBlock(props: BlockComponentProps) {
-  const { accountDetail } = props;
-  if (!accountDetail) return <AccountOverviewBlock {...props} />;
-
-  const { block, accountId, entityType, intelligence, payload, renderedProvenance } = props;
-  const account = object(payload.account) ?? {};
-  return (
-    <BlockShell block={block} accountId={accountId} entityType={entityType} payload={payload} renderedProvenance={renderedProvenance} featured title={text(account.display_name) ?? text(payload.title)}>
-      <AccountHero
-        detail={accountDetail}
-        intelligence={intelligence ?? null}
-        vitalsSlot={<VitalsStrip vitals={buildAccountVitals(accountDetail)} sourceRefs={accountDetail.sourceRefs} />}
-      />
-    </BlockShell>
-  );
-}
-
 function ClaimSummaryBlock({ block, accountId, entityType, payload, renderedProvenance, editMode }: BlockComponentProps) {
   const empty = payload.empty_state === true;
   return (
@@ -572,7 +549,7 @@ function PrimitiveBlock({ block, accountId, entityType, payload, renderedProvena
 }
 
 export const BLOCK_RENDERERS: Record<KnownCompositionBlockType, BlockComponent> = {
-  account_overview: AccountOverviewCuratedBlock,
+  account_overview: AccountOverviewBlock,
   claim_summary: ClaimSummaryBlock,
   evidence_list: EvidenceListBlock,
   health_snapshot: HealthSnapshotBlock,
