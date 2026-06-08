@@ -284,6 +284,17 @@ pub struct DbAccountFieldProvenance {
     pub updated_at: Option<String>,
 }
 
+/// Which account vitals changed in a file-sync pass and should have their
+/// provenance stamped as workspace-file-origin (WR-R1). Each flag gates the
+/// corresponding column in `set_account_vitals_file_provenance`.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub struct AccountVitalsFileMask {
+    pub arr: bool,
+    pub lifecycle: bool,
+    pub contract_end: bool,
+    pub nps: bool,
+}
+
 /// A logged automatic lifecycle change for an account.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]

@@ -13,7 +13,7 @@ use std::path::{Path, PathBuf};
 
 use serde::{Deserialize, Serialize};
 
-use crate::db::{ActionDb, DbAccount};
+use crate::db::{AccountVitalsFileMask, ActionDb, DbAccount};
 use crate::util::slugify;
 
 // =============================================================================
@@ -106,6 +106,29 @@ pub struct StrategicProgram {
 }
 
 // =============================================================================
+/// Compute which account vitals a file-sync pass changed, gating the
+/// workspace-file provenance stamp (WR-R1). For a new-from-file account
+/// (`db` is `None`) every present vital is file-origin; for an update, only
+/// fields whose value differs from the DB row changed this pass — an
+/// unchanged value (e.g. a UI edit round-tripped back to the file) is left
+/// untouched so its `user_edit`/`lifecycle` provenance is preserved.
+fn account_vitals_file_mask(file: &DbAccount, db: Option<&DbAccount>) -> AccountVitalsFileMask {
+    match db {
+        Some(db) => AccountVitalsFileMask {
+            arr: file.arr != db.arr,
+            lifecycle: file.lifecycle != db.lifecycle,
+            contract_end: file.contract_end != db.contract_end,
+            nps: file.nps != db.nps,
+        },
+        None => AccountVitalsFileMask {
+            arr: file.arr.is_some(),
+            lifecycle: file.lifecycle.is_some(),
+            contract_end: file.contract_end.is_some(),
+            nps: file.nps.is_some(),
+        },
+    }
+}
+
 // Typed JSON accessors for DbAccount blob fields
 //
 // DbAccount stores company_overview/strategic_programs/keywords/metadata as
@@ -625,6 +648,16 @@ pub fn read_account_json(path: &Path) -> Result<ReadAccountResult, String> {
 ///
 /// Returns the number of accounts synced.
 pub fn sync_accounts_from_workspace(workspace: &Path, db: &ActionDb) -> Result<usize, String> {
+    // WR-R1: one-time idempotent backfill of provenance for pre-existing vitals
+    // that have a value but no source (so the composition producer renders them
+    // rather than dropping them). The `*_source IS NULL` predicate makes this a
+    // no-op after the first run, so it is safe to call on every sync.
+    match db.backfill_missing_account_vitals_provenance() {
+        Ok(n) if n > 0 => log::info!("WR-R1: backfilled provenance for {n} pre-existing account vitals"),
+        Ok(_) => {}
+        Err(e) => log::warn!("WR-R1: account vitals provenance backfill failed: {e}"),
+    }
+
     let accounts_dir = workspace.join("Accounts");
     let mut synced = 0;
 
@@ -769,6 +802,15 @@ pub fn sync_accounts_from_workspace(workspace: &Path, db: &ActionDb) -> Result<u
                                 clippy::let_underscore_must_use,
                                 reason = "intentional best-effort discard; preserves existing non-blocking behavior"
                             )]
+                            let _ = db.set_account_vitals_file_provenance(
+                                merged.id.as_str(),
+                                merged.updated_at.as_str(),
+                                account_vitals_file_mask(&merged, Some(&db_account)),
+                            );
+                            #[allow(
+                                clippy::let_underscore_must_use,
+                                reason = "intentional best-effort discard; preserves existing non-blocking behavior"
+                            )]
                             let _ = write_account_markdown(workspace, &merged, Some(&json), db);
                             synced += 1;
                         } else if db_account.updated_at > file_account.updated_at {
@@ -793,6 +835,15 @@ pub fn sync_accounts_from_workspace(workspace: &Path, db: &ActionDb) -> Result<u
                             reason = "intentional best-effort discard; preserves existing non-blocking behavior"
                         )]
                         let _ = db.upsert_account(&file_account);
+                        #[allow(
+                            clippy::let_underscore_must_use,
+                            reason = "intentional best-effort discard; preserves existing non-blocking behavior"
+                        )]
+                        let _ = db.set_account_vitals_file_provenance(
+                            file_account.id.as_str(),
+                            file_account.updated_at.as_str(),
+                            account_vitals_file_mask(&file_account, None),
+                        );
                         #[allow(
                             clippy::let_underscore_must_use,
                             reason = "intentional best-effort discard; preserves existing non-blocking behavior"
@@ -927,6 +978,15 @@ fn scan_child_accounts_inner(
                                 clippy::let_underscore_must_use,
                                 reason = "intentional best-effort discard; preserves existing non-blocking behavior"
                             )]
+                            let _ = db.set_account_vitals_file_provenance(
+                                merged.id.as_str(),
+                                merged.updated_at.as_str(),
+                                account_vitals_file_mask(&merged, Some(&db_account)),
+                            );
+                            #[allow(
+                                clippy::let_underscore_must_use,
+                                reason = "intentional best-effort discard; preserves existing non-blocking behavior"
+                            )]
                             let _ = write_account_markdown(workspace, &merged, Some(&json), db);
                             synced += 1;
                         } else if db_account.updated_at > file_account.updated_at {
@@ -949,6 +1009,15 @@ fn scan_child_accounts_inner(
                             reason = "intentional best-effort discard; preserves existing non-blocking behavior"
                         )]
                         let _ = db.upsert_account(&file_account);
+                        #[allow(
+                            clippy::let_underscore_must_use,
+                            reason = "intentional best-effort discard; preserves existing non-blocking behavior"
+                        )]
+                        let _ = db.set_account_vitals_file_provenance(
+                            file_account.id.as_str(),
+                            file_account.updated_at.as_str(),
+                            account_vitals_file_mask(&file_account, None),
+                        );
                         #[allow(
                             clippy::let_underscore_must_use,
                             reason = "intentional best-effort discard; preserves existing non-blocking behavior"

@@ -2601,6 +2601,13 @@ fn push_account_vital_field(
         return;
     };
     let Some(source) = provenance.get(provenance_key) else {
+        // Observable, not silent (WR-R1): a vital with a value but no provenance
+        // is dropped here by design (the trust model requires a source), but the
+        // drop must be visible so a provenance-write gap is diagnosable rather
+        // than presenting as an inexplicably empty vitals strip.
+        log::warn!(
+            "account vital '{provenance_key}' has a value but no provenance source; dropping from composition"
+        );
         return;
     };
     fields.push(AccountCompositionSnapshotField {

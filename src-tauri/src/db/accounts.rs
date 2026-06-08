@@ -1447,6 +1447,73 @@ impl ActionDb {
         Ok(())
     }
 
+    /// Record the account's workspace dashboard file as the provenance source
+    /// for the vitals it supplied this sync pass.
+    ///
+    /// Safety contract (WR-R1):
+    /// - **No churn:** does not touch `accounts.updated_at`, so a provenance-only
+    ///   write never flips the file↔DB sync-direction comparison.
+    /// - **No clobber:** for each masked field, stamps the source only when the
+    ///   value is present AND the existing source is empty or already
+    ///   file-origin (`workspace_file%`). A `user_edit` / `lifecycle` / human
+    ///   attribution is never downgraded to file-origin.
+    /// - The caller (`accounts::sync`) sets the mask to the fields whose value
+    ///   actually changed this pass, so an unchanged user-edited value (e.g. a
+    ///   UI edit written back to the file) is left untouched.
+    ///
+    /// Source key is `workspace_file:entity_doc` so the composition producer
+    /// classifies it as `DataSource::WorkspaceFile { kind: EntityDoc }`.
+    #[must_use = "check whether dashboard vitals provenance was recorded"]
+    pub fn set_account_vitals_file_provenance(
+        &self,
+        account_id: &str,
+        asof: &str,
+        mask: AccountVitalsFileMask,
+    ) -> Result<(), DbError> {
+        const SRC: &str = "workspace_file:entity_doc";
+        self.conn.execute(
+            "UPDATE accounts SET
+                arr_source = CASE WHEN ?3 AND arr IS NOT NULL AND (arr_source IS NULL OR arr_source = '' OR arr_source LIKE 'workspace_file%') THEN ?7 ELSE arr_source END,
+                arr_updated_at = CASE WHEN ?3 AND arr IS NOT NULL AND (arr_source IS NULL OR arr_source = '' OR arr_source LIKE 'workspace_file%') THEN ?2 ELSE arr_updated_at END,
+                lifecycle_source = CASE WHEN ?4 AND lifecycle IS NOT NULL AND (lifecycle_source IS NULL OR lifecycle_source = '' OR lifecycle_source LIKE 'workspace_file%') THEN ?7 ELSE lifecycle_source END,
+                lifecycle_updated_at = CASE WHEN ?4 AND lifecycle IS NOT NULL AND (lifecycle_source IS NULL OR lifecycle_source = '' OR lifecycle_source LIKE 'workspace_file%') THEN ?2 ELSE lifecycle_updated_at END,
+                contract_end_source = CASE WHEN ?5 AND contract_end IS NOT NULL AND (contract_end_source IS NULL OR contract_end_source = '' OR contract_end_source LIKE 'workspace_file%') THEN ?7 ELSE contract_end_source END,
+                contract_end_updated_at = CASE WHEN ?5 AND contract_end IS NOT NULL AND (contract_end_source IS NULL OR contract_end_source = '' OR contract_end_source LIKE 'workspace_file%') THEN ?2 ELSE contract_end_updated_at END,
+                nps_source = CASE WHEN ?6 AND nps IS NOT NULL AND (nps_source IS NULL OR nps_source = '' OR nps_source LIKE 'workspace_file%') THEN ?7 ELSE nps_source END,
+                nps_updated_at = CASE WHEN ?6 AND nps IS NOT NULL AND (nps_source IS NULL OR nps_source = '' OR nps_source LIKE 'workspace_file%') THEN ?2 ELSE nps_updated_at END
+             WHERE id = ?1",
+            params![account_id, asof, mask.arr, mask.lifecycle, mask.contract_end, mask.nps, SRC],
+        )?;
+        Ok(())
+    }
+
+    /// One-time idempotent backfill: stamp a low-priority, clearly-labelled
+    /// source on vitals that have a value but no provenance at all
+    /// (pre-provenance rows — migration 075 added the columns nullable with no
+    /// backfill). Uses `workspace_file:backfilled`, distinct from the
+    /// forward-sync `entity_doc` label so it never claims the value was read
+    /// from the file *this* run; the predicate `*_source IS NULL` makes it
+    /// idempotent and clobber-safe (it never touches a field that already has
+    /// provenance). Does not touch `accounts.updated_at`.
+    #[must_use = "check whether the vitals provenance backfill ran"]
+    pub fn backfill_missing_account_vitals_provenance(&self) -> Result<usize, DbError> {
+        const SRC: &str = "workspace_file:backfilled";
+        let mut total = 0usize;
+        for (value_col, source_col, updated_col) in [
+            ("arr", "arr_source", "arr_updated_at"),
+            ("lifecycle", "lifecycle_source", "lifecycle_updated_at"),
+            ("contract_end", "contract_end_source", "contract_end_updated_at"),
+            ("nps", "nps_source", "nps_updated_at"),
+        ] {
+            let sql = format!(
+                "UPDATE accounts SET {source_col} = ?1, {updated_col} = COALESCE({updated_col}, updated_at)
+                 WHERE {value_col} IS NOT NULL AND ({source_col} IS NULL OR {source_col} = '')"
+            );
+            total += self.conn.execute(&sql, params![SRC])?;
+        }
+        Ok(total)
+    }
+
     /// Fetch provenance metadata for tracked account vitals.
     pub fn get_account_field_provenance(
         &self,
@@ -4549,4 +4616,98 @@ pub(crate) fn seed_account_stakeholder_for_tests(
         rusqlite::params![account_id, person_id, data_source],
     )?;
     Ok(())
+}
+
+#[cfg(test)]
+mod wr_r1_vitals_provenance_tests {
+    use crate::db::{test_utils::test_db, AccountVitalsFileMask, DbAccount};
+
+    fn account_with_vitals(id: &str) -> DbAccount {
+        DbAccount {
+            id: id.to_string(),
+            name: id.to_string(),
+            arr: Some(185_400.0),
+            lifecycle: Some("nurture".to_string()),
+            contract_end: Some("2026-11-24".to_string()),
+            nps: Some(8),
+            updated_at: "2026-01-01T00:00:00Z".to_string(),
+            ..Default::default()
+        }
+    }
+
+    fn col(db: &crate::db::ActionDb, id: &str, column: &str) -> Option<String> {
+        db.conn_ref()
+            .query_row(
+                &format!("SELECT {column} FROM accounts WHERE id = ?1"),
+                rusqlite::params![id],
+                |r| r.get::<_, Option<String>>(0),
+            )
+            .expect("query column")
+    }
+
+    fn full_mask() -> AccountVitalsFileMask {
+        AccountVitalsFileMask { arr: true, lifecycle: true, contract_end: true, nps: true }
+    }
+
+    #[test]
+    fn file_provenance_stamps_empty_source_but_never_clobbers_user_edit() {
+        let db = test_db();
+        db.upsert_account(&account_with_vitals("acct-r1")).expect("insert");
+        db.set_account_field_provenance("acct-r1", "arr", "user_edit", None)
+            .expect("user edit provenance");
+
+        db.set_account_vitals_file_provenance("acct-r1", "2026-06-01T00:00:00Z", full_mask())
+            .expect("file provenance");
+
+        // A human attribution is never downgraded to file-origin...
+        assert_eq!(col(&db, "acct-r1", "arr_source").as_deref(), Some("user_edit"));
+        // ...while empty-source vitals are stamped as workspace-file-origin.
+        assert_eq!(col(&db, "acct-r1", "lifecycle_source").as_deref(), Some("workspace_file:entity_doc"));
+        assert_eq!(col(&db, "acct-r1", "nps_source").as_deref(), Some("workspace_file:entity_doc"));
+    }
+
+    #[test]
+    fn file_provenance_only_stamps_masked_fields() {
+        let db = test_db();
+        db.upsert_account(&account_with_vitals("acct-mask")).expect("insert");
+        db.set_account_vitals_file_provenance(
+            "acct-mask",
+            "2026-06-01T00:00:00Z",
+            AccountVitalsFileMask { arr: false, lifecycle: true, contract_end: false, nps: false },
+        )
+        .expect("file provenance");
+        assert_eq!(col(&db, "acct-mask", "lifecycle_source").as_deref(), Some("workspace_file:entity_doc"));
+        // Unchanged fields this pass are left untouched.
+        assert_eq!(col(&db, "acct-mask", "arr_source"), None);
+    }
+
+    #[test]
+    fn file_provenance_does_not_bump_updated_at() {
+        let db = test_db();
+        db.upsert_account(&account_with_vitals("acct-bump")).expect("insert");
+        db.set_account_vitals_file_provenance("acct-bump", "2026-06-01T00:00:00Z", full_mask())
+            .expect("file provenance");
+        assert_eq!(
+            col(&db, "acct-bump", "updated_at").as_deref(),
+            Some("2026-01-01T00:00:00Z"),
+            "set_account_vitals_file_provenance must not bump accounts.updated_at"
+        );
+    }
+
+    #[test]
+    fn backfill_fills_only_null_sources_and_is_idempotent() {
+        let db = test_db();
+        db.upsert_account(&account_with_vitals("acct-bf")).expect("insert");
+        db.set_account_field_provenance("acct-bf", "arr", "user_edit", None)
+            .expect("user edit");
+
+        let first = db.backfill_missing_account_vitals_provenance().expect("backfill");
+        assert!(first >= 3, "fills the 3 null-source vitals");
+        assert_eq!(col(&db, "acct-bf", "arr_source").as_deref(), Some("user_edit"));
+        assert_eq!(col(&db, "acct-bf", "lifecycle_source").as_deref(), Some("workspace_file:backfilled"));
+        assert_eq!(col(&db, "acct-bf", "nps_source").as_deref(), Some("workspace_file:backfilled"));
+
+        let second = db.backfill_missing_account_vitals_provenance().expect("backfill 2");
+        assert_eq!(second, 0, "backfill must be a no-op on the second run");
+    }
 }
