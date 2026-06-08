@@ -43,10 +43,12 @@ import { EditableText } from "@/components/ui/EditableText";
 import { Segmented } from "@/components/ui/Segmented";
 import { Switch } from "@/components/ui/Switch";
 import { useChapterLayout, type RenderableCompositionBlock, type RenderableCompositionSection } from "@/hooks/useChapterLayout";
+import { useAccountDetail } from "@/hooks/useAccountDetail";
 import { useProjectedComposition } from "@/hooks/useProjectedComposition";
 import { useRegisterMagazineShell, useUpdateFolioVolatile } from "@/hooks/useMagazineShell";
 import type { ProjectedBlock } from "@/services/composition/contracts";
 import type { CompositionBlockVariant } from "@/services/composition/layoutOverlay";
+import type { AccountDetail, EntityIntelligence } from "@/types";
 import shared from "@/styles/entity-detail.module.css";
 import pageStyles from "./AccountDetailPage.module.css";
 
@@ -88,6 +90,8 @@ function transformStyle(transform: ReturnType<typeof useSortable>["transform"]):
 function SortableBlockFrame({
   item,
   accountId,
+  accountDetail,
+  intelligence,
   editMode,
   renderedProvenance,
   onHiddenChange,
@@ -95,6 +99,8 @@ function SortableBlockFrame({
 }: {
   item: RenderableCompositionBlock;
   accountId?: string;
+  accountDetail?: AccountDetail | null;
+  intelligence?: EntityIntelligence | null;
   editMode: boolean;
   renderedProvenance: ReturnType<typeof useProjectedComposition>["renderedProvenance"];
   onHiddenChange: (blockId: string, hidden: boolean) => void;
@@ -165,6 +171,8 @@ function SortableBlockFrame({
       <ReactBlockRenderer
         block={item.block}
         accountId={accountId}
+        accountDetail={accountDetail}
+        intelligence={intelligence}
         renderedProvenance={renderedProvenance}
         editMode={editMode}
       />
@@ -210,6 +218,7 @@ export default function AccountDetailPage() {
   const navigate = useNavigate();
   const [editMode, setEditMode] = useState(false);
   const composition = useProjectedComposition(accountId);
+  const acct = useAccountDetail(accountId);
   const projection = composition.data?.projection ?? null;
   const layout = useChapterLayout({ projection, entityType: "account" });
   const visibleSections = layout.view.sections;
@@ -330,6 +339,8 @@ export default function AccountDetailPage() {
         key={item.block.block_id}
         item={item}
         accountId={accountId}
+        accountDetail={acct.detail}
+        intelligence={acct.intelligence}
         editMode={editMode}
         renderedProvenance={composition.renderedProvenance}
         onHiddenChange={layout.setBlockHidden}
