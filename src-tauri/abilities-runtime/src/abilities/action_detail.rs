@@ -1653,7 +1653,10 @@ mod tests {
 
     use super::*;
     use crate::abilities::registry::{AbilityRegistry, ActorKind, McpExposure, ScopeSet};
-    use crate::abilities::NOOP_ABILITY_TRACER;
+    use crate::abilities::{
+        project_composition_for_surface, FallbackProjectionContext, ProjectionError, SurfaceKind,
+        NOOP_ABILITY_TRACER,
+    };
     use crate::intelligence::provider::{
         Completion, FingerprintMetadata, IntelligenceProvider, ModelName, ModelTier, PromptInput,
         ProviderError, ProviderKind,
@@ -2094,6 +2097,84 @@ mod tests {
         ));
         assert_eq!(reader.calls.load(Ordering::SeqCst), 1);
         assert_eq!(committer.calls.load(Ordering::SeqCst), 1);
+    }
+
+    #[tokio::test]
+    async fn dos852_producer_output_passes_w4d_projection() {
+        let claims = vec![action_claim("claim-action", "Action-local context")];
+        let snapshot_reader = Arc::new(SpySnapshotReader::new(Ok(snapshot_fixture(vec![
+            snapshot_field(
+                "/context/body",
+                "Context",
+                Value::String("Existing action context".to_string()),
+            ),
+            snapshot_field(
+                "/reference/source",
+                "Source",
+                json!({"type": "manual", "label": "User"}),
+            ),
+            snapshot_field(
+                "/linear/issue",
+                "Linear issue",
+                json!({"identifier": "DOS-123", "url": "https://linear.example/DOS-123"}),
+            ),
+            snapshot_field(
+                "/action-bar/status_toggle",
+                "Action bar",
+                json!({"can_complete": true, "status": "unstarted"}),
+            ),
+        ]))));
+        let (clock, rng, external, reader, committer, provider) = fixture_parts(claims);
+        let services = services(
+            &clock,
+            &rng,
+            &external,
+            reader,
+            committer,
+            snapshot_reader,
+        );
+        let ctx = ability_ctx(&services, &provider);
+
+        let output = action_detail(&ctx, input())
+            .await
+            .expect("action detail succeeds");
+        let composition = output.data();
+        let emitted_block_count = composition.blocks().count();
+
+        let proj_ctx = FallbackProjectionContext::new(
+            Actor::SurfaceClient {
+                instance: crate::abilities::registry::SurfaceClientId::new("sc_action_fixture"),
+                scopes: ScopeSet::new([crate::abilities::registry::SurfaceScope::new(
+                    "read.action_detail",
+                )])
+                .expect("scope set"),
+            },
+            SurfaceKind::SurfaceClient,
+            3,
+        );
+
+        let projection = project_composition_for_surface(composition, &proj_ctx);
+        if let Err(ProjectionError::InvalidProducerOutput { reason }) = &projection {
+            panic!("projection rejected producer output with InvalidProducerOutput: {reason:?}");
+        }
+        let (projected, _audits) =
+            projection.expect("projection must accept producer output (DOS-852 contract)");
+
+        assert_eq!(
+            projected.blocks.len(),
+            emitted_block_count,
+            "every emitted block must project"
+        );
+        for block in composition.blocks() {
+            assert!(
+                projected
+                    .blocks
+                    .iter()
+                    .any(|projected| projected.block_id.as_str() == block.id.as_str()),
+                "emitted block {} must project",
+                block.id.as_str()
+            );
+        }
     }
 
     #[tokio::test]

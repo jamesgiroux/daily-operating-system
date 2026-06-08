@@ -1794,3 +1794,67 @@ fn score_band_rule() -> BlockProjectionRule {
         default_trust_band: TrustBand::UseWithCaution,
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use chrono::TimeZone;
+
+    use super::*;
+    use crate::abilities::composition::{
+        AbilityRef, CompositionKind, CompositionMetadata, Section,
+    };
+    use crate::abilities::provenance::{InvocationId, SchemaVersion};
+
+    #[test]
+    fn binding_to_absent_payload_field_rejects_as_invalid_producer_output() {
+        let invocation_id = InvocationId::new(uuid::Uuid::from_u128(
+            0x1234_5678_90ab_cdef_1122_3344_5566_7788,
+        ));
+        let generated_at = chrono::Utc
+            .with_ymd_and_hms(2026, 5, 15, 12, 0, 0)
+            .unwrap();
+        let mut block = Block::new(
+            BlockId::new("claim-summary-1"),
+            BlockType::ClaimSummary,
+            json!({"text": "Known payload text"}),
+            Vec::new(),
+            ProvenanceRef::new(
+                invocation_id,
+                FieldPath::new("/sections/0/blocks/0").unwrap(),
+            ),
+            None,
+        )
+        .expect("block builds");
+        block.field_bindings.push(FieldBinding {
+            field_path: FieldPath::new("/missing_payload_field").unwrap(),
+            role: BindingRole::DisplayOnly,
+            claim_refs: Vec::new(),
+        });
+        let composition = Composition::new(
+            CompositionDocId::new("composition-fixture"),
+            CompositionKind::EntityPage,
+            None,
+            vec![Section::new(SectionId::new("summary"), vec![block])],
+            Salience::default(),
+            generated_at,
+            AbilityRef::new("test.ability"),
+            CompositionMetadata {
+                schema_version: SchemaVersion(1),
+                generated_at,
+                composition_version: CompositionVersion::new(1),
+                generated_by: "test.ability".to_string(),
+            },
+        );
+        let ctx = FallbackProjectionContext::new(Actor::System, SurfaceKind::Eval, 3);
+
+        let err = project_composition_for_surface(&composition, &ctx)
+            .expect_err("binding to absent payload field rejects");
+
+        assert_eq!(
+            err,
+            ProjectionError::InvalidProducerOutput {
+                reason: ProducerOutputInvalidReason::BindingTargetsUnknownField
+            }
+        );
+    }
+}
