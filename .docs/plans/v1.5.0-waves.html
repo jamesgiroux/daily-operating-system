@@ -43,7 +43,7 @@
   </p>
   <div class="plans-meta">
     <span>Target: 2026 (DRAFT)</span>
-    <span>Waves: W0–W5 + List-Surfaces lane</span>
+    <span>Waves: W0–W5 + WR (revision) + List-Surfaces lane</span>
     <span>Scope tier: Wave</span>
     <span>Decisions locked w/ James 2026-05-31</span>
   </div>
@@ -154,6 +154,7 @@
       <tr><td>W1</td><td>Account Detail — end-to-end reference</td><td>Prove producer → renderer → new design on ONE surface; figure it out here</td><td>the reference vertical</td></tr>
       <tr><td>W2</td><td>In-context edit & customize</td><td>On-page edit mode: toggle / reorder / variant / inline-edit, per type</td><td>HEADLINE</td></tr>
       <tr><td>W3</td><td>Forward surfaces — detail</td><td>Project / Person / Actions: each a producer + its new variant-D design</td><td>HEADLINE</td></tr>
+      <tr><td>WR</td><td>Detail-surface reconciliation (revision)</td><td>Make Account actually look like the design; fix the substrate gaps that block it (provenance, formatting, a producer-contract gate)</td><td>catch-up · Account-first</td></tr>
       <tr><td>W4</td><td>Forward surfaces — briefing + meeting</td><td>Briefing + meeting before/after: producers + new designs (the biggest)</td><td>HEADLINE · seam</td></tr>
       <tr><td>W5</td><td>Settings · per-type config · variants</td><td>One place to set a type's lifecycle + default layout</td><td>HEADLINE</td></tr>
       <tr><td>—</td><td>List Surfaces (parallel)</td><td>The 5 dogfooding fixes (select, bulk-archive, folders, reparent, lifecycle)</td><td>parallel lane</td></tr>
@@ -281,6 +282,18 @@
   <p class="plans-footnote"><strong>In plain terms —</strong> repeat the Account pattern for Projects, People, and Actions — each gets its new look, built as blocks, not bolted onto the old page.</p>
   <p><strong>Proof —</strong> each surface renders its new design from blocks; L4 visual review against the design per surface.</p>
 
+  <h3 class="plans-subhead">WR — Detail-surface reconciliation · revision · Account-first</h3>
+  <p>W1 and W3 passed L0 and shipped the composition <em>substrate</em> — producer, <code>ReactBlockRenderer</code>, transport, edit mode, four producers — but two things were never delivered: the W1 proof bar (<em>"matches the variant-D design, not the old page"</em> — the blocks render raw), and substrate gaps that block honest claim-backed rendering, surfaced during the Account UI pass. WR redoes that work properly, under L0/L1 discipline, so it can't silently regress. <strong>Account-first:</strong> substrate fixes are written wave-wide where code is shared; variant-D design quality lands on Account only (the reference), with the forward surfaces' design quality a follow wave. Full packet: <code>.docs/plans/v1.5.0-wr-l0-packet.md</code>.</p>
+  <ul>
+    <li><strong>R0 — Producer-contract parity gate.</strong> A trivial payload↔binding desync passed <code>cargo test</code> and only failed at runtime as <code>producer_unavailable</code> (<code>InvalidProducerOutput { BindingTargetsUnknownField }</code>). Add the CI parity test that was missing, per producer, over realistic output. <em>Lands first; everything else builds behind it.</em></li>
+    <li><strong>R1 — Field provenance at the file-sync.</strong> <code>upsert_account</code> persists <code>arr/lifecycle/contract_end/nps</code> from <code>dashboard.json</code> but discards the source, so the producer (correctly) drops every vital. Record the source the sync already knows — without bumping <code>updated_at</code> (no sync churn) — and backfill existing entities.</li>
+    <li><strong>R2 — Producer-side formatting.</strong> Emit typed <code>value</code> + formatted <code>display_value</code> + <code>kind</code> (logic/display separation; identical across Tauri/WP/MCP; agents keep the typed value). Time-relative rendering stays surface-side (the composition is cached).</li>
+    <li><strong>R3 — Variant-D Account rendering.</strong> Render the block library to design quality reusing the curated CSS (<code>EntityHeroBase</code> et al.), chrome-free masthead, edits → <code>edit_routes</code>; inside the existing W2 overlay, chapter-by-chapter, hero-first. <em>(Design is James-collaborative — reference-translation as the floor.)</em></li>
+    <li><strong>R4 — Editable type/lifecycle claim chip.</strong> Emit the identity chip with a <code>FeedbackTarget</code> binding so it routes to claim feedback (backing field decided at L0).</li>
+  </ul>
+  <p class="plans-footnote"><strong>In plain terms —</strong> the engine and the page already work, but the page doesn't look like the design and a few data plumbing gaps make it look broken (empty stats, raw numbers). WR makes Account actually look right and fixes the plumbing — and adds a guardrail so a small producer change can't blank the page again.</p>
+  <p><strong>Proof —</strong> Account Detail renders at variant-D quality end-to-end with provenance-backed, producer-formatted vitals and an editable claim chip; the producer-contract gate fails a desync at build time, not at runtime.</p>
+
   <h3 class="plans-subhead">W4 — Forward surfaces: briefing + meeting recap · HEADLINE · the seam</h3>
   <p>The biggest forward surfaces, kept as their own wave. Same vertical slice — briefing + meeting-prep/recap producers + their new designs — and the clearest produce→consume pairing (the recap's analytical blocks are ability outputs).</p>
   <ul>
@@ -367,7 +380,7 @@
                                                                                       └──> W4 (briefing + meeting) ─────┘
 
 List Surfaces ───────────────────────────────────────────────────────────────────────────  parallel (shares dnd-kit dep)</pre>
-  <p class="plans-footnote">W1 is the fan-out gate — it proves the full vertical (producer → renderer → new design) on Account, so W2/W3/W4 fan out against a working pattern rather than a renderer built on throwaway templates. W4 carries its own producers (briefing/meeting). List Surfaces is independent.</p>
+  <p class="plans-footnote">W1 is the fan-out gate — it proves the full vertical (producer → renderer → new design) on Account, so W2/W3/W4 fan out against a working pattern rather than a renderer built on throwaway templates. W4 carries its own producers (briefing/meeting). List Surfaces is independent. <strong>WR (revision)</strong> follows W3: W1/W3 shipped the substrate but not the variant-D design or the provenance/formatting/contract-gate substrate it needs; WR reconciles that on Account first and should land before the W4 forward-design fan-out inherits the same renderer.</p>
 </section>
 
 <!-- DECIDED + REMAINING -->
@@ -435,7 +448,7 @@ List Surfaces ──────────────────────
 
 <!-- FINIS -->
 <div class="finis">
-  <div class="finis-mark">W0 · W1 · W2 · W3 · W4 · W5</div>
+  <div class="finis-mark">W0 · W1 · W2 · W3 · WR · W4 · W5</div>
   <div class="finis-date">v1.5.0 Wave Plan · 2026-05-31 · DRAFT (decisions locked; L0 hardened)</div>
   <div class="finis-caption">The engine already makes blocks. v1.5.0 teaches the app to draw them — and lets you arrange them.</div>
 </div>
