@@ -17,7 +17,7 @@
 -- `conn.execute_batch(sql)` which does NOT wrap the batch in a single
 -- transaction unless the SQL contains explicit `BEGIN; ... COMMIT;`.
 -- Without that, multi-process readers (additional processes opening the
--- encrypted DB during the migration window) could observe the moment
+-- active DB during the migration window) could observe the moment
 -- between `DROP TABLE claim_feedback` and the `ALTER TABLE ... RENAME`,
 -- failing reads against the missing `claim_feedback` table.
 --

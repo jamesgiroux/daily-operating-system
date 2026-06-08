@@ -2,7 +2,7 @@
 
 **Auto-generated:** 2026-05-11 by `.docs/generators/gen-data-model.sh`
 
-**Database:** SQLite (SQLCipher-encrypted, WAL mode)
+**Database:** SQLite (plain local file, WAL mode)
 **Migrations:** 153 files (`001_baseline.sql` through `154_claim_surface_dismissals.sql`)
 **DB modules:** `src-tauri/src/db/`
 

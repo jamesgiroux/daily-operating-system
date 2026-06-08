@@ -591,6 +591,25 @@ pub struct DbService {
     _rebuild_access: crate::services::rebuild::RebuildDbAccessGuard,
 }
 
+pub(crate) struct FreshSerializedConnection {
+    conn: Connection,
+    rebuild_access: crate::services::rebuild::RebuildDbAccessGuard,
+}
+
+impl FreshSerializedConnection {
+    pub(crate) fn into_parts(self) -> (Connection, crate::services::rebuild::RebuildDbAccessGuard) {
+        (self.conn, self.rebuild_access)
+    }
+}
+
+impl std::ops::Deref for FreshSerializedConnection {
+    type Target = Connection;
+
+    fn deref(&self) -> &Self::Target {
+        &self.conn
+    }
+}
+
 #[cfg(test)]
 struct FixtureDbServiceKeyProvider {
     key: KeychainSecret,
@@ -823,9 +842,12 @@ impl DbService {
 
     /// Open a fresh connection through the writer thread so fresh handles are
     /// serialized with WAL writes.
-    pub fn open_fresh_serialized(&self, path: PathBuf) -> Result<Connection, DbError> {
+    pub(crate) fn open_fresh_serialized(
+        &self,
+        path: PathBuf,
+    ) -> Result<FreshSerializedConnection, DbError> {
         crate::db::guard_path_for_mode(&path)?;
-        let _rebuild_access = crate::services::rebuild::acquire_db_access_guard(&path)?;
+        let rebuild_access = crate::services::rebuild::acquire_db_access_guard(&path)?;
 
         let started = Instant::now();
         let writer = self.writer();
@@ -838,7 +860,10 @@ impl DbService {
             500,
         );
         match result {
-            Ok(conn) => Ok(conn),
+            Ok(conn) => Ok(FreshSerializedConnection {
+                conn,
+                rebuild_access,
+            }),
             Err(PooledCallError::Rusqlite(error)) => Err(DbError::Sqlite(error)),
             Err(PooledCallError::Closed) => Err(DbError::Migration(
                 "pooled writer thread not available".to_string(),
@@ -1345,6 +1370,62 @@ mod tests {
                 .expect("cutover after drop");
             drop(cutover);
         });
+    }
+
+    #[tokio::test(flavor = "current_thread")]
+    async fn open_fresh_serialized_guard_blocks_live_cutover_until_dropped() {
+        let _test_lock = crate::services::rebuild::rebuild_test_lock();
+        let dir = tempfile::tempdir().expect("tempdir");
+        let service_path = dir.path().join("service-held.db");
+        let fresh_path = dir.path().join("fresh-held.db");
+        let svc = DbService::open_at_unencrypted(service_path)
+            .await
+            .expect("open service");
+
+        let conn = svc
+            .open_fresh_serialized(fresh_path.clone())
+            .expect("fresh serialized open");
+
+        let error = match crate::services::rebuild::try_begin_live_cutover(&fresh_path) {
+            Ok(_) => panic!("cutover should fail while fresh serialized connection is open"),
+            Err(error) => error,
+        };
+        assert_cutover_in_progress(error, "access guards are still active");
+
+        drop(conn);
+        let cutover = crate::services::rebuild::try_begin_live_cutover(&fresh_path)
+            .expect("cutover after fresh serialized connection drop");
+        drop(cutover);
+    }
+
+    #[tokio::test(flavor = "current_thread")]
+    async fn action_db_global_fresh_open_guard_blocks_live_cutover_until_dropped() {
+        let _test_lock = crate::services::rebuild::rebuild_test_lock();
+        let dir = tempfile::tempdir().expect("tempdir");
+        let service_path = dir.path().join("service-global-held.db");
+        let fresh_path = dir.path().join("fresh-global-held.db");
+        let svc = DbService::open_at_unencrypted(service_path)
+            .await
+            .expect("open service");
+        install_global(svc);
+        let _global_guard = GlobalServiceGuard;
+
+        let db = ActionDb::open_resolved_path_for_tests(
+            fresh_path.clone(),
+            Arc::new(LocalKeychain::new()),
+        )
+        .expect("global fresh ActionDb open");
+
+        let error = match crate::services::rebuild::try_begin_live_cutover(&fresh_path) {
+            Ok(_) => panic!("cutover should fail while global fresh ActionDb is open"),
+            Err(error) => error,
+        };
+        assert_cutover_in_progress(error, "access guards are still active");
+
+        drop(db);
+        let cutover = crate::services::rebuild::try_begin_live_cutover(&fresh_path)
+            .expect("cutover after global fresh ActionDb drop");
+        drop(cutover);
     }
 
     #[tokio::test(flavor = "multi_thread", worker_threads = 2)]

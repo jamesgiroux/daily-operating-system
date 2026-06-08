@@ -178,7 +178,6 @@ export interface DatabaseRecoveryStatus {
   required: boolean;
   reason: string;
   detail: string;
-  dbPath: string;
 }
 
 export interface BackupInfo {

@@ -424,7 +424,6 @@ Complete inventory of all Tauri IPC commands (`#[tauri::command]` functions).
 | `get_all_emails` | — | — |
 | `get_email_sync_status` | yes | — |
 | `get_emails_enriched` | yes | — |
-| `get_encryption_key_status` | — | — |
 | `get_entity_context_entries` | yes | entity_type, entity_id |
 | `get_entity_emails` | yes | entity_id, entity_type |
 | `get_inbox_file_content` | — | filename |
@@ -464,4 +463,3 @@ Complete inventory of all Tauri IPC commands (`#[tauri::command]` functions).
 | `update_entity_context_entry` | yes | id, title, content |
 | `update_user_context_entry` | yes | id, title, content |
 | `update_user_entity_field` | yes | field, value |
-

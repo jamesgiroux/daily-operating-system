@@ -2281,6 +2281,47 @@ mod tests {
     }
 
     #[test]
+    fn action_db_open_at_guard_blocks_live_cutover_until_db_dropped() {
+        let _test_lock = rebuild_test_lock();
+        let dir = tempfile::tempdir().expect("tempdir");
+        let path = dir.path().join("direct-open-held.db");
+        let db = ActionDb::open_at_unencrypted(path.clone()).expect("direct open");
+
+        let error = match try_begin_live_cutover(&path) {
+            Ok(_) => panic!("cutover should fail while direct ActionDb is open"),
+            Err(error) => error,
+        };
+        assert_cutover_in_progress(error, "access guards are still active");
+
+        drop(db);
+        let cutover = try_begin_live_cutover(&path).expect("cutover after direct DB drop");
+        drop(cutover);
+    }
+
+    #[test]
+    fn action_db_readonly_guard_blocks_live_cutover_until_db_dropped() {
+        let _test_lock = rebuild_test_lock();
+        let dir = tempfile::tempdir().expect("tempdir");
+        let path = dir.path().join("readonly-open-held.db");
+        let seed = ActionDb::open_at_unencrypted(path.clone()).expect("seed DB");
+        drop(seed);
+
+        let db =
+            ActionDb::open_readonly_at(&path, std::sync::Arc::new(crate::db::LocalKeychain::new()))
+                .expect("readonly open");
+
+        let error = match try_begin_live_cutover(&path) {
+            Ok(_) => panic!("cutover should fail while readonly ActionDb is open"),
+            Err(error) => error,
+        };
+        assert_cutover_in_progress(error, "access guards are still active");
+
+        drop(db);
+        let cutover = try_begin_live_cutover(&path).expect("cutover after readonly DB drop");
+        drop(cutover);
+    }
+
+    #[test]
     fn dos832_replay_sidecar_resolves_fresh_claim_by_semantic_identity_not_runtime_uuid() {
         let db = test_db();
         let (clock, rng, external) = ctx_parts();

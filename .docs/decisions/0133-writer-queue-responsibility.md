@@ -22,7 +22,7 @@ The writer queue is governed by the following invariants. Each is enforced in co
 
 ### 1. Single writer connection per process
 
-Exactly one mutating SQLite connection exists in-process. It is owned by the writer slot of `DbService` (`src-tauri/src/db_service.rs:429`) and accessed through `PooledConnection::call_*` and `state.db_write`. No code path is permitted to open a second mutating handle to the encrypted database.
+Exactly one mutating SQLite connection exists in-process. It is owned by the writer slot of `DbService` (`src-tauri/src/db_service.rs:429`) and accessed through `PooledConnection::call_*` and `state.db_write`. No code path is permitted to open a second mutating handle to the active database.
 
 The historic justification "open a fresh `ActionDb` per worker to avoid starving the foreground" is rejected. SQLite WAL permits exactly one file-level writer at a time; adding a second connection adds a queue slot, not parallelism. `WRITE_TRANSACTION_GATE` (`src-tauri/src/db/core.rs:29`) serializes every `BEGIN IMMEDIATE` regardless of which connection issues it. The pool, not the connection count, owns prioritization.
 
@@ -32,13 +32,13 @@ Enforcement: W1-C lands a CI gate (`startup_background_db_access_lint_test.rs` e
 
 Every foreground command, background worker, signal-emission path, maintenance job, and ability mutation that writes to the DB enqueues its closure on `state.db_write` (which dispatches to the writer's mpsc loop and reaches the gate-serialized `with_transaction`). Direct calls to `conn_ref().execute*`, `conn_ref().prepare`, or any other connection method outside an explicit transaction wrapper are forbidden.
 
-Two narrow exceptions exist and are named: (a) the SQLCipher pragma sequence in `apply_pragmas` (which by ADR-0092's PRAGMA-key-first ordering cannot route through `with_transaction`); (b) the dedicated checkpoint thread W0-A introduces, which runs `PRAGMA wal_checkpoint(PASSIVE)` on the writer's own encrypted connection. Both are documented allowlist entries in the W1-C CI gate.
+One narrow exception exists and is named: the dedicated checkpoint thread W0-A introduces, which runs `PRAGMA wal_checkpoint(PASSIVE)` on the writer's own connection. It is documented as an allowlist entry in the W1-C CI gate.
 
 Enforcement: forbidden-pattern lint (W1-C); existing service-boundary test (`startup_background_db_access_lint_test.rs`) extended to cover the bypass shape.
 
 ### 3. The gate serializes; it does not throttle
 
-`WRITE_TRANSACTION_GATE` is a process-wide `parking_lot::Mutex<()>` (`src-tauri/src/db/core.rs:29`). Its sole job is to ensure no two `BEGIN IMMEDIATE` calls overlap in the same process — covering the rare non-pool fresh-open caller (the existing SQLCipher pragma path; nothing else) so SQLite WAL never sees two concurrent in-process writers.
+`WRITE_TRANSACTION_GATE` is a process-wide `parking_lot::Mutex<()>` (`src-tauri/src/db/core.rs:29`). Its sole job is to ensure no two `BEGIN IMMEDIATE` calls overlap in the same process so SQLite WAL never sees two concurrent in-process writers.
 
 The gate does not implement priority, fairness, backpressure, or rate limiting. It records gate-wait latency (W0-B instruments waits above 50ms; existing log fires only above 5s) so observability can distinguish "contention because the writer is busy" from "contention because work is queued unfairly," but the gate itself is policy-free.
 
@@ -135,7 +135,7 @@ Each of these has been proposed or attempted; listing them here so future ticket
 - Bypass closure + CI gate: W1-C lane owner.
 - Atomicity contract amendments: ADR-0104 owners (separate from this ADR).
 
-Amendments to this ADR happen when a feature ticket proposes a principled exception (e.g., the future SQLCipher key-rotation path, which currently lives outside `with_transaction` and may need explicit accommodation). Amendments are numbered and dated, not silently merged.
+Amendments to this ADR happen when a feature ticket proposes a principled exception. Amendments are numbered and dated, not silently merged.
 
 ## Enforcement summary
 
@@ -166,7 +166,7 @@ Amendments to this ADR happen when a feature ticket proposes a principled except
 - Commit `8bfdfdd8` (2026-04-20) — pool unification revert, the load-bearing lesson on mutex-across-await.
 - PR #407 — process-wide `WRITE_TRANSACTION_GATE` introduction.
 - ADR-0067 — staged split-lock helpers; this ADR is the "earn it" outcome ADR-0067 named.
-- ADR-0092 — SQLCipher PRAGMA-key-first ordering, unchanged by this ADR.
+- ADR-0092 — superseded historical SQLCipher storage contract.
 - ADR-0101 — service-boundary-enforcement; this ADR is the runway to its Phase 3.
 - ADR-0104 — execution-mode-and-mode-aware-services; owns atomicity contract; sibling to this ADR.
 - ADR-0120 — observability contract; W0-B telemetry conforms.

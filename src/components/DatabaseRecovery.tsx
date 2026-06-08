@@ -8,6 +8,19 @@ interface DatabaseRecoveryProps {
   status: DatabaseRecoveryStatus;
 }
 
+const UNSUPPORTED_BACKUP_ERROR_PREFIX =
+  "Backup is not a supported plain SQLite DailyOS backup.";
+
+function displayRecoveryError(error: unknown, fallback: string): string {
+  if (
+    typeof error === "string" &&
+    error.startsWith(UNSUPPORTED_BACKUP_ERROR_PREFIX)
+  ) {
+    return error;
+  }
+  return fallback;
+}
+
 function formatBytes(bytes: number): string {
   if (bytes < 1024) return `${bytes} B`;
   if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
@@ -33,7 +46,7 @@ export function DatabaseRecovery({ status }: DatabaseRecoveryProps) {
       const files = await invoke<BackupInfo[]>("list_database_backups");
       setBackups(files);
     } catch (e) {
-      setError(typeof e === "string" ? e : "Failed to load backups");
+      setError(displayRecoveryError(e, "Backup list unavailable. Review logs for details."));
     } finally {
       setLoading(false);
     }
@@ -56,7 +69,7 @@ export function DatabaseRecovery({ status }: DatabaseRecoveryProps) {
       await invoke("restore_database_from_backup", { backupPath: path });
       await relaunch();
     } catch (e) {
-      setError(typeof e === "string" ? e : "Restore failed");
+      setError(displayRecoveryError(e, "Restore failed. Review logs for details."));
     } finally {
       setRestoringPath(null);
     }
@@ -73,8 +86,8 @@ export function DatabaseRecovery({ status }: DatabaseRecoveryProps) {
     try {
       await invoke("start_fresh_database");
       await relaunch();
-    } catch (e) {
-      setError(typeof e === "string" ? e : "Failed to start fresh");
+    } catch {
+      setError("Could not start with a fresh database. Review logs for details.");
     } finally {
       setBusy(false);
     }
@@ -94,8 +107,8 @@ export function DatabaseRecovery({ status }: DatabaseRecoveryProps) {
         return;
       }
       await invoke("export_database_copy", { destination });
-    } catch (e) {
-      setError(typeof e === "string" ? e : "Export failed");
+    } catch {
+      setError("Export failed. Review logs for details.");
     } finally {
       setBusy(false);
     }
@@ -168,14 +181,6 @@ export function DatabaseRecovery({ status }: DatabaseRecoveryProps) {
           </div>
         )}
 
-        {status.dbPath && (
-          <details className="db-recovery-technical">
-            <summary>Technical Details</summary>
-            <div className="db-recovery-detail">
-              <strong>Database path:</strong> {status.dbPath}
-            </div>
-          </details>
-        )}
       </div>
 
       <style>{`

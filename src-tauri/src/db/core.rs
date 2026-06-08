@@ -6,11 +6,12 @@
 //! SQLite is not disposable — important state lives here and is written back to the
 //! filesystem at natural synchronization points (archive, dashboard regeneration).
 
+use std::collections::HashMap;
 use std::path::{Component, Path, PathBuf};
 use std::sync::atomic::{AtomicU8, Ordering};
-use std::sync::Arc;
 #[cfg(test)]
 use std::sync::OnceLock;
+use std::sync::{Arc, LazyLock};
 
 use super::types::*;
 use crate::db::key_provider::DbKeyProvider;
@@ -100,6 +101,10 @@ const WORKSPACE_GRAPH_DIAGNOSTIC_KEY_DERIVATION_DOMAIN: &[u8] =
 const SQLITE_DATABASE_HEADER: &[u8; 16] = b"SQLite format 3\0";
 const AUDIT_PSEUDONYMIZATION_SECRET_ACCOUNT: &str = "audit-pseudonymization-v1";
 const WORKSPACE_GRAPH_DIAGNOSTIC_SECRET_ACCOUNT: &str = "workspace-graph-diagnostic-v1";
+
+static OWNED_DB_REBUILD_GUARDS: LazyLock<
+    parking_lot::Mutex<HashMap<usize, Vec<crate::services::rebuild::RebuildDbAccessGuard>>>,
+> = LazyLock::new(|| parking_lot::Mutex::new(HashMap::new()));
 
 #[cfg(test)]
 static TEST_DAILYOS_DATA_DIR: OnceLock<PathBuf> = OnceLock::new();
@@ -342,7 +347,59 @@ fn guarded_paths_equal(left: &Path, right: &Path) -> bool {
 
 #[repr(transparent)]
 pub struct ActionDb {
-    pub(crate) conn: Connection,
+    pub(crate) conn: std::mem::ManuallyDrop<Connection>,
+}
+
+struct GuardedPlainConnection {
+    conn: Connection,
+    rebuild_access: crate::services::rebuild::RebuildDbAccessGuard,
+}
+
+fn sqlite_connection_handle(conn: &Connection) -> usize {
+    // SAFETY: the pointer is used only as a stable identity key for the live
+    // rusqlite connection. It is never dereferenced.
+    unsafe { conn.handle() as usize }
+}
+
+fn register_owned_rebuild_access(
+    conn: &Connection,
+    rebuild_access: crate::services::rebuild::RebuildDbAccessGuard,
+) {
+    OWNED_DB_REBUILD_GUARDS
+        .lock()
+        .entry(sqlite_connection_handle(conn))
+        .or_default()
+        .push(rebuild_access);
+}
+
+fn release_owned_rebuild_access_by_handle(handle: usize) {
+    let mut guards = OWNED_DB_REBUILD_GUARDS.lock();
+    let Some(entries) = guards.get_mut(&handle) else {
+        return;
+    };
+    entries.pop();
+    if entries.is_empty() {
+        guards.remove(&handle);
+    }
+}
+
+fn has_owned_rebuild_access(conn: &Connection) -> bool {
+    OWNED_DB_REBUILD_GUARDS
+        .lock()
+        .get(&sqlite_connection_handle(conn))
+        .is_some_and(|entries| !entries.is_empty())
+}
+
+impl Drop for ActionDb {
+    fn drop(&mut self) {
+        let handle = sqlite_connection_handle(self.conn_ref());
+        // Close SQLite before releasing the rebuild access guard. Cutover must
+        // not begin while rusqlite is still closing/checkpointing the handle.
+        unsafe {
+            std::mem::ManuallyDrop::drop(&mut self.conn);
+        }
+        release_owned_rebuild_access_by_handle(handle);
+    }
 }
 
 pub(crate) fn local_db_keyed_audit_tag(
@@ -439,19 +496,33 @@ impl ActionDb {
         &self.conn
     }
 
-    /// Consume the wrapper and return the underlying connection.
-    pub fn into_connection(self) -> Connection {
-        self.conn
+    /// Consume a wrapper known not to own a rebuild guard and return the raw connection.
+    ///
+    /// Only the `DbService` pool-open path uses this. The service owns the
+    /// service-lifetime rebuild access guard while this connection lives in the
+    /// pool, so there must not be an `ActionDb`-owned guard to release here.
+    fn into_connection_without_owned_rebuild_guard_for_service_pool(self) -> Connection {
+        debug_assert!(
+            !has_owned_rebuild_access(self.conn_ref()),
+            "service-pool raw connection conversion must not release an owned rebuild guard"
+        );
+        let this = std::mem::ManuallyDrop::new(self);
+        // SAFETY: `this` is wrapped in ManuallyDrop, so reading the field moves
+        // the manually-dropped connection out without running ActionDb::drop a
+        // second time.
+        unsafe { std::mem::ManuallyDrop::into_inner(std::ptr::read(&this.conn)) }
     }
 
     /// Borrow a `Connection` owned elsewhere as an `ActionDb` view.
     ///
-    /// `ActionDb` is `repr(transparent)` over `rusqlite::Connection`, so this
-    /// view has the same layout and a lifetime tied to the input borrow. The
-    /// borrowed view cannot outlive `conn` or be moved into a `'static`
-    /// closure, which keeps pooled `.call()` usage type-system bounded.
+    /// `ActionDb` is `repr(transparent)` over `ManuallyDrop<rusqlite::Connection>`,
+    /// which has the same layout as `rusqlite::Connection`; this view has a
+    /// lifetime tied to the input borrow. The borrowed view cannot outlive
+    /// `conn` or be moved into a `'static` closure, which keeps pooled `.call()`
+    /// usage type-system bounded.
     pub fn from_conn(conn: &Connection) -> &Self {
         // SAFETY: `ActionDb` is `repr(transparent)` and its only field is
+        // `ManuallyDrop<Connection>`, which has the same layout as
         // `Connection`, so `&Connection` and `&ActionDb` have identical layout.
         unsafe { &*(conn as *const Connection as *const Self) }
     }
@@ -590,15 +661,11 @@ impl ActionDb {
         Ok(())
     }
 
-    fn prepare_plain_connection(
+    fn prepare_plain_connection_after_guard(
         path: &Path,
         recover_stuck_mutations: bool,
         run_legacy_backfills: bool,
     ) -> Result<Connection, DbError> {
-        // structural prod-open deny — before key fetch or file open.
-        guard_path_for_mode(path)?;
-        let _rebuild_access = crate::services::rebuild::acquire_db_access_guard(path)?;
-
         // Ensure parent directory exists
         if let Some(parent) = path.parent() {
             if !parent.exists() {
@@ -648,9 +715,57 @@ impl ActionDb {
         Ok(conn)
     }
 
+    fn prepare_plain_connection(
+        path: &Path,
+        recover_stuck_mutations: bool,
+        run_legacy_backfills: bool,
+    ) -> Result<GuardedPlainConnection, DbError> {
+        // structural prod-open deny — before key fetch or file open.
+        guard_path_for_mode(path)?;
+        let rebuild_access = crate::services::rebuild::acquire_db_access_guard(path)?;
+        let conn = Self::prepare_plain_connection_after_guard(
+            path,
+            recover_stuck_mutations,
+            run_legacy_backfills,
+        )?;
+        Ok(GuardedPlainConnection {
+            conn,
+            rebuild_access,
+        })
+    }
+
+    fn from_owned_connection_with_rebuild_access(
+        conn: Connection,
+        rebuild_access: crate::services::rebuild::RebuildDbAccessGuard,
+    ) -> Self {
+        let db = Self {
+            conn: std::mem::ManuallyDrop::new(conn),
+        };
+        register_owned_rebuild_access(db.conn_ref(), rebuild_access);
+        db
+    }
+
+    fn open_owned_plain_connection(
+        path: PathBuf,
+        recover_stuck_mutations: bool,
+        run_legacy_backfills: bool,
+    ) -> Result<Self, DbError> {
+        let guarded =
+            Self::prepare_plain_connection(&path, recover_stuck_mutations, run_legacy_backfills)?;
+        Ok(Self::from_owned_connection_with_rebuild_access(
+            guarded.conn,
+            guarded.rebuild_access,
+        ))
+    }
+
     pub(crate) fn open_plain_connection(path: PathBuf) -> Result<Connection, DbError> {
-        let conn = Self::prepare_plain_connection(&path, true, true)?;
-        let db = Self { conn };
+        // DbService callers hold a service-lifetime rebuild access guard while
+        // this raw connection lives in the pool.
+        guard_path_for_mode(&path)?;
+        let conn = Self::prepare_plain_connection_after_guard(&path, true, true)?;
+        let db = Self {
+            conn: std::mem::ManuallyDrop::new(conn),
+        };
 
         // One-time initialization tasks (guarded by init_tasks table).
         // These run exactly once per database and are safe to call on every startup.
@@ -660,7 +775,7 @@ impl ActionDb {
         )]
         let _ = db.run_guarded_init_backfill_account_domains();
 
-        Ok(db.conn)
+        Ok(db.into_connection_without_owned_rebuild_guard_for_service_pool())
     }
 
     /// Open (or create) the database at `~/.dailyos/dailyos.db` and apply the schema.
@@ -685,8 +800,7 @@ impl ActionDb {
     /// not heal.
     pub fn open_for_inspection(_key_provider: Arc<dyn DbKeyProvider>) -> Result<Self, DbError> {
         let path = Self::db_path()?;
-        let conn = Self::prepare_plain_connection(&path, false, false)?;
-        Ok(Self { conn })
+        Self::open_owned_plain_connection(path, false, false)
     }
 
     fn open_resolved_path(path: PathBuf) -> Result<Self, DbError> {
@@ -695,13 +809,16 @@ impl ActionDb {
         guard_path_for_mode(&path)?;
         if let Some(svc) = crate::db_service::try_global() {
             let conn = svc.open_fresh_serialized(path.clone())?;
+            let (conn, rebuild_access) = conn.into_parts();
             // Startup initialization already runs through the global DbService.
             // Fresh handles should not add best-effort writes outside that path.
-            return Ok(Self { conn });
+            return Ok(Self::from_owned_connection_with_rebuild_access(
+                conn,
+                rebuild_access,
+            ));
         }
 
-        let conn = Self::open_plain_connection(path)?;
-        Ok(Self { conn })
+        Self::open_owned_plain_connection(path, true, true)
     }
 
     #[cfg(test)]
@@ -733,14 +850,13 @@ impl ActionDb {
         path: PathBuf,
         _key_provider: Arc<dyn DbKeyProvider>,
     ) -> Result<Self, DbError> {
-        let conn = Self::open_plain_connection(path)?;
-        Ok(Self { conn })
+        Self::open_owned_plain_connection(path, true, true)
     }
 
     /// Open without encryption. Used for tests only.
     #[cfg(test)]
     pub(crate) fn open_at_unencrypted(path: PathBuf) -> Result<Self, DbError> {
-        let _rebuild_access = crate::services::rebuild::acquire_db_access_guard(&path)?;
+        let rebuild_access = crate::services::rebuild::acquire_db_access_guard(&path)?;
         if let Some(parent) = path.parent() {
             if !parent.exists() {
                 std::fs::create_dir_all(parent).map_err(DbError::CreateDir)?;
@@ -757,7 +873,7 @@ impl ActionDb {
         let _ = Self::backfill_meeting_user_layer(&conn);
         let _ = Self::backfill_stakeholder_columns(&conn);
 
-        let db = Self { conn };
+        let db = Self::from_owned_connection_with_rebuild_access(conn, rebuild_access);
         Self::recover_stuck_version_mutations_logged(&db);
         let _ = db.run_guarded_init_backfill_account_domains();
         Ok(db)
@@ -776,7 +892,7 @@ impl ActionDb {
         _key_provider: Arc<dyn DbKeyProvider>,
     ) -> Result<Self, DbError> {
         guard_path_for_mode(path)?;
-        let _rebuild_access = crate::services::rebuild::acquire_db_access_guard(path)?;
+        let rebuild_access = crate::services::rebuild::acquire_db_access_guard(path)?;
         Self::validate_plain_sqlite_storage(path)?;
 
         let conn = Connection::open_with_flags(
@@ -786,19 +902,24 @@ impl ActionDb {
 
         conn.execute_batch("PRAGMA busy_timeout = 5000;")?;
         conn.execute_batch("PRAGMA query_only = ON;")?;
-        Ok(Self { conn })
+        Ok(Self::from_owned_connection_with_rebuild_access(
+            conn,
+            rebuild_access,
+        ))
     }
 
     #[cfg(any(test, feature = "test-harness", feature = "bench-harness"))]
     #[doc(hidden)]
     pub fn from_connection_for_tests(conn: Connection) -> Self {
-        Self { conn }
+        Self {
+            conn: std::mem::ManuallyDrop::new(conn),
+        }
     }
 
     #[cfg(any(test, feature = "test-harness"))]
     #[doc(hidden)]
     pub fn open_unencrypted_readonly_at_for_tests(path: &std::path::Path) -> Result<Self, DbError> {
-        let _rebuild_access = crate::services::rebuild::acquire_db_access_guard(path)?;
+        let rebuild_access = crate::services::rebuild::acquire_db_access_guard(path)?;
         let conn = Connection::open_with_flags(
             path,
             OpenFlags::SQLITE_OPEN_READ_ONLY | OpenFlags::SQLITE_OPEN_NO_MUTEX,
@@ -806,7 +927,10 @@ impl ActionDb {
         conn.execute_batch("PRAGMA busy_timeout = 5000;")?;
         conn.execute_batch("PRAGMA foreign_keys = ON;")?;
         conn.execute_batch("PRAGMA query_only = ON;")?;
-        Ok(Self { conn })
+        Ok(Self::from_owned_connection_with_rebuild_access(
+            conn,
+            rebuild_access,
+        ))
     }
 
     /// Resolve the default database path: `~/.dailyos/dailyos.db`.
@@ -831,22 +955,30 @@ impl ActionDb {
             DbMode::Live => {}
         }
 
+        Self::resolve_live_db_path(&dailyos_dir)
+    }
+
+    fn resolve_live_db_path(dailyos_dir: &Path) -> Result<PathBuf, DbError> {
         let new_path = dailyos_dir.join("dailyos.db");
         let legacy_path = dailyos_dir.join("actions.db");
-
         // One-time migration: rename actions.db → dailyos.db
         if !new_path.exists() && legacy_path.exists() {
+            Self::validate_plain_sqlite_storage(&legacy_path)?;
+
             // Checkpoint WAL into the main file before renaming, otherwise
             // data written to the WAL but not yet flushed would be lost.
-            if let Ok(conn) = Connection::open(&legacy_path) {
-                #[allow(
-                    clippy::let_underscore_must_use,
-                    reason = "intentional best-effort discard; preserves existing non-blocking behavior"
-                )]
-                // best-effort: rename migration can still proceed if no WAL frames need flushing.
-                let _ = conn.execute_batch("PRAGMA wal_checkpoint(TRUNCATE);");
-                drop(conn);
-            }
+            let conn = Connection::open(&legacy_path).map_err(|error| {
+                DbError::UnsupportedStorageState {
+                    path: legacy_path.display().to_string(),
+                    reason: format!("could not open legacy DB for WAL checkpoint: {error}"),
+                }
+            })?;
+            conn.execute_batch("PRAGMA wal_checkpoint(TRUNCATE);")
+                .map_err(|error| DbError::UnsupportedStorageState {
+                    path: legacy_path.display().to_string(),
+                    reason: format!("could not checkpoint legacy DB before rename: {error}"),
+                })?;
+            drop(conn);
 
             if let Err(e) = std::fs::rename(&legacy_path, &new_path) {
                 log::warn!(
@@ -855,17 +987,24 @@ impl ActionDb {
                 );
                 return Ok(legacy_path);
             }
-            // Clean up WAL/SHM files (SQLite recreates them under the new name)
-            #[allow(
-                clippy::let_underscore_must_use,
-                reason = "intentional best-effort discard; preserves existing non-blocking behavior"
-            )]
-            let _ = std::fs::remove_file(dailyos_dir.join("actions.db-wal"));
-            #[allow(
-                clippy::let_underscore_must_use,
-                reason = "intentional best-effort discard; preserves existing non-blocking behavior"
-            )]
-            let _ = std::fs::remove_file(dailyos_dir.join("actions.db-shm"));
+            // Clean up WAL/SHM files (SQLite recreates them under the new name).
+            for sidecar in [
+                dailyos_dir.join("actions.db-wal"),
+                dailyos_dir.join("actions.db-shm"),
+            ] {
+                match std::fs::remove_file(&sidecar) {
+                    Ok(()) => {}
+                    Err(error) if error.kind() == std::io::ErrorKind::NotFound => {}
+                    Err(error) => {
+                        return Err(DbError::UnsupportedStorageState {
+                            path: sidecar.display().to_string(),
+                            reason: format!(
+                                "could not remove legacy DB sidecar after rename: {error}"
+                            ),
+                        });
+                    }
+                }
+            }
             log::info!("Migrated database: actions.db → dailyos.db");
         }
 
@@ -1163,6 +1302,44 @@ mod storage_boundary_tests {
         std::fs::write(&path, b"not a sqlite database").expect("write unsupported file");
 
         assert_unsupported_storage(&path, "not plain SQLite");
+    }
+
+    #[test]
+    fn legacy_actions_db_preflight_rejects_without_mutating_files() {
+        let dir = tempfile::tempdir().expect("tempdir");
+        let legacy_path = dir.path().join("actions.db");
+        let new_path = dir.path().join("dailyos.db");
+        let wal_path = dir.path().join("actions.db-wal");
+        let shm_path = dir.path().join("actions.db-shm");
+
+        std::fs::write(&legacy_path, b"not plain sqlite legacy payload")
+            .expect("write unsupported legacy DB");
+        std::fs::write(&wal_path, b"legacy wal").expect("write legacy WAL");
+        std::fs::write(&shm_path, b"legacy shm").expect("write legacy SHM");
+
+        match ActionDb::resolve_live_db_path(dir.path())
+            .expect_err("unsupported legacy DB must fail before migration")
+        {
+            DbError::UnsupportedStorageState { path, reason } => {
+                assert_eq!(path, legacy_path.display().to_string());
+                assert!(
+                    reason.contains("not plain SQLite"),
+                    "unexpected reason: {reason}"
+                );
+            }
+            other => panic!("expected UnsupportedStorageState, got {other:?}"),
+        }
+
+        assert!(legacy_path.exists(), "legacy DB must not be renamed");
+        assert!(!new_path.exists(), "new DB must not be created");
+        assert_eq!(
+            std::fs::read(&wal_path).expect("read legacy WAL"),
+            b"legacy wal"
+        );
+        assert_eq!(
+            std::fs::read(&shm_path).expect("read legacy SHM"),
+            b"legacy shm"
+        );
     }
 }
 

@@ -11063,7 +11063,6 @@ mod inferred_relationship_tests {
 #[cfg(test)]
 mod live_acceptance_tests {
     use std::collections::HashSet;
-    use std::path::PathBuf;
     use std::sync::Arc;
 
     use chrono::Utc;
@@ -11643,9 +11642,14 @@ mod live_acceptance_tests {
     fn wave1_live_snapshot_i503_i528_acceptance() {
         let live_db = ActionDb::open(std::sync::Arc::new(crate::db::LocalKeychain::new()))
             .expect("open live DB");
-        let backup_path = crate::db_backup::backup_database(&live_db).expect("create live backup");
+        let backup_token = crate::db_backup::backup_database(&live_db).expect("create live backup");
+        let live_path = ActionDb::db_path_public().expect("resolve live DB path");
+        let backup_path = live_path
+            .parent()
+            .expect("live DB parent")
+            .join(backup_token);
         let snapshot_db = ActionDb::open_at(
-            PathBuf::from(&backup_path),
+            backup_path,
             std::sync::Arc::new(crate::db::LocalKeychain::new()),
         )
         .expect("open snapshot backup DB");

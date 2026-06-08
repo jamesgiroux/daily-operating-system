@@ -359,7 +359,6 @@ get_google_drive_watches
 check_icloud_warning
 dismiss_icloud_warning
 get_lock_status
-get_encryption_key_status
 lock_app
 unlock_app
 set_lock_timeout

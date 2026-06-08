@@ -230,7 +230,6 @@ pub struct DatabaseRecoveryStatus {
     pub required: bool,
     pub reason: String,
     pub detail: String,
-    pub db_path: String,
 }
 
 impl DatabaseRecoveryStatus {
@@ -239,21 +238,55 @@ impl DatabaseRecoveryStatus {
             required: false,
             reason: String::new(),
             detail: String::new(),
-            db_path: String::new(),
         }
     }
 
     pub fn required(reason: impl Into<String>, detail: impl Into<String>) -> Self {
-        let db_path = crate::db::ActionDb::db_path_public()
-            .map(|p| p.to_string_lossy().to_string())
-            .unwrap_or_default();
+        let reason = reason.into();
+        let raw_detail = detail.into();
+        let detail = sanitize_database_recovery_detail(&reason, &raw_detail);
         Self {
             required: true,
-            reason: reason.into(),
-            detail: detail.into(),
-            db_path,
+            reason,
+            detail,
         }
     }
+}
+
+fn sanitize_database_recovery_detail(reason: &str, detail: &str) -> String {
+    if reason == "migration_failed" && detail.contains("newer than this version") {
+        return detail.to_string();
+    }
+
+    match reason {
+        "migration_failed" => {
+            "Database migration failed. Use recovery mode to restore a supported backup or rebuild from canonical workspace files.".to_string()
+        }
+        "database_open_failed" => {
+            "Database open failed. Use recovery mode to restore a supported backup or rebuild from canonical workspace files.".to_string()
+        }
+        "database_storage_health" => {
+            "Database storage health check failed. Use recovery mode to restore a supported backup or rebuild from canonical workspace files.".to_string()
+        }
+        "database_connection_recovery_failed" => {
+            "Database connection recovery failed. Relaunch DailyOS or use recovery mode.".to_string()
+        }
+        "database_path_error" => "Database path setup failed. Review logs for details.".to_string(),
+        _ if database_recovery_detail_contains_path(detail) => {
+            "Database recovery required. Review logs for details.".to_string()
+        }
+        _ => detail.to_string(),
+    }
+}
+
+fn database_recovery_detail_contains_path(detail: &str) -> bool {
+    detail.contains('/')
+        || detail.contains('\\')
+        || detail.contains(".dailyos")
+        || detail.contains("dailyos.db")
+        || detail.contains("actions.db")
+        || detail.contains("private/tmp")
+        || detail.contains("Users")
 }
 
 /// Typed resource permits for concurrent background work.
@@ -1398,6 +1431,11 @@ impl AppState {
     /// Reinitialize the DbService at the current DB path (live or dev).
     /// Called during dev mode enter/exit to switch the async connection pool.
     pub async fn reinit_db_service(&self) -> Result<(), String> {
+        let _guard = self.db_service_reinit_lock.lock().await;
+        self.reinit_db_service_unlocked().await
+    }
+
+    async fn reinit_db_service_unlocked(&self) -> Result<(), String> {
         // Drop the old service first — both from state and the global.
         crate::db_service::uninstall_global();
         {
@@ -1406,6 +1444,21 @@ impl AppState {
         }
         // Open a new service at the current path (respects DEV_DB_MODE)
         self.init_db_service().await
+    }
+
+    /// Close process-wide DB service access before active DB file mutation.
+    ///
+    /// Hold the returned guard until file mutation and any intended reopen have
+    /// completed. While it is held, `db_read()` and `db_write()` cannot auto-open
+    /// a fresh `DbService` behind the mutating command.
+    pub async fn begin_db_file_mutation(&self) -> tokio::sync::MutexGuard<'_, ()> {
+        let guard = self.db_service_reinit_lock.lock().await;
+        crate::db_service::uninstall_global();
+        {
+            let mut db_service = self.db_service.write().await;
+            *db_service = None;
+        }
+        guard
     }
 
     /// Reopen the shared DB pool after a connection-local storage access failure.
@@ -1434,7 +1487,7 @@ impl AppState {
 
         let _guard = self.db_service_reinit_lock.lock().await;
         log::warn!("{context}: refreshing DbService after storage access error: {error}");
-        match self.reinit_db_service().await {
+        match self.reinit_db_service_unlocked().await {
             Ok(()) => true,
             Err(reinit_error) => {
                 self.set_database_recovery_required(
@@ -1444,6 +1497,29 @@ impl AppState {
                 log::warn!("{context}: DbService refresh failed: {reinit_error}");
                 false
             }
+        }
+    }
+
+    async fn ensure_db_service_initialized(&self) {
+        let needs_init = {
+            let guard = self.db_service.read().await;
+            guard.is_none()
+        };
+        if !needs_init {
+            return;
+        }
+
+        let _guard = self.db_service_reinit_lock.lock().await;
+        let still_needs_init = {
+            let guard = self.db_service.read().await;
+            guard.is_none()
+        };
+        if still_needs_init {
+            #[allow(
+                clippy::let_underscore_must_use,
+                reason = "intentional best-effort discard; preserves existing non-blocking behavior"
+            )]
+            let _ = self.init_db_service().await;
         }
     }
 
@@ -1459,17 +1535,7 @@ impl AppState {
         let started = std::time::Instant::now();
         // If the async service hasn't finished startup init yet, try to
         // initialize it on-demand before falling back.
-        {
-            let guard = self.db_service.read().await;
-            if guard.is_none() {
-                drop(guard);
-                #[allow(
-                    clippy::let_underscore_must_use,
-                    reason = "intentional best-effort discard; preserves existing non-blocking behavior"
-                )]
-                let _ = self.init_db_service().await;
-            }
-        }
+        self.ensure_db_service_initialized().await;
 
         {
             let guard = self.db_service.read().await;
@@ -1517,17 +1583,7 @@ impl AppState {
         let started = std::time::Instant::now();
         // If the async service hasn't finished startup init yet, try to
         // initialize it on-demand before falling back.
-        {
-            let guard = self.db_service.read().await;
-            if guard.is_none() {
-                drop(guard);
-                #[allow(
-                    clippy::let_underscore_must_use,
-                    reason = "intentional best-effort discard; preserves existing non-blocking behavior"
-                )]
-                let _ = self.init_db_service().await;
-            }
-        }
+        self.ensure_db_service_initialized().await;
 
         {
             let guard = self.db_service.read().await;
@@ -2292,6 +2348,33 @@ mod tests {
 
         assert!(!changed);
         assert!(!config.google.enabled);
+    }
+
+    #[test]
+    fn database_recovery_status_sanitizes_path_bearing_details() {
+        let status = DatabaseRecoveryStatus::required(
+            "migration_failed",
+            "failed to open rebuild cutover lock /tmp/dailyos.db.rebuild.lock: denied",
+        );
+
+        assert_eq!(
+            status.detail,
+            "Database migration failed. Use recovery mode to restore a supported backup or rebuild from canonical workspace files."
+        );
+        assert!(
+            !status.detail.contains("/tmp"),
+            "recovery status must not expose local paths"
+        );
+    }
+
+    #[test]
+    fn database_recovery_status_preserves_forward_compat_guidance() {
+        let status = DatabaseRecoveryStatus::required(
+            "migration_failed",
+            "Database schema version (300) is newer than this version of DailyOS supports (245). Please update DailyOS.",
+        );
+
+        assert!(status.detail.contains("newer than this version"));
     }
 
     #[test]

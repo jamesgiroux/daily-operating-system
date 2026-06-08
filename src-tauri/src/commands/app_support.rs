@@ -1535,10 +1535,6 @@ pub async fn clear_intelligence(
 )]
 #[tauri::command]
 pub async fn delete_all_data(state: State<'_, Arc<AppState>>) -> Result<(), String> {
-    // Get DB path from static method, close db_service before deleting.
-    let db_path = crate::db::ActionDb::db_path_public()
-        .map(|p| p.to_string_lossy().to_string())
-        .ok();
     let internal_tracker_paths = match state
         .db_read(crate::services::entity_archive_folders::snapshot_internal_tracker_paths)
         .await
@@ -1559,31 +1555,9 @@ pub async fn delete_all_data(state: State<'_, Arc<AppState>>) -> Result<(), Stri
         crate::state::resolved_workspace_path(configured.as_deref())?
     };
 
-    // Close async DB service
-    {
-        let mut db_svc = state.db_service.write().await;
-        *db_svc = None;
-    }
-
-    // Delete database file
-    if let Some(path) = db_path {
-        if std::path::Path::new(&path).exists() {
-            std::fs::remove_file(&path).map_err(|e| format!("Failed to delete database: {e}"))?;
-        }
-        // Also delete WAL and SHM files
-        let wal = format!("{path}-wal");
-        let shm = format!("{path}-shm");
-        #[allow(
-            clippy::let_underscore_must_use,
-            reason = "intentional best-effort discard; preserves existing non-blocking behavior"
-        )]
-        let _ = std::fs::remove_file(&wal);
-        #[allow(
-            clippy::let_underscore_must_use,
-            reason = "intentional best-effort discard; preserves existing non-blocking behavior"
-        )]
-        let _ = std::fs::remove_file(&shm);
-    }
+    let _db_file_mutation_guard = state.begin_db_file_mutation().await;
+    let db_file_mutation = crate::db_backup::begin_active_database_file_mutation()?;
+    crate::db_backup::remove_database_files_for_active_mutation(&db_file_mutation)?;
 
     // Clear active-mode scratch data.
     let workspace = crate::state::mode_scoped_state_path("_today");

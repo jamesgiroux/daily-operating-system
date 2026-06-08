@@ -1,9 +1,11 @@
 # ADR-0092: Data Security at Rest and Operational Hardening
 
 **Date:** 2026-02-24
-**Status:** Accepted
+**Status:** Superseded by v1.4.9 storage reset
 **Target:** v0.16.1
 **Relates to:** ADR-0091 (IntelligenceProvider -- local-first AI path)
+
+**Supersession note (2026-06-08):** v1.4.9 retired the active SQLCipher/DB-key contract and moved the runtime database boundary to plain SQLite backed by OS account controls, file permissions, Time Machine exclusion, and FileVault posture. This ADR is retained as historical context only; do not use it as the active open-sequence, backup, recovery, key-rotation, or user-facing security contract.
 
 ## Context
 

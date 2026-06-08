@@ -6,7 +6,7 @@
 
 ## The short version
 
-DailyOS is a single-user native app over encrypted SQLite. Most reads are strongly consistent. Invalidation of downstream outputs is eventually consistent, bounded by the invalidation queue processing time. Some specific flows (user corrections) use bounded-synchronous propagation so "save and immediately render" feels correct.
+DailyOS is a single-user native app over local SQLite. Most reads are strongly consistent. Invalidation of downstream outputs is eventually consistent, bounded by the invalidation queue processing time. Some specific flows (user corrections) use bounded-synchronous propagation so "save and immediately render" feels correct.
 
 No distributed consistency primitives. No eventual-consistency surprises across machines. One DB file, one process.
 

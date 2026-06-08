@@ -22,6 +22,7 @@ use crate::projects;
 const MANUAL_BACKUP_SUFFIX: &str = ".bak";
 const PRE_MIGRATION_MARKER: &str = ".pre-migration.";
 const PRE_RESTORE_MARKER: &str = ".pre-restore.";
+const UNSUPPORTED_BACKUP_MESSAGE: &str = "Backup is not a supported plain SQLite DailyOS backup. Legacy encrypted backups cannot be restored automatically; rebuild from canonical workspace files or use the storage salvage procedure.";
 
 #[derive(Debug, Clone, serde::Serialize)]
 #[serde(rename_all = "camelCase")]
@@ -43,8 +44,94 @@ pub struct DatabaseInfo {
     pub last_backup: Option<String>,
 }
 
+pub(crate) struct ActiveDatabaseFileMutation {
+    db_path: PathBuf,
+    guarded_paths: Vec<PathBuf>,
+    _cutover_guards: Vec<crate::services::rebuild::RebuildCutoverGuard>,
+}
+
+impl ActiveDatabaseFileMutation {
+    pub(crate) fn db_path(&self) -> &Path {
+        &self.db_path
+    }
+
+    pub(crate) fn guarded_paths(&self) -> &[PathBuf] {
+        &self.guarded_paths
+    }
+}
+
 fn active_db_path() -> Result<PathBuf, String> {
-    ActionDb::db_path_public().map_err(|e| format!("Failed to resolve database path: {e}"))
+    ActionDb::db_path_public().map_err(|e| {
+        log::warn!("resolve active database path failed: {e}");
+        "Failed to resolve active database path".to_string()
+    })
+}
+
+fn active_db_file_mutation_target_path() -> Result<PathBuf, String> {
+    let dailyos_dir = crate::db::dailyos_data_dir().map_err(|e| {
+        log::warn!("resolve active database mutation target failed: {e}");
+        "Failed to resolve active database mutation target".to_string()
+    })?;
+    let path = match crate::db::db_mode() {
+        crate::db::DbMode::Live => dailyos_dir.join("dailyos.db"),
+        crate::db::DbMode::Replica => dailyos_dir.join("dailyos-replica.db"),
+        crate::db::DbMode::Mock => dailyos_dir.join("dailyos-dev.db"),
+    };
+    Ok(path)
+}
+
+fn active_db_file_mutation_guard_paths() -> Result<Vec<PathBuf>, String> {
+    let dailyos_dir = crate::db::dailyos_data_dir().map_err(|e| {
+        log::warn!("resolve active database mutation guard paths failed: {e}");
+        "Failed to resolve active database mutation guard paths".to_string()
+    })?;
+    let paths = match crate::db::db_mode() {
+        crate::db::DbMode::Live => {
+            vec![
+                dailyos_dir.join("dailyos.db"),
+                dailyos_dir.join("actions.db"),
+            ]
+        }
+        crate::db::DbMode::Replica => vec![dailyos_dir.join("dailyos-replica.db")],
+        crate::db::DbMode::Mock => vec![dailyos_dir.join("dailyos-dev.db")],
+    };
+    Ok(paths)
+}
+
+fn begin_cutover_guards_for_paths(
+    paths: &[PathBuf],
+) -> Result<Vec<crate::services::rebuild::RebuildCutoverGuard>, String> {
+    let mut guards = Vec::with_capacity(paths.len());
+    for path in paths {
+        crate::db::guard_path_for_mode(path).map_err(|e| {
+            log::warn!(
+                "refusing database file mutation for {} in current DB mode: {e}",
+                path.display()
+            );
+            "Refusing database file mutation in current DB mode".to_string()
+        })?;
+        guards.push(
+            crate::services::rebuild::try_begin_live_cutover(path).map_err(|e| {
+                log::warn!(
+                    "database file mutation unavailable for {}: {e}",
+                    path.display()
+                );
+                "Database file mutation unavailable while database access is active".to_string()
+            })?,
+        );
+    }
+    Ok(guards)
+}
+
+pub(crate) fn begin_active_database_file_mutation() -> Result<ActiveDatabaseFileMutation, String> {
+    let guarded_paths = active_db_file_mutation_guard_paths()?;
+    let cutover_guards = begin_cutover_guards_for_paths(&guarded_paths)?;
+    let db_path = active_db_file_mutation_target_path()?;
+    Ok(ActiveDatabaseFileMutation {
+        db_path,
+        guarded_paths,
+        _cutover_guards: cutover_guards,
+    })
 }
 
 fn active_db_path_for_connection(db: &ActionDb) -> Result<PathBuf, String> {
@@ -190,7 +277,7 @@ fn prune_restore_snapshots(db_path: &Path, keep: usize) -> Result<(), String> {
 /// Back up the live database to `<active-db>.bak`.
 ///
 /// Uses SQLite's online backup API so the source DB can remain open and
-/// in use during the backup. Returns the backup file path on success.
+/// in use during the backup. Returns the backup filename token on success.
 ///
 /// Copying happens in chunks of [`BACKUP_PAGES_PER_STEP`] pages with
 /// busy/locked retry, mirroring `migrations.rs::create_backup_via_api`. The
@@ -213,7 +300,14 @@ pub fn backup_database(db: &ActionDb) -> Result<String, String> {
     crate::db::hardening::set_file_permissions(&backup_path);
 
     log::info!("Database backed up to {}", backup_path.display());
-    Ok(backup_path.to_string_lossy().to_string())
+    backup_file_token(&backup_path)
+}
+
+fn backup_file_token(path: &Path) -> Result<String, String> {
+    path.file_name()
+        .and_then(|name| name.to_str())
+        .map(str::to_string)
+        .ok_or_else(|| "Backup path has no filename".to_string())
 }
 
 /// Pages copied per `Backup::step` iteration.
@@ -452,13 +546,80 @@ fn remove_file_if_exists(path: &Path) -> Result<(), String> {
     match fs::remove_file(path) {
         Ok(()) => Ok(()),
         Err(e) if e.kind() == std::io::ErrorKind::NotFound => Ok(()),
-        Err(e) => Err(format!("Failed to remove {}: {e}", path.display())),
+        Err(e) => {
+            log::warn!("failed to remove database file {}: {e}", path.display());
+            Err(format!("Failed to remove database file: {e}"))
+        }
     }
+}
+
+fn canonical_backup_path_in_active_directory(
+    db_path: &Path,
+    backup_path: &Path,
+) -> Result<PathBuf, String> {
+    let backup_dir = db_path
+        .parent()
+        .ok_or_else(|| "Database path has no parent directory".to_string())?
+        .canonicalize()
+        .map_err(|e| format!("Failed to resolve database backup directory: {e}"))?;
+    let supplied_backup_path = if backup_path.components().count() == 1 {
+        backup_dir.join(backup_path)
+    } else {
+        backup_path.to_path_buf()
+    };
+    let backup_path = supplied_backup_path
+        .canonicalize()
+        .map_err(|e| format!("Failed to resolve backup path: {e}"))?;
+    if !backup_path.is_file() {
+        return Err("Backup file not found".to_string());
+    }
+
+    let supplied_dir = backup_path
+        .parent()
+        .ok_or_else(|| "Backup path has no parent directory".to_string())?;
+    if supplied_dir != backup_dir.as_path() {
+        return Err("Backup path must be in the active database backup directory".to_string());
+    }
+
+    if backup_kind(db_path, &backup_path).is_none() {
+        return Err("Backup path is not a valid DailyOS backup file".to_string());
+    }
+    Ok(backup_path)
+}
+
+pub(crate) fn remove_database_files_for_active_mutation(
+    mutation: &ActiveDatabaseFileMutation,
+) -> Result<(), String> {
+    remove_database_files_after_cutover(mutation.guarded_paths())
+}
+
+fn remove_inactive_database_files_after_restore(
+    mutation: &ActiveDatabaseFileMutation,
+) -> Result<(), String> {
+    for path in mutation
+        .guarded_paths()
+        .iter()
+        .filter(|path| path.as_path() != mutation.db_path())
+    {
+        for sidecar in [path.clone(), wal_path(path), shm_path(path)] {
+            remove_file_if_exists(&sidecar)?;
+        }
+    }
+    Ok(())
+}
+
+fn remove_database_files_after_cutover(paths: &[PathBuf]) -> Result<(), String> {
+    for db_path in paths {
+        for path in [db_path.clone(), wal_path(db_path), shm_path(db_path)] {
+            remove_file_if_exists(&path)?;
+        }
+    }
+    Ok(())
 }
 
 /// List known backup files for the active database.
 pub fn list_database_backups() -> Result<Vec<BackupInfo>, String> {
-    let db_path = active_db_path()?;
+    let db_path = active_db_file_mutation_target_path()?;
     list_database_backups_for_path(&db_path)
 }
 
@@ -468,6 +629,7 @@ fn list_database_backups_for_path(db_path: &Path) -> Result<Vec<BackupInfo>, Str
         .ok_or_else(|| "Database path has no parent directory".to_string())?;
 
     let mut backups = Vec::new();
+    let mut unsupported_backup_seen = false;
     for entry in
         fs::read_dir(parent).map_err(|e| format!("Failed to read backup directory: {e}"))?
     {
@@ -479,6 +641,14 @@ fn list_database_backups_for_path(db_path: &Path) -> Result<Vec<BackupInfo>, Str
         let Some(kind) = backup_kind(db_path, &path) else {
             continue;
         };
+        if let Err(error) = validate_backup(&path) {
+            unsupported_backup_seen = true;
+            log::warn!(
+                "skipping unsupported or unreadable database backup {}: {error}",
+                path.display()
+            );
+            continue;
+        }
         let metadata = entry
             .metadata()
             .map_err(|e| format!("Failed to inspect backup metadata: {e}"))?;
@@ -488,7 +658,7 @@ fn list_database_backups_for_path(db_path: &Path) -> Result<Vec<BackupInfo>, Str
             .unwrap_or_default();
         let schema_version = read_schema_version(&path);
         backups.push(BackupInfo {
-            path: path.to_string_lossy().to_string(),
+            path: filename.clone(),
             created_at: backup_created_at(&path, &metadata),
             size_bytes: metadata.len(),
             kind: kind.to_string(),
@@ -498,33 +668,38 @@ fn list_database_backups_for_path(db_path: &Path) -> Result<Vec<BackupInfo>, Str
     }
 
     backups.sort_by(|a, b| b.created_at.cmp(&a.created_at));
+    if backups.is_empty() && unsupported_backup_seen {
+        return Err(UNSUPPORTED_BACKUP_MESSAGE.to_string());
+    }
     Ok(backups)
 }
 
 /// Restore the active database file from a selected backup.
 pub fn restore_database_from_backup(backup_path: &Path) -> Result<(), String> {
-    let db_path = active_db_path()?;
-    restore_database_from_backup_for_path(&db_path, backup_path)
+    let mutation = begin_active_database_file_mutation()?;
+    restore_database_from_backup_for_path_after_cutover(mutation.db_path(), backup_path)?;
+    remove_inactive_database_files_after_restore(&mutation)
 }
 
 fn restore_database_from_backup_for_path(db_path: &Path, backup_path: &Path) -> Result<(), String> {
+    let guarded_paths = vec![db_path.to_path_buf()];
+    let _cutover_guards = begin_cutover_guards_for_paths(&guarded_paths)?;
+    restore_database_from_backup_for_path_after_cutover(db_path, backup_path)
+}
+
+fn restore_database_from_backup_for_path_after_cutover(
+    db_path: &Path,
+    backup_path: &Path,
+) -> Result<(), String> {
     crate::db::guard_path_for_mode(db_path).map_err(|e| {
-        format!(
-            "Refusing database restore for active DB path {} in current DB mode: {e}",
+        log::warn!(
+            "refusing database restore for {} in current DB mode: {e}",
             db_path.display()
-        )
+        );
+        "Refusing database restore in current DB mode".to_string()
     })?;
 
-    let backup_path = backup_path
-        .canonicalize()
-        .map_err(|e| format!("Failed to resolve backup path: {e}"))?;
-
-    if !backup_path.exists() || !backup_path.is_file() {
-        return Err("Backup file not found".to_string());
-    }
-    if backup_kind(db_path, &backup_path).is_none() {
-        return Err("Backup path is not a valid DailyOS backup file".to_string());
-    }
+    let backup_path = canonical_backup_path_in_active_directory(db_path, backup_path)?;
 
     validate_backup(&backup_path)?;
 
@@ -562,31 +737,23 @@ fn restore_database_from_backup_for_path(db_path: &Path, backup_path: &Path) -> 
         fs::rename(&temp_restore, db_path)
             .map_err(|e| format!("Failed to activate restored database: {e}"))?;
 
-        let wal = wal_path(db_path);
-        if let Err(e) = fs::remove_file(&wal) {
-            log::warn!(
-                "remove restored database WAL file {} failed: {e}",
-                wal.display()
-            );
-        }
-        let shm = shm_path(db_path);
-        if let Err(e) = fs::remove_file(&shm) {
-            log::warn!(
-                "remove restored database SHM file {} failed: {e}",
-                shm.display()
-            );
-        }
+        remove_file_if_exists(&wal_path(db_path))?;
+        remove_file_if_exists(&shm_path(db_path))?;
         crate::db::hardening::set_file_permissions(db_path);
         prune_restore_snapshots(db_path, 5)?;
         Ok(())
     })();
 
     if let Err(err) = restore_attempt {
+        let mut rollback_errors = Vec::new();
         if let Err(e) = fs::remove_file(&temp_restore) {
-            log::warn!(
-                "remove failed restore temp file {} failed: {e}",
-                temp_restore.display()
-            );
+            if e.kind() != std::io::ErrorKind::NotFound {
+                log::warn!(
+                    "remove failed restore temp file {} failed: {e}",
+                    temp_restore.display()
+                );
+                rollback_errors.push(format!("failed to remove restore temp file: {e}"));
+            }
         }
         if snapshot_created {
             if let Err(e) = fs::copy(&snapshot_path, db_path) {
@@ -594,28 +761,37 @@ fn restore_database_from_backup_for_path(db_path: &Path, backup_path: &Path) -> 
                     "restore pre-restore snapshot {} failed: {e}",
                     snapshot_path.display()
                 );
+                rollback_errors.push(format!("pre-restore snapshot rollback failed: {e}"));
             }
             let wal = wal_path(db_path);
-            if let Err(e) = fs::remove_file(&wal) {
+            if let Err(e) = remove_file_if_exists(&wal) {
                 log::warn!(
                     "remove WAL after failed restore {} failed: {e}",
                     wal.display()
                 );
+                rollback_errors.push(format!("rollback sidecar cleanup failed: {e}"));
             }
             let shm = shm_path(db_path);
-            if let Err(e) = fs::remove_file(&shm) {
+            if let Err(e) = remove_file_if_exists(&shm) {
                 log::warn!(
                     "remove SHM after failed restore {} failed: {e}",
                     shm.display()
                 );
+                rollback_errors.push(format!("rollback sidecar cleanup failed: {e}"));
             }
+        }
+        if !rollback_errors.is_empty() {
+            return Err(format!(
+                "Database restore failed: {err}; rollback failed: {}",
+                rollback_errors.join("; ")
+            ));
         }
         return Err(format!("Database restore failed: {err}"));
     }
 
     log::info!(
         "Database restored from backup {}",
-        backup_path.to_string_lossy()
+        backup_file_token(&backup_path).unwrap_or_else(|_| "<unknown>".to_string())
     );
     Ok(())
 }
@@ -623,47 +799,84 @@ fn restore_database_from_backup_for_path(db_path: &Path, backup_path: &Path) -> 
 /// Validate a backup file's integrity before restoring.
 ///
 pub fn validate_backup(path: &Path) -> Result<(), String> {
-    crate::db::ActionDb::validate_plain_sqlite_storage(path).map_err(|error| error.to_string())?;
+    crate::db::ActionDb::validate_plain_sqlite_storage(path).map_err(|error| {
+        log::warn!("unsupported database backup {}: {error}", path.display());
+        UNSUPPORTED_BACKUP_MESSAGE.to_string()
+    })?;
     let conn =
         rusqlite::Connection::open_with_flags(path, rusqlite::OpenFlags::SQLITE_OPEN_READ_ONLY)
-            .map_err(|e| format!("Cannot open backup file: {e}"))?;
+            .map_err(|e| {
+                log::warn!("cannot open database backup {}: {e}", path.display());
+                UNSUPPORTED_BACKUP_MESSAGE.to_string()
+            })?;
     let result = conn
         .pragma_query_value(None, "integrity_check", |row| row.get::<_, String>(0))
-        .map_err(|e| format!("Integrity check failed: {e}"))?;
+        .map_err(|e| {
+            log::warn!(
+                "database backup integrity check failed for {}: {e}",
+                path.display()
+            );
+            UNSUPPORTED_BACKUP_MESSAGE.to_string()
+        })?;
 
     if result != "ok" {
-        return Err(format!("Backup integrity check failed: {result}"));
+        log::warn!(
+            "database backup integrity check failed for {}: {result}",
+            path.display()
+        );
+        return Err(UNSUPPORTED_BACKUP_MESSAGE.to_string());
     }
     Ok(())
 }
 
 /// Delete the active database and all associated WAL/SHM files.
 pub fn start_fresh_database() -> Result<(), String> {
-    let db_path = active_db_path()?;
-    start_fresh_database_for_path(&db_path)
+    let mutation = begin_active_database_file_mutation()?;
+    remove_database_files_for_active_mutation(&mutation)
 }
 
 fn start_fresh_database_for_path(db_path: &Path) -> Result<(), String> {
     crate::db::guard_path_for_mode(db_path).map_err(|e| {
-        format!(
-            "Refusing to start fresh database for active DB path {} in current DB mode: {e}",
+        log::warn!(
+            "refusing to start fresh database for {} in current DB mode: {e}",
             db_path.display()
-        )
+        );
+        "Refusing to start fresh database in current DB mode".to_string()
     })?;
-    for path in [db_path, &wal_path(db_path), &shm_path(db_path)] {
-        match fs::remove_file(path) {
-            Ok(()) => {}
-            Err(e) if e.kind() == std::io::ErrorKind::NotFound => {}
-            Err(e) => return Err(format!("Failed to remove {}: {e}", path.display())),
-        }
-    }
-    Ok(())
+    let guarded_paths = vec![db_path.to_path_buf()];
+    let _cutover_guards = begin_cutover_guards_for_paths(&guarded_paths)?;
+    remove_database_files_after_cutover(&guarded_paths)
 }
 
 /// Copy the active database to a user-chosen destination.
 pub fn export_database_copy(destination: &str) -> Result<(), String> {
     let db_path = active_db_path()?;
-    fs::copy(&db_path, destination).map_err(|e| format!("Failed to export database: {e}"))?;
+    export_database_copy_for_path(&db_path, Path::new(destination))
+}
+
+fn export_database_copy_for_path(db_path: &Path, destination: &Path) -> Result<(), String> {
+    if db_path == destination {
+        return Err("Export destination must be different from the active database".to_string());
+    }
+
+    let source_db = ActionDb::open_readonly_at(db_path, Arc::new(crate::db::LocalKeychain::new()))
+        .map_err(|error| {
+            log::warn!("failed to open active database for export: {error}");
+            "Failed to open active database for export".to_string()
+        })?;
+
+    remove_file_if_exists(destination)?;
+    remove_file_if_exists(&wal_path(destination))?;
+    remove_file_if_exists(&shm_path(destination))?;
+
+    let mut destination_conn = rusqlite::Connection::open(destination)
+        .map_err(|e| format!("Failed to open export destination: {e}"))?;
+    run_chunked_backup(source_db.conn_ref(), &mut destination_conn)
+        .map_err(|e| format!("Failed to export database: {e}"))?;
+    drop(destination_conn);
+    drop(source_db);
+
+    crate::db::hardening::set_file_permissions(destination);
     Ok(())
 }
 
@@ -678,7 +891,10 @@ pub fn get_database_info() -> Result<DatabaseInfo, String> {
         .first()
         .map(|b| b.created_at.clone());
     Ok(DatabaseInfo {
-        path: db_path.to_string_lossy().to_string(),
+        path: db_path
+            .file_name()
+            .map(|name| name.to_string_lossy().to_string())
+            .unwrap_or_else(|| "dailyos.db".to_string()),
         size_bytes,
         schema_version,
         last_backup,
@@ -733,8 +949,29 @@ mod tests {
         }
     }
 
+    fn remove_test_file_if_exists(path: &Path) {
+        match std::fs::remove_file(path) {
+            Ok(()) => {}
+            Err(error) if error.kind() == std::io::ErrorKind::NotFound => {}
+            Err(error) => panic!("remove test file {} failed: {error}", path.display()),
+        }
+    }
+
+    fn create_plain_sqlite_file(path: &Path, user_version: i64) {
+        let conn = rusqlite::Connection::open(path).expect("open sqlite file");
+        conn.pragma_update(None, "user_version", user_version)
+            .expect("set user_version");
+        drop(conn);
+    }
+
+    fn create_header_valid_malformed_file(path: &Path) {
+        let mut bytes = b"SQLite format 3\0".to_vec();
+        bytes.extend_from_slice(b"not a sqlite database body");
+        std::fs::write(path, bytes).expect("write malformed backup");
+    }
+
     #[test]
-    fn test_backup_creates_file() {
+    fn test_backup_creates_file_and_returns_filename_token() {
         let dir = tempfile::tempdir().expect("tempdir");
         let db_path = dir.path().join("test.db");
         let db = ActionDb::open_at_unencrypted(db_path).expect("open db");
@@ -742,14 +979,14 @@ mod tests {
         let backup_path =
             manual_backup_path(&active_db_path_for_connection(&db).expect("active path"))
                 .expect("backup path");
-        let mut backup_conn = rusqlite::Connection::open(&backup_path).expect("open backup");
-        let backup =
-            rusqlite::backup::Backup::new(db.conn_ref(), &mut backup_conn).expect("init backup");
-        backup.step(-1).expect("backup step");
-        drop(backup);
-        drop(backup_conn);
+        let token = backup_database(&db).expect("backup database");
 
         assert!(backup_path.exists());
+        assert_eq!(token, "test.db.bak");
+        assert!(
+            !Path::new(&token).is_absolute(),
+            "backup command should not return absolute paths"
+        );
     }
 
     #[test]
@@ -858,6 +1095,78 @@ mod tests {
     }
 
     #[test]
+    fn restore_database_from_backup_for_path_refuses_backup_outside_active_directory() {
+        let active_dir = tempfile::tempdir().expect("active tempdir");
+        let outside_dir = tempfile::tempdir().expect("outside tempdir");
+        let db_path = active_dir.path().join("dailyos.db");
+        let backup_path = outside_dir.path().join("dailyos.db.bak");
+
+        let conn = rusqlite::Connection::open(&db_path).expect("open live db");
+        conn.execute_batch("CREATE TABLE t (v TEXT); INSERT INTO t (v) VALUES ('live');")
+            .expect("seed live db");
+        drop(conn);
+
+        let backup_conn = rusqlite::Connection::open(&backup_path).expect("open backup db");
+        backup_conn
+            .execute_batch("CREATE TABLE t (v TEXT); INSERT INTO t (v) VALUES ('backup');")
+            .expect("seed backup db");
+        drop(backup_conn);
+
+        let error = restore_database_from_backup_for_path(&db_path, &backup_path)
+            .expect_err("restore must reject valid-looking backups outside the active directory");
+        assert!(error.contains("active database backup directory"));
+    }
+
+    #[test]
+    fn restore_database_from_backup_for_path_accepts_filename_restore_token() {
+        let dir = tempfile::tempdir().expect("tempdir");
+        let db_path = dir.path().join("dailyos.db");
+        let backup_path = dir.path().join("dailyos.db.bak");
+
+        let conn = rusqlite::Connection::open(&db_path).expect("open live db");
+        conn.execute_batch("CREATE TABLE t (v TEXT); INSERT INTO t (v) VALUES ('live');")
+            .expect("seed live db");
+        drop(conn);
+
+        let backup_conn = rusqlite::Connection::open(&backup_path).expect("open backup db");
+        backup_conn
+            .execute_batch("CREATE TABLE t (v TEXT); INSERT INTO t (v) VALUES ('backup');")
+            .expect("seed backup db");
+        drop(backup_conn);
+
+        restore_database_from_backup_for_path(&db_path, Path::new("dailyos.db.bak"))
+            .expect("restore from filename token");
+
+        let reopened = rusqlite::Connection::open(&db_path).expect("open restored db");
+        let value: String = reopened
+            .query_row("SELECT v FROM t LIMIT 1", [], |r| r.get(0))
+            .expect("read restored value");
+        assert_eq!(value, "backup");
+    }
+
+    #[test]
+    fn restore_database_from_backup_for_path_rejects_open_db_access_guard() {
+        let dir = tempfile::tempdir().expect("tempdir");
+        let db_path = dir.path().join("dailyos.db");
+        let backup_path = dir.path().join("dailyos.db.bak");
+
+        let db = ActionDb::open_at_unencrypted(db_path.clone()).expect("open live db");
+        let backup_conn = rusqlite::Connection::open(&backup_path).expect("open backup db");
+        backup_conn
+            .execute_batch("CREATE TABLE t (v TEXT); INSERT INTO t (v) VALUES ('backup');")
+            .expect("seed backup db");
+        drop(backup_conn);
+
+        let error = restore_database_from_backup_for_path(&db_path, &backup_path)
+            .expect_err("restore must reject while a DB access guard is active");
+        assert!(
+            error.contains("Database file mutation unavailable"),
+            "unexpected error: {error}"
+        );
+        drop(db);
+    }
+
+    #[test]
     fn restore_database_from_backup_for_path_refuses_prod_path_in_replica_mode() {
         let _lock = crate::db::DB_MODE_TEST_LOCK.lock().expect("db mode lock");
         let _reset = ResetDbMode;
@@ -871,7 +1180,39 @@ mod tests {
 
         let error = restore_database_from_backup_for_path(&prod_path, &backup_path)
             .expect_err("replica mode must not restore the production DB");
-        assert!(error.contains("Refused to open production database"));
+        assert!(error.contains("Refusing database file mutation"));
+    }
+
+    #[test]
+    fn active_file_mutation_target_does_not_preflight_unsupported_legacy_actions_db() {
+        let _mode_lock = crate::db::DB_MODE_TEST_LOCK.lock().expect("db mode lock");
+        let _reset = ResetDbMode;
+        crate::db::set_db_mode(crate::db::DbMode::Live);
+
+        let dailyos_dir = crate::db::dailyos_data_dir().expect("data dir");
+        std::fs::create_dir_all(&dailyos_dir).expect("create data dir");
+        let new_path = dailyos_dir.join("dailyos.db");
+        let legacy_path = dailyos_dir.join("actions.db");
+        remove_test_file_if_exists(&legacy_path);
+        remove_test_file_if_exists(&wal_path(&legacy_path));
+        remove_test_file_if_exists(&shm_path(&legacy_path));
+
+        std::fs::write(&legacy_path, b"not plain sqlite legacy payload")
+            .expect("write unsupported legacy DB");
+        std::fs::write(wal_path(&legacy_path), b"legacy wal").expect("write legacy WAL");
+        std::fs::write(shm_path(&legacy_path), b"legacy shm").expect("write legacy SHM");
+
+        let mutation_target = active_db_file_mutation_target_path().expect("mutation target path");
+        assert_eq!(mutation_target, new_path);
+        let guarded_paths = active_db_file_mutation_guard_paths().expect("mutation guarded paths");
+        assert!(
+            guarded_paths.iter().any(|path| path == &legacy_path),
+            "legacy DB path should still be guarded for deletion"
+        );
+
+        remove_test_file_if_exists(&legacy_path);
+        remove_test_file_if_exists(&wal_path(&legacy_path));
+        remove_test_file_if_exists(&shm_path(&legacy_path));
     }
 
     #[test]
@@ -885,7 +1226,7 @@ mod tests {
 
         let error = start_fresh_database_for_path(&prod_path)
             .expect_err("replica mode must not start fresh against the production DB");
-        assert!(error.contains("Refused to open production database"));
+        assert!(error.contains("Refusing to start fresh database"));
     }
 
     #[test]
@@ -903,6 +1244,21 @@ mod tests {
         assert!(!db_path.exists(), "target DB should be removed");
         assert!(!wal.exists(), "target WAL should be removed");
         assert!(!shm.exists(), "target SHM should be removed");
+    }
+
+    #[test]
+    fn start_fresh_database_for_path_rejects_open_db_access_guard() {
+        let dir = tempfile::tempdir().expect("tempdir");
+        let db_path = dir.path().join("dailyos-replica.db");
+        let db = ActionDb::open_at_unencrypted(db_path.clone()).expect("open live db");
+
+        let error = start_fresh_database_for_path(&db_path)
+            .expect_err("start fresh must reject while a DB access guard is active");
+        assert!(
+            error.contains("Database file mutation unavailable"),
+            "unexpected error: {error}"
+        );
+        drop(db);
     }
 
     #[test]
@@ -1059,7 +1415,7 @@ mod tests {
     fn test_list_database_backups_for_path_includes_known_backup_kinds() {
         let dir = tempfile::tempdir().expect("tempdir");
         let db_path = dir.path().join("dailyos.db");
-        std::fs::write(&db_path, b"db").expect("seed db file");
+        create_plain_sqlite_file(&db_path, 1);
 
         let manual = dir.path().join("dailyos.db.bak");
         let pre_migration = dir
@@ -1068,15 +1424,176 @@ mod tests {
         let pre_restore = dir
             .path()
             .join("dailyos.db.pre-restore.20260305-121000.bak");
-        std::fs::write(&manual, b"m").expect("manual");
-        std::fs::write(&pre_migration, b"pm").expect("pre migration");
-        std::fs::write(&pre_restore, b"pr").expect("pre restore");
+        create_plain_sqlite_file(&manual, 1);
+        create_plain_sqlite_file(&pre_migration, 2);
+        create_plain_sqlite_file(&pre_restore, 3);
 
         let items = list_database_backups_for_path(&db_path).expect("list backups");
         let kinds: Vec<_> = items.iter().map(|i| i.kind.as_str()).collect();
         assert!(kinds.contains(&"manual"));
         assert!(kinds.contains(&"pre-migration"));
         assert!(kinds.contains(&"restore-point"));
+        assert!(
+            items
+                .iter()
+                .all(|item| !Path::new(&item.path).is_absolute()),
+            "backup restore tokens should not expose absolute paths"
+        );
+        assert!(
+            items.iter().any(|item| item.path == "dailyos.db.bak"),
+            "manual backup should use its filename as the restore token"
+        );
+    }
+
+    #[test]
+    fn list_database_backups_for_path_skips_unsupported_legacy_backup_files() {
+        let dir = tempfile::tempdir().expect("tempdir");
+        let db_path = dir.path().join("dailyos.db");
+        create_plain_sqlite_file(&db_path, 1);
+        create_plain_sqlite_file(&dir.path().join("dailyos.db.bak"), 1);
+        std::fs::write(
+            dir.path()
+                .join("dailyos.db.pre-migration.20260305-120000.bak"),
+            b"legacy encrypted backup payload",
+        )
+        .expect("legacy backup");
+
+        let items = list_database_backups_for_path(&db_path).expect("list backups");
+
+        assert_eq!(items.len(), 1);
+        assert_eq!(items[0].filename, "dailyos.db.bak");
+    }
+
+    #[test]
+    fn list_database_backups_for_path_skips_header_valid_malformed_backup_files() {
+        let dir = tempfile::tempdir().expect("tempdir");
+        let db_path = dir.path().join("dailyos.db");
+        create_plain_sqlite_file(&db_path, 1);
+        create_plain_sqlite_file(&dir.path().join("dailyos.db.bak"), 1);
+        create_header_valid_malformed_file(
+            &dir.path()
+                .join("dailyos.db.pre-migration.20260305-120000.bak"),
+        );
+
+        let items = list_database_backups_for_path(&db_path).expect("list backups");
+
+        assert_eq!(items.len(), 1);
+        assert_eq!(items[0].filename, "dailyos.db.bak");
+    }
+
+    #[test]
+    fn list_database_backups_for_path_reports_unsupported_only_backup_files() {
+        let dir = tempfile::tempdir().expect("tempdir");
+        let db_path = dir.path().join("dailyos.db");
+        create_plain_sqlite_file(&db_path, 1);
+        std::fs::write(
+            dir.path().join("dailyos.db.bak"),
+            b"legacy encrypted backup payload",
+        )
+        .expect("legacy backup");
+
+        let error = list_database_backups_for_path(&db_path).expect_err("unsupported backup");
+
+        assert_eq!(error, UNSUPPORTED_BACKUP_MESSAGE);
+    }
+
+    #[test]
+    fn list_database_backups_uses_dailyos_target_when_legacy_actions_db_is_unsupported() {
+        let _lock = crate::db::DB_MODE_TEST_LOCK.lock().expect("db mode lock");
+        let _reset = ResetDbMode;
+        crate::db::set_db_mode(crate::db::DbMode::Live);
+
+        let dir = crate::db::dailyos_data_dir().expect("dailyos data dir");
+        std::fs::create_dir_all(&dir).expect("create dailyos data dir");
+        let dailyos_db = dir.join("dailyos.db");
+        let actions_db = dir.join("actions.db");
+        let backup_path = dir.join("dailyos.db.bak");
+        for path in [
+            dailyos_db.clone(),
+            wal_path(&dailyos_db),
+            shm_path(&dailyos_db),
+            actions_db.clone(),
+            wal_path(&actions_db),
+            shm_path(&actions_db),
+            backup_path.clone(),
+        ] {
+            remove_test_file_if_exists(&path);
+        }
+
+        std::fs::write(&actions_db, b"legacy encrypted database payload").expect("legacy db");
+        create_plain_sqlite_file(&backup_path, 42);
+
+        let items = list_database_backups().expect("list backups");
+
+        assert!(
+            items.iter().any(|item| item.filename == "dailyos.db.bak"),
+            "canonical backup should list even when legacy actions.db is unsupported"
+        );
+
+        for path in [dailyos_db, actions_db, backup_path] {
+            remove_test_file_if_exists(&path);
+        }
+    }
+
+    #[test]
+    fn validate_backup_redacts_unsupported_storage_path() {
+        let dir = tempfile::tempdir().expect("tempdir");
+        let backup_path = dir.path().join("dailyos.db.bak");
+        std::fs::write(&backup_path, b"legacy encrypted backup payload").expect("backup");
+
+        let error = validate_backup(&backup_path).expect_err("unsupported backup");
+
+        assert_eq!(error, UNSUPPORTED_BACKUP_MESSAGE);
+        assert!(
+            !error.contains(dir.path().to_string_lossy().as_ref()),
+            "user-facing validation error should not expose local paths"
+        );
+    }
+
+    #[test]
+    fn validate_backup_redacts_header_valid_malformed_backup_path() {
+        let dir = tempfile::tempdir().expect("tempdir");
+        let backup_path = dir.path().join("dailyos.db.bak");
+        create_header_valid_malformed_file(&backup_path);
+
+        let error = validate_backup(&backup_path).expect_err("malformed backup");
+
+        assert_eq!(error, UNSUPPORTED_BACKUP_MESSAGE);
+        assert!(
+            !error.contains(dir.path().to_string_lossy().as_ref()),
+            "user-facing validation error should not expose local paths"
+        );
+    }
+
+    #[test]
+    fn export_database_copy_for_path_uses_sqlite_backup_and_preserves_wal_frames() {
+        let dir = tempfile::tempdir().expect("tempdir");
+        let source_path = dir.path().join("dailyos.db");
+        let export_path = dir.path().join("export.db");
+
+        let source = rusqlite::Connection::open(&source_path).expect("open source");
+        source
+            .execute_batch(
+                "PRAGMA journal_mode = WAL;
+                 CREATE TABLE export_marker (id INTEGER PRIMARY KEY, label TEXT);
+                 INSERT INTO export_marker (label) VALUES ('from-wal');",
+            )
+            .expect("seed source");
+        assert!(
+            wal_path(&source_path).exists(),
+            "test setup should leave committed frames in WAL"
+        );
+
+        export_database_copy_for_path(&source_path, &export_path).expect("export copy");
+
+        let exported = rusqlite::Connection::open(&export_path).expect("open export");
+        let label: String = exported
+            .query_row("SELECT label FROM export_marker", [], |row| row.get(0))
+            .expect("read exported WAL-backed row");
+        assert_eq!(label, "from-wal");
+
+        drop(exported);
+        drop(source);
     }
 
     #[test]

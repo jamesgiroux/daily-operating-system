@@ -246,11 +246,7 @@ pub async fn restore_database_from_backup(
         Err(_) => return Err("Background work in progress — please try again shortly".to_string()),
     };
 
-    // Drop async DB service before swapping files on disk.
-    {
-        let mut db_service_guard = state.db_service.write().await;
-        *db_service_guard = None;
-    }
+    let _db_file_mutation_guard = state.begin_db_file_mutation().await;
 
     if let Err(e) = crate::db_backup::restore_database_from_backup(Path::new(&backup_path)) {
         // Best-effort recovery: re-init DB service if restore failed.
@@ -263,10 +259,15 @@ pub async fn restore_database_from_backup(
     }
 
     if let Err(e) = state.init_db_service().await {
-        state.set_database_recovery_required("restore_reopen_failed", e.clone());
-        return Err(format!(
-            "Restore succeeded but failed to reinitialize DB service: {e}"
-        ));
+        log::warn!("restore succeeded but DB service reinitialization failed: {e}");
+        state.set_database_recovery_required(
+            "restore_reopen_failed",
+            "Database service reinitialization failed after restore".to_string(),
+        );
+        return Err(
+            "Restore succeeded, but DailyOS could not reopen the database. Relaunch and review logs."
+                .to_string(),
+        );
     }
 
     state.clear_database_recovery_required();
@@ -281,13 +282,15 @@ pub async fn restore_database_from_backup(
 pub async fn start_fresh_database(
     state: tauri::State<'_, Arc<AppState>>,
 ) -> Result<crate::services::entity_archive_folders::ArchiveFolderRepairPlan, String> {
-    // Drop async DB service before deleting files.
-    {
-        let mut db_service_guard = state.db_service.write().await;
-        *db_service_guard = None;
-    }
+    let _db_file_mutation_guard = state.begin_db_file_mutation().await;
     crate::db_backup::start_fresh_database()?;
-    state.init_db_service().await?;
+    if let Err(error) = state.init_db_service().await {
+        log::warn!("start fresh succeeded but DB service reinitialization failed: {error}");
+        return Err(
+            "DailyOS started a fresh database, but could not reopen it. Relaunch and review logs."
+                .to_string(),
+        );
+    }
     Ok(plan_entity_archive_folder_reconciliation_after_reset(state.inner().clone()).await)
 }
 

@@ -9,7 +9,7 @@
 # `BEGIN IMMEDIATE; ... COMMIT;`. When a destructive batch (DROP TABLE,
 # DROP VIEW, ALTER TABLE ... RENAME, or any table-rebuild) executes in
 # autocommit mode, each statement commits separately. Multi-process readers
-# opening the encrypted DB during the migration window can then observe an
+# opening the active DB during the migration window can then observe an
 # intermediate schema state (e.g., the moment between DROP and CREATE) and
 # fail with "no such table/view".
 #

@@ -29,7 +29,7 @@
 | **Config weights don't sum to 1.0** (Trust Compiler) | Trust computation rejects | Panic at boot with clear error message; app fails to start | User fixes config; restart |
 | **Clock skew / future-dated input** (user device clock wrong) | Time-based checks (freshness decay, tombstone window) compute with negative age | Freshness clamped at 1.0 for negative ages per [DOS-10](https://linear.app/a8c/issue/DOS-10); tombstone window still applies forward from `now` | User fixes system clock; data recovers on next computation |
 | **Log record buffer full** (Evaluate mode ring buffer) | Oldest records evicted | Test-time assertion on recent events still works; distant-past events unavailable | Test restructures to assert closer to emission |
-| **DB key unavailable** (Keychain denied or control-plane revoked) | App refuses to open DB; existing data remains encrypted at rest | Login failure or "session revoked" state | User re-auths via Keychain / control plane restores access |
+| **Local database storage unsupported** (legacy encrypted, truncated, or non-SQLite file) | Workspace files and backups remain available | Recovery mode offers supported plain-SQLite backups, export, or start-fresh/rebuild paths | Restore a supported backup, rebuild from canonical workspace files, or use the storage salvage procedure |
 | **Panic in mutation service function** | Transaction rolls back; DB integrity preserved | Generic error to user with retry affordance | Bug; logged; requires code fix |
 | **Background worker crash** (invalidation worker, publish worker, etc.) | Other workers continue; failed worker restarts from durable job queue | No user-visible failure if restart is fast; latency increase on affected work class | Automatic restart; investigate if crash recurs |
 | **Process crash mid-publish** (between commit_publish and outbox delivery) | On restart, outbox worker picks up Pending entry and delivers | User sees "pending delivery" in surface until delivery completes | Automatic |
@@ -44,7 +44,7 @@
 
 **Retry everywhere reasonable.** Transient failures (network, provider, lock contention) retry with backoff. Permanent failures surface once and don't churn.
 
-**Content never leaves the device during failure.** Even in error paths, content stays encrypted locally. Errors carry typed enum codes, not free-text ([ADR-0120 §6](../decisions/0120-observability-contract.md)) — the log records shape, not content.
+**Content never leaves the device during failure.** Even in error paths, content stays local. Errors carry typed enum codes, not free-text ([ADR-0120 §6](../decisions/0120-observability-contract.md)) — the log records shape, not content.
 
 ## When a new failure class emerges
 

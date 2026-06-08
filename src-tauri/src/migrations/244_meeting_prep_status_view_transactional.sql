@@ -5,7 +5,7 @@
 -- `migrations.rs:3573` calls `conn.execute_batch(sql)` which does NOT
 -- wrap the batch in a single transaction unless the SQL contains
 -- explicit `BEGIN; ... COMMIT;`. Multi-process readers (additional
--- processes opening the encrypted DB during the migration window) could
+-- processes opening the active DB during the migration window) could
 -- observe the moment between DROP and CREATE and fail on
 -- "no such view: meeting_prep_status_view" at `read.rs:106` prepare.
 --
