@@ -1424,6 +1424,8 @@ const ACCOUNT_OVERVIEW_FIELDS: &[FieldPolicy] = &[
     text_field("/account_id", ClaimSensitivity::Internal),
     text_field("/vitals/*/label", ClaimSensitivity::Internal),
     text_field("/vitals/*/value", ClaimSensitivity::Internal),
+    text_field("/vitals/*/display_value", ClaimSensitivity::Internal),
+    text_field("/vitals/*/kind", ClaimSensitivity::Internal),
     text_field("/vitals/*/source_label", ClaimSensitivity::Internal),
     text_field("/vitals/*/source_asof", ClaimSensitivity::Internal),
     text_field("/vitals/*/trust_band", ClaimSensitivity::Internal),

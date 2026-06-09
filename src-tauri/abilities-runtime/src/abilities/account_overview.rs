@@ -3740,8 +3740,34 @@ mod tests {
                 ClaimSensitivity::Internal,
             ),
         ];
+        // Headline vitals must flow through projection: the producer emits
+        // display-only bindings for every vital field (including R2's
+        // `display_value`/`kind`), so the parity gate has to exercise an
+        // account that actually has vitals. A vitals-free fixture silently
+        // skips the `/vitals/*/...` bindings and lets a binding↔rule desync
+        // ship undetected (the BindingTargetsUnknownField producer_unavailable
+        // regression).
+        let snapshot_reader = Arc::new(SpySnapshotReader::new(Ok(snapshot_fixture(vec![
+            snapshot_field(
+                "/vitals/arr",
+                "ARR",
+                json!(185_400),
+                AccountCompositionSnapshotSensitivity::Internal,
+                Some("Workspace file (entity document)"),
+                Some("2026-05-14T09:00:00Z"),
+            ),
+            snapshot_field(
+                "/vitals/contract_end",
+                "Contract end",
+                Value::String("2026-11-24".to_string()),
+                AccountCompositionSnapshotSensitivity::Internal,
+                Some("Workspace file (entity document)"),
+                Some("2026-05-14T09:00:00Z"),
+            ),
+        ]))));
         let (clock, rng, external, reader, committer, provider) = fixture_parts(claims);
-        let services = services(&clock, &rng, &external, reader, committer);
+        let services =
+            services_with_snapshot(&clock, &rng, &external, reader, committer, snapshot_reader);
         let ctx = ability_ctx(&services, &provider);
 
         let output = account_overview(&ctx, input())
@@ -3787,6 +3813,17 @@ mod tests {
         assert!(
             trust_band_rendered,
             "projected payload must surface trust_band from producer attributes"
+        );
+
+        // Guard the coverage that made this gate meaningful: the headline
+        // vitals (with R2's producer-formatted display_value) must survive
+        // projection. If this drops to zero the parity check above is vacuous.
+        let vital_display_rendered = projected.blocks.iter().any(|block| {
+            block.payload.pointer("/vitals/0/display_value").is_some()
+        });
+        assert!(
+            vital_display_rendered,
+            "projected payload must surface headline vital display_value from producer attributes"
         );
     }
 }
