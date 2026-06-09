@@ -13,6 +13,7 @@ export interface ReactBlockRendererProps {
   entityType?: CompositionFeedbackEntityType;
   renderedProvenance?: RenderedProvenance | null;
   editMode?: boolean;
+  onSnapshotFieldSave?: (field: string, value: string) => Promise<void> | void;
 }
 
 export function ReactBlockRenderer({
@@ -22,6 +23,7 @@ export function ReactBlockRenderer({
   entityType = "account",
   renderedProvenance,
   editMode = false,
+  onSnapshotFieldSave,
 }: ReactBlockRendererProps) {
   const Renderer = BLOCK_RENDERERS[block.selected_known_type_id as keyof typeof BLOCK_RENDERERS];
   const feedbackEntityId = entityId ?? accountId;
@@ -34,6 +36,7 @@ export function ReactBlockRenderer({
         payload={block.payload}
         renderedProvenance={renderedProvenance}
         editMode={editMode}
+        onSnapshotFieldSave={onSnapshotFieldSave}
       />
     );
   }
@@ -46,6 +49,7 @@ export function ReactBlockRenderer({
         payload={block.payload}
         renderedProvenance={renderedProvenance}
         editMode={editMode}
+        onSnapshotFieldSave={onSnapshotFieldSave}
       />
     );
   }

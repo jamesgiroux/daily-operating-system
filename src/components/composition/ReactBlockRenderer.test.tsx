@@ -74,10 +74,16 @@ describe("ReactBlockRenderer", () => {
     );
   });
 
-  it("renders known account overview blocks", () => {
+  it("renders the chrome-free account overview hero (identity + vitals, no lede or per-line provenance)", () => {
     render(
       <ReactBlockRenderer
         block={block({
+          payload: {
+            account: { display_name: "Example Account", type: "customer" },
+            summary: "A grounded account summary.",
+            vitals: [{ label: "Lifecycle", value: "active", display_value: "active" }],
+            context: [],
+          },
           provenance: [{ invocation_id: "invocation-fixture", field_path: "/summary" }],
         })}
         renderedProvenance={{
@@ -92,10 +98,13 @@ describe("ReactBlockRenderer", () => {
     );
 
     expect(screen.getByText("Example Account")).toBeInTheDocument();
-    expect(screen.getByText("A grounded account summary.")).toBeInTheDocument();
-    expect(screen.getByText("Lifecycle")).toBeInTheDocument();
-    expect(screen.getByText("active")).toBeInTheDocument();
-    expect(screen.getByText("from 2 sources")).toBeInTheDocument();
+    // Dot-strip composes "<label> <value>" into one cell.
+    expect(screen.getByText("Lifecycle active")).toBeInTheDocument();
+    // Identity-only hero: no summary lede, and no per-line provenance on the
+    // hero — the ambient freshness dot is the only trust signal; sources live
+    // in the sources chapter (R3 trust-surfacing decision).
+    expect(screen.queryByText("A grounded account summary.")).not.toBeInTheDocument();
+    expect(screen.queryByText("from 2 sources")).not.toBeInTheDocument();
   });
 
   it("renders claim feedback affordances for allowed edit routes", () => {
@@ -189,10 +198,21 @@ describe("ReactBlockRenderer", () => {
     expect(screen.queryByText("account_snapshot_unavailable")).not.toBeInTheDocument();
   });
 
+  // Provenance resolution + masking live in BlockShell, which the chrome-free
+  // hero no longer uses. Exercise that invariant through a BlockShell-rendering
+  // block (claim_summary) so the coverage survives the hero redesign.
+  function shellBlock(overrides: Partial<ProjectedBlock> = {}): ProjectedBlock {
+    return block({
+      selected_known_type_id: "claim_summary",
+      payload: { title: "Current signal", text: "Body", trust_band: "likely_current" },
+      ...overrides,
+    });
+  }
+
   it("resolves provenance through covered field paths", () => {
     render(
       <ReactBlockRenderer
-        block={block({
+        block={shellBlock({
           provenance: [{ invocation_id: "invocation-fixture", field_path: "/sections/8/blocks/0" }],
         })}
         renderedProvenance={{
@@ -214,7 +234,7 @@ describe("ReactBlockRenderer", () => {
   it("does not mark valid blocks pending when provenance attributions are truncated", () => {
     render(
       <ReactBlockRenderer
-        block={block({
+        block={shellBlock({
           provenance: [{ invocation_id: "invocation-fixture", field_path: "/sections/18/blocks/0" }],
         })}
         renderedProvenance={{
@@ -235,15 +255,15 @@ describe("ReactBlockRenderer", () => {
     render(
       <>
         <ReactBlockRenderer
-          block={block({
+          block={shellBlock({
             block_id: "missing-provenance",
-            provenance: [{ invocation_id: "invocation-fixture", field_path: "/summary" }],
+            provenance: [{ invocation_id: "invocation-fixture", field_path: "/sections/8/blocks/0" }],
           })}
         />
         <ReactBlockRenderer
-          block={block({
+          block={shellBlock({
             block_id: "masked-provenance",
-            provenance: [{ invocation_id: "invocation-fixture", field_path: "/summary" }],
+            provenance: [{ invocation_id: "invocation-fixture", field_path: "/sections/8/blocks/0" }],
           })}
           renderedProvenance={{
             surface: "tauri_app",
@@ -255,7 +275,8 @@ describe("ReactBlockRenderer", () => {
 
     expect(screen.getByText("Provenance unavailable")).toBeInTheDocument();
     expect(screen.getByText("Provenance masked")).toBeInTheDocument();
-    expect(screen.queryByText("/summary")).not.toBeInTheDocument();
+    // Raw internal field pointers must never leak to the surface.
+    expect(screen.queryByText("/sections/8/blocks/0")).not.toBeInTheDocument();
   });
 
   it("renders fallback banner without exposing diagnostics", () => {

@@ -1,5 +1,6 @@
 import { useCallback, useMemo, useState } from "react";
 import type { ReactNode } from "react";
+import { invoke } from "@tauri-apps/api/core";
 import { useNavigate, useParams } from "@tanstack/react-router";
 import {
   closestCenter,
@@ -92,6 +93,7 @@ function SortableBlockFrame({
   renderedProvenance,
   onHiddenChange,
   onVariantChange,
+  onSnapshotFieldSave,
 }: {
   item: RenderableCompositionBlock;
   accountId?: string;
@@ -99,6 +101,7 @@ function SortableBlockFrame({
   renderedProvenance: ReturnType<typeof useProjectedComposition>["renderedProvenance"];
   onHiddenChange: (blockId: string, hidden: boolean) => void;
   onVariantChange: (blockId: string, variant: CompositionBlockVariant) => void;
+  onSnapshotFieldSave?: (field: string, value: string) => Promise<void> | void;
 }) {
   const disabled = !editMode || item.coreLocked;
   const {
@@ -167,6 +170,7 @@ function SortableBlockFrame({
         accountId={accountId}
         renderedProvenance={renderedProvenance}
         editMode={editMode}
+        onSnapshotFieldSave={onSnapshotFieldSave}
       />
     </div>
   );
@@ -217,6 +221,20 @@ export default function AccountDetailPage() {
   const sensors = useSensors(
     useSensor(PointerSensor),
     useSensor(KeyboardSensor, { coordinateGetter: sortableKeyboardCoordinates }),
+  );
+
+  // Snapshot-field edits (account name/type/vitals) route through the
+  // service-layer correction command (ADR-0123), never the bespoke React
+  // hook. It writes the column + "user_edit" provenance + records an
+  // account_field_correction; refetch re-projects so the edit shows. Layout
+  // (useChapterLayout) is untouched (ADR-0136).
+  const handleSnapshotFieldSave = useCallback(
+    async (field: string, value: string) => {
+      if (!accountId) return;
+      await invoke("update_account_field", { accountId, field, value });
+      await composition.refetch();
+    },
+    [accountId, composition],
   );
 
   const blockLabels = useMemo(() => {
@@ -334,6 +352,7 @@ export default function AccountDetailPage() {
         renderedProvenance={composition.renderedProvenance}
         onHiddenChange={layout.setBlockHidden}
         onVariantChange={layout.setBlockVariant}
+        onSnapshotFieldSave={handleSnapshotFieldSave}
       />
     );
   }
@@ -401,7 +420,7 @@ export default function AccountDetailPage() {
               data-section-id={section.section_id}
               data-section-layout={section.layout}
             >
-              <div className={pageStyles.compositionMastheadGrid}>
+              <div className={pageStyles.compositionBlockStack}>
                 <SortableContext items={blocks.map((item) => item.block.block_id)} strategy={verticalListSortingStrategy}>
                   {blocks.map(renderBlock)}
                 </SortableContext>

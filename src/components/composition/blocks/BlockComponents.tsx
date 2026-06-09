@@ -14,9 +14,33 @@ import type {
   ProjectedBlock,
   RenderedProvenance,
 } from "@/services/composition/contracts";
+import { IntelligenceQualityBadge } from "@/components/entity/IntelligenceQualityBadge";
+import { TypeBadge } from "@/components/ui/TypeBadge";
+import { TypeBadgeDisplay, type TypeBadgeValue } from "@/components/ui/TypeBadgeDisplay";
+import { CompositionVitalsStrip, type CompositionVitalSpec } from "@/components/composition/blocks/CompositionVitalsStrip";
 import pageStyles from "@/pages/AccountDetailPage.module.css";
+import heroStyles from "@/components/composition/blocks/AccountHeroBlock.module.css";
 
 type Payload = Record<string, unknown>;
+
+const TYPE_BADGE_VALUES: ReadonlySet<string> = new Set(["customer", "internal", "partner"]);
+function asTypeBadgeValue(value: string | null): TypeBadgeValue | null {
+  return value && TYPE_BADGE_VALUES.has(value) ? (value as TypeBadgeValue) : null;
+}
+
+// Map a headline vital's label to its editable account column. Labels are
+// stable constants from the snapshot builder (context.rs push_account_vital_field);
+// an unmapped label simply renders read-only. (Same label-keyed approach as
+// VitalsStrip's matchVitalToSourceRef.)
+const VITAL_FIELD_BY_LABEL: Record<string, string> = {
+  arr: "arr",
+  "contract end": "contract_end",
+  nps: "nps",
+  lifecycle: "lifecycle",
+};
+function vitalFieldFromLabel(label: string | null): string | null {
+  return label ? VITAL_FIELD_BY_LABEL[label.toLowerCase().trim()] ?? null : null;
+}
 type BlockComponentProps = {
   block: ProjectedBlock;
   accountId?: string;
@@ -24,6 +48,9 @@ type BlockComponentProps = {
   payload: Payload;
   renderedProvenance?: RenderedProvenance | null;
   editMode?: boolean;
+  /** Save a snapshot-derived account field (name/type/vitals) via the
+   *  service-layer correction command; the page re-projects on success. */
+  onSnapshotFieldSave?: (field: string, value: string) => Promise<void> | void;
 };
 type BlockComponent = (props: BlockComponentProps) => JSX.Element;
 
@@ -326,49 +353,64 @@ function EditableBlockText({
   );
 }
 
-function AccountOverviewBlock({ block, accountId, entityType, payload, renderedProvenance, editMode }: BlockComponentProps) {
+/**
+ * AccountOverviewBlock — the headline hero. Chrome-free (no BlockShell card):
+ * the headline chapter is full-bleed. Renders the v1.5.0 claim-backed
+ * account_overview payload with the curated editorial look (mono uppercase
+ * meta row, 76px serif name, provenance-bearing vitals strip). Identity-only:
+ * no claim lede in the hero (James, 2026-06-08). Inline edits route to the
+ * block's claim-feedback edit_routes — never to account-field writes.
+ */
+function AccountOverviewBlock({ payload, onSnapshotFieldSave }: BlockComponentProps) {
   const account = object(payload.account) ?? {};
   const vitals = array(payload.vitals);
-  const contexts = array(payload.context);
+  const displayName = text(account.display_name) ?? text(payload.title) ?? "Account";
+  const accountType = asTypeBadgeValue(text(account.type));
   const snapshotDegraded = Boolean(text(payload.snapshot_degraded));
+  const heroAsof = text(vitals[0]?.source_asof) ?? undefined;
+
+  // Map the claim-backed vitals into the curated dot-separated strip. Each
+  // cell shows the producer's display_value ("ARR $185,400") but edits the raw
+  // value (185400) via the snapshot-field correction path. Provenance/source
+  // detail deliberately stays OFF the hero — the ambient freshness dot is the
+  // only trust signal here; sources live in the sources chapter.
+  const vitalSpecs: CompositionVitalSpec[] = vitals.flatMap((item) => {
+    const label = text(item.label);
+    const raw = text(item.value);
+    const display = text(item.display_value) ?? raw;
+    if (!display) return [];
+    const composed = label ? `${label} ${display}` : display;
+    return [{ label, display: composed, raw: raw ?? display, field: vitalFieldFromLabel(label) }];
+  });
+
   return (
-    <BlockShell block={block} accountId={accountId} entityType={entityType} payload={payload} renderedProvenance={renderedProvenance} featured title={text(account.display_name) ?? text(payload.title)}>
+    <div className={heroStyles.hero}>
+      <div className={heroStyles.metaRow}>
+        <IntelligenceQualityBadge enrichedAt={heroAsof} showLabel />
+        {accountType &&
+          (onSnapshotFieldSave ? (
+            <TypeBadge
+              value={accountType}
+              onChange={(value) => void onSnapshotFieldSave("account_type", value)}
+            />
+          ) : (
+            <TypeBadgeDisplay value={accountType} />
+          ))}
+      </div>
+
+      <h1 className={heroStyles.name}>{displayName}</h1>
+
+      {vitalSpecs.length > 0 && (
+        <CompositionVitalsStrip vitals={vitalSpecs} onSave={onSnapshotFieldSave} />
+      )}
+
       {snapshotDegraded && (
-        <div className={pageStyles.compositionDegradedState} role="status">
-          <p className={pageStyles.compositionStateLabel}>Account details unavailable</p>
-          <p className={pageStyles.compositionStateText}>Some sourced account details could not be loaded for this view.</p>
+        <div className={heroStyles.degraded} role="status">
+          <p className={heroStyles.degradedLabel}>Account details unavailable</p>
+          <p className={heroStyles.degradedText}>Some sourced account details could not be loaded for this view.</p>
         </div>
       )}
-      {text(payload.summary) && (
-        <EditableBlockText
-          accountId={accountId}
-          entityType={entityType}
-          block={block}
-          editMode={editMode}
-          fieldPath="/summary"
-          value={text(payload.summary) ?? ""}
-          as="p"
-          className={pageStyles.compositionNarrative}
-        />
-      )}
-      {vitals.length > 0 && (
-        <div className={pageStyles.compositionVitalRail}>
-          {vitals.map((item, index) => (
-            <div className={pageStyles.compositionVitalRow} key={`${text(item.label) ?? "vital"}-${index}`}>
-              <span className={pageStyles.compositionVitalLabel}>{text(item.label)}</span>
-              <span className={pageStyles.compositionVitalValue}>{text(item.display_value) ?? text(item.value)}</span>
-            </div>
-          ))}
-        </div>
-      )}
-      {contexts.length > 0 && (
-        <ul className={pageStyles.compositionInlineList}>
-          {contexts.slice(0, 4).map((item, index) => (
-            <li key={`${text(item.claim_id) ?? "context"}-${index}`}>{text(item.text)}</li>
-          ))}
-        </ul>
-      )}
-    </BlockShell>
+    </div>
   );
 }
 
