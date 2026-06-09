@@ -1,7 +1,7 @@
 use std::cmp::Ordering;
 use std::collections::BTreeMap;
 
-use chrono::{DateTime, Utc};
+use chrono::{DateTime, NaiveDate, Utc};
 use dailyos_abilities_macro::ability;
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
@@ -1301,10 +1301,13 @@ fn build_overview_block(
     let vitals = headline_fields
         .iter()
         .map(|field| {
+            let (display_value, kind) = vital_display(field);
             json!({
                 "label": field.label,
-                "value": snapshot_value_text(&field.value),
-                "source_label": field.source_label,
+                "value": field.value,
+                "display_value": display_value,
+                "kind": kind,
+                "source_label": vital_source_label(field.source_label.as_deref()),
                 "source_asof": field.source_asof,
                 "trust_band": trust_band_label(field.trust_band),
             })
@@ -1668,6 +1671,66 @@ fn snapshot_value_text(value: &Value) -> String {
     }
 }
 
+/// Format an integer with thousands separators (e.g. `185400` -> `185,400`).
+fn format_thousands(value: i64) -> String {
+    let negative = value < 0;
+    let digits = value.unsigned_abs().to_string();
+    let bytes = digits.as_bytes();
+    let len = bytes.len();
+    let mut out = String::with_capacity(len + len / 3);
+    for (index, byte) in bytes.iter().enumerate() {
+        if index > 0 && (len - index).is_multiple_of(3) {
+            out.push(',');
+        }
+        out.push(*byte as char);
+    }
+    if negative {
+        format!("-{out}")
+    } else {
+        out
+    }
+}
+
+/// Produce the display-ready string + a `kind` hint for a headline vital
+/// (WR-R2). Formatting lives in the producer so every surface — Tauri,
+/// WordPress, MCP — renders identically; the typed `value` is preserved
+/// separately so agents can still compute on it. Time-relative rendering
+/// (countdowns) is deliberately NOT done here — the composition is cached and
+/// would freeze a relative value; a surface derives it from the typed `value`
+/// using this `kind` hint.
+fn vital_display(field: &AccountCompositionSnapshotField) -> (String, &'static str) {
+    let key = field.field_path.rsplit('/').next().unwrap_or("");
+    match key {
+        "arr" => match field.value.as_f64() {
+            Some(amount) => (format!("${}", format_thousands(amount.round() as i64)), "currency"),
+            None => (snapshot_value_text(&field.value), "currency"),
+        },
+        "contract_end" => {
+            let raw = snapshot_value_text(&field.value);
+            let display = NaiveDate::parse_from_str(raw.trim(), "%Y-%m-%d")
+                .map(|date| date.format("%b %-d, %Y").to_string())
+                .unwrap_or(raw);
+            (display, "date")
+        }
+        "nps" => (snapshot_value_text(&field.value), "number"),
+        _ => (snapshot_value_text(&field.value), "text"),
+    }
+}
+
+/// Human-facing source label for a vital, via `DataSource::display_name()`
+/// (ADR-0108) rather than the raw source key. Normalizes the WR-R1
+/// `workspace_file:backfilled` transitional label (which classifies as
+/// `Other` and would otherwise render the raw key) to a clean "Workspace
+/// file".
+fn vital_source_label(raw: Option<&str>) -> Option<String> {
+    let display = data_source_for_claim(raw?).display_name();
+    if display.starts_with("workspace_file") {
+        Some("Workspace file".to_string())
+    } else {
+        Some(display)
+    }
+}
+
 fn attribute_static_composition_fields(
     builder: &mut ProvenanceBuilder,
     subject: &SubjectAttribution,
@@ -1805,11 +1868,13 @@ fn context_computed_bindings(
 }
 
 fn vitals_display_bindings(item_count: usize) -> Result<Vec<FieldBinding>, AbilityError> {
-    let mut bindings = Vec::with_capacity(item_count * 5);
+    let mut bindings = Vec::with_capacity(item_count * 7);
     for index in 0..item_count {
         for field in [
             "label",
             "value",
+            "display_value",
+            "kind",
             "source_label",
             "source_asof",
             "trust_band",
@@ -2585,6 +2650,71 @@ mod tests {
             trust_status: "likely_current".to_string(),
             provenance_kind: AccountCompositionProvenanceKind::NonSensitiveIdentity,
         }
+    }
+
+    #[test]
+    fn vital_display_formats_by_kind_and_preserves_typed_value() {
+        let arr = snapshot_field(
+            "/vitals/arr",
+            "ARR",
+            serde_json::json!(185_400.0),
+            AccountCompositionSnapshotSensitivity::Internal,
+            Some("workspace_file:entity_doc"),
+            None,
+        );
+        assert_eq!(vital_display(&arr), ("$185,400".to_string(), "currency"));
+        assert!(arr.value.is_number(), "typed value preserved for compute/MCP");
+
+        let date = snapshot_field(
+            "/vitals/contract_end",
+            "Contract end",
+            serde_json::json!("2026-11-24"),
+            AccountCompositionSnapshotSensitivity::Internal,
+            None,
+            None,
+        );
+        assert_eq!(vital_display(&date), ("Nov 24, 2026".to_string(), "date"));
+
+        let nps = snapshot_field(
+            "/vitals/nps",
+            "NPS",
+            serde_json::json!(8),
+            AccountCompositionSnapshotSensitivity::Internal,
+            None,
+            None,
+        );
+        assert_eq!(vital_display(&nps), ("8".to_string(), "number"));
+
+        let lifecycle = snapshot_field(
+            "/vitals/lifecycle",
+            "Lifecycle",
+            serde_json::json!("nurture"),
+            AccountCompositionSnapshotSensitivity::Internal,
+            None,
+            None,
+        );
+        assert_eq!(vital_display(&lifecycle), ("nurture".to_string(), "text"));
+    }
+
+    #[test]
+    fn format_thousands_groups_digits() {
+        assert_eq!(format_thousands(8), "8");
+        assert_eq!(format_thousands(185_400), "185,400");
+        assert_eq!(format_thousands(1_234_567), "1,234,567");
+        assert_eq!(format_thousands(-2_000), "-2,000");
+    }
+
+    #[test]
+    fn vital_source_label_uses_display_name_and_normalizes_backfill() {
+        assert_eq!(
+            vital_source_label(Some("workspace_file:entity_doc")).as_deref(),
+            Some("Workspace file (entity document)")
+        );
+        assert_eq!(
+            vital_source_label(Some("workspace_file:backfilled")).as_deref(),
+            Some("Workspace file")
+        );
+        assert_eq!(vital_source_label(None), None);
     }
 
     fn snapshot_fixture(

@@ -356,7 +356,7 @@ function AccountOverviewBlock({ block, accountId, entityType, payload, renderedP
           {vitals.map((item, index) => (
             <div className={pageStyles.compositionVitalRow} key={`${text(item.label) ?? "vital"}-${index}`}>
               <span className={pageStyles.compositionVitalLabel}>{text(item.label)}</span>
-              <span className={pageStyles.compositionVitalValue}>{text(item.value)}</span>
+              <span className={pageStyles.compositionVitalValue}>{text(item.display_value) ?? text(item.value)}</span>
             </div>
           ))}
         </div>
