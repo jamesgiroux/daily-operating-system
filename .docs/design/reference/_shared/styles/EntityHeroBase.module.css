@@ -140,21 +140,21 @@
 }
 
 .EntityHeroBase_heroAvatar {
+  /* Matches the shipped PersonHero_avatar treatment — EntityHero is the
+   * generalization, not a new look. */
   position: relative;
   display: inline-flex;
   align-items: center;
   justify-content: center;
   flex-shrink: 0;
-  width: 72px;
-  height: 72px;
-  border: 1px solid var(--color-rule-heavy);
+  width: 56px;
+  height: 56px;
   border-radius: 50%;
-  background: var(--color-paper-warm-white);
-  color: var(--color-text-primary);
+  background: var(--color-garden-larkspur-15);
+  color: var(--color-garden-larkspur);
   font-family: var(--font-serif);
-  font-size: 24px;
-  letter-spacing: 0.02em;
-  text-transform: uppercase;
+  font-size: 28px;
+  font-weight: 400;
 }
 
 /* Live-relationship ring (people variant): present = actively tracked. */
@@ -175,9 +175,10 @@
   gap: var(--space-sm);
   margin-top: var(--space-xs);
   color: var(--color-text-secondary);
-  font-family: var(--font-sans);
-  font-size: 13px;
-  line-height: 1.5;
+  font-family: var(--font-mono);
+  font-size: 11px;
+  letter-spacing: 0.04em;
+  line-height: 1.6;
 }
 
 .EntityHeroBase_heroSubMetaSep {
