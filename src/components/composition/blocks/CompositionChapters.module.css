@@ -1,0 +1,276 @@
+/* CompositionChapters — spine-D editorial treatments for composition chapter
+ * block BODIES. Translates the canonical reference looks (ClaimRow rich row,
+ * WatchList accent cards, AccountOutlook statement, TimelineEntry action rows,
+ * QuoteWall evidence) onto the claim-backed composition payloads. The BlockShell
+ * wrapper owns trust-as-opacity, safety provenance states, and confirm/contest —
+ * these classes style only the children inside it. */
+@import "../../../styles/design-tokens.css";
+
+/* ── Kicker line — quiet mono label per claim row (WatchList sectionLabel) ── */
+
+.kickerLine {
+  display: flex;
+  align-items: baseline;
+  flex-wrap: wrap;
+  gap: var(--space-sm);
+}
+
+.kicker {
+  font-family: var(--font-mono);
+  font-size: 10px;
+  font-weight: 500;
+  text-transform: uppercase;
+  letter-spacing: 0.1em;
+  color: var(--color-text-tertiary);
+}
+
+.kickerLine[data-intent="win"] .kicker,
+.kickerLine[data-intent="value"] .kicker {
+  color: var(--color-garden-sage);
+}
+
+.kickerLine[data-intent="risk"] .kicker {
+  color: var(--color-spice-terracotta);
+}
+
+.kickerDate {
+  font-family: var(--font-mono);
+  font-size: 10px;
+  font-weight: 500;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--color-text-tertiary);
+}
+
+/* ── Claim rows — rich ClaimRow value line (serif, generous) ── */
+
+.claimBody {
+  display: grid;
+  gap: var(--space-sm);
+}
+
+/* Intent accent: 3px left border per WatchList/StateBlock treatment. */
+.claimBody[data-intent="win"],
+.claimBody[data-intent="value"] {
+  border-left: 3px solid var(--color-garden-sage);
+  padding-left: var(--space-md);
+}
+
+.claimBody[data-intent="risk"] {
+  border-left: 3px solid var(--color-spice-terracotta);
+  padding-left: var(--space-md);
+}
+
+.claimValue {
+  margin: 0;
+  color: var(--color-text-primary);
+  font-family: var(--font-serif);
+  font-size: 18px;
+  font-weight: 400;
+  line-height: 1.45;
+  letter-spacing: 0;
+  max-width: 640px;
+  overflow-wrap: anywhere;
+}
+
+.claimSupport {
+  margin: 0;
+  color: var(--color-text-secondary);
+  font-family: var(--font-sans);
+  font-size: 13px;
+  line-height: 1.55;
+  letter-spacing: 0;
+  max-width: 620px;
+}
+
+/* ── Outlook statement — AccountOutlook editorial statement ── */
+
+.statement {
+  margin: 0;
+  color: var(--color-text-primary);
+  font-family: var(--font-serif);
+  font-size: 28px;
+  font-weight: 300;
+  line-height: 1.4;
+  letter-spacing: -0.01em;
+  max-width: 640px;
+}
+
+.statementMetrics {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-xl);
+}
+
+.statementMetric {
+  display: grid;
+  gap: var(--space-xs);
+}
+
+.statementMetricValue {
+  color: var(--color-text-primary);
+  font-family: var(--font-serif);
+  font-size: 28px;
+  font-weight: 300;
+  line-height: 1;
+}
+
+.statementMetricLabel {
+  color: var(--color-text-tertiary);
+  font-family: var(--font-mono);
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+
+/* ── Action rows — TimelineEntry dot treatment, per-block ── */
+
+.actionRow {
+  position: relative;
+  padding-left: 24px;
+  display: grid;
+  gap: var(--space-xs);
+}
+
+.actionRow::before {
+  content: "";
+  position: absolute;
+  left: 0;
+  top: 6px;
+  width: 9px;
+  height: 9px;
+  border-radius: 50%;
+  background: var(--color-spice-turmeric);
+  border: 2px solid var(--color-paper-cream);
+}
+
+.actionText {
+  margin: 0;
+  color: var(--color-text-primary);
+  font-family: var(--font-sans);
+  font-size: 15px;
+  line-height: 1.6;
+  letter-spacing: 0;
+  max-width: 620px;
+}
+
+.actionMeta {
+  margin: 0;
+  color: var(--color-text-tertiary);
+  font-family: var(--font-mono);
+  font-size: 10px;
+  font-weight: 500;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+}
+
+/* ── The room — stakeholder rows ── */
+
+.personRow {
+  display: flex;
+  align-items: center;
+  gap: var(--space-md);
+}
+
+.personAvatar {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  width: 36px;
+  height: 36px;
+  border: 1px solid var(--color-rule-heavy);
+  border-radius: 50%;
+  background: var(--color-paper-warm-white);
+  color: var(--color-text-primary);
+  font-family: var(--font-serif);
+  font-size: 16px;
+  font-weight: 400;
+  text-transform: uppercase;
+}
+
+.personText {
+  margin: 0;
+  min-width: 0;
+  color: var(--color-text-primary);
+  font-family: var(--font-sans);
+  font-size: 14px;
+  line-height: 1.5;
+  letter-spacing: 0;
+}
+
+/* ── The record — evidence as quoted material ── */
+
+.evidenceQuote {
+  margin: 0;
+  color: var(--color-text-primary);
+  font-family: var(--font-serif);
+  font-size: 17px;
+  font-style: italic;
+  font-weight: 300;
+  line-height: 1.6;
+  letter-spacing: 0;
+  max-width: 620px;
+}
+
+.evidenceAssertion {
+  margin: 0;
+  color: var(--color-text-secondary);
+  font-family: var(--font-sans);
+  font-size: 13px;
+  line-height: 1.5;
+  letter-spacing: 0;
+  max-width: 620px;
+}
+
+.evidenceMeta {
+  margin: 0;
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-xs);
+  color: var(--color-text-tertiary);
+  font-family: var(--font-mono);
+  font-size: 10px;
+  font-weight: 500;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+}
+
+.evidenceItem {
+  display: grid;
+  gap: var(--space-xs);
+  padding: var(--space-md) 0;
+  border-top: 1px solid var(--color-rule-light);
+}
+
+.evidenceItem:first-child {
+  padding-top: 0;
+  border-top: none;
+}
+
+/* ── Markdown document chapters — editorial body ── */
+
+.docHeading {
+  margin: 0;
+  color: var(--color-text-primary);
+  font-family: var(--font-serif);
+  font-size: 20px;
+  font-weight: 400;
+  letter-spacing: -0.01em;
+}
+
+.docBody {
+  margin: 0;
+  color: var(--color-text-secondary);
+  font-family: var(--font-sans);
+  font-size: 14px;
+  line-height: 1.65;
+  letter-spacing: 0;
+  max-width: 640px;
+}
+
+.docSection {
+  display: grid;
+  gap: var(--space-sm);
+}

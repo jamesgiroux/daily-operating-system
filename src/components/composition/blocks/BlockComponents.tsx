@@ -17,6 +17,7 @@ import { TypeBadgeDisplay, type TypeBadgeValue } from "@/components/ui/TypeBadge
 import { CompositionVitalsStrip, type CompositionVitalSpec } from "@/components/composition/blocks/CompositionVitalsStrip";
 import pageStyles from "@/pages/AccountDetailPage.module.css";
 import heroStyles from "@/components/composition/blocks/AccountHeroBlock.module.css";
+import chapterStyles from "@/components/composition/blocks/CompositionChapters.module.css";
 
 type Payload = Record<string, unknown>;
 
@@ -198,6 +199,47 @@ function provenanceState(block: ProjectedBlock, renderedProvenance?: RenderedPro
         ? `from ${sourceCount} ${sourceCount === 1 ? "source" : "sources"}`
         : "Provenance recorded",
   };
+}
+
+/** Mono "Mar 12, 2026" date for the kicker line; null on unparseable input. */
+function formatAsofDate(value: string | null): string | null {
+  if (!value) return null;
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return null;
+  return date.toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" });
+}
+
+/** Claim-row intent for kicker color + accent border. */
+type ChapterIntent = "win" | "value" | "risk" | "context" | null;
+
+function chapterIntent(payload: Payload): ChapterIntent {
+  const intent = text(payload.intent);
+  return intent === "win" || intent === "value" || intent === "context" ? intent : null;
+}
+
+const INTENT_KICKER_LABELS: Record<string, string> = {
+  win: "Win",
+  value: "Value",
+  context: "Context",
+  risk: "Risk",
+};
+
+/**
+ * KickerLine — the quiet mono label that opens each chapter claim row
+ * (WatchList section-label treatment). Carries the block's title or intent
+ * plus the claim's as-of date; intent tints the label (sage for win/value,
+ * terracotta for risk). This replaces the bold sans BlockShell title for
+ * spine-D chapter bodies.
+ */
+function KickerLine({ label, intent, asof }: { label: string | null; intent?: ChapterIntent; asof?: string | null }) {
+  const date = formatAsofDate(asof ?? null);
+  if (!label && !date) return null;
+  return (
+    <div className={chapterStyles.kickerLine} data-intent={intent ?? undefined}>
+      {label && <span className={chapterStyles.kicker}>{label}</span>}
+      {date && <span className={chapterStyles.kickerDate}>{date}</span>}
+    </div>
+  );
 }
 
 function feedbackRoute(block: ProjectedBlock): EditRoute | null {
@@ -420,38 +462,48 @@ function AccountOverviewBlock({ payload, onSnapshotFieldSave }: BlockComponentPr
 
 function ClaimSummaryBlock({ block, accountId, entityType, payload, renderedProvenance, editMode }: BlockComponentProps) {
   const empty = payload.empty_state === true;
+  const intent = chapterIntent(payload);
+  const kicker = text(payload.title) ?? (intent ? INTENT_KICKER_LABELS[intent] : null);
   return (
-    <BlockShell block={block} accountId={accountId} entityType={entityType} payload={payload} renderedProvenance={renderedProvenance} title={text(payload.title) ?? text(payload.intent)} empty={empty}>
-      {text(payload.text) && (
-        <EditableBlockText accountId={accountId} entityType={entityType} block={block} editMode={editMode} fieldPath="/text" value={text(payload.text) ?? ""} as="p" className={pageStyles.compositionNarrative} />
-      )}
-      {text(payload.body) && (
-        <EditableBlockText accountId={accountId} entityType={entityType} block={block} editMode={editMode} fieldPath="/body" value={text(payload.body) ?? ""} as="p" className={pageStyles.compositionBodyText} />
-      )}
+    <BlockShell block={block} accountId={accountId} entityType={entityType} payload={payload} renderedProvenance={renderedProvenance} empty={empty}>
+      <div className={chapterStyles.claimBody} data-intent={intent ?? undefined}>
+        <KickerLine label={kicker} intent={intent} asof={text(payload.source_asof)} />
+        {text(payload.text) && (
+          <EditableBlockText accountId={accountId} entityType={entityType} block={block} editMode={editMode} fieldPath="/text" value={text(payload.text) ?? ""} as="p" className={chapterStyles.claimValue} />
+        )}
+        {text(payload.body) && (
+          <EditableBlockText accountId={accountId} entityType={entityType} block={block} editMode={editMode} fieldPath="/body" value={text(payload.body) ?? ""} as="p" className={chapterStyles.claimSupport} />
+        )}
+      </div>
     </BlockShell>
   );
 }
 
 function HealthSnapshotBlock({ block, accountId, entityType, payload, renderedProvenance, editMode }: BlockComponentProps) {
-  const band = text(payload.band) ?? text(payload.trust_band);
+  // Trust stays quiet here: the trust_band is NOT a health band, so it never
+  // renders as a metric (the opacity model + sources chapter carry trust).
+  const band = text(payload.band);
   return (
-    <BlockShell block={block} accountId={accountId} entityType={entityType} payload={payload} renderedProvenance={renderedProvenance} title="Health">
-      <div className={pageStyles.compositionMetricGrid}>
-        {typeof payload.score === "number" && (
-          <div className={pageStyles.compositionMetric}>
-            <span className={pageStyles.compositionMetricValue}>{payload.score}</span>
-            <span className={pageStyles.compositionMetricLabel}>Score</span>
-          </div>
-        )}
-        {band && (
-          <div className={pageStyles.compositionMetric}>
-            <span className={pageStyles.compositionMetricValue}>{band.replace(/_/g, " ")}</span>
-            <span className={pageStyles.compositionMetricLabel}>Band</span>
-          </div>
-        )}
-      </div>
+    <BlockShell block={block} accountId={accountId} entityType={entityType} payload={payload} renderedProvenance={renderedProvenance}>
+      <KickerLine label={text(payload.title) ?? "Health"} asof={text(payload.source_asof)} />
       {text(payload.text) && (
-        <EditableBlockText accountId={accountId} entityType={entityType} block={block} editMode={editMode} fieldPath="/text" value={text(payload.text) ?? ""} as="p" className={pageStyles.compositionNarrative} />
+        <EditableBlockText accountId={accountId} entityType={entityType} block={block} editMode={editMode} fieldPath="/text" value={text(payload.text) ?? ""} as="p" className={chapterStyles.statement} />
+      )}
+      {(typeof payload.score === "number" || band) && (
+        <div className={chapterStyles.statementMetrics}>
+          {typeof payload.score === "number" && (
+            <div className={chapterStyles.statementMetric}>
+              <span className={chapterStyles.statementMetricValue}>{payload.score}</span>
+              <span className={chapterStyles.statementMetricLabel}>Score</span>
+            </div>
+          )}
+          {band && (
+            <div className={chapterStyles.statementMetric}>
+              <span className={chapterStyles.statementMetricValue}>{band.replace(/_/g, " ")}</span>
+              <span className={chapterStyles.statementMetricLabel}>Band</span>
+            </div>
+          )}
+        </div>
       )}
     </BlockShell>
   );
@@ -460,13 +512,16 @@ function HealthSnapshotBlock({ block, accountId, entityType, payload, renderedPr
 function RiskCalloutBlock({ block, accountId, entityType, payload, renderedProvenance, editMode }: BlockComponentProps) {
   const primary = text(payload.text) ?? text(payload.body);
   return (
-    <BlockShell block={block} accountId={accountId} entityType={entityType} payload={payload} renderedProvenance={renderedProvenance} title={text(payload.title) ?? "Risk"}>
-      {primary && (
-        <EditableBlockText accountId={accountId} entityType={entityType} block={block} editMode={editMode} fieldPath={text(payload.text) ? "/text" : "/body"} value={primary} as="p" className={pageStyles.compositionNarrative} />
-      )}
-      {text(payload.recommended_action) && (
-        <EditableBlockText accountId={accountId} entityType={entityType} block={block} editMode={editMode} fieldPath="/recommended_action" value={text(payload.recommended_action) ?? ""} as="p" className={pageStyles.compositionBodyText} />
-      )}
+    <BlockShell block={block} accountId={accountId} entityType={entityType} payload={payload} renderedProvenance={renderedProvenance}>
+      <div className={chapterStyles.claimBody} data-intent="risk">
+        <KickerLine label={text(payload.title) ?? "Risk"} intent="risk" asof={text(payload.source_asof)} />
+        {primary && (
+          <EditableBlockText accountId={accountId} entityType={entityType} block={block} editMode={editMode} fieldPath={text(payload.text) ? "/text" : "/body"} value={primary} as="p" className={chapterStyles.claimValue} />
+        )}
+        {text(payload.recommended_action) && (
+          <EditableBlockText accountId={accountId} entityType={entityType} block={block} editMode={editMode} fieldPath="/recommended_action" value={text(payload.recommended_action) ?? ""} as="p" className={chapterStyles.claimSupport} />
+        )}
+      </div>
     </BlockShell>
   );
 }
@@ -474,15 +529,13 @@ function RiskCalloutBlock({ block, accountId, entityType, payload, renderedProve
 function RelationshipMapBlock({ block, accountId, entityType, payload, renderedProvenance }: BlockComponentProps) {
   const nodes = array(payload.nodes);
   return (
-    <BlockShell block={block} accountId={accountId} entityType={entityType} payload={payload} renderedProvenance={renderedProvenance} title="Relationships">
-      <div className={pageStyles.compositionRelationshipGrid}>
-        {nodes.map((node, index) => (
-          <div className={pageStyles.compositionPersonNode} key={`${text(node.claim_id) ?? text(node.label) ?? "node"}-${index}`}>
-            <span className={pageStyles.compositionAvatar}>{(text(node.label) ?? text(node.text) ?? "?").slice(0, 1)}</span>
-            <span>{text(node.label) ?? text(node.text)}</span>
-          </div>
-        ))}
-      </div>
+    <BlockShell block={block} accountId={accountId} entityType={entityType} payload={payload} renderedProvenance={renderedProvenance}>
+      {nodes.map((node, index) => (
+        <div className={chapterStyles.personRow} key={`${text(node.claim_id) ?? text(node.label) ?? "node"}-${index}`}>
+          <span className={chapterStyles.personAvatar} aria-hidden="true">{(text(node.label) ?? text(node.text) ?? "?").slice(0, 1)}</span>
+          <p className={chapterStyles.personText}>{text(node.label) ?? text(node.text)}</p>
+        </div>
+      ))}
     </BlockShell>
   );
 }
@@ -490,18 +543,16 @@ function RelationshipMapBlock({ block, accountId, entityType, payload, renderedP
 function ActionListBlock({ block, accountId, entityType, payload, renderedProvenance }: BlockComponentProps) {
   const items = array(payload.items);
   return (
-    <BlockShell block={block} accountId={accountId} entityType={entityType} payload={payload} renderedProvenance={renderedProvenance} title={text(payload.title) ?? "Actions"} empty={items.length === 0}>
-      <div className={pageStyles.compositionBlockStack}>
-        {items.map((item, index) => (
-          <div className={pageStyles.compositionActionRow} key={`${text(item.claim_id) ?? text(item.title) ?? "action"}-${index}`}>
-            <span className={pageStyles.compositionActionIndex}>{index + 1}</span>
-            <div>
-              <p className={pageStyles.compositionEvidenceTitle}>{text(item.title) ?? text(item.text)}</p>
-              {text(item.status) && <p className={pageStyles.compositionEvidenceMeta}>{text(item.status)}</p>}
-            </div>
+    <BlockShell block={block} accountId={accountId} entityType={entityType} payload={payload} renderedProvenance={renderedProvenance} empty={items.length === 0}>
+      {items.map((item, index) => {
+        const meta = [text(item.status), formatAsofDate(text(item.source_asof))].filter(Boolean);
+        return (
+          <div className={chapterStyles.actionRow} key={`${text(item.claim_id) ?? text(item.title) ?? "action"}-${index}`}>
+            <p className={chapterStyles.actionText}>{text(item.title) ?? text(item.text)}</p>
+            {meta.length > 0 && <p className={chapterStyles.actionMeta}>{meta.join(" · ")}</p>}
           </div>
-        ))}
-      </div>
+        );
+      })}
     </BlockShell>
   );
 }
@@ -509,34 +560,31 @@ function ActionListBlock({ block, accountId, entityType, payload, renderedProven
 function EvidenceListBlock({ block, accountId, entityType, payload, renderedProvenance }: BlockComponentProps) {
   const items = array(payload.items);
   return (
-    <BlockShell block={block} accountId={accountId} entityType={entityType} payload={payload} renderedProvenance={renderedProvenance} title={text(payload.title) ?? "Evidence"} empty={items.length === 0}>
-      <div className={pageStyles.compositionEvidenceList}>
-        {items.map((item, index) => {
-          const title = text(item.evidence_quote) ?? text(item.label);
-          const assertion = text(item.assertion_text);
-          const meta = [
-            text(item.source_label),
-            text(item.source_asof),
-            text(item.workspace_file_kind),
-            text(item.trust_band),
-            text(item.sensitivity),
-            text(item.redaction_state),
-          ].filter(Boolean);
-          return (
-            <div className={pageStyles.compositionEvidenceRow} key={`${title ?? "evidence"}-${index}`}>
-              <div className={pageStyles.compositionEvidenceMain}>
-                <p className={pageStyles.compositionEvidenceTitle}>{title}</p>
-                {assertion && assertion !== title && (
-                  <p className={pageStyles.compositionEvidenceMeta}>{assertion}</p>
-                )}
-                {meta.length > 0 && (
-                  <p className={pageStyles.compositionEvidenceMeta}>{meta.join(" · ")}</p>
-                )}
-              </div>
-            </div>
-          );
-        })}
-      </div>
+    <BlockShell block={block} accountId={accountId} entityType={entityType} payload={payload} renderedProvenance={renderedProvenance} empty={items.length === 0}>
+      <KickerLine label={text(payload.title)} />
+      {items.map((item, index) => {
+        const quote = text(item.evidence_quote);
+        const title = quote ?? text(item.label);
+        const assertion = text(item.assertion_text);
+        const meta = [
+          text(item.source_label),
+          formatAsofDate(text(item.source_asof)) ?? text(item.source_asof),
+          text(item.workspace_file_kind),
+          text(item.sensitivity),
+          text(item.redaction_state),
+        ].filter(Boolean);
+        return (
+          <div className={chapterStyles.evidenceItem} key={`${title ?? "evidence"}-${index}`}>
+            {title && (
+              <p className={quote ? chapterStyles.evidenceQuote : chapterStyles.evidenceAssertion}>
+                {quote ? `“${quote}”` : title}
+              </p>
+            )}
+            {assertion && assertion !== title && <p className={chapterStyles.evidenceAssertion}>{assertion}</p>}
+            {meta.length > 0 && <p className={chapterStyles.evidenceMeta}>{meta.join(" · ")}</p>}
+          </div>
+        );
+      })}
     </BlockShell>
   );
 }
@@ -544,14 +592,15 @@ function EvidenceListBlock({ block, accountId, entityType, payload, renderedProv
 function MarkdownDocumentBlock({ block, accountId, entityType, payload, renderedProvenance, editMode }: BlockComponentProps) {
   const sections = array(payload.sections);
   return (
-    <BlockShell block={block} accountId={accountId} entityType={entityType} payload={payload} renderedProvenance={renderedProvenance} title={text(payload.title)}>
+    <BlockShell block={block} accountId={accountId} entityType={entityType} payload={payload} renderedProvenance={renderedProvenance}>
+      <KickerLine label={text(payload.title)} asof={text(payload.source_asof)} />
       {text(payload.body) && (
-        <EditableBlockText accountId={accountId} entityType={entityType} block={block} editMode={editMode} fieldPath="/body" value={text(payload.body) ?? ""} as="p" className={pageStyles.compositionBodyText} />
+        <EditableBlockText accountId={accountId} entityType={entityType} block={block} editMode={editMode} fieldPath="/body" value={text(payload.body) ?? ""} as="p" className={chapterStyles.docBody} />
       )}
       {sections.map((section, index) => (
-        <section key={`${text(section.heading) ?? "section"}-${index}`}>
-          {text(section.heading) && <h4 className={pageStyles.compositionEvidenceTitle}>{text(section.heading)}</h4>}
-          {text(section.body) && <p className={pageStyles.compositionBodyText}>{text(section.body)}</p>}
+        <section className={chapterStyles.docSection} key={`${text(section.heading) ?? "section"}-${index}`}>
+          {text(section.heading) && <h4 className={chapterStyles.docHeading}>{text(section.heading)}</h4>}
+          {text(section.body) && <p className={chapterStyles.docBody}>{text(section.body)}</p>}
         </section>
       ))}
     </BlockShell>
@@ -562,9 +611,10 @@ export function GenericTextBlock({ block, accountId, entityType, payload, render
   const title = text(payload.title) ?? text(payload.label);
   const body = text(payload.text) ?? text(payload.body);
   return (
-    <BlockShell block={block} accountId={accountId} entityType={entityType} payload={payload} renderedProvenance={renderedProvenance} title={title}>
+    <BlockShell block={block} accountId={accountId} entityType={entityType} payload={payload} renderedProvenance={renderedProvenance}>
+      <KickerLine label={title} />
       {body && (
-        <EditableBlockText accountId={accountId} entityType={entityType} block={block} editMode={editMode} fieldPath={text(payload.text) ? "/text" : "/body"} value={body} as="p" className={pageStyles.compositionBodyText} />
+        <EditableBlockText accountId={accountId} entityType={entityType} block={block} editMode={editMode} fieldPath={text(payload.text) ? "/text" : "/body"} value={body} as="p" className={chapterStyles.docBody} />
       )}
     </BlockShell>
   );
