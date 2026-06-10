@@ -1396,7 +1396,7 @@ fn build_claim_block(
 ) -> Result<Block, AbilityError> {
     let claim_ref = claim_ref_for_projection(projection)?;
     let trust_band = trust_band_label(projection.trust_band);
-    let (block_type, attributes, bindings, salience_value, salience_band, salience_reason) =
+    let (block_type, mut attributes, mut bindings, salience_value, salience_band, salience_reason) =
         match projection.placement {
             ClaimPlacement::Risk => (
                 BlockType::RiskCallout,
@@ -1511,6 +1511,26 @@ fn build_claim_block(
                 ));
             }
         };
+
+    // Provenance class drives trust rendering (opacity) on every surface:
+    // hard-sourced claims read at full presence, enrichment inferences fade.
+    // Keyed off source_ref presence, NOT the cold-start trust score (DOS-853).
+    let provenance_kind = claim_provenance_kind(&projection.claim);
+    let provenance_kind_binding_path = match projection.placement {
+        ClaimPlacement::Commitment => {
+            attributes["items"][0]["provenance_kind"] = json!(provenance_kind);
+            "/items/0/provenance_kind"
+        }
+        ClaimPlacement::Relationship => {
+            attributes["nodes"][0]["provenance_kind"] = json!(provenance_kind);
+            "/nodes/0/provenance_kind"
+        }
+        _ => {
+            attributes["provenance_kind"] = json!(provenance_kind);
+            "/provenance_kind"
+        }
+    };
+    bindings.push(display_only_binding(provenance_kind_binding_path)?);
 
     let mut block = Block::new(
         BlockId::new(block_id(
@@ -2165,6 +2185,19 @@ fn data_source_for_claim(value: &str) -> DataSource {
             downstream: GleanDownstream::Documents,
         },
         _ => data_source_from_key(value),
+    }
+}
+
+/// Provenance class for trust rendering: a claim resting on a hard source
+/// (has a `source_ref` — workspace docs, CRM, etc.) is `"sourced"`; one with
+/// no source_ref (enrichment inference) is `"inferred"`. Surfaces fade
+/// `inferred` content; `sourced` reads at full presence. This is the render
+/// signal — distinct from the trust score, whose cold-start calibration is
+/// tracked separately (DOS-853).
+fn claim_provenance_kind(claim: &IntelligenceClaim) -> &'static str {
+    match claim.source_ref.as_deref() {
+        Some(reference) if !reference.trim().is_empty() => "sourced",
+        _ => "inferred",
     }
 }
 
@@ -3737,6 +3770,27 @@ mod tests {
                 "Fixture Account operates in software",
                 Some(0.96),
                 Some("2026-03-01T09:00:00Z"),
+                ClaimSensitivity::Internal,
+            ),
+            // Exercise the Health (HealthSnapshot) and Relationship
+            // (RelationshipMap) placements so the provenance_kind bindings on
+            // every claim-block rule are validated by this parity gate.
+            claim(
+                "claim-health",
+                "entity_current_state",
+                "/health/current",
+                "Renewal posture is steady",
+                Some(0.9),
+                Some("2026-05-14T09:00:00Z"),
+                ClaimSensitivity::Internal,
+            ),
+            claim(
+                "claim-room",
+                "stakeholder_role",
+                "/relationships/champion",
+                "Primary champion owns the rollout",
+                Some(0.88),
+                Some("2026-05-14T09:00:00Z"),
                 ClaimSensitivity::Internal,
             ),
         ];
