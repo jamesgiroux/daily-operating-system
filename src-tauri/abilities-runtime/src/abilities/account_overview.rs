@@ -467,7 +467,7 @@ fn build_composition(
             1,
             outlook_claims,
             snapshot_fields_for_section(snapshot, "outlook"),
-            section_intelligence_subset("outlook", snapshot.and_then(|s| s.intelligence.as_ref())),
+            snapshot,
             EmptySectionCopy {
                 title: "No current outlook signals",
                 body: "DailyOS has not found current account-health signals with renderable provenance.",
@@ -504,7 +504,7 @@ fn build_composition(
             2,
             state_claims,
             snapshot_fields_for_section(snapshot, "state-of-play"),
-            section_intelligence_subset("state-of-play", snapshot.and_then(|s| s.intelligence.as_ref())),
+            snapshot,
             EmptySectionCopy {
                 title: "No active state-of-play signals",
                 body: "No active account claims are currently eligible for this surface.",
@@ -532,7 +532,7 @@ fn build_composition(
             3,
             room_claims,
             snapshot_fields_for_section(snapshot, "the-room"),
-            section_intelligence_subset("the-room", snapshot.and_then(|s| s.intelligence.as_ref())),
+            snapshot,
             EmptySectionCopy {
                 title: "No room signals",
                 body: "Stakeholder and relationship inputs are not yet grounded for this account.",
@@ -560,7 +560,7 @@ fn build_composition(
             4,
             next_claims,
             snapshot_fields_for_section(snapshot, "whats-next"),
-            section_intelligence_subset("whats-next", snapshot.and_then(|s| s.intelligence.as_ref())),
+            snapshot,
             EmptySectionCopy {
                 title: "No open next steps",
                 body: "There are no renderable commitments or next-step records for this account.",
@@ -588,7 +588,7 @@ fn build_composition(
             5,
             watch_claims,
             snapshot_fields_for_section(snapshot, "watch-list"),
-            section_intelligence_subset("watch-list", snapshot.and_then(|s| s.intelligence.as_ref())),
+            snapshot,
             EmptySectionCopy {
                 title: "No active watch-list signals",
                 body: "No active risk or watch-list claims are eligible for this account.",
@@ -621,7 +621,7 @@ fn build_composition(
             6,
             value_claims,
             snapshot_fields_for_section(snapshot, "value-commitments"),
-            section_intelligence_subset("value-commitments", snapshot.and_then(|s| s.intelligence.as_ref())),
+            snapshot,
             EmptySectionCopy {
                 title: "No commitments with current evidence",
                 body: "DailyOS has not found value or commitment claims with current evidence.",
@@ -658,7 +658,7 @@ fn build_composition(
             7,
             strategic_claims,
             snapshot_fields_for_section(snapshot, "strategic-landscape"),
-            section_intelligence_subset("strategic-landscape", snapshot.and_then(|s| s.intelligence.as_ref())),
+            snapshot,
             EmptySectionCopy {
                 title: "Strategic context not yet grounded",
                 body: "No source-backed strategic context is available for this account.",
@@ -680,6 +680,11 @@ fn build_composition(
             input,
             projections,
             snapshot_fields_for_section(snapshot, "the-record"),
+            snapshot
+                .and_then(|snap| snap.glean_signals.as_ref())
+                .and_then(|glean| glean.get("quoteWall"))
+                .filter(|quotes| quotes.as_array().is_some_and(|rows| !rows.is_empty()))
+                .cloned(),
             8,
             subject,
             invocation_id,
@@ -703,7 +708,7 @@ fn build_composition(
             9,
             work_claims,
             snapshot_fields_for_section(snapshot, "the-work"),
-            section_intelligence_subset("the-work", snapshot.and_then(|s| s.intelligence.as_ref())),
+            snapshot,
             EmptySectionCopy {
                 title: "No active work items",
                 body: "No active work records are currently grounded for this account.",
@@ -792,22 +797,27 @@ fn build_claim_or_snapshot_section_blocks(
     section_index: usize,
     projections: Vec<&ClaimProjection>,
     snapshot_fields: Vec<&AccountCompositionSnapshotField>,
-    intelligence: Option<serde_json::Value>,
+    snapshot: Option<&AccountCompositionSnapshot>,
     empty_copy: EmptySectionCopy,
     subject: &SubjectAttribution,
     invocation_id: InvocationId,
     provenance_builder: &mut ProvenanceBuilder,
 ) -> Result<Vec<Block>, AbilityError> {
-    // A chapter renders when it has claims OR enriched intelligence content;
-    // the production content contract does not depend on claim coverage.
-    let has_chapter_content = !projections.is_empty() || intelligence.is_some();
+    // A section renders when any of its production blocks has content —
+    // claims, enriched intelligence, or a domain payload (glean, sentiment,
+    // stakeholders, footprint). Claim coverage alone no longer gates it.
+    let groups = section_block_groups(section_id, &projections, snapshot);
+    let has_chapter_content = groups.iter().any(|group| {
+        !group.projections.is_empty()
+            || group.intelligence.is_some()
+            || group.extras.len() > 1
+    });
     let mut blocks = if has_chapter_content {
         build_projection_blocks(
             input,
             section_id,
             section_index,
-            projections,
-            intelligence,
+            groups,
             subject,
             invocation_id,
             provenance_builder,
@@ -868,18 +878,14 @@ fn build_projection_blocks(
     input: &NormalizedInput,
     section_id: &str,
     section_index: usize,
-    projections: Vec<&ClaimProjection>,
-    intelligence: Option<serde_json::Value>,
+    groups: Vec<SectionBlockGroup<'_>>,
     subject: &SubjectAttribution,
     invocation_id: InvocationId,
     provenance_builder: &mut ProvenanceBuilder,
 ) -> Result<Vec<Block>, AbilityError> {
     let mut blocks = Vec::new();
-    let mut intelligence = intelligence;
-    for group in section_block_groups(section_id, &projections) {
-        // The chapter's intelligence content rides the first emitted block.
-        let group_intelligence = intelligence.take();
-        if group.projections.is_empty() && group_intelligence.is_none() {
+    for group in groups {
+        if group.projections.is_empty() && group.intelligence.is_none() && group.extras.len() <= 1 {
             continue;
         }
         let block_index = blocks.len();
@@ -887,7 +893,6 @@ fn build_projection_blocks(
             input,
             section_id,
             group,
-            group_intelligence,
             subject,
             invocation_id,
             &format!("/sections/{section_index}/blocks/{block_index}"),
@@ -959,34 +964,206 @@ struct SectionBlockGroup<'a> {
     salience_value: f32,
     salience_band: SalienceBand,
     salience_reason: &'static str,
+    /// Chapter intelligence subset riding this block (production content).
+    intelligence: Option<serde_json::Value>,
+    /// Production-block payload: a "block" discriminator naming the
+    /// main-branch component this block renders through, plus the domain
+    /// values that component consumes (gleanSignals, sentiment,
+    /// stakeholders, technicalFootprint, findings, …).
+    extras: serde_json::Map<String, serde_json::Value>,
 }
 
 fn section_block_groups<'a>(
     section_id: &str,
     projections: &[&'a ClaimProjection],
+    snapshot: Option<&AccountCompositionSnapshot>,
 ) -> Vec<SectionBlockGroup<'a>> {
     let all = || projections.to_vec();
+    let intelligence_value = snapshot.and_then(|snap| snap.intelligence.as_ref());
+    let subset = || section_intelligence_subset(section_id, intelligence_value);
+    let domain = |key: &str| -> Option<serde_json::Value> {
+        let snap = snapshot?;
+        match key {
+            "gleanSignals" => snap.glean_signals.clone(),
+            "sentiment" => snap.sentiment.clone(),
+            "stakeholders" => snap.stakeholders.clone(),
+            "technicalFootprint" => snap.technical_footprint.clone(),
+            _ => None,
+        }
+    };
+    let intel_keys = |keys: &[&str]| -> Option<serde_json::Value> {
+        let intelligence = intelligence_value?.as_object()?;
+        let mut out = serde_json::Map::new();
+        for key in keys {
+            match intelligence.get(*key) {
+                Some(serde_json::Value::Null) | None => {}
+                Some(value) if value.as_array().is_some_and(Vec::is_empty) => {}
+                Some(value) => {
+                    out.insert((*key).to_string(), value.clone());
+                }
+            }
+        }
+        if out.is_empty() {
+            None
+        } else {
+            Some(serde_json::Value::Object(out))
+        }
+    };
+    // Build the extras map for a production block: the "block" discriminator
+    // names the main-branch component; entries with None values are omitted.
+    let extras = |block: &str, entries: Vec<(&str, Option<serde_json::Value>)>| {
+        let mut map = serde_json::Map::new();
+        map.insert("block".to_string(), serde_json::json!(block));
+        for (key, value) in entries {
+            if let Some(value) = value {
+                map.insert(key.to_string(), value);
+            }
+        }
+        map
+    };
+
     match section_id {
-        "outlook" => vec![SectionBlockGroup {
-            block_type: BlockType::HealthSnapshot,
-            item_key: "items",
-            intent: None,
-            group_key: "outlook",
-            projections: all(),
-            salience_value: 0.82,
-            salience_band: SalienceBand::Important,
-            salience_reason: "health claims",
-        }],
-        "state-of-play" => vec![SectionBlockGroup {
-            block_type: BlockType::ClaimSummary,
-            item_key: "items",
-            intent: Some("context"),
-            group_key: "state",
-            projections: all(),
-            salience_value: 0.82,
-            salience_band: SalienceBand::Important,
-            salience_reason: "state-of-play claims",
-        }],
+        "outlook" => vec![
+            SectionBlockGroup {
+                block_type: BlockType::HealthSnapshot,
+                item_key: "items",
+                intent: None,
+                group_key: "outlook",
+                projections: all(),
+                salience_value: 0.82,
+                salience_band: SalienceBand::Important,
+                salience_reason: "health claims",
+                intelligence: subset(),
+                extras: extras("outlook_panel", vec![]),
+            },
+            SectionBlockGroup {
+                block_type: BlockType::HealthSnapshot,
+                item_key: "items",
+                intent: None,
+                group_key: "supporting-tension",
+                projections: Vec::new(),
+                salience_value: 0.6,
+                salience_band: SalienceBand::Contextual,
+                salience_reason: "health vs signals",
+                intelligence: None,
+                extras: {
+                    // Production SupportingTension: intelligence.health + glean.
+                    let glean = domain("gleanSignals");
+                    let health = intel_keys(&["health", "enrichedAt"]);
+                    if glean.is_none() && health.is_none() {
+                        serde_json::Map::new()
+                    } else {
+                        extras(
+                            "supporting_tension",
+                            vec![("intelligence", health), ("gleanSignals", glean)],
+                        )
+                    }
+                },
+            },
+            SectionBlockGroup {
+                block_type: BlockType::HealthSnapshot,
+                item_key: "items",
+                intent: None,
+                group_key: "about-intelligence",
+                projections: Vec::new(),
+                salience_value: 0.3,
+                salience_band: SalienceBand::Background,
+                salience_reason: "about this intelligence",
+                intelligence: None,
+                extras: {
+                    let about = intel_keys(&[
+                        "enrichedAt",
+                        "sourceFileCount",
+                        "sourceManifest",
+                    ]);
+                    if about.is_none() {
+                        serde_json::Map::new()
+                    } else {
+                        extras(
+                            "about_intelligence",
+                            vec![
+                                ("intelligence", about),
+                                ("gleanSignals", domain("gleanSignals")),
+                            ],
+                        )
+                    }
+                },
+            },
+        ],
+        "state-of-play" => vec![
+            SectionBlockGroup {
+                block_type: BlockType::ClaimSummary,
+                item_key: "items",
+                intent: Some("context"),
+                group_key: "state",
+                projections: all(),
+                salience_value: 0.82,
+                salience_band: SalienceBand::Important,
+                salience_reason: "state-of-play claims",
+                intelligence: subset(),
+                extras: extras("on_track", vec![]),
+            },
+            SectionBlockGroup {
+                block_type: BlockType::RiskCallout,
+                item_key: "items",
+                intent: Some("risk"),
+                group_key: "triage",
+                projections: Vec::new(),
+                salience_value: 0.88,
+                salience_band: SalienceBand::Critical,
+                salience_reason: "needs attention",
+                intelligence: None,
+                extras: {
+                    let triage_intel = intel_keys(&[
+                        "risks",
+                        "recentWins",
+                        "currentState",
+                        "blockers",
+                        "enrichedAt",
+                    ]);
+                    if triage_intel.is_none() && domain("gleanSignals").is_none() {
+                        serde_json::Map::new()
+                    } else {
+                        extras(
+                            "triage",
+                            vec![
+                                ("intelligence", triage_intel),
+                                ("gleanSignals", domain("gleanSignals")),
+                                ("sentiment", domain("sentiment")),
+                            ],
+                        )
+                    }
+                },
+            },
+            SectionBlockGroup {
+                block_type: BlockType::RiskCallout,
+                item_key: "items",
+                intent: Some("risk"),
+                group_key: "divergence",
+                projections: Vec::new(),
+                salience_value: 0.7,
+                salience_band: SalienceBand::Important,
+                salience_reason: "consistency divergence",
+                intelligence: None,
+                extras: {
+                    let findings = intelligence_value
+                        .and_then(|intel| intel.get("consistencyFindings"))
+                        .filter(|value| value.as_array().is_some_and(|rows| !rows.is_empty()))
+                        .cloned();
+                    if findings.is_none() {
+                        serde_json::Map::new()
+                    } else {
+                        extras(
+                            "divergence",
+                            vec![
+                                ("findings", findings),
+                                ("gleanSignals", domain("gleanSignals")),
+                            ],
+                        )
+                    }
+                },
+            },
+        ],
         "the-room" => vec![SectionBlockGroup {
             block_type: BlockType::RelationshipMap,
             item_key: "nodes",
@@ -996,6 +1173,8 @@ fn section_block_groups<'a>(
             salience_value: 0.62,
             salience_band: SalienceBand::Contextual,
             salience_reason: "relationship claims",
+            intelligence: subset(),
+            extras: extras("stakeholder_grid", vec![("stakeholders", domain("stakeholders"))]),
         }],
         "watch-list" => vec![SectionBlockGroup {
             block_type: BlockType::RiskCallout,
@@ -1006,6 +1185,8 @@ fn section_block_groups<'a>(
             salience_value: 0.9,
             salience_band: SalienceBand::Critical,
             salience_reason: "risk claims",
+            intelligence: subset(),
+            extras: serde_json::Map::new(),
         }],
         "value-commitments" => vec![SectionBlockGroup {
             block_type: BlockType::ClaimSummary,
@@ -1016,17 +1197,42 @@ fn section_block_groups<'a>(
             salience_value: 0.72,
             salience_band: SalienceBand::Important,
             salience_reason: "value and commitment claims",
+            intelligence: subset(),
+            extras: serde_json::Map::new(),
         }],
-        "strategic-landscape" => vec![SectionBlockGroup {
-            block_type: BlockType::ClaimSummary,
-            item_key: "items",
-            intent: Some("context"),
-            group_key: "strategy",
-            projections: all(),
-            salience_value: 0.58,
-            salience_band: SalienceBand::Contextual,
-            salience_reason: "strategic context claims",
-        }],
+        "strategic-landscape" => vec![
+            SectionBlockGroup {
+                block_type: BlockType::ClaimSummary,
+                item_key: "items",
+                intent: Some("context"),
+                group_key: "strategy",
+                projections: all(),
+                salience_value: 0.58,
+                salience_band: SalienceBand::Contextual,
+                salience_reason: "strategic context claims",
+                intelligence: subset(),
+                extras: serde_json::Map::new(),
+            },
+            SectionBlockGroup {
+                block_type: BlockType::ClaimSummary,
+                item_key: "items",
+                intent: None,
+                group_key: "technical-footprint",
+                projections: Vec::new(),
+                salience_value: 0.4,
+                salience_band: SalienceBand::Background,
+                salience_reason: "technical footprint",
+                intelligence: None,
+                extras: {
+                    let footprint = domain("technicalFootprint");
+                    if footprint.is_none() {
+                        serde_json::Map::new()
+                    } else {
+                        extras("technical_footprint", vec![("technicalFootprint", footprint)])
+                    }
+                },
+            },
+        ],
         // whats-next, the-work, and any future claim section: one action list.
         _ => vec![SectionBlockGroup {
             block_type: BlockType::ActionList,
@@ -1037,6 +1243,8 @@ fn section_block_groups<'a>(
             salience_value: 0.78,
             salience_band: SalienceBand::Important,
             salience_reason: "commitment claims",
+            intelligence: subset(),
+            extras: serde_json::Map::new(),
         }],
     }
 }
@@ -1046,7 +1254,6 @@ fn build_aggregate_claim_block(
     input: &NormalizedInput,
     section_id: &str,
     group: SectionBlockGroup<'_>,
-    intelligence: Option<serde_json::Value>,
     subject: &SubjectAttribution,
     invocation_id: InvocationId,
     composition_block_path: &str,
@@ -1101,11 +1308,28 @@ fn build_aggregate_claim_block(
     // The chapter's production content contract: the enriched intelligence
     // subset rides the payload at /intelligence/<key>, display-bound so the
     // projection admits it through the per-type field policies.
-    if let Some(serde_json::Value::Object(subset)) = intelligence {
+    if let Some(serde_json::Value::Object(subset)) = group.intelligence {
         for key in subset.keys() {
             bindings.push(display_only_binding(&format!("/intelligence/{key}"))?);
         }
         attributes["intelligence"] = serde_json::Value::Object(subset);
+    }
+    // Production-block payload: the "block" discriminator + the domain values
+    // the main-branch component consumes, all display-bound.
+    for (key, value) in group.extras {
+        if key == "intelligence" {
+            // Domain-scoped intelligence subset (e.g. triage) — bind per key
+            // so the per-type /intelligence/<key> policies admit it.
+            if let serde_json::Value::Object(ref subset) = value {
+                for sub_key in subset.keys() {
+                    bindings.push(display_only_binding(&format!("/intelligence/{sub_key}"))?);
+                }
+            }
+            attributes["intelligence"] = value;
+            continue;
+        }
+        bindings.push(display_only_binding(&format!("/{key}"))?);
+        attributes[key.as_str()] = value;
     }
 
     let mut block = Block::new(
@@ -1142,6 +1366,7 @@ fn build_record_section_blocks(
     input: &NormalizedInput,
     projections: &[ClaimProjection],
     snapshot_fields: Vec<&AccountCompositionSnapshotField>,
+    quote_wall: Option<serde_json::Value>,
     section_index: usize,
     subject: &SubjectAttribution,
     invocation_id: InvocationId,
@@ -1165,6 +1390,30 @@ fn build_record_section_blocks(
     }
 
     let mut blocks = Vec::new();
+    // Production QuoteWall block ("their voice") — glean-sourced quotes.
+    if let Some(quotes) = quote_wall {
+        let block_index = blocks.len();
+        let composition_block_path = format!("/sections/{section_index}/blocks/{block_index}");
+        let mut block = Block::new(
+            BlockId::new(block_id(input, "the-record", "evidence_list", "quote-wall")),
+            BlockType::EvidenceList,
+            json!({ "block": "quote_wall", "quotes": quotes }),
+            Vec::new(),
+            ProvenanceRef::new(
+                invocation_id,
+                FieldPath::new(&composition_block_path).map_err(field_error)?,
+            ),
+            None,
+        )
+        .map_err(block_error)?;
+        block.field_bindings = vec![
+            display_only_binding("/block")?,
+            display_only_binding("/quotes")?,
+        ];
+        block.salience = salience(0.5, SalienceBand::Contextual, "their voice");
+        attribute_block(provenance_builder, &composition_block_path, subject, Vec::new())?;
+        blocks.push(block);
+    }
     let quote_items = transcript_quote_evidence_items(projections);
     if !quote_items.is_empty() {
         let block_index = blocks.len();
@@ -2847,6 +3096,10 @@ mod tests {
             )),
             fields,
             intelligence: None,
+            glean_signals: None,
+            sentiment: None,
+            stakeholders: None,
+            technical_footprint: None,
         }
     }
 

@@ -23,7 +23,15 @@ import { ValueCommitments } from "@/components/entity/ValueCommitments";
 import { StrategicLandscape } from "@/components/entity/StrategicLandscape";
 import { OutlookPanel, renewalCallVerdict } from "@/components/health/OutlookPanel";
 import { OnTrackChapter } from "@/components/health/OnTrackChapter";
+import { TriageSection } from "@/components/health/TriageSection";
+import { DivergenceSection } from "@/components/health/DivergenceSection";
+import { SupportingTension } from "@/components/health/SupportingTension";
+import { AboutIntelligence } from "@/components/health/AboutIntelligence";
+import { StakeholderGrid } from "@/components/entity/StakeholderGrid";
+import { QuoteWall } from "@/components/editorial/QuoteWall";
+import { AccountTechnicalFootprint } from "@/components/account/AccountTechnicalFootprint";
 import { ChapterHeading } from "@/components/editorial/ChapterHeading";
+import type { ConsistencyFinding, HealthOutlookSignals, QuoteWallEntry } from "@/types";
 import { useIntelligenceFieldUpdate } from "@/hooks/useIntelligenceFieldUpdate";
 import type { EntityIntelligence } from "@/types";
 
@@ -52,6 +60,63 @@ function useChapterIntelligenceWiring(accountId?: string) {
   return {
     onUpdateField: accountId ? updateField : undefined,
   };
+}
+
+/**
+ * Production-block registry — payload.block names the main-branch component
+ * this block renders through (the blocks model: producers shape content,
+ * blocks are display-only). Returns null for unknown/locally-rendered keys
+ * (outlook_panel, on_track) so type components fall through to their own
+ * rendering.
+ */
+function renderProductionBlock(payload: Payload, accountId?: string): JSX.Element | null {
+  const block = text(payload.block);
+  if (!block) return null;
+  const intelligence = chapterIntelligence(payload);
+  const glean = (object(payload.gleanSignals) as unknown as HealthOutlookSignals | null) ?? null;
+  switch (block) {
+    case "triage":
+      return (
+        <TriageSection
+          intelligence={intelligence}
+          gleanSignals={glean}
+          sentiment={(text(object(payload.sentiment)?.current) ?? null) as never}
+          accountId={accountId}
+        />
+      );
+    case "divergence":
+      return (
+        <DivergenceSection
+          findings={(Array.isArray(payload.findings) ? payload.findings : []) as unknown as ConsistencyFinding[]}
+          gleanSignals={glean}
+          accountId={accountId}
+        />
+      );
+    case "supporting_tension":
+      return <SupportingTension intelligence={intelligence} gleanSignals={glean} />;
+    case "about_intelligence":
+      return <AboutIntelligence intelligence={intelligence} gleanSignals={glean} />;
+    case "stakeholder_grid": {
+      const stakeholders = object(payload.stakeholders);
+      if (!stakeholders?.stakeholdersFull) return null;
+      return (
+        <StakeholderGrid
+          stakeholders={stakeholders.stakeholdersFull as never}
+          accountName={text(stakeholders.accountName) ?? undefined}
+        />
+      );
+    }
+    case "technical_footprint": {
+      const footprint = object(payload.technicalFootprint);
+      return footprint ? <AccountTechnicalFootprint footprint={footprint as never} /> : null;
+    }
+    case "quote_wall":
+      return (
+        <QuoteWall quotes={(Array.isArray(payload.quotes) ? payload.quotes : null) as unknown as QuoteWallEntry[] | null} />
+      );
+    default:
+      return null;
+  }
 }
 
 const TYPE_BADGE_VALUES: ReadonlySet<string> = new Set(["customer", "internal", "partner"]);
@@ -613,6 +678,15 @@ function ClaimSummaryBlock({ block, accountId, entityType, payload, renderedProv
   const intelligence = chapterIntelligence(payload);
   const wiring = useChapterIntelligenceWiring(accountId);
 
+  const production = renderProductionBlock(payload, accountId);
+  if (production) {
+    return (
+      <BlockShell block={block} accountId={accountId} entityType={entityType} payload={payload} renderedProvenance={renderedProvenance} quiet>
+        {production}
+      </BlockShell>
+    );
+  }
+
   // Production content path: the chapter renders through the SAME bespoke
   // components the production account page uses, fed by the producer's
   // intelligence subset. Claims remain attached on the block for provenance.
@@ -689,6 +763,15 @@ function ClaimSummaryBlock({ block, accountId, entityType, payload, renderedProv
 function HealthSnapshotBlock({ block, accountId, entityType, payload, renderedProvenance, editMode }: BlockComponentProps) {
   const items = array(payload.items);
   const intelligence = chapterIntelligence(payload);
+
+  const production = renderProductionBlock(payload, accountId);
+  if (production) {
+    return (
+      <BlockShell block={block} accountId={accountId} entityType={entityType} payload={payload} renderedProvenance={renderedProvenance} quiet>
+        {production}
+      </BlockShell>
+    );
+  }
 
   // Production content path: the outlook chapter IS the production
   // OutlookPanel (main retired the legacy AccountOutlook), fed the
@@ -783,6 +866,15 @@ function RiskCalloutBlock({ block, accountId, entityType, payload, renderedProve
   const intelligence = chapterIntelligence(payload);
   const wiring = useChapterIntelligenceWiring(accountId);
 
+  const production = renderProductionBlock(payload, accountId);
+  if (production) {
+    return (
+      <BlockShell block={block} accountId={accountId} entityType={entityType} payload={payload} renderedProvenance={renderedProvenance} quiet>
+        {production}
+      </BlockShell>
+    );
+  }
+
   // Production content path: the watch-list chapter IS the production
   // WatchList component, fed the producer's intelligence subset.
   if (intelligence) {
@@ -832,6 +924,14 @@ function RiskCalloutBlock({ block, accountId, entityType, payload, renderedProve
 
 function RelationshipMapBlock({ block, accountId, entityType, payload, renderedProvenance }: BlockComponentProps) {
   const nodes = array(payload.nodes);
+  const production = renderProductionBlock(payload, accountId);
+  if (production) {
+    return (
+      <BlockShell block={block} accountId={accountId} entityType={entityType} payload={payload} renderedProvenance={renderedProvenance} quiet>
+        {production}
+      </BlockShell>
+    );
+  }
   return (
     <BlockShell block={block} accountId={accountId} entityType={entityType} payload={payload} renderedProvenance={renderedProvenance}>
       <div className={chapterStyles.personGrid}>
@@ -906,6 +1006,14 @@ function ActionListBlock({ block, accountId, entityType, payload, renderedProven
 
 function EvidenceListBlock({ block, accountId, entityType, payload, renderedProvenance }: BlockComponentProps) {
   const items = array(payload.items);
+  const production = renderProductionBlock(payload, accountId);
+  if (production) {
+    return (
+      <BlockShell block={block} accountId={accountId} entityType={entityType} payload={payload} renderedProvenance={renderedProvenance} quiet>
+        {production}
+      </BlockShell>
+    );
+  }
   return (
     <BlockShell block={block} accountId={accountId} entityType={entityType} payload={payload} renderedProvenance={renderedProvenance} empty={items.length === 0}>
       <KickerLine label={text(payload.title)} />

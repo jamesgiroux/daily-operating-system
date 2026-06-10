@@ -1389,6 +1389,7 @@ fn read_account_composition_snapshot_from_db(
         None,
     );
 
+    let mut technical_footprint_value: Option<serde_json::Value> = None;
     if let Some(footprint) = db
         .get_account_technical_footprint(account_id)
         .map_err(|error| {
@@ -1397,6 +1398,7 @@ fn read_account_composition_snapshot_from_db(
             ))
         })?
     {
+        technical_footprint_value = serde_json::to_value(&footprint).ok();
         push_sourced_account_field(
             &mut fields,
             "/technical/usage_tier",
@@ -1485,6 +1487,44 @@ fn read_account_composition_snapshot_from_db(
         .flatten()
         .and_then(|payload| serde_json::to_value(payload).ok());
 
+    // Production-parity domain reads — the same queries get_account_detail
+    // makes, shipped raw so producers can shape per-block payloads.
+    let glean_signals = db
+        .conn_ref()
+        .query_row(
+            "SELECT health_outlook_signals_json FROM entity_assessment WHERE entity_id = ?1",
+            rusqlite::params![account_id],
+            |row| row.get::<_, Option<String>>(0),
+        )
+        .ok()
+        .flatten()
+        .and_then(|json| serde_json::from_str::<serde_json::Value>(&json).ok());
+
+    let sentiment_note = db
+        .get_latest_sentiment_note(account_id)
+        .ok()
+        .flatten()
+        .map(|(note, _)| note);
+    let sentiment = account.user_health_sentiment.as_deref().map(|current| {
+        serde_json::json!({
+            "current": current,
+            "setAt": account.sentiment_set_at,
+            "note": sentiment_note,
+        })
+    });
+
+    let stakeholders = db
+        .get_account_stakeholders_full(account_id)
+        .ok()
+        .filter(|rows| !rows.is_empty())
+        .and_then(|rows| serde_json::to_value(rows).ok())
+        .map(|stakeholders_full| {
+            serde_json::json!({
+                "stakeholdersFull": stakeholders_full,
+                "accountName": account.name,
+            })
+        });
+
     Ok(AccountCompositionSnapshot {
         account_id: account.id.clone(),
         display_name: account_identity_field(
@@ -1499,6 +1539,10 @@ fn read_account_composition_snapshot_from_db(
         )),
         fields,
         intelligence,
+        glean_signals,
+        sentiment,
+        stakeholders,
+        technical_footprint: technical_footprint_value,
     })
 }
 
