@@ -1,89 +1,79 @@
-/* CompositionChapters — spine-D editorial treatments for composition chapter
- * block BODIES. Translates the canonical reference looks (ClaimRow rich row,
- * WatchList accent cards, AccountOutlook statement, TimelineEntry action rows,
- * QuoteWall evidence) onto the claim-backed composition payloads. The BlockShell
- * wrapper owns trust-as-opacity, safety provenance states, and confirm/contest —
- * these classes style only the children inside it. */
+/* CompositionChapters — glue CSS for composition chapter block bodies.
+ * Follows the AccountHeroBlock pattern: visual treatments COMPOSE from the
+ * existing shipped editorial component CSS (StateBlock, TimelineEntry) rather
+ * than restating values; only claim-payload glue that has no shipped
+ * equivalent (per-item trust fade, hover-revealed confirm/contest) is defined
+ * here. BlockShell owns block-level trust/safety/feedback chrome. */
 @import "../../../styles/design-tokens.css";
 
-/* ── Kicker line — quiet mono label per claim row (WatchList sectionLabel) ── */
+/* ── Grouped claim lists (state-of-play, watch-list, value, strategy) ──
+ * StateBlock look: mono uppercase group label + 3px left-border item rows.
+ * The accent color rides the same --state-block-color custom property the
+ * StateBlock component uses, set per intent variant (no inline styles). */
 
-.kickerLine {
-  display: flex;
-  align-items: baseline;
-  flex-wrap: wrap;
-  gap: var(--space-sm);
+.group {
+  composes: container from "../../editorial/StateBlock.module.css";
+  margin-bottom: 0;
 }
 
-.kicker {
-  font-family: var(--font-mono);
-  font-size: 10px;
-  font-weight: 500;
-  text-transform: uppercase;
-  letter-spacing: 0.1em;
-  color: var(--color-text-tertiary);
+.group[data-intent="working"],
+.group[data-intent="value"] {
+  --state-block-color: var(--color-garden-sage);
 }
 
-.kickerLine[data-intent="win"] .kicker,
-.kickerLine[data-intent="value"] .kicker {
-  color: var(--color-garden-sage);
+.group[data-intent="struggling"],
+.group[data-intent="risk"] {
+  --state-block-color: var(--color-spice-terracotta);
 }
 
-.kickerLine[data-intent="risk"] .kicker {
-  color: var(--color-spice-terracotta);
+.groupLabel {
+  composes: label from "../../editorial/StateBlock.module.css";
 }
 
-.kickerDate {
-  font-family: var(--font-mono);
-  font-size: 10px;
-  font-weight: 500;
-  text-transform: uppercase;
-  letter-spacing: 0.06em;
-  color: var(--color-text-tertiary);
+.groupItems {
+  composes: itemList from "../../editorial/StateBlock.module.css";
 }
 
-/* ── Claim rows — rich ClaimRow value line (serif, generous) ── */
-
-.claimBody {
-  display: grid;
-  gap: var(--space-sm);
+.itemRow {
+  composes: itemRow from "../../editorial/StateBlock.module.css";
+  flex-direction: column;
+  gap: var(--space-xs);
 }
 
-/* Intent accent: 3px left border per WatchList/StateBlock treatment. */
-.claimBody[data-intent="win"],
-.claimBody[data-intent="value"] {
-  border-left: 3px solid var(--color-garden-sage);
-  padding-left: var(--space-md);
+.itemText {
+  composes: itemText from "../../editorial/StateBlock.module.css";
 }
 
-.claimBody[data-intent="risk"] {
-  border-left: 3px solid var(--color-spice-terracotta);
-  padding-left: var(--space-md);
+/* Per-item trust-as-opacity: inferred claims fade inside aggregate blocks
+ * exactly like inferred blocks fade in the page (same value as
+ * compositionInferred); hover/focus restores presence. */
+.itemRow[data-provenance-kind="inferred"] {
+  opacity: 0.62;
+  transition: opacity 120ms ease;
 }
 
-.claimValue {
-  margin: 0;
-  color: var(--color-text-primary);
-  font-family: var(--font-serif);
-  font-size: 18px;
-  font-weight: 400;
-  line-height: 1.45;
-  letter-spacing: 0;
-  max-width: 640px;
-  overflow-wrap: anywhere;
+.itemRow[data-provenance-kind="inferred"]:hover,
+.itemRow[data-provenance-kind="inferred"]:focus-within {
+  opacity: 1;
 }
 
-.claimSupport {
-  margin: 0;
-  color: var(--color-text-secondary);
-  font-family: var(--font-sans);
-  font-size: 13px;
-  line-height: 1.55;
-  letter-spacing: 0;
-  max-width: 620px;
+/* Per-item confirm/contest stays quiet until the row is engaged
+ * (StateBlock's hover-reveal actions pattern). */
+.itemFeedback {
+  opacity: 0;
+  transition: opacity 0.15s ease;
 }
 
-/* ── Outlook statement — AccountOutlook editorial statement ── */
+.itemRow:hover .itemFeedback,
+.itemRow:focus-within .itemFeedback,
+.actionRow:hover .itemFeedback,
+.actionRow:focus-within .itemFeedback,
+.personRow:hover .itemFeedback,
+.personRow:focus-within .itemFeedback {
+  opacity: 1;
+}
+
+/* ── Outlook — lead claim reads as the AccountOutlook statement ── */
 
 .statement {
   margin: 0;
@@ -96,81 +86,66 @@
   max-width: 640px;
 }
 
-.statementMetrics {
-  display: flex;
-  flex-wrap: wrap;
-  gap: var(--space-xl);
-}
+/* ── Action rows (whats-next, the-work) — TimelineEntry dot + meta look ── */
 
-.statementMetric {
+.actionList {
+  composes: timeline from "../../editorial/TimelineEntry.module.css";
   display: grid;
-  gap: var(--space-xs);
+  gap: var(--space-md);
 }
-
-.statementMetricValue {
-  color: var(--color-text-primary);
-  font-family: var(--font-serif);
-  font-size: 28px;
-  font-weight: 300;
-  line-height: 1;
-}
-
-.statementMetricLabel {
-  color: var(--color-text-tertiary);
-  font-family: var(--font-mono);
-  font-size: 10px;
-  font-weight: 600;
-  letter-spacing: 0.06em;
-  text-transform: uppercase;
-}
-
-/* ── Action rows — TimelineEntry dot treatment, per-block ── */
 
 .actionRow {
-  position: relative;
-  padding-left: 24px;
+  composes: entry from "../../editorial/TimelineEntry.module.css";
+  padding-bottom: 0;
   display: grid;
   gap: var(--space-xs);
 }
 
-.actionRow::before {
-  content: "";
-  position: absolute;
-  left: 0;
-  top: 6px;
-  width: 9px;
-  height: 9px;
-  border-radius: 50%;
-  background: var(--color-spice-turmeric);
-  border: 2px solid var(--color-paper-cream);
+.actionRow[data-provenance-kind="inferred"] {
+  opacity: 0.62;
+  transition: opacity 120ms ease;
 }
 
-.actionText {
-  margin: 0;
-  color: var(--color-text-primary);
-  font-family: var(--font-sans);
-  font-size: 15px;
-  line-height: 1.6;
-  letter-spacing: 0;
-  max-width: 620px;
+.actionRow[data-provenance-kind="inferred"]:hover,
+.actionRow[data-provenance-kind="inferred"]:focus-within {
+  opacity: 1;
+}
+
+.actionDot {
+  composes: dot from "../../editorial/TimelineEntry.module.css";
+  background: var(--color-spice-turmeric);
 }
 
 .actionMeta {
-  margin: 0;
-  color: var(--color-text-tertiary);
-  font-family: var(--font-mono);
-  font-size: 10px;
-  font-weight: 500;
-  text-transform: uppercase;
-  letter-spacing: 0.06em;
+  composes: date from "../../editorial/TimelineEntry.module.css";
+}
+
+.actionText {
+  composes: itemText from "../../editorial/StateBlock.module.css";
 }
 
 /* ── The room — stakeholder rows ── */
+
+.personGrid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(240px, 1fr));
+  gap: var(--space-md) var(--space-lg);
+}
 
 .personRow {
   display: flex;
   align-items: center;
   gap: var(--space-md);
+}
+
+.personRow[data-provenance-kind="inferred"] {
+  opacity: 0.62;
+  transition: opacity 120ms ease;
+}
+
+.personRow[data-provenance-kind="inferred"]:hover,
+.personRow[data-provenance-kind="inferred"]:focus-within {
+  opacity: 1;
 }
 
 .personAvatar {
@@ -186,7 +161,6 @@
   color: var(--color-text-primary);
   font-family: var(--font-serif);
   font-size: 16px;
-  font-weight: 400;
   text-transform: uppercase;
 }
 
@@ -197,45 +171,9 @@
   font-family: var(--font-sans);
   font-size: 14px;
   line-height: 1.5;
-  letter-spacing: 0;
 }
 
 /* ── The record — evidence as quoted material ── */
-
-.evidenceQuote {
-  margin: 0;
-  color: var(--color-text-primary);
-  font-family: var(--font-serif);
-  font-size: 17px;
-  font-style: italic;
-  font-weight: 300;
-  line-height: 1.6;
-  letter-spacing: 0;
-  max-width: 620px;
-}
-
-.evidenceAssertion {
-  margin: 0;
-  color: var(--color-text-secondary);
-  font-family: var(--font-sans);
-  font-size: 13px;
-  line-height: 1.5;
-  letter-spacing: 0;
-  max-width: 620px;
-}
-
-.evidenceMeta {
-  margin: 0;
-  display: flex;
-  flex-wrap: wrap;
-  gap: var(--space-xs);
-  color: var(--color-text-tertiary);
-  font-family: var(--font-mono);
-  font-size: 10px;
-  font-weight: 500;
-  text-transform: uppercase;
-  letter-spacing: 0.06em;
-}
 
 .evidenceItem {
   display: grid;
@@ -247,6 +185,101 @@
 .evidenceItem:first-child {
   padding-top: 0;
   border-top: none;
+}
+
+.evidenceQuote {
+  margin: 0;
+  color: var(--color-text-primary);
+  font-family: var(--font-serif);
+  font-size: 17px;
+  font-style: italic;
+  font-weight: 300;
+  line-height: 1.6;
+  max-width: 620px;
+}
+
+.evidenceAssertion {
+  margin: 0;
+  color: var(--color-text-secondary);
+  font-family: var(--font-sans);
+  font-size: 13px;
+  line-height: 1.5;
+  max-width: 620px;
+}
+
+.evidenceMeta {
+  composes: date from "../../editorial/TimelineEntry.module.css";
+  margin: 0;
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-xs);
+}
+
+/* ── Kicker line — quiet mono label for single-claim/legacy blocks ── */
+
+.kickerLine {
+  display: flex;
+  align-items: baseline;
+  flex-wrap: wrap;
+  gap: var(--space-sm);
+}
+
+.kicker {
+  composes: label from "../../editorial/StateBlock.module.css";
+  margin-bottom: 0;
+}
+
+.kickerLine[data-intent="win"] .kicker,
+.kickerLine[data-intent="value"] .kicker {
+  color: var(--color-garden-sage);
+}
+
+.kickerLine[data-intent="risk"] .kicker,
+.kickerLine[data-intent="struggling"] .kicker {
+  color: var(--color-spice-terracotta);
+}
+
+.kickerDate {
+  composes: date from "../../editorial/TimelineEntry.module.css";
+}
+
+/* ── Single-claim / legacy payload treatments (empty states, fallbacks) ── */
+
+.claimBody {
+  display: grid;
+  gap: var(--space-sm);
+}
+
+.claimBody[data-intent="win"],
+.claimBody[data-intent="value"] {
+  border-left: 3px solid var(--color-garden-sage);
+  padding-left: var(--space-md);
+}
+
+.claimBody[data-intent="risk"],
+.claimBody[data-intent="struggling"] {
+  border-left: 3px solid var(--color-spice-terracotta);
+  padding-left: var(--space-md);
+}
+
+.claimValue {
+  margin: 0;
+  color: var(--color-text-primary);
+  font-family: var(--font-serif);
+  font-size: 18px;
+  font-weight: 400;
+  line-height: 1.45;
+  max-width: 640px;
+  overflow-wrap: anywhere;
+}
+
+.claimSupport {
+  margin: 0;
+  color: var(--color-text-secondary);
+  font-family: var(--font-sans);
+  font-size: 13px;
+  line-height: 1.55;
+  max-width: 620px;
 }
 
 /* ── Markdown document chapters — editorial body ── */
@@ -266,7 +299,6 @@
   font-family: var(--font-sans);
   font-size: 14px;
   line-height: 1.65;
-  letter-spacing: 0;
   max-width: 640px;
 }
 

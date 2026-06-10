@@ -845,6 +845,13 @@ fn build_claim_or_snapshot_section_blocks(
     )?])
 }
 
+/// Chapter-shaped aggregate emission. Each VARIANT_D chapter renders as ONE
+/// aggregate block (state-of-play as up to three intent groups) whose payload
+/// carries every claim as an item with its own claim_ref, provenance_kind,
+/// and `/items/N/text` feedback binding — so per-claim trust (opacity) and
+/// confirm/contest survive inside chapter layouts, and every surface that
+/// consumes the composition (Tauri, MCP, WP) receives the chapter shape
+/// instead of re-deriving it from a stack of single-claim blocks.
 fn build_projection_blocks(
     input: &NormalizedInput,
     section_id: &str,
@@ -854,13 +861,16 @@ fn build_projection_blocks(
     invocation_id: InvocationId,
     provenance_builder: &mut ProvenanceBuilder,
 ) -> Result<Vec<Block>, AbilityError> {
-    let mut blocks = Vec::with_capacity(projections.len());
-    for projection in projections {
+    let mut blocks = Vec::new();
+    for group in section_block_groups(section_id, &projections) {
+        if group.projections.is_empty() {
+            continue;
+        }
         let block_index = blocks.len();
-        blocks.push(build_claim_block(
+        blocks.push(build_aggregate_claim_block(
             input,
             section_id,
-            projection,
+            group,
             subject,
             invocation_id,
             &format!("/sections/{section_index}/blocks/{block_index}"),
@@ -868,6 +878,227 @@ fn build_projection_blocks(
         )?);
     }
     Ok(blocks)
+}
+
+/// One emitted aggregate block: a block type, the payload item key, an
+/// optional intent tag (drives grouping labels/accents on the surface), the
+/// member claims, and the block's salience.
+struct SectionBlockGroup<'a> {
+    block_type: BlockType,
+    item_key: &'static str,
+    intent: Option<&'static str>,
+    group_key: &'static str,
+    projections: Vec<&'a ClaimProjection>,
+    salience_value: f32,
+    salience_band: SalienceBand,
+    salience_reason: &'static str,
+}
+
+fn section_block_groups<'a>(
+    section_id: &str,
+    projections: &[&'a ClaimProjection],
+) -> Vec<SectionBlockGroup<'a>> {
+    let all = || projections.to_vec();
+    match section_id {
+        "outlook" => vec![SectionBlockGroup {
+            block_type: BlockType::HealthSnapshot,
+            item_key: "items",
+            intent: None,
+            group_key: "outlook",
+            projections: all(),
+            salience_value: 0.82,
+            salience_band: SalienceBand::Important,
+            salience_reason: "health claims",
+        }],
+        "state-of-play" => vec![
+            SectionBlockGroup {
+                block_type: BlockType::ClaimSummary,
+                item_key: "items",
+                intent: Some("working"),
+                group_key: "working",
+                projections: projections
+                    .iter()
+                    .copied()
+                    .filter(|projection| {
+                        matches!(projection.placement, ClaimPlacement::Win | ClaimPlacement::Value)
+                    })
+                    .collect(),
+                salience_value: 0.72,
+                salience_band: SalienceBand::Important,
+                salience_reason: "working claims",
+            },
+            SectionBlockGroup {
+                block_type: BlockType::ClaimSummary,
+                item_key: "items",
+                intent: Some("struggling"),
+                group_key: "struggling",
+                projections: projections
+                    .iter()
+                    .copied()
+                    .filter(|projection| projection.placement == ClaimPlacement::Risk)
+                    .collect(),
+                salience_value: 0.9,
+                salience_band: SalienceBand::Critical,
+                salience_reason: "struggling claims",
+            },
+            SectionBlockGroup {
+                block_type: BlockType::ClaimSummary,
+                item_key: "items",
+                intent: Some("context"),
+                group_key: "context",
+                projections: projections
+                    .iter()
+                    .copied()
+                    .filter(|projection| {
+                        matches!(
+                            projection.placement,
+                            ClaimPlacement::Health | ClaimPlacement::Overview
+                        )
+                    })
+                    .collect(),
+                salience_value: 0.58,
+                salience_band: SalienceBand::Contextual,
+                salience_reason: "state context claims",
+            },
+        ],
+        "the-room" => vec![SectionBlockGroup {
+            block_type: BlockType::RelationshipMap,
+            item_key: "nodes",
+            intent: None,
+            group_key: "room",
+            projections: all(),
+            salience_value: 0.62,
+            salience_band: SalienceBand::Contextual,
+            salience_reason: "relationship claims",
+        }],
+        "watch-list" => vec![SectionBlockGroup {
+            block_type: BlockType::RiskCallout,
+            item_key: "items",
+            intent: Some("risk"),
+            group_key: "risks",
+            projections: all(),
+            salience_value: 0.9,
+            salience_band: SalienceBand::Critical,
+            salience_reason: "risk claims",
+        }],
+        "value-commitments" => vec![SectionBlockGroup {
+            block_type: BlockType::ClaimSummary,
+            item_key: "items",
+            intent: Some("value"),
+            group_key: "value",
+            projections: all(),
+            salience_value: 0.72,
+            salience_band: SalienceBand::Important,
+            salience_reason: "value and commitment claims",
+        }],
+        "strategic-landscape" => vec![SectionBlockGroup {
+            block_type: BlockType::ClaimSummary,
+            item_key: "items",
+            intent: Some("context"),
+            group_key: "strategy",
+            projections: all(),
+            salience_value: 0.58,
+            salience_band: SalienceBand::Contextual,
+            salience_reason: "strategic context claims",
+        }],
+        // whats-next, the-work, and any future claim section: one action list.
+        _ => vec![SectionBlockGroup {
+            block_type: BlockType::ActionList,
+            item_key: "items",
+            intent: None,
+            group_key: "actions",
+            projections: all(),
+            salience_value: 0.78,
+            salience_band: SalienceBand::Important,
+            salience_reason: "commitment claims",
+        }],
+    }
+}
+
+#[allow(clippy::too_many_arguments)]
+fn build_aggregate_claim_block(
+    input: &NormalizedInput,
+    section_id: &str,
+    group: SectionBlockGroup<'_>,
+    subject: &SubjectAttribution,
+    invocation_id: InvocationId,
+    composition_block_path: &str,
+    provenance_builder: &mut ProvenanceBuilder,
+) -> Result<Block, AbilityError> {
+    let item_key = group.item_key;
+    let lead = group.projections[0];
+    let lead_trust_band = trust_band_label(lead.trust_band);
+
+    let mut claim_refs = Vec::with_capacity(group.projections.len());
+    let mut source_indexes = Vec::with_capacity(group.projections.len());
+    let mut items = Vec::with_capacity(group.projections.len());
+    let mut bindings = Vec::new();
+    for (index, projection) in group.projections.iter().enumerate() {
+        claim_refs.push(claim_ref_for_projection(projection)?);
+        source_indexes.push(projection.source_index);
+        items.push(json!({
+            "claim_id": projection.claim.id,
+            "text": projection.rendered_text,
+            "claim_type": projection.claim.claim_type,
+            "trust_band": trust_band_label(projection.trust_band),
+            "source_asof": projection.claim.source_asof,
+            "provenance_kind": claim_provenance_kind(&projection.claim),
+        }));
+        let text_path = format!("/{item_key}/{index}/text");
+        bindings.push(binding(&text_path, BindingRole::Source, vec![index])?);
+        bindings.push(binding(&text_path, BindingRole::FeedbackTarget, vec![index])?);
+        bindings.push(computed_binding_for_indexes(
+            &format!("/{item_key}/{index}/trust_band"),
+            vec![index],
+        )?);
+        for field in ["claim_id", "claim_type", "source_asof", "provenance_kind"] {
+            bindings.push(display_only_binding(&format!("/{item_key}/{index}/{field}"))?);
+        }
+    }
+
+    // Block-level metadata mirrors the lead claim so the shell (trust band,
+    // freshness, fallback selection) keeps a stable contract for aggregates.
+    let mut attributes = json!({
+        item_key: items,
+        "claim_type": lead.claim.claim_type,
+        "trust_band": lead_trust_band,
+        "source_asof": lead.claim.source_asof,
+    });
+    if let Some(intent) = group.intent {
+        attributes["intent"] = json!(intent);
+    }
+    for field in ["claim_type", "trust_band", "source_asof", "intent"] {
+        if attributes.get(field).is_some() {
+            bindings.push(display_only_binding(&format!("/{field}"))?);
+        }
+    }
+
+    let mut block = Block::new(
+        BlockId::new(block_id(
+            input,
+            section_id,
+            group.block_type.type_id(),
+            group.group_key,
+        )),
+        group.block_type,
+        attributes,
+        claim_refs,
+        ProvenanceRef::new(
+            invocation_id,
+            FieldPath::new(composition_block_path).map_err(field_error)?,
+        ),
+        None,
+    )
+    .map_err(block_error)?;
+    block.field_bindings = bindings;
+    block.salience = salience(group.salience_value, group.salience_band, group.salience_reason);
+    attribute_block(
+        provenance_builder,
+        composition_block_path,
+        subject,
+        source_indexes,
+    )?;
+    Ok(block)
 }
 
 #[allow(clippy::too_many_arguments)]
@@ -1385,181 +1616,6 @@ fn build_overview_block(
     Ok(block)
 }
 
-fn build_claim_block(
-    input: &NormalizedInput,
-    section_id: &str,
-    projection: &ClaimProjection,
-    subject: &SubjectAttribution,
-    invocation_id: InvocationId,
-    composition_block_path: &str,
-    provenance_builder: &mut ProvenanceBuilder,
-) -> Result<Block, AbilityError> {
-    let claim_ref = claim_ref_for_projection(projection)?;
-    let trust_band = trust_band_label(projection.trust_band);
-    let (block_type, mut attributes, mut bindings, salience_value, salience_band, salience_reason) =
-        match projection.placement {
-            ClaimPlacement::Risk => (
-                BlockType::RiskCallout,
-                json!({
-                    "claim_id": projection.claim.id,
-                    "text": projection.rendered_text,
-                    "claim_type": projection.claim.claim_type,
-                    "trust_band": trust_band,
-                    "source_asof": projection.claim.source_asof,
-                }),
-                source_feedback_computed_bindings("/text", "/trust_band")?,
-                0.9,
-                SalienceBand::Critical,
-                "risk claim",
-            ),
-            ClaimPlacement::Win => (
-                BlockType::ClaimSummary,
-                json!({
-                    "intent": "win",
-                    "claim_id": projection.claim.id,
-                    "text": projection.rendered_text,
-                    "claim_type": projection.claim.claim_type,
-                    "trust_band": trust_band,
-                    "source_asof": projection.claim.source_asof,
-                }),
-                source_feedback_computed_bindings("/text", "/trust_band")?,
-                0.72,
-                SalienceBand::Important,
-                "win claim",
-            ),
-            ClaimPlacement::Value => (
-                BlockType::ClaimSummary,
-                json!({
-                    "intent": "value",
-                    "claim_id": projection.claim.id,
-                    "text": projection.rendered_text,
-                    "claim_type": projection.claim.claim_type,
-                    "trust_band": trust_band,
-                    "source_asof": projection.claim.source_asof,
-                }),
-                source_feedback_computed_bindings("/text", "/trust_band")?,
-                0.72,
-                SalienceBand::Important,
-                "value claim",
-            ),
-            ClaimPlacement::Commitment => (
-                BlockType::ActionList,
-                json!({
-                    "items": [{
-                        "claim_id": projection.claim.id,
-                        "text": projection.rendered_text,
-                        "trust_band": trust_band,
-                        "source_asof": projection.claim.source_asof,
-                    }],
-                    "claim_type": projection.claim.claim_type,
-                    "trust_band": trust_band,
-                    "source_asof": projection.claim.source_asof,
-                }),
-                source_feedback_computed_bindings("/items/0/text", "/items/0/trust_band")?,
-                0.78,
-                SalienceBand::Important,
-                "commitment claim",
-            ),
-            ClaimPlacement::Relationship => (
-                BlockType::RelationshipMap,
-                json!({
-                    "nodes": [{
-                        "claim_id": projection.claim.id,
-                        "text": projection.rendered_text,
-                        "trust_band": trust_band,
-                        "source_asof": projection.claim.source_asof,
-                    }],
-                    "claim_type": projection.claim.claim_type,
-                }),
-                source_feedback_computed_bindings("/nodes/0/text", "/nodes/0/trust_band")?,
-                0.62,
-                SalienceBand::Contextual,
-                "relationship claim",
-            ),
-            ClaimPlacement::Health => (
-                BlockType::HealthSnapshot,
-                json!({
-                    "claim_id": projection.claim.id,
-                    "text": projection.rendered_text,
-                    "claim_type": projection.claim.claim_type,
-                    "trust_band": trust_band,
-                    "source_asof": projection.claim.source_asof,
-                }),
-                source_feedback_computed_bindings("/text", "/trust_band")?,
-                0.82,
-                SalienceBand::Important,
-                "health claim",
-            ),
-            ClaimPlacement::Overview => (
-                BlockType::ClaimSummary,
-                json!({
-                    "intent": "context",
-                    "claim_id": projection.claim.id,
-                    "text": projection.rendered_text,
-                    "claim_type": projection.claim.claim_type,
-                    "trust_band": trust_band,
-                    "source_asof": projection.claim.source_asof,
-                }),
-                source_feedback_computed_bindings("/text", "/trust_band")?,
-                0.58,
-                SalienceBand::Contextual,
-                "account context claim",
-            ),
-            ClaimPlacement::Ignored => {
-                return Err(validation_error(
-                    "unexpected account overview block placement",
-                ));
-            }
-        };
-
-    // Provenance class drives trust rendering (opacity) on every surface:
-    // hard-sourced claims read at full presence, enrichment inferences fade.
-    // Keyed off source_ref presence, NOT the cold-start trust score (DOS-853).
-    let provenance_kind = claim_provenance_kind(&projection.claim);
-    let provenance_kind_binding_path = match projection.placement {
-        ClaimPlacement::Commitment => {
-            attributes["items"][0]["provenance_kind"] = json!(provenance_kind);
-            "/items/0/provenance_kind"
-        }
-        ClaimPlacement::Relationship => {
-            attributes["nodes"][0]["provenance_kind"] = json!(provenance_kind);
-            "/nodes/0/provenance_kind"
-        }
-        _ => {
-            attributes["provenance_kind"] = json!(provenance_kind);
-            "/provenance_kind"
-        }
-    };
-    bindings.push(display_only_binding(provenance_kind_binding_path)?);
-
-    let mut block = Block::new(
-        BlockId::new(block_id(
-            input,
-            section_id,
-            block_type.type_id(),
-            &projection.claim.id,
-        )),
-        block_type,
-        attributes,
-        vec![claim_ref],
-        ProvenanceRef::new(
-            invocation_id,
-            FieldPath::new(composition_block_path).map_err(field_error)?,
-        ),
-        None,
-    )
-    .map_err(block_error)?;
-    block.field_bindings = bindings;
-    block.salience = salience(salience_value, salience_band, salience_reason);
-    attribute_block(
-        provenance_builder,
-        composition_block_path,
-        subject,
-        vec![projection.source_index],
-    )?;
-    Ok(block)
-}
-
 fn snapshot_fields_for_section<'a>(
     snapshot: Option<&'a AccountCompositionSnapshot>,
     section_id: &str,
@@ -1826,17 +1882,6 @@ fn attribute_block(
         .attribute(path.clone(), attribution.clone())
         .map_err(provenance_error)?;
     Ok(())
-}
-
-fn source_feedback_computed_bindings(
-    source_path: &str,
-    computed_path: &str,
-) -> Result<Vec<FieldBinding>, AbilityError> {
-    Ok(vec![
-        binding(source_path, BindingRole::Source, vec![0])?,
-        binding(source_path, BindingRole::FeedbackTarget, vec![0])?,
-        binding(computed_path, BindingRole::ComputedFrom, vec![0])?,
-    ])
 }
 
 fn computed_binding(
@@ -3204,9 +3249,12 @@ mod tests {
                 .blocks
                 .iter()
                 .any(|block| block.block_type == BlockType::ClaimSummary
-                    && block.attributes.pointer("/text").and_then(Value::as_str)
+                    && block
+                        .attributes
+                        .pointer("/items/0/text")
+                        .and_then(Value::as_str)
                         == Some("Adoption milestone shipped")),
-            "claim evidence remains renderable"
+            "claim evidence remains renderable as an aggregate item"
         );
         assert!(
             value_section

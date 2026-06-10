@@ -178,6 +178,50 @@ describe("ReactBlockRenderer", () => {
     );
   });
 
+  it("renders aggregate chapter blocks with per-item trust fade and per-item feedback", () => {
+    const itemRoute = (index: number) => ({
+      field_path: `/items/${index}/text`,
+      role: "feedback_target" as const,
+      claim_refs: [{ claim_id: `claim-${index}`, claim_version: 1, field_path: `/items/${index}/text` }],
+      feedback_allowed: true,
+      refusal_reason: null,
+    });
+    render(
+      <ReactBlockRenderer
+        accountId="acct-aggregate"
+        block={block({
+          selected_known_type_id: "claim_summary",
+          payload: {
+            intent: "working",
+            items: [
+              { claim_id: "claim-0", text: "Adoption is expanding", provenance_kind: "sourced" },
+              { claim_id: "claim-1", text: "Champion may be hesitant", provenance_kind: "inferred" },
+            ],
+          },
+          claim_refs: [
+            { claim_id: "claim-0", claim_version: 1, field_path: "/items/0/text" },
+            { claim_id: "claim-1", claim_version: 1, field_path: "/items/1/text" },
+          ],
+          edit_routes: [itemRoute(0), itemRoute(1)],
+        })}
+      />,
+    );
+
+    // Both claims render inside one chapter-shaped block with the group label.
+    expect(screen.getByText("Working")).toBeInTheDocument();
+    expect(screen.getByText("Adoption is expanding")).toBeInTheDocument();
+    expect(screen.getByText("Champion may be hesitant")).toBeInTheDocument();
+    // Per-item trust-as-opacity: the inferred row fades, the sourced row does not.
+    expect(
+      screen.getByText("Champion may be hesitant").closest('[data-provenance-kind="inferred"]'),
+    ).not.toBeNull();
+    expect(
+      screen.getByText("Adoption is expanding").closest('[data-provenance-kind="inferred"]'),
+    ).toBeNull();
+    // Per-item confirm/contest: one prompt per claim, no block-level prompt on top.
+    expect(screen.getAllByText("Is this accurate?")).toHaveLength(2);
+  });
+
   it("surfaces account snapshot degradation without exposing the internal reason", () => {
     render(
       <ReactBlockRenderer

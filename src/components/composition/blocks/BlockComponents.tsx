@@ -95,14 +95,10 @@ function pointerValue(payload: Payload, pointer: string): unknown {
  * producer's provenance_kind, not the cold-start trust score (DOS-853).
  */
 function provenanceKind(payload: Payload): "sourced" | "inferred" | null {
-  // Single-claim blocks carry provenance_kind at the top level; the ActionList
-  // (commitment) and RelationshipMap (relationship) blocks carry it on their
-  // single item/node. Check both so the block-level fade covers every
-  // claim-backed block.
-  const candidate =
-    text(payload.provenance_kind) ??
-    text(array(payload.items)[0]?.provenance_kind) ??
-    text(array(payload.nodes)[0]?.provenance_kind);
+  // Single-claim blocks carry provenance_kind at the top level and fade as a
+  // whole. Aggregate chapter blocks carry provenance_kind per item/node — the
+  // item rows own their own fade, so the block stays at full presence.
+  const candidate = text(payload.provenance_kind);
   return candidate === "sourced" || candidate === "inferred" ? candidate : null;
 }
 
@@ -210,11 +206,10 @@ function formatAsofDate(value: string | null): string | null {
 }
 
 /** Claim-row intent for kicker color + accent border. */
-type ChapterIntent = "win" | "value" | "risk" | "context" | null;
+type ChapterIntent = string | null;
 
 function chapterIntent(payload: Payload): ChapterIntent {
-  const intent = text(payload.intent);
-  return intent === "win" || intent === "value" || intent === "context" ? intent : null;
+  return text(payload.intent);
 }
 
 const INTENT_KICKER_LABELS: Record<string, string> = {
@@ -222,6 +217,16 @@ const INTENT_KICKER_LABELS: Record<string, string> = {
   value: "Value",
   context: "Context",
   risk: "Risk",
+  working: "Working",
+  struggling: "Struggling",
+};
+
+/** Group labels for aggregate claim lists. Only the state-of-play split
+ *  carries a visible label — other groups' chapters are already titled by
+ *  the section header, so a repeated label would be redundant chrome. */
+const INTENT_GROUP_LABELS: Record<string, string> = {
+  working: "Working",
+  struggling: "Struggling",
 };
 
 /**
@@ -242,8 +247,18 @@ function KickerLine({ label, intent, asof }: { label: string | null; intent?: Ch
   );
 }
 
+/** Item-level routes (aggregate chapter payloads) are owned by the item rows,
+ *  not the block-level feedback prompt. */
+function isItemRoute(route: EditRoute): boolean {
+  return route.field_path.startsWith("/items/") || route.field_path.startsWith("/nodes/");
+}
+
 function feedbackRoute(block: ProjectedBlock): EditRoute | null {
-  return block.edit_routes.find((route) => route.feedback_allowed && route.claim_refs.length > 0) ?? null;
+  return (
+    block.edit_routes.find(
+      (route) => route.feedback_allowed && route.claim_refs.length > 0 && !isItemRoute(route),
+    ) ?? null
+  );
 }
 
 function feedbackRouteForPath(block: ProjectedBlock, fieldPath: string): EditRoute | null {
@@ -290,6 +305,99 @@ function BlockFeedback({
         variant={currentValue ? "correct" : "dismiss"}
       />
     </div>
+  );
+}
+
+/** Per-item confirm/contest for aggregate chapter rows. Same
+ *  IntelligenceCorrection affordance as the block-level prompt, routed
+ *  through the item's own `/items/N/text` claim ref; hover-revealed so a
+ *  chapter of N claims doesn't render N standing prompts. */
+function ItemFeedback({
+  accountId,
+  entityType = "account",
+  block,
+  fieldPath,
+  value,
+}: {
+  accountId?: string;
+  entityType?: CompositionFeedbackEntityType;
+  block: ProjectedBlock;
+  fieldPath: string;
+  value: string | null;
+}) {
+  const route = feedbackRouteForPath(block, fieldPath);
+  const claimRef = route?.claim_refs[0];
+  if (!accountId || !route || !claimRef) return null;
+  return (
+    <div className={clsx(pageStyles.compositionFeedbackRow, chapterStyles.itemFeedback)}>
+      <IntelligenceCorrection
+        entityId={accountId}
+        entityType={entityType}
+        field={feedbackField(route)}
+        itemKey={claimRef.claim_id}
+        currentValue={value}
+        variant={value ? "correct" : "dismiss"}
+      />
+    </div>
+  );
+}
+
+/** Aggregate claim items — the shared row renderer for chapter lists.
+ *  Each row: editable claim text, per-item trust fade (provenance_kind),
+ *  hover-revealed confirm/contest. */
+function AggregateClaimItems({
+  accountId,
+  entityType,
+  block,
+  editMode,
+  items,
+  itemKey = "items",
+  indexOffset = 0,
+  textClassName,
+}: {
+  accountId?: string;
+  entityType?: CompositionFeedbackEntityType;
+  block: ProjectedBlock;
+  editMode?: boolean;
+  items: Payload[];
+  itemKey?: string;
+  /** Payload index of items[0] — nonzero when a lead item renders separately. */
+  indexOffset?: number;
+  textClassName?: string;
+}) {
+  return (
+    <>
+      {items.map((item, index) => {
+        const fieldPath = `/${itemKey}/${index + indexOffset}/text`;
+        const value = text(item.text) ?? "";
+        return (
+          <div
+            className={chapterStyles.itemRow}
+            data-provenance-kind={text(item.provenance_kind) ?? undefined}
+            title={text(item.provenance_kind) === "inferred" ? INFERRED_TOOLTIP : undefined}
+            key={`${text(item.claim_id) ?? "item"}-${index}`}
+          >
+            <EditableBlockText
+              accountId={accountId}
+              entityType={entityType}
+              block={block}
+              editMode={editMode}
+              fieldPath={fieldPath}
+              value={value}
+              as="p"
+              className={textClassName ?? chapterStyles.itemText}
+            />
+            <ItemFeedback
+              accountId={accountId}
+              entityType={entityType}
+              block={block}
+              fieldPath={fieldPath}
+              value={value}
+            />
+          </div>
+        );
+      })}
+    </>
   );
 }
 
@@ -463,6 +571,32 @@ function AccountOverviewBlock({ payload, onSnapshotFieldSave }: BlockComponentPr
 function ClaimSummaryBlock({ block, accountId, entityType, payload, renderedProvenance, editMode }: BlockComponentProps) {
   const empty = payload.empty_state === true;
   const intent = chapterIntent(payload);
+  const items = array(payload.items);
+
+  // Aggregate chapter payload: a grouped claim list (StateBlock treatment —
+  // mono group label + accent-bordered rows). Working/Struggling carry their
+  // split labels; other groups are already titled by the section header.
+  if (items.length > 0) {
+    const label = intent ? INTENT_GROUP_LABELS[intent] ?? null : null;
+    return (
+      <BlockShell block={block} accountId={accountId} entityType={entityType} payload={payload} renderedProvenance={renderedProvenance}>
+        <div className={chapterStyles.group} data-intent={intent ?? undefined}>
+          {label && <div className={chapterStyles.groupLabel}>{label}</div>}
+          <div className={chapterStyles.groupItems}>
+            <AggregateClaimItems
+              accountId={accountId}
+              entityType={entityType}
+              block={block}
+              editMode={editMode}
+              items={items}
+            />
+          </div>
+        </div>
+      </BlockShell>
+    );
+  }
+
+  // Single-claim / empty-state / fallback payload.
   const kicker = text(payload.title) ?? (intent ? INTENT_KICKER_LABELS[intent] : null);
   return (
     <BlockShell block={block} accountId={accountId} entityType={entityType} payload={payload} renderedProvenance={renderedProvenance} empty={empty}>
@@ -480,8 +614,48 @@ function ClaimSummaryBlock({ block, accountId, entityType, payload, renderedProv
 }
 
 function HealthSnapshotBlock({ block, accountId, entityType, payload, renderedProvenance, editMode }: BlockComponentProps) {
-  // Trust stays quiet here: the trust_band is NOT a health band, so it never
-  // renders as a metric (the opacity model + sources chapter carry trust).
+  const items = array(payload.items);
+
+  // Aggregate outlook payload: the lead claim reads as the AccountOutlook
+  // editorial statement; supporting claims follow as quieter rows. Trust
+  // stays quiet (opacity per item) — trust_band never renders as a metric.
+  if (items.length > 0) {
+    const lead = items[0];
+    const rest = items.slice(1);
+    return (
+      <BlockShell block={block} accountId={accountId} entityType={entityType} payload={payload} renderedProvenance={renderedProvenance}>
+        <div
+          className={chapterStyles.itemRow}
+          data-provenance-kind={text(lead.provenance_kind) ?? undefined}
+          title={text(lead.provenance_kind) === "inferred" ? INFERRED_TOOLTIP : undefined}
+        >
+          <EditableBlockText
+            accountId={accountId}
+            entityType={entityType}
+            block={block}
+            editMode={editMode}
+            fieldPath="/items/0/text"
+            value={text(lead.text) ?? ""}
+            as="p"
+            className={chapterStyles.statement}
+          />
+          <ItemFeedback accountId={accountId} entityType={entityType} block={block} fieldPath="/items/0/text" value={text(lead.text)} />
+        </div>
+        {rest.length > 0 && (
+          <AggregateClaimItems
+            accountId={accountId}
+            entityType={entityType}
+            block={block}
+            editMode={editMode}
+            items={rest}
+            indexOffset={1}
+          />
+        )}
+      </BlockShell>
+    );
+  }
+
+  // Legacy single-claim / snapshot payload.
   const band = text(payload.band);
   return (
     <BlockShell block={block} accountId={accountId} entityType={entityType} payload={payload} renderedProvenance={renderedProvenance}>
@@ -510,6 +684,29 @@ function HealthSnapshotBlock({ block, accountId, entityType, payload, renderedPr
 }
 
 function RiskCalloutBlock({ block, accountId, entityType, payload, renderedProvenance, editMode }: BlockComponentProps) {
+  const items = array(payload.items);
+
+  // Aggregate watch-list payload: terracotta-flagged claim rows (WatchList
+  // grouped treatment) with per-item trust fade + confirm/contest.
+  if (items.length > 0) {
+    return (
+      <BlockShell block={block} accountId={accountId} entityType={entityType} payload={payload} renderedProvenance={renderedProvenance}>
+        <div className={chapterStyles.group} data-intent="risk">
+          <div className={chapterStyles.groupItems}>
+            <AggregateClaimItems
+              accountId={accountId}
+              entityType={entityType}
+              block={block}
+              editMode={editMode}
+              items={items}
+            />
+          </div>
+        </div>
+      </BlockShell>
+    );
+  }
+
+  // Legacy single-claim payload.
   const primary = text(payload.text) ?? text(payload.body);
   return (
     <BlockShell block={block} accountId={accountId} entityType={entityType} payload={payload} renderedProvenance={renderedProvenance}>
@@ -530,29 +727,72 @@ function RelationshipMapBlock({ block, accountId, entityType, payload, renderedP
   const nodes = array(payload.nodes);
   return (
     <BlockShell block={block} accountId={accountId} entityType={entityType} payload={payload} renderedProvenance={renderedProvenance}>
-      {nodes.map((node, index) => (
-        <div className={chapterStyles.personRow} key={`${text(node.claim_id) ?? text(node.label) ?? "node"}-${index}`}>
-          <span className={chapterStyles.personAvatar} aria-hidden="true">{(text(node.label) ?? text(node.text) ?? "?").slice(0, 1)}</span>
-          <p className={chapterStyles.personText}>{text(node.label) ?? text(node.text)}</p>
-        </div>
-      ))}
+      <div className={chapterStyles.personGrid}>
+        {nodes.map((node, index) => {
+          const label = text(node.label) ?? text(node.text);
+          return (
+            <div
+              className={chapterStyles.personRow}
+              data-provenance-kind={text(node.provenance_kind) ?? undefined}
+              title={text(node.provenance_kind) === "inferred" ? INFERRED_TOOLTIP : undefined}
+              key={`${text(node.claim_id) ?? label ?? "node"}-${index}`}
+            >
+              <span className={chapterStyles.personAvatar} aria-hidden="true">{(label ?? "?").slice(0, 1)}</span>
+              <p className={chapterStyles.personText}>{label}</p>
+              <ItemFeedback
+                accountId={accountId}
+                entityType={entityType}
+                block={block}
+                fieldPath={`/nodes/${index}/text`}
+                value={text(node.text)}
+              />
+            </div>
+          );
+        })}
+      </div>
     </BlockShell>
   );
 }
 
-function ActionListBlock({ block, accountId, entityType, payload, renderedProvenance }: BlockComponentProps) {
+function ActionListBlock({ block, accountId, entityType, payload, renderedProvenance, editMode }: BlockComponentProps) {
   const items = array(payload.items);
   return (
     <BlockShell block={block} accountId={accountId} entityType={entityType} payload={payload} renderedProvenance={renderedProvenance} empty={items.length === 0}>
-      {items.map((item, index) => {
-        const meta = [text(item.status), formatAsofDate(text(item.source_asof))].filter(Boolean);
-        return (
-          <div className={chapterStyles.actionRow} key={`${text(item.claim_id) ?? text(item.title) ?? "action"}-${index}`}>
-            <p className={chapterStyles.actionText}>{text(item.title) ?? text(item.text)}</p>
-            {meta.length > 0 && <p className={chapterStyles.actionMeta}>{meta.join(" · ")}</p>}
-          </div>
-        );
-      })}
+      <div className={chapterStyles.actionList}>
+        {items.map((item, index) => {
+          const fieldPath = `/items/${index}/text`;
+          const value = text(item.title) ?? text(item.text) ?? "";
+          const meta = [text(item.status), formatAsofDate(text(item.source_asof))].filter(Boolean);
+          return (
+            <div
+              className={chapterStyles.actionRow}
+              data-provenance-kind={text(item.provenance_kind) ?? undefined}
+              title={text(item.provenance_kind) === "inferred" ? INFERRED_TOOLTIP : undefined}
+              key={`${text(item.claim_id) ?? value ?? "action"}-${index}`}
+            >
+              <span className={chapterStyles.actionDot} aria-hidden="true" />
+              {meta.length > 0 && <p className={chapterStyles.actionMeta}>{meta.join(" · ")}</p>}
+              <EditableBlockText
+                accountId={accountId}
+                entityType={entityType}
+                block={block}
+                editMode={editMode}
+                fieldPath={fieldPath}
+                value={value}
+                as="p"
+                className={chapterStyles.actionText}
+              />
+              <ItemFeedback
+                accountId={accountId}
+                entityType={entityType}
+                block={block}
+                fieldPath={fieldPath}
+                value={text(item.text)}
+              />
+            </div>
+          );
+        })}
+      </div>
     </BlockShell>
   );
 }

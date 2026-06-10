@@ -1445,6 +1445,12 @@ const CLAIM_SUMMARY_FIELDS: &[FieldPolicy] = &[
     text_field("/intent", ClaimSensitivity::Internal),
     text_field("/provenance_kind", ClaimSensitivity::Internal),
     bool_field("/empty_state", ClaimSensitivity::Internal),
+    text_field("/items/*/text", ClaimSensitivity::Internal),
+    text_field("/items/*/claim_id", ClaimSensitivity::Internal),
+    text_field("/items/*/claim_type", ClaimSensitivity::Internal),
+    text_field("/items/*/trust_band", ClaimSensitivity::Internal),
+    text_field("/items/*/source_asof", ClaimSensitivity::Internal),
+    text_field("/items/*/provenance_kind", ClaimSensitivity::Internal),
 ];
 const EVIDENCE_LIST_FIELDS: &[FieldPolicy] = &[
     text_field("/title", ClaimSensitivity::Internal),
@@ -1480,6 +1486,12 @@ const HEALTH_SNAPSHOT_FIELDS: &[FieldPolicy] = &[
     text_field("/claim_type", ClaimSensitivity::Internal),
     text_field("/source_asof", ClaimSensitivity::Internal),
     text_field("/provenance_kind", ClaimSensitivity::Internal),
+    text_field("/items/*/text", ClaimSensitivity::Internal),
+    text_field("/items/*/claim_id", ClaimSensitivity::Internal),
+    text_field("/items/*/claim_type", ClaimSensitivity::Internal),
+    text_field("/items/*/trust_band", ClaimSensitivity::Internal),
+    text_field("/items/*/source_asof", ClaimSensitivity::Internal),
+    text_field("/items/*/provenance_kind", ClaimSensitivity::Internal),
 ];
 const RELATIONSHIP_MAP_FIELDS: &[FieldPolicy] = &[
     text_field("/nodes/*/label", ClaimSensitivity::Internal),
@@ -1490,7 +1502,10 @@ const RELATIONSHIP_MAP_FIELDS: &[FieldPolicy] = &[
     text_field("/nodes/*/claim_id", ClaimSensitivity::Internal),
     text_field("/nodes/*/source_asof", ClaimSensitivity::Internal),
     text_field("/nodes/*/provenance_kind", ClaimSensitivity::Internal),
+    text_field("/nodes/*/claim_type", ClaimSensitivity::Internal),
     text_field("/claim_type", ClaimSensitivity::Internal),
+    text_field("/trust_band", ClaimSensitivity::Internal),
+    text_field("/source_asof", ClaimSensitivity::Internal),
 ];
 const RISK_CALLOUT_FIELDS: &[FieldPolicy] = &[
     text_field("/title", ClaimSensitivity::Internal),
@@ -1503,6 +1518,13 @@ const RISK_CALLOUT_FIELDS: &[FieldPolicy] = &[
     text_field("/claim_id", ClaimSensitivity::Internal),
     text_field("/claim_type", ClaimSensitivity::Internal),
     text_field("/source_asof", ClaimSensitivity::Internal),
+    text_field("/intent", ClaimSensitivity::Internal),
+    text_field("/items/*/text", ClaimSensitivity::Internal),
+    text_field("/items/*/claim_id", ClaimSensitivity::Internal),
+    text_field("/items/*/claim_type", ClaimSensitivity::Internal),
+    text_field("/items/*/trust_band", ClaimSensitivity::Internal),
+    text_field("/items/*/source_asof", ClaimSensitivity::Internal),
+    text_field("/items/*/provenance_kind", ClaimSensitivity::Internal),
 ];
 const ACTION_LIST_FIELDS: &[FieldPolicy] = &[
     text_field("/items/*/title", ClaimSensitivity::Internal),
@@ -1514,6 +1536,7 @@ const ACTION_LIST_FIELDS: &[FieldPolicy] = &[
     text_field("/items/*/trust_band", ClaimSensitivity::Internal),
     text_field("/items/*/claim_id", ClaimSensitivity::Internal),
     text_field("/items/*/source_asof", ClaimSensitivity::Internal),
+    text_field("/items/*/claim_type", ClaimSensitivity::Internal),
     text_field("/claim_type", ClaimSensitivity::Internal),
     text_field("/trust_band", ClaimSensitivity::Internal),
     text_field("/source_asof", ClaimSensitivity::Internal),
