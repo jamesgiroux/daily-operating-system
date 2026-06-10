@@ -293,13 +293,16 @@ if [ -f "$PII_BLOCKLIST" ]; then
 fi
 
 # 8. Reference fidelity gate (cheap unless audit script does heavy work)
+# reference/surfaces/ mirrors PRODUCTION (public/main), not the working tree —
+# the audit compares against that ref so in-flight branch UI work can't
+# silently redefine what the reference is supposed to mirror.
 if printf '%s\n' "$STAGED_FILES" | grep -qE '\.docs/design/reference/(surfaces|_shared)/|^src/(pages|components)/.*\.(tsx|module\.css)$'; then
   AUDIT_SCRIPT="${CWD}/.docs/design/_audits/audit-reference.py"
   if [ -f "$AUDIT_SCRIPT" ]; then
-    if ! python3 "$AUDIT_SCRIPT" --enforce-baseline 2>&1; then
-      append_error "❌ Reference fidelity regressed (see output above)."
+    if ! python3 "$AUDIT_SCRIPT" --against-ref public/main --enforce-baseline 2>&1; then
+      append_error "❌ Reference fidelity regressed vs production (see output above)."
       append_error "   Either fix the reference HTML, or if the regression is intentional,"
-      append_error "   re-baseline:  python3 .docs/design/_audits/audit-reference.py --write-baseline"
+      append_error "   re-baseline:  python3 .docs/design/_audits/audit-reference.py --against-ref public/main --write-baseline"
     fi
   fi
 fi

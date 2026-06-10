@@ -18,9 +18,11 @@ Reports go to .docs/design/_audits/reference-fidelity.md by default.
 from __future__ import annotations
 
 import argparse
+from html import unescape as html_unescape
 from html.parser import HTMLParser
 import json
 import re
+import subprocess
 import sys
 from pathlib import Path
 from typing import Any
@@ -90,6 +92,63 @@ def read(path: Path) -> str:
     if not path.exists():
         return ""
     return path.read_text()
+
+
+class SourceTree:
+    """Reads app sources (src/**) either from the working tree or a git ref.
+
+    The reference library mirrors PRODUCTION (`--against-ref public/main`),
+    not whatever the current branch happens to render. Reference HTML, the
+    manifest, and design specs always come from the working tree; only app
+    sources are ref-resolved.
+    """
+
+    def __init__(self, ref: str | None) -> None:
+        self.ref = ref
+        self._cache: dict[str, str] = {}
+        self._files: set[str] | None = None
+
+    def label(self) -> str:
+        return self.ref or "working tree"
+
+    def _file_set(self) -> set[str]:
+        if self._files is None:
+            proc = subprocess.run(
+                ["git", "-C", str(REPO), "ls-tree", "-r", "--name-only", str(self.ref), "--", "src"],
+                capture_output=True, text=True,
+            )
+            if proc.returncode != 0:
+                raise SystemExit(f"git ls-tree failed for ref {self.ref!r}: {proc.stderr.strip()}")
+            self._files = set(proc.stdout.split())
+        return self._files
+
+    def exists(self, rel: str) -> bool:
+        if self.ref is None:
+            return (REPO / rel).exists()
+        return rel in self._file_set()
+
+    def read(self, rel: str) -> str:
+        if self.ref is None:
+            return read(REPO / rel)
+        if rel not in self._cache:
+            proc = subprocess.run(
+                ["git", "-C", str(REPO), "show", f"{self.ref}:{rel}"],
+                capture_output=True, text=True,
+            )
+            self._cache[rel] = proc.stdout if proc.returncode == 0 else ""
+        return self._cache[rel]
+
+
+# Set in main(); default compares against the working tree.
+SRC = SourceTree(None)
+
+RE_HTML_TEMPLATE = re.compile(r"<template\b.*?</template>", re.DOTALL | re.IGNORECASE)
+
+
+def strip_templates(html: str) -> str:
+    """Drop <template> blocks — their content never renders, so it cannot
+    count as evidence that the reference mirrors the surface."""
+    return RE_HTML_TEMPLATE.sub("", html)
 
 
 def rel(path: Path) -> str:
@@ -163,15 +222,16 @@ def extract_jsx_text(tsx: str) -> set[str]:
     return out
 
 
-def find_module_css(component_path: str) -> Path | None:
-    """Given a component import path, find its .module.css if present."""
-    base = REPO / "src" / component_path
+def find_module_css(component_path: str) -> str | None:
+    """Given a component import path, find its .module.css repo-relative path
+    (resolved against the active SourceTree) if present."""
+    base = Path("src") / component_path
     candidates = [
-        Path(str(base) + ".module.css"),
-        base.parent / (base.stem + ".module.css"),
+        str(base) + ".module.css",
+        str(base.parent / (base.stem + ".module.css")),
     ]
     for c in candidates:
-        if c.exists():
+        if SRC.exists(c):
             return c
     return None
 
@@ -495,7 +555,7 @@ def extract_custom_properties(css: str) -> dict[str, str]:
 
 def audit_token_exports() -> dict[str, Any]:
     """Compare duplicate reference token exports to runtime design tokens."""
-    runtime = extract_custom_properties(read(RUNTIME_TOKENS))
+    runtime = extract_custom_properties(SRC.read("src/styles/design-tokens.css"))
     exports: list[dict[str, Any]] = []
 
     for token_path in REFERENCE_TOKEN_EXPORTS:
@@ -569,7 +629,7 @@ def router_import_map(router_source: str) -> dict[str, str]:
 
 
 def extract_router_routes() -> list[dict[str, Any]]:
-    source = read(ROUTER)
+    source = SRC.read("src/router.tsx")
     imports = router_import_map(source)
     routes: list[dict[str, Any]] = []
 
@@ -685,15 +745,14 @@ def audit_global(manifest: dict[str, Any]) -> dict[str, Any]:
 def audit_surface(entry: dict[str, Any]) -> dict[str, Any]:
     """Return findings dict for a single surface."""
     html_path = REPO / entry["html"]
-    tsx_path = REPO / entry["primary"]
-    module_path = REPO / entry["module"] if entry.get("module") else None
+    module_rel = entry.get("module")
     prefix = entry.get("module_prefix")
 
     findings: dict[str, Any] = {
         "html": entry["html"],
         "tsx": entry["primary"],
         "module_prefix": prefix,
-        "exists": {"html": html_path.exists(), "tsx": tsx_path.exists()},
+        "exists": {"html": html_path.exists(), "tsx": SRC.exists(entry["primary"])},
         "invented_classes": [],
         "missing_classes": [],
         "inline_styles_html_only": [],
@@ -701,21 +760,31 @@ def audit_surface(entry: dict[str, Any]) -> dict[str, Any]:
         "text_deltas": [],
     }
 
-    if not html_path.exists() or not tsx_path.exists():
+    if not html_path.exists() or not SRC.exists(entry["primary"]):
         return findings
 
-    html = read(html_path)
-    tsx = read(tsx_path)
+    # Only RENDERED markup counts as mirror evidence — <template> blocks are
+    # stripped so hidden markup can't satisfy class/text checks.
+    html = strip_templates(read(html_path))
+    tsx = SRC.read(entry["primary"])
 
     # ── invented + missing classes ──────────────────────────────────────────
     html_classes = extract_html_classes(html)
     tsx_styles = extract_styles_refs(tsx)
 
-    if prefix and module_path and module_path.exists():
-        # The mirror under _shared/styles/ holds the SCOPED (prefixed) class names
-        mirror_path = REPO / ".docs/design/reference/_shared/styles" / module_path.name
-        scoped_css = read(mirror_path) if mirror_path.exists() else ""
-        defined_scoped = extract_css_classes(scoped_css)
+    if prefix and module_rel and SRC.exists(module_rel):
+        if SRC.ref is None:
+            # The mirror under _shared/styles/ holds the SCOPED (prefixed) class names
+            mirror_path = REPO / ".docs/design/reference/_shared/styles" / Path(module_rel).name
+            scoped_css = read(mirror_path) if mirror_path.exists() else ""
+            defined_scoped = extract_css_classes(scoped_css)
+        else:
+            # Ref mode: derive scoped names from the ref's module CSS directly,
+            # mimicking scope-modules.py prefixing.
+            raw_classes = extract_css_classes(SRC.read(module_rel))
+            defined_scoped = {
+                c if c.startswith(f"{prefix}_") else f"{prefix}_{c}" for c in raw_classes
+            }
 
         # invented: HTML uses {prefix}_X but X is not defined in mirror
         for cls in sorted(html_classes):
@@ -753,10 +822,10 @@ def audit_surface(entry: dict[str, Any]) -> dict[str, Any]:
     imports = extract_tsx_imports(tsx)
     for component, path in imports:
         # if the component has its own module.css, look for that prefix in HTML
-        css_path = find_module_css(path)
-        if not css_path:
+        css_rel = find_module_css(path)
+        if not css_rel:
             continue
-        stem = css_path.stem.replace(".module", "")
+        stem = Path(css_rel).name.replace(".module.css", "")
         if stem in CHROME_RUNTIME:
             continue
         # Heuristic: confirm the component is actually used in JSX before
@@ -772,8 +841,10 @@ def audit_surface(entry: dict[str, Any]) -> dict[str, Any]:
     tsx_strings = extract_jsx_text(tsx)
     # Drop strings that are obviously dynamic (e.g., contain {variable})
     static_strings = {s for s in tsx_strings if "{" not in s and "}" not in s}
+    # Compare against entity-decoded HTML so `Health &amp; Outlook` matches.
+    html_text = html_unescape(html)
     for s in sorted(static_strings):
-        if s not in html:
+        if s not in html_text:
             findings["text_deltas"].append(s)
 
     return findings
@@ -1000,6 +1071,7 @@ def render_md(all_findings: list[dict[str, Any]], global_findings: dict[str, Any
     out.append("# Reference fidelity audit\n")
     out.append("Generated by `.docs/design/_audits/audit-reference.py`. ")
     out.append("Each reference HTML is compared against its canonical TSX. ")
+    out.append(f"App sources read from: **{SRC.label()}**. ")
     out.append("See the script docstring for what each finding means.\n\n")
 
     by_sev: dict[str, list[dict[str, Any]]] = {"critical": [], "major": [], "minor": [], "clean": []}
@@ -1082,7 +1154,12 @@ def write_baseline(findings: list[dict[str, Any]], global_findings: dict[str, An
 
 
 def main() -> int:
+    global SRC
     ap = argparse.ArgumentParser()
+    ap.add_argument("--against-ref", metavar="REF",
+                    help="Compare reference HTML against app sources at this git ref "
+                         "(e.g. public/main) instead of the working tree. The reference "
+                         "library mirrors PRODUCTION; use this for the canonical check.")
     ap.add_argument("--surface", help="Audit only the surface whose HTML basename matches")
     ap.add_argument("--json", action="store_true", help="Emit JSON to stdout instead of writing markdown")
     ap.add_argument("--strict", action="store_true", help="Exit non-zero if any critical or major findings")
@@ -1091,6 +1168,19 @@ def main() -> int:
     ap.add_argument("--write-baseline", action="store_true",
                     help="Snapshot current findings as the new baseline")
     args = ap.parse_args()
+
+    if args.against_ref:
+        SRC = SourceTree(args.against_ref)
+        # Fail fast (and fall back politely) when the ref isn't fetchable —
+        # e.g. a fresh clone without the public remote.
+        probe = subprocess.run(
+            ["git", "-C", str(REPO), "rev-parse", "--verify", f"{args.against_ref}^{{commit}}"],
+            capture_output=True, text=True,
+        )
+        if probe.returncode != 0:
+            print(f"warning: ref {args.against_ref!r} not found — falling back to working tree",
+                  file=sys.stderr)
+            SRC = SourceTree(None)
 
     manifest = json.loads(MANIFEST.read_text())
     entries = manifest["surfaces"]
