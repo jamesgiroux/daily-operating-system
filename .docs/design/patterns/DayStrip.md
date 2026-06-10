@@ -53,6 +53,22 @@ not just "today" (James, 2026-06-10). The strip is the chrome that answers
 - All visible strip text uses `--font-mono` because DayStrip is chrome, not
   editorial body copy.
 
+## Future direction — tabs become pages (James, 2026-06-10)
+
+The strip chrome generalizes beyond dates: it can replace tabs. Instead of
+tabbed views inside one surface (e.g. account detail's Health / Context /
+Work), each view becomes its OWN routable page surface (own TSX, own URL),
+and a strip of this shape answers "which page of this entity am I on" —
+sides navigate sibling pages, center names the current page. Future-proofs
+any entity that grows to multiple pages.
+
+Constraints when generalizing: one strip = one navigation axis (never dates
+AND siblings in the same strip); the pulsing turmeric mark stays exclusive
+to "live day" and does not generalize to "current page"; sides stay
+label-only. Whether this ships as a DayStrip variant or a sibling pattern
+(audit chrome overlap first per DS convention) is decided when account
+detail's page split is designed — not minted pre-emptively.
+
 ## Source
 
 - **Mockup substrate:** `/Users/jamesgiroux/Downloads/dailyos-design-system 2/project/mockups/briefing/variations/D-spine.html`
