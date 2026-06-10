@@ -1,5 +1,5 @@
 {
-  ".docs/design/reference/surfaces/account.html": "critical",
+  ".docs/design/reference/surfaces/account.html": "clean",
   ".docs/design/reference/surfaces/accounts.html": "major",
   ".docs/design/reference/surfaces/action-detail.html": "clean",
   ".docs/design/reference/surfaces/actions.html": "clean",
@@ -10,7 +10,7 @@
   ".docs/design/reference/surfaces/me.html": "major",
   ".docs/design/reference/surfaces/meeting.html": "minor",
   ".docs/design/reference/surfaces/onboarding/claude-code.html": "major",
-  ".docs/design/reference/surfaces/onboarding/first-account.html": "major",
+  ".docs/design/reference/surfaces/onboarding/first-account.html": "clean",
   ".docs/design/reference/surfaces/onboarding/glean.html": "major",
   ".docs/design/reference/surfaces/onboarding/google.html": "major",
   ".docs/design/reference/surfaces/onboarding/prime.html": "major",
