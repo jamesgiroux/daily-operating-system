@@ -10,8 +10,9 @@ Rendered HTML/CSS/JS that makes the design system *visible*, not just readable. 
   - `chrome.css` + `chrome.js` — auto-injected page chrome (`FolioBar`, `FloatingNavIsland`, `AtmosphereLayer`)
   - `fonts.css` — webfont declarations
   - `inspector.js` + `inspector.css` — opt-in hover inspector (`?` to toggle); reads `data-ds-*` attributes
-- **`surfaces/`** — one HTML reference render per app surface (briefing, account detail, settings, etc.). Each renders with mock data and links to peer surfaces via `chrome.js` nav (set `data-nav-base` on body).
-- **`system/`** — system showcase pages: `tokens.html`, `primitives.html`, `patterns.html`. Each gallery loads `_shared/` + `inspector.js` and renders every entry with its `data-ds-*` attributes.
+- **`surfaces/`** — one HTML reference render per app surface (briefing, account detail, settings, etc.). Each renders with mock data and links to peer surfaces via `chrome.js` nav (set `data-nav-base` on body). **Mirrors PRODUCTION (`public/main`) only** — see Conventions.
+- **`experiments/`** — proposed and future designs: wave design targets, demos, explorations (e.g. `account-composition-v150.html` is the v1.5.0 composition target). Anything that is *not yet shipped to main* lives here, never in `surfaces/`.
+- **`system/`** — system showcase pages: `tokens.html`, `primitives.html`, `patterns.html`. Each gallery loads `_shared/` + `inspector.js` and renders every entry with its `data-ds-*` attributes. Unshipped entries carry `data-status="proposed"`.
 
 ## Why this matters
 
@@ -22,6 +23,9 @@ Rendered HTML/CSS/JS that makes the design system *visible*, not just readable. 
 
 ## Conventions
 
+- **`surfaces/` mirrors PRODUCTION — `public/main`, the code in the shipped app.** Never the working tree, never a wave's design target. The fidelity audit enforces this: `python3 .docs/design/_audits/audit-reference.py --against-ref public/main`, run by the pre-commit gate whenever reference or surface code is staged. Surfaces sync when a release cuts to main, not per dev PR.
+- **Proposed / future designs go in `experiments/`.** A wave's target render never overwrites a `surfaces/` mirror. When the wave ships to main, the experiment graduates: the release-sync commit replaces the mirror and deletes the experiment file.
+- **No `<template>` smuggling.** Everything production renders must appear as rendered markup. The auditor strips `<template>` blocks before checking classes and text, so hidden markup satisfies nothing.
 - **Markdown specs are the contract.** Reference renders are *derivative* — they implement the spec. If they disagree, the spec is right and the render gets updated.
 - **No domain data in renders.** Use placeholder text and the canonical mock data palette (Acme Corp, Globex Inc, Northwind Traders, Meridian Harbor; people: Jen Park, Dan Mitchell, Priya Raman, Marco Devine, Aoife Murphy, Liu Kang). Never real customer data.
 - **One render per file.** Don't bundle everything into one mega-file.
