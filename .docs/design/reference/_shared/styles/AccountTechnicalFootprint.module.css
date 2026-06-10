@@ -1,5 +1,3 @@
-@import './design-tokens.css';
-
 .AccountTechnicalFootprint_productGroups {
   display: grid;
   gap: var(--space-md);

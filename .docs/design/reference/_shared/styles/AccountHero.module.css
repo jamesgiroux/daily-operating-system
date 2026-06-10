@@ -1,4 +1,3 @@
-
 .AccountHero_hero {
   composes: hero from "../entity/EntityHeroBase.module.css";
 }
@@ -44,8 +43,8 @@
 }
 
 .AccountHero_customerBadge {
-  background: var(--color-account-12);
-  color: var(--color-account);
+  background: var(--color-spice-turmeric-12);
+  color: var(--color-spice-turmeric);
 }
 
 .AccountHero_internalBadge {
@@ -190,7 +189,7 @@
 }
 
 .AccountHero_typeBadgeOptionCustomer {
-  color: var(--color-account);
+  color: var(--color-spice-turmeric);
 }
 
 .AccountHero_typeBadgeOptionInternal {

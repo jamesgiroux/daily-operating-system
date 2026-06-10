@@ -1,5 +1,3 @@
-@import './design-tokens.css';
-
 .EditableVitalsStrip_inlineInputRoot {
   display: inline-flex;
   align-items: center;

@@ -8,8 +8,6 @@
    Design reference: design/mockups/daily-briefing-reimagined-v2.html
    ============================================================================= */
 
-@import "./design-tokens.css";
-
 /* =============================================================================
    MARGIN GRID — Editorial left-label / right-content layout
    ============================================================================= */
@@ -168,6 +166,18 @@
   color: var(--color-text-secondary);
   margin: 0 0 32px 0;
   max-width: 640px;
+}
+
+.editorial-briefing_nowPillInline {
+  font-family: var(--font-mono);
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  padding: 2px 8px;
+  background: var(--color-spice-turmeric-15);
+  color: var(--color-spice-turmeric);
+  margin-left: 8px;
 }
 
 /* =============================================================================
@@ -687,6 +697,30 @@
   line-height: 1.35;
 }
 
+.editorial-briefing_nowPill {
+  font-family: var(--font-mono);
+  font-size: 9px;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  padding: 2px 8px;
+  background: var(--color-spice-turmeric-18);
+  color: var(--color-spice-turmeric);
+  flex-shrink: 0;
+}
+
+.editorial-briefing_upNextPill {
+  font-family: var(--font-mono);
+  font-size: 9px;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  padding: 2px 8px;
+  background: var(--color-garden-sage-15);
+  color: var(--color-garden-sage);
+  flex-shrink: 0;
+}
+
 .editorial-briefing_scheduleSubtitle {
   font-family: var(--font-sans);
   font-size: 13px;
@@ -698,7 +732,7 @@
   gap: 6px;
 }
 
-/*.schedulePrepDot and.schedulePrepDotMuted removed — hasPrep fallback eliminated */
+/* .schedulePrepDot and .schedulePrepDotMuted removed — I329: hasPrep fallback eliminated */
 
 .editorial-briefing_prepFlag {
   font-family: var(--font-mono);
@@ -1229,7 +1263,7 @@
   margin: 0;
 }
 
-/* Score reason metadata */
+/* I395: Score reason metadata */
 .editorial-briefing_emailScoreReason {
   font-family: var(--font-mono);
   font-size: 10px;
@@ -1239,7 +1273,7 @@
   margin-top: 2px;
 }
 
-/* Score band group headers */
+/* I395: Score band group headers */
 .editorial-briefing_emailScoreBandLabel {
   font-family: var(--font-mono);
   font-size: 10px;

@@ -305,6 +305,13 @@ if printf '%s\n' "$STAGED_FILES" | grep -qE '\.docs/design/reference/(surfaces|_
       append_error "   re-baseline:  python3 .docs/design/_audits/audit-reference.py --against-ref public/main --write-baseline"
     fi
   fi
+  SYNC_SCRIPT="${CWD}/.docs/design/reference/_shared/sync-styles-from-ref.py"
+  if [ -f "$SYNC_SCRIPT" ]; then
+    if ! python3 "$SYNC_SCRIPT" --ref public/main --check 2>&1; then
+      append_error "❌ Reference _shared stylesheets drifted from production CSS."
+      append_error "   Regenerate:  python3 .docs/design/reference/_shared/sync-styles-from-ref.py --ref public/main"
+    fi
+  fi
 fi
 
 # Block commit before prompt/cargo checks if cheap/path-local checks already failed.
