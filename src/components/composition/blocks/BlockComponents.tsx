@@ -18,12 +18,12 @@ import { CompositionVitalsStrip, type CompositionVitalSpec } from "@/components/
 import pageStyles from "@/pages/AccountDetailPage.module.css";
 import heroStyles from "@/components/composition/blocks/AccountHeroBlock.module.css";
 import chapterStyles from "@/components/composition/blocks/CompositionChapters.module.css";
-import { StateOfPlay } from "@/components/entity/StateOfPlay";
 import { WatchList } from "@/components/entity/WatchList";
 import { ValueCommitments } from "@/components/entity/ValueCommitments";
 import { StrategicLandscape } from "@/components/entity/StrategicLandscape";
-import { AccountOutlook } from "@/components/entity/AccountOutlook";
-import { AccountHealthSection } from "@/components/account/AccountHealthSection";
+import { OutlookPanel, renewalCallVerdict } from "@/components/health/OutlookPanel";
+import { OnTrackChapter } from "@/components/health/OnTrackChapter";
+import { ChapterHeading } from "@/components/editorial/ChapterHeading";
 import { useIntelligenceFieldUpdate } from "@/hooks/useIntelligenceFieldUpdate";
 import type { EntityIntelligence } from "@/types";
 
@@ -625,7 +625,18 @@ function ClaimSummaryBlock({ block, accountId, entityType, payload, renderedProv
     return (
       <BlockShell block={block} accountId={accountId} entityType={entityType} payload={payload} renderedProvenance={renderedProvenance} quiet>
         {isState ? (
-          <StateOfPlay intelligence={intelligence} sectionId="" onUpdateField={wiring.onUpdateField} />
+          <>
+            <OnTrackChapter intelligence={intelligence} />
+            {accountId && intelligence.executiveAssessment && (
+              <IntelligenceCorrection
+                entityId={accountId}
+                entityType={entityType ?? "account"}
+                field="executiveAssessment"
+                variant="correct"
+                currentValue={intelligence.executiveAssessment}
+              />
+            )}
+          </>
         ) : isValue ? (
           <ValueCommitments intelligence={intelligence} onUpdateField={wiring.onUpdateField} />
         ) : (
@@ -678,20 +689,24 @@ function ClaimSummaryBlock({ block, accountId, entityType, payload, renderedProv
 function HealthSnapshotBlock({ block, accountId, entityType, payload, renderedProvenance, editMode }: BlockComponentProps) {
   const items = array(payload.items);
   const intelligence = chapterIntelligence(payload);
-  const wiring = useChapterIntelligenceWiring(accountId);
 
   // Production content path: the outlook chapter IS the production
-  // AccountOutlook (+ health section) components, fed the producer's
-  // intelligence subset.
-  if (intelligence) {
-    const hasOutlook =
-      !!intelligence.agreementOutlook || !!intelligence.expansionSignals?.length || !!intelligence.contractContext;
+  // OutlookPanel (main retired the legacy AccountOutlook), fed the
+  // producer's intelligence subset (agreementOutlook + contractContext).
+  if (intelligence?.agreementOutlook) {
     return (
       <BlockShell block={block} accountId={accountId} entityType={entityType} payload={payload} renderedProvenance={renderedProvenance} quiet>
-        {hasOutlook && (
-          <AccountOutlook intelligence={intelligence} onUpdateField={wiring.onUpdateField} />
+        <ChapterHeading title={`The Call: ${renewalCallVerdict(intelligence.agreementOutlook)}`} />
+        <OutlookPanel intelligence={intelligence} />
+        {accountId && (
+          <IntelligenceCorrection
+            entityId={accountId}
+            entityType={entityType ?? "account"}
+            field="agreementOutlook.renewalNarrative"
+            variant="correct"
+            currentValue={intelligence.agreementOutlook.renewalNarrative ?? intelligence.agreementOutlook.expansionPotential ?? null}
+          />
         )}
-        {intelligence.health && <AccountHealthSection health={intelligence.health} />}
       </BlockShell>
     );
   }

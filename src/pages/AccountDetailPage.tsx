@@ -462,7 +462,9 @@ export default function AccountDetailPage() {
         // production look) — the page keeps only the margin label for those
         // chapters instead of stacking a second title on top.
         const componentOwnsHeading =
-          (section.section_id === "state-of-play" || section.section_id === "watch-list") &&
+          (section.section_id === "state-of-play" ||
+            section.section_id === "watch-list" ||
+            section.section_id === "outlook") &&
           blocks.some((item) => !!item.block.payload.intelligence);
 
         return (
