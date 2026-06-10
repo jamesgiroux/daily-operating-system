@@ -448,6 +448,23 @@ export default function AccountDetailPage() {
           );
         }
 
+        // Production parity: chapters without content don't render at all —
+        // no headers, no empty-state placeholders, no scroll gaps. Edit mode
+        // keeps them visible so layout customization can re-enable content.
+        const hasContent = blocks.some(
+          (item) => item.block.payload.empty_state !== true,
+        );
+        if (!editMode && (!hasContent || blocks.length === 0)) {
+          return null;
+        }
+
+        // StateOfPlay and WatchList render their own ChapterHeading (the
+        // production look) — the page keeps only the margin label for those
+        // chapters instead of stacking a second title on top.
+        const componentOwnsHeading =
+          (section.section_id === "state-of-play" || section.section_id === "watch-list") &&
+          blocks.some((item) => !!item.block.payload.intelligence);
+
         return (
           <section
             key={section.section_id}
@@ -459,23 +476,24 @@ export default function AccountDetailPage() {
           >
             <div className={pageStyles.compositionSectionLabel}>{renderableSection.label}</div>
             <div className={pageStyles.compositionSectionBody}>
-              <header className={pageStyles.compositionSectionHeader}>
-                <div>
-                  {sectionTitle(renderableSection)}
-                  {editMode && (
-                    <label className={pageStyles.compositionSectionVisibility}>
-                      <Switch
-                        checked
-                        disabled={renderableSection.coreLocked}
-                        onCheckedChange={(checked) => layout.setSectionHidden(section.section_id, !checked)}
-                        aria-label={`Toggle section ${renderableSection.label}`}
-                      />
-                      <span>{renderableSection.coreLocked ? "Locked" : "Shown"}</span>
-                    </label>
-                  )}
-                </div>
-                <p className={pageStyles.compositionSectionMeta}>{section.salience.reason}</p>
-              </header>
+              {(!componentOwnsHeading || editMode) && (
+                <header className={pageStyles.compositionSectionHeader}>
+                  <div>
+                    {!componentOwnsHeading && sectionTitle(renderableSection)}
+                    {editMode && (
+                      <label className={pageStyles.compositionSectionVisibility}>
+                        <Switch
+                          checked
+                          disabled={renderableSection.coreLocked}
+                          onCheckedChange={(checked) => layout.setSectionHidden(section.section_id, !checked)}
+                          aria-label={`Toggle section ${renderableSection.label}`}
+                        />
+                        <span>{renderableSection.coreLocked ? "Locked" : "Shown"}</span>
+                      </label>
+                    )}
+                  </div>
+                </header>
+              )}
               <div className={pageStyles.compositionBlockStack}>
                 {blocks.length > 0 ? (
                   <SortableContext items={blocks.map((item) => item.block.block_id)} strategy={verticalListSortingStrategy}>

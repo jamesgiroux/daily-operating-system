@@ -25,7 +25,6 @@ import { StrategicLandscape } from "@/components/entity/StrategicLandscape";
 import { AccountOutlook } from "@/components/entity/AccountOutlook";
 import { AccountHealthSection } from "@/components/account/AccountHealthSection";
 import { useIntelligenceFieldUpdate } from "@/hooks/useIntelligenceFieldUpdate";
-import { useIntelligenceFeedback } from "@/hooks/useIntelligenceFeedback";
 import type { EntityIntelligence } from "@/types";
 
 type Payload = Record<string, unknown>;
@@ -42,16 +41,16 @@ function chapterIntelligence(payload: Payload): EntityIntelligence | null {
   return value ? (value as unknown as EntityIntelligence) : null;
 }
 
-/** Production-parity edit + feedback wiring for intelligence-backed chapters.
- *  Same hooks the production page uses; corrections persist through the
- *  entity intelligence write path and surface on the next projection. */
+/** Production-parity inline-edit wiring for intelligence-backed chapters.
+ *  Same write path the production page uses; corrections persist through the
+ *  entity intelligence field update and surface on the next projection.
+ *  Deliberately NO thumbs feedback wiring — the helpful/not-helpful pattern
+ *  is the legacy affordance the trust model retired; typed claim feedback
+ *  arrives with the unified-writer track. */
 function useChapterIntelligenceWiring(accountId?: string) {
   const { updateField } = useIntelligenceFieldUpdate("account", accountId, async () => {});
-  const feedback = useIntelligenceFeedback(accountId, "account");
   return {
     onUpdateField: accountId ? updateField : undefined,
-    getItemFeedback: accountId ? feedback.getFeedback : undefined,
-    onItemFeedback: accountId ? feedback.submitFeedback : undefined,
   };
 }
 
@@ -445,6 +444,7 @@ function BlockShell({
   children,
   featured = false,
   empty = false,
+  quiet = false,
 }: {
   block: ProjectedBlock;
   accountId?: string;
@@ -455,6 +455,10 @@ function BlockShell({
   children: ReactNode;
   featured?: boolean;
   empty?: boolean;
+  /** Chrome-free shell for intelligence-backed chapters: the production
+   *  components own their rules/headers, so the block adds no border or
+   *  block-level feedback row (safety provenance states still render). */
+  quiet?: boolean;
 }) {
   const provenance = provenanceState(block, renderedProvenance);
   // Trust surfaces as opacity, not chips. Only the safety states (unavailable
@@ -466,7 +470,7 @@ function BlockShell({
   return (
     <article
       className={clsx(
-        pageStyles.compositionBlock,
+        quiet ? pageStyles.compositionQuietBlock : pageStyles.compositionBlock,
         featured && pageStyles.compositionFeaturedBlock,
         empty && pageStyles.compositionEmptyState,
         block.banner && pageStyles.compositionFallbackState,
@@ -499,7 +503,7 @@ function BlockShell({
         </header>
       )}
       {children}
-      <BlockFeedback accountId={accountId} entityType={entityType} block={block} payload={payload} />
+      {!quiet && <BlockFeedback accountId={accountId} entityType={entityType} block={block} payload={payload} />}
     </article>
   );
 }
@@ -619,13 +623,13 @@ function ClaimSummaryBlock({ block, accountId, entityType, payload, renderedProv
       !!intelligence.successMetrics?.length ||
       !!intelligence.openCommitments?.length;
     return (
-      <BlockShell block={block} accountId={accountId} entityType={entityType} payload={payload} renderedProvenance={renderedProvenance}>
+      <BlockShell block={block} accountId={accountId} entityType={entityType} payload={payload} renderedProvenance={renderedProvenance} quiet>
         {isState ? (
-          <StateOfPlay intelligence={intelligence} sectionId="" onUpdateField={wiring.onUpdateField} getItemFeedback={wiring.getItemFeedback} onItemFeedback={wiring.onItemFeedback} />
+          <StateOfPlay intelligence={intelligence} sectionId="" onUpdateField={wiring.onUpdateField} />
         ) : isValue ? (
-          <ValueCommitments intelligence={intelligence} onUpdateField={wiring.onUpdateField} onItemFeedback={wiring.onItemFeedback} />
+          <ValueCommitments intelligence={intelligence} onUpdateField={wiring.onUpdateField} />
         ) : (
-          <StrategicLandscape intelligence={intelligence} onUpdateField={wiring.onUpdateField} onItemFeedback={wiring.onItemFeedback} />
+          <StrategicLandscape intelligence={intelligence} onUpdateField={wiring.onUpdateField} />
         )}
       </BlockShell>
     );
@@ -683,9 +687,9 @@ function HealthSnapshotBlock({ block, accountId, entityType, payload, renderedPr
     const hasOutlook =
       !!intelligence.agreementOutlook || !!intelligence.expansionSignals?.length || !!intelligence.contractContext;
     return (
-      <BlockShell block={block} accountId={accountId} entityType={entityType} payload={payload} renderedProvenance={renderedProvenance}>
+      <BlockShell block={block} accountId={accountId} entityType={entityType} payload={payload} renderedProvenance={renderedProvenance} quiet>
         {hasOutlook && (
-          <AccountOutlook intelligence={intelligence} onUpdateField={wiring.onUpdateField} getItemFeedback={wiring.getItemFeedback} onItemFeedback={wiring.onItemFeedback} />
+          <AccountOutlook intelligence={intelligence} onUpdateField={wiring.onUpdateField} />
         )}
         {intelligence.health && <AccountHealthSection health={intelligence.health} />}
       </BlockShell>
@@ -768,8 +772,8 @@ function RiskCalloutBlock({ block, accountId, entityType, payload, renderedProve
   // WatchList component, fed the producer's intelligence subset.
   if (intelligence) {
     return (
-      <BlockShell block={block} accountId={accountId} entityType={entityType} payload={payload} renderedProvenance={renderedProvenance}>
-        <WatchList intelligence={intelligence} sectionId="" onUpdateField={wiring.onUpdateField} getItemFeedback={wiring.getItemFeedback} onItemFeedback={wiring.onItemFeedback} />
+      <BlockShell block={block} accountId={accountId} entityType={entityType} payload={payload} renderedProvenance={renderedProvenance} quiet>
+        <WatchList intelligence={intelligence} sectionId="" onUpdateField={wiring.onUpdateField} />
       </BlockShell>
     );
   }
