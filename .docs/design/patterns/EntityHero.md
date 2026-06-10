@@ -34,20 +34,16 @@ account d-spine composition hero.
    - person: `Champion · VP Digital Merchandising · @Meridian Harbor · NY · GMT−5`
    - account: `Customer · Enterprise · @Parent Co · tracked since Feb 2024`
    - project: `Customer co-build · Beta · 7 workstreams · 4 accounts`
-4. **Vitals strip** (`heroVitals`): two-line cells — value line with optional
-   semantic tint (`heroVitalText[data-tint]`) over a quiet mono source line
-   (`heroVitalSource`): `$185K ARR / defends internally`,
-   `Health: Watch / 1 workstream at risk`. Tint is semantic state, never
-   decoration.
+Vitals are NOT part of this block (James, 2026-06-10) — the two-line
+vitals strip from the D-composite mockups is a separate pattern
+(`VitalsStrip`, extending the shipped component) composed below the hero.
 
 ## Variants
 
 - **person**: avatar always, `heroAvatarRing` when actively tracked; tier
   chip (Champion / Detractor / …); related = account.
-- **account**: variant chip customer/partner/internal; vitals = ARR,
-  contract end, NPS, lifecycle (snapshot-fed, editable).
-- **project**: variant chip = engagement kind; phase + counts in sub-meta;
-  vitals = phase, health, target date, owner.
+- **account**: variant chip customer/partner/internal.
+- **project**: variant chip = engagement kind; phase + counts in sub-meta.
 
 ## When NOT to use it
 
@@ -57,10 +53,9 @@ account d-spine composition hero.
 
 ## Substrate
 
-Hero payload comes from the entity composition producer (snapshot identity +
-vitals with per-field provenance and edit routes, per the approved account
-hero). The avatar/sub-meta facts are snapshot fields; vitals stay editable
-through the snapshot-field correction path. Trust renders as opacity.
+Hero payload comes from the entity composition producer (snapshot identity
+fields, per the approved account hero). The avatar/sub-meta facts are
+snapshot fields. Trust renders as opacity.
 
 ## Source
 
