@@ -6,7 +6,7 @@
 **Last updated:** 2026-05-06
 **`data-ds-name`:** `DayStrip`
 **`data-ds-spec`:** `patterns/DayStrip.md`
-**Variants:** previous/current/next; compact mobile previews
+**Variants:** today (mark + "Today"); non-today (date center, relabeled sides); window-edge (disabled side); compact mobile previews
 **Design system version introduced:** 0.1.0
 
 ## Job
@@ -14,6 +14,24 @@
 Provide day-to-day briefing navigation directly below `FolioBar`: previous day,
 current day, next day. In the D-spine direction, this is the proposed replacement
 for a separate Weekly Forecast surface.
+
+The briefing surface renders a **±7-day window** (up to 7 days past, 7 ahead),
+not just "today" (James, 2026-06-10). The strip is the chrome that answers
+"what day am I looking at?" while walking that window:
+
+- **Center label**: "Today" with the pulsing turmeric mark when the rendered
+  day IS today; otherwise the full date ("Thursday, April 23") with NO mark —
+  the mark means "live day," never decoration.
+- **Side links** walk one day at a time and relabel relative to the rendered
+  day: "Yesterday"/"Tomorrow" only when that side IS yesterday/tomorrow,
+  otherwise the short date ("Wed, Apr 22"). Each side carries a one-line
+  preview of that day's briefing (captured activity for past days, first
+  commitments for future days).
+- **Window bounds**: at +7/−7 the outbound side renders disabled (no href,
+  `--color-text-quaternary`), preserving the 1fr/auto/1fr grid so the center
+  never shifts.
+- **Substrate**: side previews are producer-fed (the briefing producer emits
+  adjacent-day summaries); the strip itself is chrome and carries no claims.
 
 ## When to use it
 

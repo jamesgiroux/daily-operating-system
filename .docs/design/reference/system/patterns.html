@@ -840,12 +840,25 @@
           <a class="ds-spec-link" href="../../patterns/DayStrip.md">Spec</a>
         </div>
         <p class="ds-composition"><strong>Composes:</strong> previous day, current date, next day, and short adjacent-day previews under FolioBar.</p>
-        <div class="ds-variants"><span>previous/current/next</span><span>mobile compact</span></div>
+        <div class="ds-variants"><span>today</span><span>non-today</span><span>window-edge</span><span>mobile compact</span></div>
         <div class="ds-demo" data-ds-name="DayStrip" data-ds-tier="pattern" data-ds-spec="patterns/DayStrip.md">
           <nav class="DayStrip_strip" aria-label="Briefing days" style="position:relative; top:auto; left:auto; right:auto; z-index:1; margin:0; padding:0 16px;">
             <a class="DayStrip_side" href="../surfaces/briefing.html"><span class="DayStrip_direction" aria-hidden="true">&larr;</span><span class="DayStrip_label">Yesterday</span><span class="DayStrip_preview">Acme call captured</span></a>
             <div class="DayStrip_current" aria-label="Today, Thursday April 23"><span class="DayStrip_mark" aria-hidden="true"></span>Today</div>
             <a class="DayStrip_side DayStrip_sideRight" href="../surfaces/briefing.html"><span class="DayStrip_preview">Northwind follow-up</span><span class="DayStrip_label">Tomorrow</span><span class="DayStrip_direction" aria-hidden="true">&rarr;</span></a>
+          </nav>
+          <!-- Non-today: walking the ±7-day window. Date center, NO live mark;
+               sides relabel to short dates unless adjacent to today. -->
+          <nav class="DayStrip_strip" aria-label="Briefing days" style="position:relative; top:auto; left:auto; right:auto; z-index:1; margin:12px 0 0; padding:0 16px;">
+            <a class="DayStrip_side" href="../surfaces/briefing.html"><span class="DayStrip_direction" aria-hidden="true">&larr;</span><span class="DayStrip_label">Tue, Apr 21</span><span class="DayStrip_preview">2 meetings &middot; 1 capture</span></a>
+            <div class="DayStrip_current" aria-label="Wednesday, April 22">Wednesday, April 22</div>
+            <a class="DayStrip_side DayStrip_sideRight" href="../surfaces/briefing.html"><span class="DayStrip_preview">Acme call captured</span><span class="DayStrip_label">Yesterday</span><span class="DayStrip_direction" aria-hidden="true">&rarr;</span></a>
+          </nav>
+          <!-- Window edge (-7): outbound side is inert; grid holds. -->
+          <nav class="DayStrip_strip" aria-label="Briefing days" style="position:relative; top:auto; left:auto; right:auto; z-index:1; margin:12px 0 0; padding:0 16px;">
+            <span class="DayStrip_side DayStrip_sideDisabled" aria-disabled="true"><span class="DayStrip_direction" aria-hidden="true">&larr;</span><span class="DayStrip_label">End of window</span></span>
+            <div class="DayStrip_current" aria-label="Thursday, April 16">Thursday, April 16</div>
+            <a class="DayStrip_side DayStrip_sideRight" href="../surfaces/briefing.html"><span class="DayStrip_preview">QBR prep started</span><span class="DayStrip_label">Fri, Apr 17</span><span class="DayStrip_direction" aria-hidden="true">&rarr;</span></a>
           </nav>
         </div>
       </article>
