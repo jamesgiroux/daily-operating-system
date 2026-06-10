@@ -22,16 +22,14 @@ not just "today" (James, 2026-06-10). The strip is the chrome that answers
 - **Center label**: "Today" with the pulsing turmeric mark when the rendered
   day IS today; otherwise the full date ("Thursday, April 23") with NO mark —
   the mark means "live day," never decoration.
-- **Side links** walk one day at a time and relabel relative to the rendered
-  day: "Yesterday"/"Tomorrow" only when that side IS yesterday/tomorrow,
-  otherwise the short date ("Wed, Apr 22"). Each side carries a one-line
-  preview of that day's briefing (captured activity for past days, first
-  commitments for future days).
+- **Side links** walk one day at a time and carry the label ONLY — no
+  preview text (James, 2026-06-10): "Yesterday"/"Tomorrow" when that side IS
+  yesterday/tomorrow, otherwise the short date ("Wed, Apr 22").
 - **Window bounds**: at +7/−7 the outbound side renders disabled (no href,
   `--color-text-quaternary`), preserving the 1fr/auto/1fr grid so the center
   never shifts.
-- **Substrate**: side previews are producer-fed (the briefing producer emits
-  adjacent-day summaries); the strip itself is chrome and carries no claims.
+- **Substrate**: none required — the strip is pure chrome (dates + routing),
+  no producer payload, no claims.
 
 ## When to use it
 
@@ -47,11 +45,11 @@ not just "today" (James, 2026-06-10). The strip is the chrome that answers
 ## Composition
 
 - Fixed strip under `FolioBar`
-- Previous-day link with short preview
+- Previous-day link (label only)
 - Center current-day label with turmeric mark. Use "Today" visibly when the
   date is already present in `FolioBar`; keep the exact date in the accessible
   label if needed.
-- Next-day link with short preview
+- Next-day link (label only)
 - All visible strip text uses `--font-mono` because DayStrip is chrome, not
   editorial body copy.
 

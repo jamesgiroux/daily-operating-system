@@ -54,17 +54,6 @@
   text-transform: uppercase;
 }
 
-.DayStrip_preview {
-  min-width: 0;
-  overflow: hidden;
-  color: var(--color-text-quaternary, var(--color-text-tertiary));
-  font-family: var(--font-mono);
-  font-size: 10.5px;
-  font-weight: 500;
-  letter-spacing: 0;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
 
 .DayStrip_current {
   display: inline-flex;
@@ -104,9 +93,6 @@
     padding-right: 16px;
   }
 
-  .DayStrip_preview {
-    display: none;
-  }
 }
 
 @media (max-width: 560px) {
