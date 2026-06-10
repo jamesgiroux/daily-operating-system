@@ -1,9 +1,6 @@
 import clsx from "clsx";
 import type { ReactNode } from "react";
-import { FreshnessIndicator } from "@/components/ui/FreshnessIndicator";
 import { IntelligenceCorrection } from "@/components/ui/IntelligenceCorrection";
-import { ProvenanceTag } from "@/components/ui/ProvenanceTag";
-import { TrustBandBadge } from "@/components/ui/TrustBandBadge";
 import { HealthBadge } from "@/components/shared/HealthBadge";
 import { CompositionInlineEdit } from "@/components/composition/CompositionInlineEdit";
 import { normalizeTrustBand } from "@/services/composition/contracts";
@@ -90,17 +87,26 @@ function pointerValue(payload: Payload, pointer: string): unknown {
     }, payload);
 }
 
-function payloadTrust(payload: Payload, fallback: ProjectedBlock["trust_band"]) {
-  return normalizeTrustBand(text(payload.trust_band) ?? text((payload.trust as Payload | undefined)?.band) ?? fallback);
+/**
+ * Provenance class for trust rendering. "inferred" (enrichment, no source_ref)
+ * renders faded with a tooltip + confirm/contest; "sourced" (hard fact) reads
+ * at full presence. Trust surfaces as opacity, not chips — keyed off the
+ * producer's provenance_kind, not the cold-start trust score (DOS-853).
+ */
+function provenanceKind(payload: Payload): "sourced" | "inferred" | null {
+  // Single-claim blocks carry provenance_kind at the top level; the ActionList
+  // (commitment) and RelationshipMap (relationship) blocks carry it on their
+  // single item/node. Check both so the block-level fade covers every
+  // claim-backed block.
+  const candidate =
+    text(payload.provenance_kind) ??
+    text(array(payload.items)[0]?.provenance_kind) ??
+    text(array(payload.nodes)[0]?.provenance_kind);
+  return candidate === "sourced" || candidate === "inferred" ? candidate : null;
 }
 
-function sourceLabel(payload: Payload): string | null {
-  return text(payload.source_label) ?? text((payload.trust as Payload | undefined)?.source_label);
-}
-
-function sourceAsof(payload: Payload): string | null {
-  return text(payload.source_asof);
-}
+const INFERRED_TOOLTIP =
+  "Inferred from enrichment — not yet confirmed by a source. Confirm or contest below.";
 
 function renderedValue(renderedProvenance?: RenderedProvenance | null): Payload | null {
   return object(renderedProvenance?.value);
@@ -123,11 +129,6 @@ function provenanceSourceCount(renderedProvenance?: RenderedProvenance | null): 
   const sources = value?.sources;
   if (Array.isArray(sources)) return sources.length;
   return null;
-}
-
-function provenanceProducedAt(renderedProvenance?: RenderedProvenance | null): string | null {
-  const value = renderedValue(renderedProvenance);
-  return text(value?.produced_at) ?? text(object(value?.about_this)?.produced_at);
 }
 
 function fieldPathCovers(candidate: string, target: string): boolean {
@@ -271,9 +272,13 @@ function BlockShell({
   featured?: boolean;
   empty?: boolean;
 }) {
-  const source = sourceLabel(payload);
   const provenance = provenanceState(block, renderedProvenance);
-  const asof = sourceAsof(payload) ?? provenanceProducedAt(renderedProvenance);
+  // Trust surfaces as opacity, not chips. Only the safety states (unavailable
+  // / masked / pending) get a visible status; the routine "from N sources"
+  // resolution stays quiet — sources live in the sources chapter, and inferred
+  // content fades with a tooltip rather than carrying a loud trust band.
+  const safetyProvenance = provenance && provenance.state !== "rendered" ? provenance : null;
+  const inferred = provenanceKind(payload) === "inferred";
   return (
     <article
       className={clsx(
@@ -281,9 +286,12 @@ function BlockShell({
         featured && pageStyles.compositionFeaturedBlock,
         empty && pageStyles.compositionEmptyState,
         block.banner && pageStyles.compositionFallbackState,
+        inferred && pageStyles.compositionInferred,
       )}
       data-block-type={block.selected_known_type_id}
       data-trust-band={normalizeTrustBand(block.trust_band)}
+      data-provenance-kind={provenanceKind(payload) ?? undefined}
+      title={inferred ? INFERRED_TOOLTIP : undefined}
     >
       {block.banner && (
         <div className={pageStyles.compositionFallbackState} role="note">
@@ -291,23 +299,19 @@ function BlockShell({
           <p className={pageStyles.compositionStateText}>{block.banner}</p>
         </div>
       )}
-      {(title || source || provenance || asof || block.trust_band) && (
+      {(title || safetyProvenance) && (
         <header className={pageStyles.compositionBlockHeader}>
           {title && <h3 className={pageStyles.compositionBlockTitle}>{title}</h3>}
-          <div className={pageStyles.compositionBlockMeta}>
-            <TrustBandBadge band={payloadTrust(payload, block.trust_band)} compact />
-            {provenance ? (
+          {safetyProvenance && (
+            <div className={pageStyles.compositionBlockMeta}>
               <span
                 className={pageStyles.compositionProvenanceStatus}
-                data-provenance-state={provenance.state}
+                data-provenance-state={safetyProvenance.state}
               >
-                {provenance.label}
+                {safetyProvenance.label}
               </span>
-            ) : (
-              source && <ProvenanceTag itemSource={source} />
-            )}
-            {asof && <FreshnessIndicator at={asof} />}
-          </div>
+            </div>
+          )}
         </header>
       )}
       {children}

@@ -376,6 +376,20 @@
   background: var(--color-surface-primary);
 }
 
+/* Trust as opacity: enrichment-inferred content (no hard source) reads at
+ * reduced presence; hover/focus restores it. The tooltip + confirm/contest
+ * carry the "why" — no loud trust chip. Hard-sourced content is full presence
+ * (no class). Keyed off the producer's provenance_kind. */
+.compositionInferred {
+  opacity: 0.62;
+  transition: opacity 120ms ease;
+}
+
+.compositionInferred:hover,
+.compositionInferred:focus-within {
+  opacity: 1;
+}
+
 .compositionBlockHeader {
   display: flex;
   flex-wrap: wrap;
