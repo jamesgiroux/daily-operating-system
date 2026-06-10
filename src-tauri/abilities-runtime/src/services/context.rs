@@ -1017,6 +1017,14 @@ pub struct AccountCompositionSnapshot {
     pub account_type: Option<AccountCompositionSnapshotField>,
     #[serde(default)]
     pub fields: Vec<AccountCompositionSnapshotField>,
+    /// The entity's enriched intelligence payload (camelCase, the same shape
+    /// the production account-detail surface renders: currentState, risks,
+    /// valueDelivered, agreementOutlook, recommendedActions, …). The producer
+    /// reshapes chapter-relevant subsets into block payloads so composition
+    /// surfaces carry the SAME content as the production page, not just
+    /// atomic claims. None when the account has never been enriched.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub intelligence: Option<serde_json::Value>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]

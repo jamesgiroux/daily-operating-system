@@ -467,6 +467,7 @@ fn build_composition(
             1,
             outlook_claims,
             snapshot_fields_for_section(snapshot, "outlook"),
+            section_intelligence_subset("outlook", snapshot.and_then(|s| s.intelligence.as_ref())),
             EmptySectionCopy {
                 title: "No current outlook signals",
                 body: "DailyOS has not found current account-health signals with renderable provenance.",
@@ -503,6 +504,7 @@ fn build_composition(
             2,
             state_claims,
             snapshot_fields_for_section(snapshot, "state-of-play"),
+            section_intelligence_subset("state-of-play", snapshot.and_then(|s| s.intelligence.as_ref())),
             EmptySectionCopy {
                 title: "No active state-of-play signals",
                 body: "No active account claims are currently eligible for this surface.",
@@ -530,6 +532,7 @@ fn build_composition(
             3,
             room_claims,
             snapshot_fields_for_section(snapshot, "the-room"),
+            section_intelligence_subset("the-room", snapshot.and_then(|s| s.intelligence.as_ref())),
             EmptySectionCopy {
                 title: "No room signals",
                 body: "Stakeholder and relationship inputs are not yet grounded for this account.",
@@ -557,6 +560,7 @@ fn build_composition(
             4,
             next_claims,
             snapshot_fields_for_section(snapshot, "whats-next"),
+            section_intelligence_subset("whats-next", snapshot.and_then(|s| s.intelligence.as_ref())),
             EmptySectionCopy {
                 title: "No open next steps",
                 body: "There are no renderable commitments or next-step records for this account.",
@@ -584,6 +588,7 @@ fn build_composition(
             5,
             watch_claims,
             snapshot_fields_for_section(snapshot, "watch-list"),
+            section_intelligence_subset("watch-list", snapshot.and_then(|s| s.intelligence.as_ref())),
             EmptySectionCopy {
                 title: "No active watch-list signals",
                 body: "No active risk or watch-list claims are eligible for this account.",
@@ -616,6 +621,7 @@ fn build_composition(
             6,
             value_claims,
             snapshot_fields_for_section(snapshot, "value-commitments"),
+            section_intelligence_subset("value-commitments", snapshot.and_then(|s| s.intelligence.as_ref())),
             EmptySectionCopy {
                 title: "No commitments with current evidence",
                 body: "DailyOS has not found value or commitment claims with current evidence.",
@@ -652,6 +658,7 @@ fn build_composition(
             7,
             strategic_claims,
             snapshot_fields_for_section(snapshot, "strategic-landscape"),
+            section_intelligence_subset("strategic-landscape", snapshot.and_then(|s| s.intelligence.as_ref())),
             EmptySectionCopy {
                 title: "Strategic context not yet grounded",
                 body: "No source-backed strategic context is available for this account.",
@@ -696,6 +703,7 @@ fn build_composition(
             9,
             work_claims,
             snapshot_fields_for_section(snapshot, "the-work"),
+            section_intelligence_subset("the-work", snapshot.and_then(|s| s.intelligence.as_ref())),
             EmptySectionCopy {
                 title: "No active work items",
                 body: "No active work records are currently grounded for this account.",
@@ -784,18 +792,22 @@ fn build_claim_or_snapshot_section_blocks(
     section_index: usize,
     projections: Vec<&ClaimProjection>,
     snapshot_fields: Vec<&AccountCompositionSnapshotField>,
+    intelligence: Option<serde_json::Value>,
     empty_copy: EmptySectionCopy,
     subject: &SubjectAttribution,
     invocation_id: InvocationId,
     provenance_builder: &mut ProvenanceBuilder,
 ) -> Result<Vec<Block>, AbilityError> {
-    let has_projections = !projections.is_empty();
-    let mut blocks = if has_projections {
+    // A chapter renders when it has claims OR enriched intelligence content;
+    // the production content contract does not depend on claim coverage.
+    let has_chapter_content = !projections.is_empty() || intelligence.is_some();
+    let mut blocks = if has_chapter_content {
         build_projection_blocks(
             input,
             section_id,
             section_index,
             projections,
+            intelligence,
             subject,
             invocation_id,
             provenance_builder,
@@ -803,7 +815,7 @@ fn build_claim_or_snapshot_section_blocks(
     } else {
         Vec::new()
     };
-    if has_projections {
+    if has_chapter_content {
         if !snapshot_fields.is_empty() {
             let block_index = blocks.len();
             blocks.push(build_snapshot_fields_block(
@@ -857,13 +869,17 @@ fn build_projection_blocks(
     section_id: &str,
     section_index: usize,
     projections: Vec<&ClaimProjection>,
+    intelligence: Option<serde_json::Value>,
     subject: &SubjectAttribution,
     invocation_id: InvocationId,
     provenance_builder: &mut ProvenanceBuilder,
 ) -> Result<Vec<Block>, AbilityError> {
     let mut blocks = Vec::new();
+    let mut intelligence = intelligence;
     for group in section_block_groups(section_id, &projections) {
-        if group.projections.is_empty() {
+        // The chapter's intelligence content rides the first emitted block.
+        let group_intelligence = intelligence.take();
+        if group.projections.is_empty() && group_intelligence.is_none() {
             continue;
         }
         let block_index = blocks.len();
@@ -871,6 +887,7 @@ fn build_projection_blocks(
             input,
             section_id,
             group,
+            group_intelligence,
             subject,
             invocation_id,
             &format!("/sections/{section_index}/blocks/{block_index}"),
@@ -878,6 +895,56 @@ fn build_projection_blocks(
         )?);
     }
     Ok(blocks)
+}
+
+/// Per-chapter subset of the account's enriched intelligence payload — the
+/// SAME content contract the production account-detail chapters render
+/// (StateOfPlay reads currentState, WatchList reads risks/recentWins, …).
+/// Returns None when the account has no enriched content for the chapter so
+/// the section can fall back to claims or its empty copy.
+fn section_intelligence_subset(
+    section_id: &str,
+    intelligence: Option<&serde_json::Value>,
+) -> Option<serde_json::Value> {
+    let intelligence = intelligence?.as_object()?;
+    let content_keys: &[&str] = match section_id {
+        "outlook" => &[
+            "agreementOutlook",
+            "contractContext",
+            "expansionSignals",
+            "health",
+            "consistencyFindings",
+        ],
+        "state-of-play" => &["currentState", "executiveAssessment", "pullQuote"],
+        "the-room" => &["stakeholderInsights"],
+        "watch-list" => &["risks", "recentWins", "currentState"],
+        "value-commitments" => &["valueDelivered", "successMetrics", "openCommitments"],
+        "strategic-landscape" => &[
+            "strategicPriorities",
+            "competitiveContext",
+            "marketContext",
+            "regulatoryContext",
+        ],
+        "whats-next" | "the-work" => &["recommendedActions"],
+        _ => return None,
+    };
+    let mut subset = serde_json::Map::new();
+    for key in content_keys {
+        match intelligence.get(*key) {
+            Some(serde_json::Value::Null) | None => {}
+            Some(value) if value.as_array().is_some_and(Vec::is_empty) => {}
+            Some(value) => {
+                subset.insert((*key).to_string(), value.clone());
+            }
+        }
+    }
+    if subset.is_empty() {
+        return None;
+    }
+    if let Some(enriched_at) = intelligence.get("enrichedAt") {
+        subset.insert("enrichedAt".to_string(), enriched_at.clone());
+    }
+    Some(serde_json::Value::Object(subset))
 }
 
 /// One emitted aggregate block: a block type, the payload item key, an
@@ -910,57 +977,16 @@ fn section_block_groups<'a>(
             salience_band: SalienceBand::Important,
             salience_reason: "health claims",
         }],
-        "state-of-play" => vec![
-            SectionBlockGroup {
-                block_type: BlockType::ClaimSummary,
-                item_key: "items",
-                intent: Some("working"),
-                group_key: "working",
-                projections: projections
-                    .iter()
-                    .copied()
-                    .filter(|projection| {
-                        matches!(projection.placement, ClaimPlacement::Win | ClaimPlacement::Value)
-                    })
-                    .collect(),
-                salience_value: 0.72,
-                salience_band: SalienceBand::Important,
-                salience_reason: "working claims",
-            },
-            SectionBlockGroup {
-                block_type: BlockType::ClaimSummary,
-                item_key: "items",
-                intent: Some("struggling"),
-                group_key: "struggling",
-                projections: projections
-                    .iter()
-                    .copied()
-                    .filter(|projection| projection.placement == ClaimPlacement::Risk)
-                    .collect(),
-                salience_value: 0.9,
-                salience_band: SalienceBand::Critical,
-                salience_reason: "struggling claims",
-            },
-            SectionBlockGroup {
-                block_type: BlockType::ClaimSummary,
-                item_key: "items",
-                intent: Some("context"),
-                group_key: "context",
-                projections: projections
-                    .iter()
-                    .copied()
-                    .filter(|projection| {
-                        matches!(
-                            projection.placement,
-                            ClaimPlacement::Health | ClaimPlacement::Overview
-                        )
-                    })
-                    .collect(),
-                salience_value: 0.58,
-                salience_band: SalienceBand::Contextual,
-                salience_reason: "state context claims",
-            },
-        ],
+        "state-of-play" => vec![SectionBlockGroup {
+            block_type: BlockType::ClaimSummary,
+            item_key: "items",
+            intent: Some("context"),
+            group_key: "state",
+            projections: all(),
+            salience_value: 0.82,
+            salience_band: SalienceBand::Important,
+            salience_reason: "state-of-play claims",
+        }],
         "the-room" => vec![SectionBlockGroup {
             block_type: BlockType::RelationshipMap,
             item_key: "nodes",
@@ -1020,14 +1046,14 @@ fn build_aggregate_claim_block(
     input: &NormalizedInput,
     section_id: &str,
     group: SectionBlockGroup<'_>,
+    intelligence: Option<serde_json::Value>,
     subject: &SubjectAttribution,
     invocation_id: InvocationId,
     composition_block_path: &str,
     provenance_builder: &mut ProvenanceBuilder,
 ) -> Result<Block, AbilityError> {
     let item_key = group.item_key;
-    let lead = group.projections[0];
-    let lead_trust_band = trust_band_label(lead.trust_band);
+    let lead = group.projections.first();
 
     let mut claim_refs = Vec::with_capacity(group.projections.len());
     let mut source_indexes = Vec::with_capacity(group.projections.len());
@@ -1058,12 +1084,12 @@ fn build_aggregate_claim_block(
 
     // Block-level metadata mirrors the lead claim so the shell (trust band,
     // freshness, fallback selection) keeps a stable contract for aggregates.
-    let mut attributes = json!({
-        item_key: items,
-        "claim_type": lead.claim.claim_type,
-        "trust_band": lead_trust_band,
-        "source_asof": lead.claim.source_asof,
-    });
+    let mut attributes = json!({ item_key: items });
+    if let Some(lead) = lead {
+        attributes["claim_type"] = json!(lead.claim.claim_type);
+        attributes["trust_band"] = json!(trust_band_label(lead.trust_band));
+        attributes["source_asof"] = json!(lead.claim.source_asof);
+    }
     if let Some(intent) = group.intent {
         attributes["intent"] = json!(intent);
     }
@@ -1071,6 +1097,15 @@ fn build_aggregate_claim_block(
         if attributes.get(field).is_some() {
             bindings.push(display_only_binding(&format!("/{field}"))?);
         }
+    }
+    // The chapter's production content contract: the enriched intelligence
+    // subset rides the payload at /intelligence/<key>, display-bound so the
+    // projection admits it through the per-type field policies.
+    if let Some(serde_json::Value::Object(subset)) = intelligence {
+        for key in subset.keys() {
+            bindings.push(display_only_binding(&format!("/intelligence/{key}"))?);
+        }
+        attributes["intelligence"] = serde_json::Value::Object(subset);
     }
 
     let mut block = Block::new(
@@ -2811,6 +2846,7 @@ mod tests {
                 "customer",
             )),
             fields,
+            intelligence: None,
         }
     }
 

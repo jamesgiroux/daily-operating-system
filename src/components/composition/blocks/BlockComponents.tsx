@@ -18,8 +18,42 @@ import { CompositionVitalsStrip, type CompositionVitalSpec } from "@/components/
 import pageStyles from "@/pages/AccountDetailPage.module.css";
 import heroStyles from "@/components/composition/blocks/AccountHeroBlock.module.css";
 import chapterStyles from "@/components/composition/blocks/CompositionChapters.module.css";
+import { StateOfPlay } from "@/components/entity/StateOfPlay";
+import { WatchList } from "@/components/entity/WatchList";
+import { ValueCommitments } from "@/components/entity/ValueCommitments";
+import { StrategicLandscape } from "@/components/entity/StrategicLandscape";
+import { AccountOutlook } from "@/components/entity/AccountOutlook";
+import { AccountHealthSection } from "@/components/account/AccountHealthSection";
+import { useIntelligenceFieldUpdate } from "@/hooks/useIntelligenceFieldUpdate";
+import { useIntelligenceFeedback } from "@/hooks/useIntelligenceFeedback";
+import type { EntityIntelligence } from "@/types";
 
 type Payload = Record<string, unknown>;
+
+/**
+ * The chapter's enriched-intelligence payload — the production content
+ * contract. The producer ships the chapter-relevant subset of the account's
+ * EntityIntelligence at payload.intelligence (camelCase, same shape the
+ * production account-detail chapters consume), so composition chapters render
+ * through the SAME bespoke components as production.
+ */
+function chapterIntelligence(payload: Payload): EntityIntelligence | null {
+  const value = object(payload.intelligence);
+  return value ? (value as unknown as EntityIntelligence) : null;
+}
+
+/** Production-parity edit + feedback wiring for intelligence-backed chapters.
+ *  Same hooks the production page uses; corrections persist through the
+ *  entity intelligence write path and surface on the next projection. */
+function useChapterIntelligenceWiring(accountId?: string) {
+  const { updateField } = useIntelligenceFieldUpdate("account", accountId, async () => {});
+  const feedback = useIntelligenceFeedback(accountId, "account");
+  return {
+    onUpdateField: accountId ? updateField : undefined,
+    getItemFeedback: accountId ? feedback.getFeedback : undefined,
+    onItemFeedback: accountId ? feedback.submitFeedback : undefined,
+  };
+}
 
 const TYPE_BADGE_VALUES: ReadonlySet<string> = new Set(["customer", "internal", "partner"]);
 function asTypeBadgeValue(value: string | null): TypeBadgeValue | null {
@@ -572,6 +606,30 @@ function ClaimSummaryBlock({ block, accountId, entityType, payload, renderedProv
   const empty = payload.empty_state === true;
   const intent = chapterIntent(payload);
   const items = array(payload.items);
+  const intelligence = chapterIntelligence(payload);
+  const wiring = useChapterIntelligenceWiring(accountId);
+
+  // Production content path: the chapter renders through the SAME bespoke
+  // components the production account page uses, fed by the producer's
+  // intelligence subset. Claims remain attached on the block for provenance.
+  if (intelligence) {
+    const isState = !!intelligence.currentState || !!intelligence.executiveAssessment;
+    const isValue =
+      !!intelligence.valueDelivered?.length ||
+      !!intelligence.successMetrics?.length ||
+      !!intelligence.openCommitments?.length;
+    return (
+      <BlockShell block={block} accountId={accountId} entityType={entityType} payload={payload} renderedProvenance={renderedProvenance}>
+        {isState ? (
+          <StateOfPlay intelligence={intelligence} sectionId="" onUpdateField={wiring.onUpdateField} getItemFeedback={wiring.getItemFeedback} onItemFeedback={wiring.onItemFeedback} />
+        ) : isValue ? (
+          <ValueCommitments intelligence={intelligence} onUpdateField={wiring.onUpdateField} onItemFeedback={wiring.onItemFeedback} />
+        ) : (
+          <StrategicLandscape intelligence={intelligence} onUpdateField={wiring.onUpdateField} onItemFeedback={wiring.onItemFeedback} />
+        )}
+      </BlockShell>
+    );
+  }
 
   // Aggregate chapter payload: a grouped claim list (StateBlock treatment —
   // mono group label + accent-bordered rows). Working/Struggling carry their
@@ -615,6 +673,24 @@ function ClaimSummaryBlock({ block, accountId, entityType, payload, renderedProv
 
 function HealthSnapshotBlock({ block, accountId, entityType, payload, renderedProvenance, editMode }: BlockComponentProps) {
   const items = array(payload.items);
+  const intelligence = chapterIntelligence(payload);
+  const wiring = useChapterIntelligenceWiring(accountId);
+
+  // Production content path: the outlook chapter IS the production
+  // AccountOutlook (+ health section) components, fed the producer's
+  // intelligence subset.
+  if (intelligence) {
+    const hasOutlook =
+      !!intelligence.agreementOutlook || !!intelligence.expansionSignals?.length || !!intelligence.contractContext;
+    return (
+      <BlockShell block={block} accountId={accountId} entityType={entityType} payload={payload} renderedProvenance={renderedProvenance}>
+        {hasOutlook && (
+          <AccountOutlook intelligence={intelligence} onUpdateField={wiring.onUpdateField} getItemFeedback={wiring.getItemFeedback} onItemFeedback={wiring.onItemFeedback} />
+        )}
+        {intelligence.health && <AccountHealthSection health={intelligence.health} />}
+      </BlockShell>
+    );
+  }
 
   // Aggregate outlook payload: the lead claim reads as the AccountOutlook
   // editorial statement; supporting claims follow as quieter rows. Trust
@@ -685,6 +761,18 @@ function HealthSnapshotBlock({ block, accountId, entityType, payload, renderedPr
 
 function RiskCalloutBlock({ block, accountId, entityType, payload, renderedProvenance, editMode }: BlockComponentProps) {
   const items = array(payload.items);
+  const intelligence = chapterIntelligence(payload);
+  const wiring = useChapterIntelligenceWiring(accountId);
+
+  // Production content path: the watch-list chapter IS the production
+  // WatchList component, fed the producer's intelligence subset.
+  if (intelligence) {
+    return (
+      <BlockShell block={block} accountId={accountId} entityType={entityType} payload={payload} renderedProvenance={renderedProvenance}>
+        <WatchList intelligence={intelligence} sectionId="" onUpdateField={wiring.onUpdateField} getItemFeedback={wiring.getItemFeedback} onItemFeedback={wiring.onItemFeedback} />
+      </BlockShell>
+    );
+  }
 
   // Aggregate watch-list payload: terracotta-flagged claim rows (WatchList
   // grouped treatment) with per-item trust fade + confirm/contest.

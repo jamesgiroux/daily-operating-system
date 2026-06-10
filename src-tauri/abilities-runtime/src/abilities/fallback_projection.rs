@@ -262,6 +262,7 @@ enum ValueKind {
     Number,
     Bool,
     Array,
+    Object,
 }
 
 #[derive(Debug, Clone)]
@@ -936,6 +937,7 @@ fn value_for_kind(value: &Value, kind: ValueKind) -> Option<Value> {
         (ValueKind::Number, Value::Number(_)) => Some(value.clone()),
         (ValueKind::Bool, Value::Bool(_)) => Some(value.clone()),
         (ValueKind::Array, Value::Array(_)) => Some(value.clone()),
+        (ValueKind::Object, Value::Object(_)) => Some(value.clone()),
         _ => None,
     }
 }
@@ -1380,6 +1382,15 @@ const fn array_field(pointer: &'static str, sensitivity: ClaimSensitivity) -> Fi
     }
 }
 
+const fn object_field(pointer: &'static str, sensitivity: ClaimSensitivity) -> FieldPolicy {
+    FieldPolicy {
+        pointer,
+        sensitivity,
+        allowed_surfaces: ALL_SURFACES,
+        value_kind: ValueKind::Object,
+    }
+}
+
 const ACCOUNT_OVERVIEW_FIELDS: &[FieldPolicy] = &[
     text_field("/account/id", ClaimSensitivity::Internal),
     text_field("/account/display_name", ClaimSensitivity::Internal),
@@ -1445,6 +1456,17 @@ const CLAIM_SUMMARY_FIELDS: &[FieldPolicy] = &[
     text_field("/intent", ClaimSensitivity::Internal),
     text_field("/provenance_kind", ClaimSensitivity::Internal),
     bool_field("/empty_state", ClaimSensitivity::Internal),
+    object_field("/intelligence/currentState", ClaimSensitivity::Internal),
+    text_field("/intelligence/executiveAssessment", ClaimSensitivity::Internal),
+    text_field("/intelligence/pullQuote", ClaimSensitivity::Internal),
+    array_field("/intelligence/valueDelivered", ClaimSensitivity::Internal),
+    array_field("/intelligence/successMetrics", ClaimSensitivity::Internal),
+    array_field("/intelligence/openCommitments", ClaimSensitivity::Internal),
+    array_field("/intelligence/strategicPriorities", ClaimSensitivity::Internal),
+    array_field("/intelligence/competitiveContext", ClaimSensitivity::Internal),
+    array_field("/intelligence/marketContext", ClaimSensitivity::Internal),
+    array_field("/intelligence/regulatoryContext", ClaimSensitivity::Internal),
+    text_field("/intelligence/enrichedAt", ClaimSensitivity::Internal),
     text_field("/items/*/text", ClaimSensitivity::Internal),
     text_field("/items/*/claim_id", ClaimSensitivity::Internal),
     text_field("/items/*/claim_type", ClaimSensitivity::Internal),
@@ -1492,6 +1514,12 @@ const HEALTH_SNAPSHOT_FIELDS: &[FieldPolicy] = &[
     text_field("/items/*/trust_band", ClaimSensitivity::Internal),
     text_field("/items/*/source_asof", ClaimSensitivity::Internal),
     text_field("/items/*/provenance_kind", ClaimSensitivity::Internal),
+    object_field("/intelligence/agreementOutlook", ClaimSensitivity::Internal),
+    object_field("/intelligence/contractContext", ClaimSensitivity::Internal),
+    array_field("/intelligence/expansionSignals", ClaimSensitivity::Internal),
+    object_field("/intelligence/health", ClaimSensitivity::Internal),
+    array_field("/intelligence/consistencyFindings", ClaimSensitivity::Internal),
+    text_field("/intelligence/enrichedAt", ClaimSensitivity::Internal),
 ];
 const RELATIONSHIP_MAP_FIELDS: &[FieldPolicy] = &[
     text_field("/nodes/*/label", ClaimSensitivity::Internal),
@@ -1506,6 +1534,8 @@ const RELATIONSHIP_MAP_FIELDS: &[FieldPolicy] = &[
     text_field("/claim_type", ClaimSensitivity::Internal),
     text_field("/trust_band", ClaimSensitivity::Internal),
     text_field("/source_asof", ClaimSensitivity::Internal),
+    array_field("/intelligence/stakeholderInsights", ClaimSensitivity::Internal),
+    text_field("/intelligence/enrichedAt", ClaimSensitivity::Internal),
 ];
 const RISK_CALLOUT_FIELDS: &[FieldPolicy] = &[
     text_field("/title", ClaimSensitivity::Internal),
@@ -1525,6 +1555,10 @@ const RISK_CALLOUT_FIELDS: &[FieldPolicy] = &[
     text_field("/items/*/trust_band", ClaimSensitivity::Internal),
     text_field("/items/*/source_asof", ClaimSensitivity::Internal),
     text_field("/items/*/provenance_kind", ClaimSensitivity::Internal),
+    array_field("/intelligence/risks", ClaimSensitivity::Internal),
+    array_field("/intelligence/recentWins", ClaimSensitivity::Internal),
+    object_field("/intelligence/currentState", ClaimSensitivity::Internal),
+    text_field("/intelligence/enrichedAt", ClaimSensitivity::Internal),
 ];
 const ACTION_LIST_FIELDS: &[FieldPolicy] = &[
     text_field("/items/*/title", ClaimSensitivity::Internal),
@@ -1540,6 +1574,8 @@ const ACTION_LIST_FIELDS: &[FieldPolicy] = &[
     text_field("/claim_type", ClaimSensitivity::Internal),
     text_field("/trust_band", ClaimSensitivity::Internal),
     text_field("/source_asof", ClaimSensitivity::Internal),
+    array_field("/intelligence/recommendedActions", ClaimSensitivity::Internal),
+    text_field("/intelligence/enrichedAt", ClaimSensitivity::Internal),
 ];
 const MARKDOWN_DOCUMENT_FIELDS: &[FieldPolicy] = &[
     text_field("/title", ClaimSensitivity::Internal),

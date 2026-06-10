@@ -1474,6 +1474,17 @@ fn read_account_composition_snapshot_from_db(
         provenance_kind: AccountCompositionProvenanceKind::SystemConfig,
     });
 
+    // The enriched intelligence payload is the production page's content
+    // contract (currentState, risks, valueDelivered, agreementOutlook, …) —
+    // camelCase via IntelligenceJson serde, identical to what the frontend
+    // EntityIntelligence type consumes. Best-effort: an unenriched account
+    // simply omits it and chapters fall back to claims/empty copy.
+    let intelligence = db
+        .get_entity_intelligence(account_id)
+        .ok()
+        .flatten()
+        .and_then(|payload| serde_json::to_value(payload).ok());
+
     Ok(AccountCompositionSnapshot {
         account_id: account.id.clone(),
         display_name: account_identity_field(
@@ -1487,6 +1498,7 @@ fn read_account_composition_snapshot_from_db(
             serde_json::Value::from(account.account_type.as_db_str()),
         )),
         fields,
+        intelligence,
     })
 }
 

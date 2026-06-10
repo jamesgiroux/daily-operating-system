@@ -270,9 +270,28 @@ export default function AccountDetailPage() {
   );
   useRegisterMagazineShell(shellConfig);
 
+  // Folio refresh runs a REAL enrichment (production parity with the
+  // account-detail enrich button), then re-projects the composition so the
+  // refreshed intelligence content lands in the chapters.
+  const [enriching, setEnriching] = useState(false);
+  const handleEnrich = useCallback(async () => {
+    if (!accountId || enriching) return;
+    setEnriching(true);
+    try {
+      await invoke("enrich_account", { accountId });
+      await composition.refetch();
+    } catch (error) {
+      console.error("enrich_account failed:", error);
+    } finally {
+      setEnriching(false);
+    }
+  }, [accountId, composition, enriching]);
+
   useUpdateFolioVolatile(
     {
-      folioStatusText: composition.loading
+      folioStatusText: enriching
+        ? "Refreshing intelligence..."
+        : composition.loading
         ? "Composing..."
         : layout.saving
           ? "Saving layout..."
@@ -290,11 +309,11 @@ export default function AccountDetailPage() {
             <SlidersHorizontal size={14} strokeWidth={1.7} />
             {editMode ? "Done" : "Customize"}
           </button>
-          <FolioRefreshButton onClick={composition.refetch} loading={composition.loading} />
+          <FolioRefreshButton onClick={handleEnrich} loading={enriching || composition.loading} />
         </div>
       ),
     },
-    `${accountId ?? "account"}-${editMode}-${layout.saving}`,
+    `${accountId ?? "account"}-${editMode}-${layout.saving}-${enriching}`,
   );
 
   const handleDragEnd = useCallback(
