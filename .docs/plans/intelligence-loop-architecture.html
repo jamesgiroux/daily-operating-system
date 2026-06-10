@@ -1,0 +1,158 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>Intelligence Loop · Architecture Reality Map · DailyOS Planning</title>
+  <link rel="stylesheet" href="../design/reference/_shared/fonts.css">
+  <link rel="stylesheet" href="../design/reference/_shared/styles/design-tokens.css">
+  <link rel="stylesheet" href="../design/reference/_shared/styles/AtmosphereLayer.module.css">
+  <link rel="stylesheet" href="../design/reference/_shared/styles/MagazinePageLayout.module.css">
+  <link rel="stylesheet" href="../design/reference/_shared/chrome.css">
+  <link rel="stylesheet" href="plans.css">
+</head>
+<body data-tint="eucalyptus">
+<div class="MagazinePageLayout_magazinePage">
+<main class="MagazinePageLayout_pageContainer">
+<div class="plans-shell">
+
+<!-- TOPNAV -->
+<nav class="plans-topnav" aria-label="Planning surface">
+  <a class="plans-mark" href="index.html">
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 433 407" width="16" height="16" aria-hidden="true">
+      <path d="M159 407 161 292 57 355 0 259 102 204 0 148 57 52 161 115 159 0H273L271 115L375 52L433 148L331 204L433 259L375 355L271 292L273 407Z" fill="currentColor"/>
+    </svg>
+    DailyOS · Planning
+  </a>
+  <div class="plans-topnav-links">
+    <a href="engineering-ladder.html">Engineering Ladder</a>
+    <a href="v1.5.0-waves.html">v1.5.0 Waves</a>
+    <a href="abilities-intelligence-loop.html">Abilities Explainer</a>
+    <a href="intelligence-loop-architecture.html" data-active="true">Architecture Map</a>
+  </div>
+</nav>
+
+<!-- COVER -->
+<section class="plans-cover">
+  <p class="plans-eyebrow">DailyOS · Reference · Architecture Reality Map</p>
+  <h1 class="plans-title">The loop as it actually is.</h1>
+  <p class="plans-kicker">Five stages — signal → claim → producer → surface → feedback — mapped against what the code does today, not what the docs aspire to. Every cell carries file:line evidence.</p>
+  <p class="plans-lede">
+    The <a href="abilities-intelligence-loop.html">Abilities Explainer</a> describes the intended contract. This page is its audit twin: the verified current state, stage by stage, including where two or three implementations compete for the same job. Sourced from the 8-lane v1.4.x reconciliation audit (<code>.docs/plans/v1.4.x-abilities-reconciliation-audit.md</code>) plus a dedicated stage-2 verification pass. The WC wave (v1.5.0) and its tickets were cross-checked against this map — mismatches found during that check are flagged inline.
+  </p>
+  <div class="plans-meta">
+    <span>Audience: James + engineering sessions</span>
+    <span>Grounded in code: 2026-06-10</span>
+    <span>Companions: <a href="v1.5.0-waves.html">v1.5.0 Waves</a> · audit (Tier 3 md)</span>
+  </div>
+</section>
+
+<!-- VERDICT STRIP -->
+<section class="plans-section" aria-labelledby="verdict">
+  <header class="plans-section-header">
+    <p class="plans-section-eyebrow">The one-screen verdict</p>
+    <h2 id="verdict" class="plans-section-title">The loop is sound. Stage 2 is already one substrate. The duplication lives in stages 3–5 and the trigger plumbing.</h2>
+  </header>
+  <table class="reviewer-matrix">
+    <thead>
+      <tr><th>Stage</th><th>What it is</th><th>Substrate count (verified)</th><th>Health</th><th>WC ticket</th></tr>
+    </thead>
+    <tbody>
+      <tr><td><strong>1 · Signal in</strong></td><td>Ingestion: pollers, transcripts, Glean, email, files</td><td><strong>1 per source, healthy</strong> — 18 supervised pollers/loops all spawned from <code>lib.rs</code>; signal bus + propagation engine (11 rules)</td><td>✅ mostly healthy; 2 orphaned signal emissions, 1 bus bypass</td><td>DOS-862 (C4)</td></tr>
+      <tr><td><strong>2 · Claim</strong></td><td>Create / corroborate / contradict / resolve</td><td><strong>1 — verified unified.</strong> All 28 writer call sites converge on <code>commit_claim()</code> (<code>services/claims.rs:6323</code>); dedup→corroborate→contradict→supersede decided in ONE transaction (<code>claims.rs:6788–7080</code>); lint blocks bypass writes</td><td>✅ <strong>the healthiest stage</strong></td><td>— (nothing to fix)</td></tr>
+      <tr><td><strong>3 · Producer</strong></td><td>Claims → user-facing content</td><td><strong>2 per capability</strong> — abilities runtime (~29 registered; 4 Composition producers) ∥ legacy PTY paths (Today briefing, prep queue, risk briefing) + legacy enrichment writing <code>entity_intelligence</code> snapshots. <code>WorkerAbilityBridge</code>: 0 non-test callers</td><td>🔴 the core problem</td><td>DOS-855 (C1), DOS-860 (C0)</td></tr>
+      <tr><td><strong>3-inputs · Context</strong></td><td>Assemble entity/day context for producers</td><td><strong>16 builders</strong>; 5 duplicated fetches; prep blind to email signals + stakeholders</td><td>🔴 duplication + divergent truths</td><td>DOS-861 (C3)</td></tr>
+      <tr><td><strong>4 · Surface</strong></td><td>Render: Tauri app, MCP</td><td><strong>2 render paths</strong> (by design, mid-migration): BlockRenderer (Account/Project/Person/Actions via W1/W3/WR) ∥ legacy hand-written pages (briefing, meeting — W4 retires them). MCP v2 ability-backed; MCP v1 prod-disabled</td><td>🟡 transitional, kill dates named (W4)</td><td>W4 AC</td></tr>
+      <tr><td><strong>5 · Feedback</strong></td><td>Corroborate / correct → trust</td><td><strong>12 feedback-adjacent systems; 2 primary.</strong> Canonical <code>claim_feedback</code> (ADR-0123) has <strong>zero UI writers</strong>; UI thumbs write legacy <code>entity_feedback_events</code> trust never reads; <code>applied_at</code> contract unimplemented; 6+ dismissal tables; 2 source-reliability substrates</td><td>🔴 the loop's broken segment</td><td>DOS-856 (C2); post-WC 857/858/859</td></tr>
+    </tbody>
+  </table>
+  <p class="plans-footnote"><strong>In plain terms —</strong> the spine of the system — "every fact is a claim, written through one gate, with corroboration and conflict handled in one place" — is real and verified. What's broken is on either side of it: two engines produce content from claims (old and new), and the user's corrections enter through a door the trust system doesn't watch.</p>
+</section>
+
+<!-- THE MAP -->
+<section class="plans-section" aria-labelledby="map">
+  <header class="plans-section-header">
+    <p class="plans-section-eyebrow">The map</p>
+    <h2 id="map" class="plans-section-title">As-is, with the duplicate paths drawn.</h2>
+  </header>
+  <pre class="plans-flow">STAGE 1 · SIGNAL IN                 STAGE 2 · CLAIM (one gate ✅)          STAGE 3 · PRODUCER (two engines 🔴)
+─────────────────────               ──────────────────────────────         ─────────────────────────────────────
+calendar/email pollers ─┐                                                  ┌─ ABILITIES RUNTIME (~29, manual+MCP only)
+transcript pollers ─────┤           7 feeder pipelines                     │    4 Composition producers (acct/proj/person/action)
+Glean / Drive / Linear ─┼─signals─▶ ALL → commit_claim()        claims ───┤   get_entity_intelligence (read envelope)
+workspace ingestion ────┤           claims.rs:6323                         │   ⚠ WorkerAbilityBridge: 0 callers
+hygiene / proactive ────┘           dedup→corroborate→                     │
+                                    contradict→supersede                   └─ LEGACY PTY (everything SCHEDULED)
+  signal bus (policy registry)      in ONE transaction                         Today briefing (executor→deliver.rs)
+  ⚠ 2 orphan emits, 1 bypass        + PRE-GATE tombstones                      meeting prep queue PTY
+                                                                               risk briefing 5-section PTY
+                                                                               enrichment → entity_intelligence snapshots
+                                                                               (stage-2 extraction FUSED with stage-3 output)
+
+STAGE 3-INPUTS · CONTEXT (16 builders 🔴)        STAGE 4 · SURFACE (transitional 🟡)     STAGE 5 · FEEDBACK (split 🔴)
+────────────────────────────────────────         ──────────────────────────────────      ─────────────────────────────────
+build_intelligence_context (90d windows)         BlockRenderer ◀─ Compositions            canonical: claim_feedback (ADR-0123)
+gather_account_context (30d, no email            (Acct/Proj/Person/Actions)                 ◀─ MCP v2, abilities, edit_routes
+  signals, no stakeholders) + 14 more            legacy hand-drawn pages                    ✗ ZERO UI writers · applied_at never set
+                                                 (briefing, meeting → W4 retires)         legacy: entity_feedback_events
+                                                 MCP v2 (ability-backed)                    ◀─ ALL UI thumbs/corrections
+                                                                                            ✗ trust/salience never read it</pre>
+  <p class="plans-footnote">Evidence anchors: <code>WorkerAbilityBridge</code> orphan <code>bridges/worker.rs:22-68</code> · Today PTY <code>executor.rs:1279</code> → <code>workflow/deliver.rs:3304-3570</code> · prep PTY <code>meeting_prep_queue.rs:810-875</code> · enrichment fusion <code>services/intelligence.rs:1551-2086</code> · feedback split <code>commands/claim_feedback.rs:67</code> (0 UI callers) vs <code>services/feedback.rs:309</code> · <code>applied_at</code> NULL <code>services/claims.rs:7847</code> + <code>trust_recompute.rs:1108</code> · context builders <code>intelligence/prompts.rs:270</code> vs <code>prepare/meeting_context.rs:277</code>.</p>
+</section>
+
+<!-- CROSS-CHECK -->
+<section class="plans-section plans-section-callouts" aria-labelledby="crosscheck">
+  <header class="plans-section-header">
+    <p class="plans-section-eyebrow">Cross-check · 2026-06-10</p>
+    <h2 id="crosscheck" class="plans-section-title">Does the WC wave match this architecture? Mostly — three corrections from reality.</h2>
+  </header>
+  <div class="callout-grid">
+    <article class="callout">
+      <h3 class="callout-title">✅ Confirmed: WC targets the right stages</h3>
+      <p class="callout-prose">WC's five items map onto exactly the red cells: C0/C1 → stage 3's dual engines, C2 → stage 5's split, C3 → stage-3 inputs, C4 → stage-1 hygiene. Nothing in WC touches stage 2 — correct, because stage 2 is verified healthy. The audit's worry that claim creation might also be fragmented was <strong>disproven</strong> by the dedicated verification pass.</p>
+    </article>
+    <article class="callout">
+      <h3 class="callout-title">✏️ Correction 1 — DOS-860 framing narrowed</h3>
+      <p class="callout-prose">Earlier framing implied enrichment's claim-writing was part of the problem. Verified: enrichment's claim writes go through <code>commit_claim()</code> correctly. The fusion problem is <em>only</em> that the same pass also emits stage-3 output (<code>entity_intelligence</code> snapshots, LLM health prose). C0's split is therefore smaller than it sounded: keep the extraction + claim-write path as-is; remove the snapshot/prose emission from it. Ticket updated.</p>
+    </article>
+    <article class="callout">
+      <h3 class="callout-title">✏️ Correction 2 — 4 Composition producers, not 1</h3>
+      <p class="callout-prose">The Abilities Explainer ("only <code>account_overview</code> emits a Composition") is stale: <code>project_overview</code>, <code>person_overview</code>, <code>action_detail</code> shipped with W3 and are registered. C1's first tranche (scheduled refresh via <code>WorkerAbilityBridge</code>) covers four shipped producers. The roster is ~29 registered abilities via <code>#[ability]</code>, not "about two dozen."</p>
+    </article>
+    <article class="callout">
+      <h3 class="callout-title">✏️ Correction 3 — the Explainer described the goal as the present</h3>
+      <p class="callout-prose">Three Explainer claims are aspiration, not description: "abilities are the single source of truth" (scheduled production bypasses them); "feedback routes back through an ability" (zero UI writers on the canonical path); the §5 worked example credits <code>get_entity_intelligence</code> with claim creation (it's a read ability; legacy enrichment writes the claims). The Explainer now carries a reality-check note pointing here. After WC + W4, those sentences become true — that's a usable definition of done for the consolidation.</p>
+    </article>
+  </div>
+</section>
+
+<!-- HEALTHY SUBSTRATE -->
+<section class="plans-section" aria-labelledby="healthy">
+  <header class="plans-section-header">
+    <p class="plans-section-eyebrow">Verified healthy · do not "fix"</p>
+    <h2 id="healthy" class="plans-section-title">What the audit confirmed is right — guard it.</h2>
+  </header>
+  <ul>
+    <li><strong>Stage 2 claim gate</strong> — <code>commit_claim()</code> with per-dedup-key commit locks (<code>claims.rs:6481</code>), one-transaction corroboration/contradiction, PRE-GATE tombstone blocking (<code>claims.rs:6602-6628</code>), reconciliation kinds (<code>claims.rs:10255-10290</code>), and a lint preventing bypass writes. <em>Any future ingestion source must feed this gate, never write claims directly.</em></li>
+    <li><strong>Background execution inventory</strong> — 31 mechanisms, all intentionally spawned from <code>lib.rs</code>; startup-drain + continuous-worker pairs are deliberate.</li>
+    <li><strong>Delta + consolidated reliability table pairs</strong>; <strong><code>prep_context_json</code> vs <code>prep_frozen_json</code></strong> (ADR-0101 read-model/export split).</li>
+    <li><strong><code>claim_receipt:invalidated</code> event bridge</strong> (<code>event_bridge.rs:71</code> → <code>useClaimReceiptSubscription.ts:194</code>) — the reference pattern for backend→frontend event wiring.</li>
+    <li><strong>Frontend invoke hygiene</strong> — all 143 frontend <code>invoke()</code> calls map to registered commands.</li>
+  </ul>
+</section>
+
+<!-- MAINTENANCE -->
+<section class="plans-section" aria-labelledby="upkeep">
+  <header class="plans-section-header">
+    <p class="plans-section-eyebrow">Keeping this true</p>
+    <h2 id="upkeep" class="plans-section-title">This map decays unless re-verified.</h2>
+  </header>
+  <p>Re-run the reconciliation sweep (8 parallel lanes, ~2h wall-clock; lane prompts reusable from the audit doc) at each version close (L3/L5) and diff against this page; update the "Grounded in code" date or the map itself. New work names its loop stage at L0 (wave-plan cross-wave rule). A producer wave ships its trigger wiring and deletes its legacy path — the W4 AC pattern.</p>
+  <div class="finis-mark">signal · claim · producer · surface · feedback</div>
+</section>
+
+</div>
+</main>
+</div>
+</body>
+</html>

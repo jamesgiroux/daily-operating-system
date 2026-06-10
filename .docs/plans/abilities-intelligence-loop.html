@@ -28,6 +28,7 @@
     <a href="engineering-ladder.html">Engineering Ladder</a>
     <a href="v1.5.0-waves.html">v1.5.0 Waves</a>
     <a href="abilities-intelligence-loop.html" data-active="true">Abilities Explainer</a>
+    <a href="intelligence-loop-architecture.html">Architecture Map</a>
     <a href="AUTHORING.md">Authoring Ruleset</a>
   </div>
 </nav>
@@ -42,7 +43,7 @@
   </p>
   <div class="plans-meta">
     <span>Audience: product owner</span>
-    <span>Grounded in code: 2026-05-31</span>
+    <span>Grounded in code: 2026-05-31 · reality-checked 2026-06-10</span>
     <span>Companion: v1.5.0-waves.html</span>
   </div>
 </section>
@@ -53,6 +54,7 @@
     <p class="plans-section-eyebrow">The whole thing in one breath</p>
     <h2 id="frame" class="plans-section-title">Something happens → an ability analyzes it → it records a claim with proof → the screen reflects it → your feedback makes it smarter.</h2>
     <p class="plans-section-lede">Everything below is just that sentence, expanded. The key idea to hold: <strong>abilities are the single source of truth.</strong> Every visible fact traces back to an ability that produced it and the evidence it stood on. Nothing appears on screen that can't be explained.</p>
+    <p class="plans-footnote"><strong>Reality check (2026-06-10) —</strong> that paragraph is the <em>contract</em>, not yet the full reality. The v1.4.x reconciliation audit found scheduled production (daily briefing, meeting prep, risk, enrichment) still runs older non-ability pipelines, and the app's feedback buttons write a legacy path the trust system doesn't read. The verified current state, stage by stage, is mapped at <a href="intelligence-loop-architecture.html">Architecture Reality Map</a>; the v1.5.0 WC wave + W4 close the gap. When they land, this paragraph becomes literally true.</p>
   </header>
   <pre class="plans-flow">an event            (email arrives · meeting scheduled · you confirm a fact)
   → an ability runs (a mini-analyst reads your data, maybe asks an AI model)
@@ -109,7 +111,7 @@
       <tr><td><strong>Rendering helpers</strong></td><td><code>markdown_preview</code></td><td>Safe formatted text</td></tr>
     </tbody>
   </table>
-  <p class="plans-footnote"><strong>The one that matters most for v1.5.0:</strong> only <code>account_overview</code> produces the new block output (a Composition) today. Everything else still hands back the older "intelligence envelope," which the current pages read and render by hand. v1.5.0 builds the renderer for blocks and teaches a few more abilities to produce them.</p>
+  <p class="plans-footnote"><strong>The one that matters most for v1.5.0:</strong> four producers emit the new block output (a Composition) as of W3 — <code>account_overview</code>, <code>project_overview</code>, <code>person_overview</code>, <code>action_detail</code> <em>(updated 2026-06-10; originally only account)</em>. Briefing and meeting still hand back the older "intelligence envelope" / legacy pipelines; W4 teaches them blocks.</p>
 </section>
 
 <!-- THE LOOP -->
@@ -138,7 +140,7 @@
     </article>
     <article class="callout">
       <h3 class="callout-title">Feedback</h3>
-      <p class="callout-prose">When you confirm, dismiss, or flag a claim, that routes back through an ability. It updates the claim's lifecycle and trust, and adjusts how reliable that source is judged next time. This is the loop closing.</p>
+      <p class="callout-prose">When you confirm, dismiss, or flag a claim, that <em>should</em> route back through an ability, updating the claim's lifecycle and trust and adjusting how reliable that source is judged next time. <strong>Today it only does on the newest surfaces</strong> (block edit-routes, MCP) — the app's older thumbs/correction buttons write a legacy path the trust system never reads. Closing this is v1.5.0 WC item C2 (DOS-856); see the <a href="intelligence-loop-architecture.html">reality map</a>.</p>
     </article>
     <article class="callout">
       <h3 class="callout-title">The payoff</h3>
@@ -159,7 +161,7 @@
   <p>An ability (usually <code>get_entity_intelligence</code>) returns an <strong>intelligence envelope</strong> — a bag of facts with provenance. The Mac app reads it, maps the facts into shapes like "risks," "wins," "commitments," and renders them with hand-written React for that specific page. Account / Project / Person detail pages work this way now. It works, but every page is bespoke code, and adding a new section means writing a new page.</p>
 
   <h3 class="plans-subhead">Path B — the block path (the future, and v1.5.0's job)</h3>
-  <p>An ability (today, only <code>account_overview</code>) returns a <strong>Composition</strong> — a typed list of blocks, each carrying its claims, provenance, and trust. A renderer turns each block into a component. The substrate for this is already built (the block model + a safety net for unknown blocks). What's missing is the Mac app's renderer for it. v1.5.0 builds that renderer, teaches a few more abilities to produce Compositions, and adds the layer that lets you rearrange the blocks.</p>
+  <p>An ability (today: <code>account_overview</code>, <code>project_overview</code>, <code>person_overview</code>, <code>action_detail</code>) returns a <strong>Composition</strong> — a typed list of blocks, each carrying its claims, provenance, and trust. A renderer turns each block into a component. The substrate for this is already built (the block model + a safety net for unknown blocks). What's missing is the Mac app's renderer for it. v1.5.0 builds that renderer, teaches a few more abilities to produce Compositions, and adds the layer that lets you rearrange the blocks.</p>
 
   <pre class="plans-flow">PATH A (today):  ability → intelligence envelope → app maps facts → hand-written page sections
 PATH B (v1.5.0): ability → Composition (blocks) → BlockRenderer → component per block + your layout</pre>
@@ -175,7 +177,7 @@ PATH B (v1.5.0): ability → Composition (blocks) → BlockRenderer → componen
   </header>
   <ol class="l6-list-items">
     <li><span><strong>The event.</strong> John (a champion at Acme) emails: "Let's talk Q3 renewal." The email is ingested; the system recognizes the Account (Acme) and the Person (John).</span></li>
-    <li><span><strong>An ability runs.</strong> <code>get_entity_intelligence</code> reads Acme's existing claims and the new email. An AI step concludes: "John initiated a renewal discussion."</span></li>
+    <li><span><strong>Analysis runs.</strong> Background enrichment reads Acme's existing claims and the new email; an AI step concludes: "John initiated a renewal discussion." <em>(Corrected 2026-06-10: this step is today's legacy enrichment pipeline, not <code>get_entity_intelligence</code> — that ability only reads claims and assembles the envelope. After the v1.5.0 consolidation, synthesis like this runs as abilities too.)</em></span></li>
     <li><span><strong>A claim is recorded.</strong> A "renewal opportunity" claim is written for Acme, with the email as its source and a timestamp. Because a prior CRM note also pointed at renewal, the two corroborate.</span></li>
     <li><span><strong>Trust is computed.</strong> Two corroborating sources, no contradictions, plus a confirmation you gave two weeks ago → the claim lands at high confidence and renders with a strong trust band.</span></li>
     <li><span><strong>A signal fires.</strong> "Something about Acme changed." A listener finds an upcoming renewal call within 48 hours and queues its prep to be regenerated.</span></li>
