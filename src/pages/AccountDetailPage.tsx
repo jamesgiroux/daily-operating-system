@@ -68,7 +68,6 @@ const SECTION_ICONS: Record<string, ReactNode> = {
   "technical-shape": <Compass size={18} strokeWidth={1.5} />,
   "relationship-fabric": <Users size={18} strokeWidth={1.5} />,
   "about-dossier": <FileText size={18} strokeWidth={1.5} />,
-  "the-work": <Briefcase size={18} strokeWidth={1.5} />,
   outputs: <FileText size={18} strokeWidth={1.5} />,
   "the-record": <Activity size={18} strokeWidth={1.5} />,
 };

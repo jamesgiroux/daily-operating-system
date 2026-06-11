@@ -38,7 +38,7 @@ const ABILITY_NAME: &str = "dailyos/account-overview";
 const ABILITY_SCHEMA_VERSION: u32 = 1;
 const ACCOUNT_CLAIM_DEPTH: usize = 3;
 
-const VARIANT_D_SECTIONS: [(&str, &str); 19] = [
+const VARIANT_D_SECTIONS: [(&str, &str); 18] = [
     ("headline", "Headline"),
     ("your-assessment", "Your assessment"),
     ("on-track", "On Track"),
@@ -55,7 +55,6 @@ const VARIANT_D_SECTIONS: [(&str, &str); 19] = [
     ("technical-shape", "Technical shape"),
     ("relationship-fabric", "Relationship fabric"),
     ("about-dossier", "About the dossier"),
-    ("the-work", "The Work"),
     ("outputs", "Outputs"),
     ("the-record", "The Record"),
 ];
@@ -469,7 +468,7 @@ fn build_composition(
         SalienceBand,
         &'static str,
     );
-    let plan: [SectionPlanRow<'_>; 16] = [
+    let plan: [SectionPlanRow<'_>; 15] = [
         ("your-assessment", "Your assessment", Vec::new(), SectionLayout::Stacked, 0.92, SalienceBand::Critical, "user assessment"),
         ("on-track", "On Track", claims_for(&[ClaimPlacement::Win, ClaimPlacement::Value, ClaimPlacement::Overview]), SectionLayout::Stacked, 0.84, SalienceBand::Important, "what is on track"),
         ("needs-attention", "Needs attention", claims_for(&[ClaimPlacement::Risk]), SectionLayout::Stacked, 0.9, SalienceBand::Critical, "needs attention"),
@@ -485,7 +484,6 @@ fn build_composition(
         ("technical-shape", "Technical shape", Vec::new(), SectionLayout::Stacked, 0.45, SalienceBand::Background, "technical shape"),
         ("relationship-fabric", "Relationship fabric", Vec::new(), SectionLayout::Stacked, 0.45, SalienceBand::Background, "relationship fabric"),
         ("about-dossier", "About the dossier", Vec::new(), SectionLayout::Stacked, 0.25, SalienceBand::Background, "about the dossier"),
-        ("the-work", "The Work", claims_for(&[ClaimPlacement::Commitment]), SectionLayout::Stacked, 0.62, SalienceBand::Important, "account work"),
     ];
     for (section_id, label, section_claims, layout, weight, band, reason) in plan {
         let section_index = sections.len();
@@ -766,7 +764,6 @@ fn section_intelligence_subset(
         ],
         "value-commitments" => &["valueDelivered", "successMetrics", "openCommitments"],
         "thesis" => &["pullQuote"],
-        "the-work" => &["recommendedActions"],
         _ => return None,
     };
     let mut subset = serde_json::Map::new();
@@ -3067,126 +3064,6 @@ mod tests {
                 .any(|block| block.attributes.to_string().contains("Growth potential")),
             "snapshot fields must not leak into section blocks"
         );
-    }
-
-    #[tokio::test]
-    async fn recommendation_claims_render_as_work_actions() {
-        let claims = vec![claim(
-            "claim-recommendation",
-            "recommendation",
-            "/recommendations/review",
-            "Review the launch plan with the account owner",
-            Some(0.88),
-            Some("2026-05-14T09:00:00Z"),
-            ClaimSensitivity::Internal,
-        )];
-        let (clock, rng, external, reader, committer, provider) = fixture_parts(claims);
-        let services = services(&clock, &rng, &external, reader, committer);
-        let ctx = ability_ctx(&services, &provider);
-
-        let output = account_overview(&ctx, input())
-            .await
-            .expect("recommendation-backed account overview succeeds");
-        let composition = output.data();
-
-        for section_id in ["the-work"] {
-            let section = composition
-                .sections
-                .iter()
-                .find(|section| section.id.as_str() == section_id)
-                .expect("work section exists");
-            let block = section
-                .blocks
-                .iter()
-                .find(|block| {
-                    block.block_type == BlockType::ActionList
-                        && block
-                            .attributes
-                            .pointer("/claim_type")
-                            .and_then(Value::as_str)
-                            == Some("recommendation")
-                        && block
-                            .attributes
-                            .pointer("/items/0/text")
-                            .and_then(Value::as_str)
-                            == Some("Review the launch plan with the account owner")
-                })
-                .expect("recommendation is rendered as a work action");
-
-            assert!(block
-                .claim_refs
-                .iter()
-                .any(|claim_ref| claim_ref.claim_id == "claim-recommendation"));
-            assert!(block.field_bindings.iter().any(|binding| {
-                binding.role == BindingRole::FeedbackTarget
-                    && binding.field_path.as_str() == "/items/0/text"
-                    && !binding.claim_refs.is_empty()
-            }));
-            assert_eq!(
-                block
-                    .attributes
-                    .pointer("/trust_band")
-                    .and_then(Value::as_str),
-                Some("likely_current"),
-                "work action blocks expose block-level trust for the shell badge"
-            );
-            assert_eq!(
-                block
-                    .attributes
-                    .pointer("/source_asof")
-                    .and_then(Value::as_str),
-                Some("2026-05-14T09:00:00Z"),
-                "work action blocks expose block-level freshness for the shell"
-            );
-        }
-
-        let proj_ctx = FallbackProjectionContext::new(
-            Actor::SurfaceClient {
-                instance: crate::abilities::registry::SurfaceClientId::new("sc_fixture"),
-                scopes: ScopeSet::new([crate::abilities::registry::SurfaceScope::new(
-                    "read.account_overview",
-                )])
-                .expect("scope set"),
-            },
-            SurfaceKind::SurfaceClient,
-            3,
-        );
-        let (projected, _audits) = project_composition_for_surface(composition, &proj_ctx)
-            .expect("projected recommendation action preserves shell metadata");
-
-        for section_id in ["the-work"] {
-            let section = projected
-                .sections
-                .iter()
-                .find(|section| section.section_id.as_str() == section_id)
-                .expect("projected work section exists");
-            let projected_block = section
-                .block_indexes
-                .iter()
-                .filter_map(|index| projected.blocks.get(*index as usize))
-                .find(|block| {
-                    block.payload.pointer("/claim_type").and_then(Value::as_str)
-                        == Some("recommendation")
-                })
-                .expect("projected recommendation work action exists");
-
-            assert_eq!(
-                projected_block
-                    .payload
-                    .pointer("/trust_band")
-                    .and_then(Value::as_str),
-                Some("likely_current"),
-                "projection must preserve block-level trust for the renderer shell"
-            );
-            assert_eq!(
-                projected_block
-                    .payload
-                    .pointer("/source_asof")
-                    .and_then(Value::as_str),
-                Some("2026-05-14T09:00:00Z"),
-                "projection must preserve block-level freshness for the renderer shell"
-            );
-        }
     }
 
     #[tokio::test]
