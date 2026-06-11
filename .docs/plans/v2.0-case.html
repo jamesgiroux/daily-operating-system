@@ -1,0 +1,488 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>v2.0 — The Case for the Rebuild · DailyOS Planning</title>
+  <link rel="stylesheet" href="../design/reference/_shared/fonts.css">
+  <link rel="stylesheet" href="../design/reference/_shared/styles/design-tokens.css">
+  <link rel="stylesheet" href="../design/reference/_shared/styles/AtmosphereLayer.module.css">
+  <link rel="stylesheet" href="../design/reference/_shared/styles/MagazinePageLayout.module.css">
+  <link rel="stylesheet" href="../design/reference/_shared/chrome.css">
+  <link rel="stylesheet" href="plans.css">
+</head>
+<body
+  data-tint="eucalyptus"
+  data-active-page="planning">
+<div class="MagazinePageLayout_magazinePage">
+<main class="MagazinePageLayout_pageContainer">
+<div class="plans-shell">
+
+<!-- ============================================================
+     TOP NAV — see _patterns/topnav.html
+     ============================================================ -->
+<nav class="plans-topnav" aria-label="Planning surface">
+  <a class="plans-mark" href="index.html">
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 433 407" width="16" height="16" aria-hidden="true">
+      <path d="M159 407 161 292 57 355 0 259 102 204 0 148 57 52 161 115 159 0H273L271 115L375 52L433 148L331 204L433 259L375 355L271 292L273 407Z" fill="currentColor"/>
+    </svg>
+    DailyOS · Planning
+  </a>
+  <div class="plans-topnav-links">
+    <a href="engineering-ladder.html">Engineering Ladder</a>
+    <a href="v2.0-case.html" data-active="true">v2.0 Case</a>
+    <a href="AUTHORING.md">Authoring Ruleset</a>
+  </div>
+</nav>
+
+<!-- ============================================================
+     COVER — see _patterns/cover-section.html
+     ============================================================ -->
+<section class="plans-cover">
+  <p class="plans-eyebrow">DailyOS · v2.0</p>
+  <h1 class="plans-title">The Case for the Rebuild</h1>
+  <p class="plans-kicker">Personal intelligence means context that only ever grows. The current shell's cost grows with it. v2.0 rearchitects everything between the store and the user's eyes — the surfaces and the read path — on the substrate the outside world just validated.</p>
+  <p class="plans-lede">
+    This document makes four arguments in sequence: the <strong>category</strong> we serve demands a shell whose performance is independent of accumulated context (§1); the <strong>19-week journey</strong> shows the substrate crystallizing while the shell superseded itself (§2); the <strong>scaling chain</strong>, measured end to end, shows why no per-page patch can fix it (§3); and an <strong>unconstrained greenfield exercise</strong> against the mid-2026 toolscape independently re-derives the same boundary (§4). Then it names what v2.0 is (§5) and what it costs (§6). Supersedes the 2026-06-11 boundary draft; its keep/kill matrices fold into §5.
+  </p>
+  <div class="plans-meta">
+    <span>Gated + red-teamed 2026-06-11 · amendments applied</span>
+    <span>Scope: shell + read path (checkpoint-gated)</span>
+    <span>Data layer: owned Rust projections; framework must beat it at L0</span>
+    <span>Chat escape hatch: in scope</span>
+  </div>
+</section>
+
+<!-- ============================================================
+     §1 — THE CATEGORY
+     ============================================================ -->
+<section class="plans-section" aria-labelledby="category">
+  <header class="plans-section-header">
+    <p class="plans-section-eyebrow">§1 · The category</p>
+    <h2 id="category" class="plans-section-title">Personal intelligence demands a different shell.</h2>
+    <p class="plans-section-lede">
+      DailyOS is memory plus judgment. Memory that compounds is the product premise — which means context growth is not an edge case to tolerate; it is the success condition to design for. A shell serving this category has four non-negotiable properties, and the current shell has none of them structurally.
+    </p>
+  </header>
+
+  <div class="callout-grid">
+    <article class="callout">
+      <h3 class="callout-title">Consumption-first</h3>
+      <p class="callout-prose">"The AI gathers, compiles, organizes. You show up and consume the output" (PHILOSOPHY). Today 21 of 25 surfaces hand-assemble meaning via 1–28 imperative invokes each — the frontend is the operator, the exact failure MISSION attributes to the status quo.</p>
+    </article>
+    <article class="callout">
+      <h3 class="callout-title">Trust rendered uniformly</h3>
+      <p class="callout-prose">"Trust as a testable contract — no drift between surfaces" (PRODUCT-THESIS). Today the same claims render through two display grammars and corrections enter through three write paths; drift between surfaces is the standing state, not a risk.</p>
+    </article>
+    <article class="callout">
+      <h3 class="callout-title">Push-first proactivity</h3>
+      <p class="callout-prose">"It should just know" — before the user asks. Today's 26-route navigation taxonomy is a mission-control destination the user operates; the briefing is one route among many rather than the front door.</p>
+    </article>
+    <article class="callout">
+      <h3 class="callout-title">Performance independent of context</h3>
+      <p class="callout-prose">A memory product that slows down as memory accumulates punishes the user for using it. Today shell cost is proportional to accumulated claims — §3 measures the chain.</p>
+    </article>
+  </div>
+
+  <p class="plans-footnote">
+    Surface inventory and thesis-alignment audit: <code>.docs/plans/v2.0-shell-audit.md</code> §1, §4 (measured at commit <code>0262d6bb</code>; key numbers re-verified for this document).
+  </p>
+</section>
+
+<!-- ============================================================
+     §2 — THE JOURNEY
+     ============================================================ -->
+<section class="plans-section" aria-labelledby="journey">
+  <header class="plans-section-header">
+    <p class="plans-section-eyebrow">§2 · The journey</p>
+    <h2 id="journey" class="plans-section-title">Nineteen weeks of earned asymmetry.</h2>
+    <p class="plans-section-lede">
+      First commit 2026-01-29. Since then: 2,570 commits, 140 ADRs, 31 documented problem→fix captures. The record splits cleanly in two — and the split is the case. Each shell patch was rational in the moment; the accumulation is the lesson.
+    </p>
+  </header>
+
+  <table class="reviewer-matrix">
+    <thead>
+      <tr>
+        <th>Evidence</th>
+        <th>Substrate (claims · abilities · services · trust)</th>
+        <th>Shell (pages · layouts · data paths)</th>
+      </tr>
+    </thead>
+    <tbody>
+      <tr>
+        <td><strong>ADR supersessions</strong></td>
+        <td>No post-April substrate ADR superseded (~8 weeks stable; early-era substrate ADRs 0018 and 0092 <em>were</em> superseded — the asymmetry is recent-era, stated honestly). ADR-0101 → 0102 → 0105 → 0113 → 0125 → 0130 is a learning chain, each building on the last.</td>
+        <td>Dashboard layout superseded twice in six days (ADR-0053 → 0055 → 0077); ADR-0034 deprecated after acceptance; ADR-0052's readiness enums invalidated within ten days by ADR-0081.</td>
+      </tr>
+      <tr>
+        <td><strong>Failure record</strong></td>
+        <td>0 of 31 <code>docs/solutions/</code> entries trace to substrate-internal failures. Trust, claims, signals: zero bug-class captures.</td>
+        <td>Eight write-path interventions in fourteen weeks (ADR-0133), each "supposed to be the last." Dual-system drift, parity tax (874-LOC <code>src/parity/</code> exists to police duplication).</td>
+      </tr>
+      <tr>
+        <td><strong>Accretion shape</strong></td>
+        <td>Backend reorganized (commands split, abilities crate); Rust files 278 → 449 in May by restructuring.</td>
+        <td>45 pages created → 24 remain; three generations of entity detail with gen-2 still in-tree; 27 orphan components; 11 dual systems doing one job each; an unreachable second shell in the router.</td>
+      </tr>
+      <tr>
+        <td><strong>What shipped that lasted</strong></td>
+        <td>Claim anatomy, provenance envelopes, trust scoring, lifecycle, composition contract — all in daily production use, all consumed by every surface.</td>
+        <td>The parts of the shell that lasted are exactly the composition-backed parts (4 of 25 surfaces) — the parts built on the substrate's model rather than against it.</td>
+      </tr>
+    </tbody>
+  </table>
+
+  <p class="plans-footnote">
+    Sources: <code>.docs/decisions/</code> corpus (full arc traced for this document), <code>docs/solutions/</code> (all 31 entries read), <code>.docs/plans/v2.0-shell-audit.md</code> §2–§3. The learned-failed-learned arc is the point: this is conviction the system earned, not a reaction to last week.
+  </p>
+</section>
+
+<!-- ============================================================
+     §3 — THE SCALING THESIS
+     ============================================================ -->
+<section class="plans-section" aria-labelledby="scaling">
+  <header class="plans-section-header">
+    <p class="plans-section-eyebrow">§3 · The scaling thesis</p>
+    <h2 id="scaling" class="plans-section-title">The shell cannot stay performant for one user with twenty accounts.</h2>
+    <p class="plans-section-lede">
+      Every link in the chain below is measured, not estimated. Read top to bottom: each row grows with accumulated context, and the product's job is to accumulate context.
+    </p>
+  </header>
+
+  <table class="reviewer-matrix">
+    <thead>
+      <tr>
+        <th>Link</th>
+        <th>Measured state</th>
+        <th>Why it grows with context</th>
+      </tr>
+    </thead>
+    <tbody>
+      <tr>
+        <td><strong>Claim accumulation</strong></td>
+        <td>7,357 claims; worst subject carries <strong>2,143</strong> (1,874 active). The working figure of "693-claim subjects" understated reality 3×.</td>
+        <td>Enrichment commits projection claims per dimension per run; nothing bounds a subject's claim count until DOS-866's caps land.</td>
+      </tr>
+      <tr>
+        <td><strong>Signal amplification</strong></td>
+        <td>~311,000 <code>signal_events</code> rows — 43 events per claim, ≈60% of the 397&nbsp;MB database (table + indexes ≈ 237&nbsp;MB).</td>
+        <td>Every enrichment emits and propagates signals inside the gated transaction (<code>services/intelligence.rs:2087</code>).</td>
+      </tr>
+      <tr>
+        <td><strong>Enrichment grind</strong></td>
+        <td>Trust recompute loads <em>all</em> active claims for a subject on the 2 remaining unbounded call sites (<code>intel_queue.rs:3583</code>, <code>invalidation_jobs.rs:449</code>; a bounded paged variant already exists at <code>trust_recompute.rs:65</code>); persist re-merges the full legacy snapshot; parent cascades multiply runs.</td>
+        <td>Work is O(accumulated claims), not O(new information). The 2,143-claim subject makes every touching signal cost a full pass.</td>
+      </tr>
+      <tr>
+        <td><strong>Write serialization</strong></td>
+        <td>One process-wide gate (<code>db/core.rs:96</code>), ~16 background producers, 120&nbsp;s transaction timeout; an enrichment persist holds the gate for its entire transaction (<code>intel_queue.rs:2713-2746</code>) — the DOS-866 starvation class, twice incident-confirmed 2026-06-10/11.</td>
+        <td>More context → more producers firing → longer holds → deeper foreground queue.</td>
+      </tr>
+      <tr>
+        <td><strong>Read amplification</strong></td>
+        <td>Legacy account detail = ~10 IPC round trips + a 30-query backend assembly (<code>services/accounts.rs:1582-1837</code>). The composition path reads claims at depth 3 with <strong>no limit</strong> and <strong>commits a composition row on the cache-miss path of a page load</strong> (<code>account_overview.rs:148-152</code>; 60&nbsp;s in-memory cache, <code>composition_render_orchestrator.rs:52</code>).</td>
+        <td>Reads walk everything the writes accumulated — and add a write of their own on the hot path.</td>
+      </tr>
+      <tr>
+        <td><strong>Net effect</strong></td>
+        <td><strong>8.8&nbsp;s</strong> on a routine account click at twenty entities — measured 2026-05-27 <strong>on the legacy <code>get_account_detail</code> path, pre-DOS-866</strong> (mechanism per the lock-storm capture: WAL bloat starving the reader pool, amplified by combined-domain transaction shape).</td>
+        <td>Twenty accounts is the floor, not the ceiling. The same chain at twice the context is not twice as slow — the holds, cascades, and unbounded reads compound.</td>
+      </tr>
+    </tbody>
+  </table>
+
+  <p>
+    The framing that matters: <strong>this is a read/write architecture failure, not a SQLite bug.</strong> The UI runs analytical, graph-shaped reads against the same store a continuous enrichment pipeline writes to — and the eight interventions of ADR-0133's history each governed <em>who may write when</em>; none separated the read workload from the write workload. The red-team correction this case adopts: whether targeted substrate fixes (DOS-866 + bounding the two unbounded recompute call sites + a limit on the producer read + moving the commit off the read path) dissolve the latency <em>without</em> read models is an open empirical question — so the read-model commitment is <strong>gated on a post-fix re-measurement</strong> (ADR-0139 checkpoint: entity click &lt; 500&nbsp;ms p95 on the live path kills the performance argument). What no targeted fix changes: the structural pattern of eight one-at-a-time interventions, each supposed to be the last.
+  </p>
+
+  <p class="plans-footnote">
+    Measurements: replica DB (plain SQLite, read-only queries, 2026-06-11), <code>docs/solutions/architecture-patterns/db-lock-storm-class-2026-05-27.md</code>, <code>.docs/plans/dos-866-l0-packet.md</code>. File:line citations verified for existence; runtime-behavior corrections (cache gating, paged recompute, legacy-path provenance) applied per the 2026-06-11 red-team — synthesis at <code>.docs/plans/v2.0-case-redteam-2026-06-11.md</code>.
+  </p>
+</section>
+
+<!-- ============================================================
+     §4 — THE GREENFIELD TEST
+     ============================================================ -->
+<section class="plans-section" aria-labelledby="greenfield">
+  <header class="plans-section-header">
+    <p class="plans-section-eyebrow">§4 · The greenfield test</p>
+    <h2 id="greenfield" class="plans-section-title">Built today, unconstrained, it lands in the same place.</h2>
+    <p class="plans-section-lede">
+      Method: set the repo aside and ask what a top team would build in mid-2026 — shells, data layers, AI-native experience paradigms, agent runtimes — then compare. Red-team demotion accepted: this is a <strong>landscape scan consistent with the direction</strong>, not an independent derivation (same author, conclusion-aware). It supports the keep decisions; the rebuild decisions rest on §1–§3.
+    </p>
+  </header>
+
+  <table class="reviewer-matrix">
+    <thead>
+      <tr>
+        <th>2026 landscape finding</th>
+        <th>Evidence</th>
+        <th>DailyOS disposition</th>
+      </tr>
+    </thead>
+    <tbody>
+      <tr>
+        <td><strong>Declarative typed-component dispatch won generative UI</strong></td>
+        <td>A2UI (production in Gemini/Opal), AG-UI protocol (Microsoft/Google/Amazon adoption), MCP Apps (Claude, VS Code). Consensus: agent names a component from a typed, pre-approved registry; the model never generates markup.</td>
+        <td>That is ADR-0130 composition — producers, block registry, typed payloads. We built the winning pattern before the specs existed. <strong>Keep; externally validated.</strong></td>
+      </tr>
+      <tr>
+        <td><strong>Memory commoditized; judgment didn't</strong></td>
+        <td>Vector + BM25 + entity fusion is table stakes (mem0-class). The field's own state-of reports name staleness, salience, provenance, and trust as the <em>unsolved</em> problems; no shipping competitor exposes trust-band semantics.</td>
+        <td>Exactly the claims / trust / lifecycle / correction substrate. <strong>Keep; this is the moat, now with outside confirmation.</strong></td>
+      </tr>
+      <tr>
+        <td><strong>The experience paradigm went post-chat and push-first</strong></td>
+        <td>Google's Daily Brief, Siri AI's briefing surface ship push-first; ChatGPT Pulse attempted and paused (evidence cuts both ways). Convergent shape where it ships: briefing front door → structured drill-down → chat as escape hatch.</td>
+        <td>The 26-route mission control is the wrong paradigm — not badly executed, wrong shape. <strong>Rebuild the surface taxonomy.</strong></td>
+      </tr>
+      <tr>
+        <td><strong>Local-first data layers went event-sourced / CQRS</strong></td>
+        <td>LiveStore (event log → materialized SQLite projections → reactive queries; <strong>no native Tauri adapter yet</strong> — red-team-verified correction of this case's research input), TanStack DB 0.6 (JS client layer), DuckDB reading SQLite for analytics. The pattern: background pipelines append; the UI subscribes. The frameworks' motivation is multi-device sync — a constraint this product doesn't have.</td>
+        <td>The <em>separation</em> is right; the mechanism is owned Rust projections behind existing service contracts, framework only if it beats that at L0 — and the whole commitment is gated on the ADR-0139 re-measurement checkpoint.</td>
+      </tr>
+      <tr>
+        <td><strong>Divergence check: the platform survives</strong></td>
+        <td>Both genuinely viable 2026 stacks keep Tauri 2 + Rust + React + SQLite; single-writer SQLite is designed around, never escaped. On-device models (Apple Foundation Models) handle classification/extraction for free; frontier calls reserve for synthesis.</td>
+        <td>No framework migration. Greenfield does <em>not</em> indict the platform — only the read path and the taxonomy. On-device enrichment tiering banks as a v2.x lever.</td>
+      </tr>
+    </tbody>
+  </table>
+
+  <p>
+    The landscape scan is consistent with where the journey landed: <strong>keep everything below <code>services/</code>; rebuild everything between the store and the user's eyes.</strong> The scan corroborates the keep decisions — the moat and the composition model are what the field names as unsolved and converging respectively; the rebuild decisions stand on the internal evidence.
+  </p>
+</section>
+
+<!-- ============================================================
+     §5 — WHAT v2.0 IS
+     ============================================================ -->
+<section class="plans-section" aria-labelledby="definition">
+  <header class="plans-section-header">
+    <p class="plans-section-eyebrow">§5 · What v2.0 is</p>
+    <h2 id="definition" class="plans-section-title">Three commitments on one boundary.</h2>
+    <p class="plans-section-lede">
+      v2.0 changes how the product reads and renders, not what it knows. The boundary matrices below carry forward from the superseded draft, now justified by §1–§4 rather than asserted. Then three architecture commitments define the new side.
+    </p>
+  </header>
+
+  <div class="ladder-rung-pass-rule">
+    <span class="pass-rule-label">Disposition</span>
+    <span class="pass-rule-badge pass-rule-unanimous">Crosses the boundary</span>
+  </div>
+
+  <table class="reviewer-matrix">
+    <thead>
+      <tr>
+        <th>Subsystem</th>
+        <th>Why it crosses</th>
+        <th>Citation</th>
+      </tr>
+    </thead>
+    <tbody>
+      <tr>
+        <td><strong>abilities-runtime crate</strong></td>
+        <td>Separate crate, clean boundary; producers, projection, and trust machinery proven in daily use. Never depended on the shell.</td>
+        <td><code>ADR-0102</code>, <code>ADR-0111</code></td>
+      </tr>
+      <tr>
+        <td><strong>Claims schema + <code>services/</code> layer</strong></td>
+        <td>The memory+judgment moat: provenance, lifecycle, corrections. All mutations already flow through <code>services/</code>; v2.0 surfaces are new consumers, not new writers. §4 row 2: externally confirmed differentiator.</td>
+        <td><code>ADR-0125</code>, <code>ADR-0113</code>, <code>ADR-0123</code></td>
+      </tr>
+      <tr>
+        <td><strong>Composition substrate</strong></td>
+        <td>Model, registry, projection policies, per-item claim bindings — the pattern the industry standardized on (§4 row 1). v2.0's shell is built on it by definition.</td>
+        <td><code>ADR-0130</code></td>
+      </tr>
+      <tr>
+        <td><strong>Trust-as-opacity rendering model</strong></td>
+        <td>L4-approved 2026-06-10; keyed off per-claim <code>provenance_kind</code>; shell-independent.</td>
+        <td><code>DOS-852</code></td>
+      </tr>
+      <tr>
+        <td><strong>Design system</strong></td>
+        <td>Tokens, primitives, patterns, surfaces; <code>.docs/design/reference/</code> as copy-paste canon. v2.0 blocks compose these patterns.</td>
+        <td><code>ADR-0073</code>, <code>ADR-0077</code></td>
+      </tr>
+      <tr>
+        <td><strong>DB hardening (writer queue + reader pool + DOS-866 fixes)</strong></td>
+        <td>Rank-then-cap, phased persist, W1-A — earned against real starvation incidents; lands at the substrate layer regardless of shell, and §5C builds on it.</td>
+        <td><code>ADR-0133</code>, <code>ADR-0134</code>, <code>DOS-866</code></td>
+      </tr>
+      <tr>
+        <td><strong>App as control plane</strong></td>
+        <td>Packaging, lifecycle, updates, and the only native push primitive — the 2026-05-29 adjudication's unanimous keep. Push-first (§1) requires it.</td>
+        <td><code>.docs/plans/dailyos-rearchitecture-examination-2026-05-29.md</code></td>
+      </tr>
+      <tr>
+        <td><strong>ADR corpus + <code>docs/solutions/</code> + ladder process</strong></td>
+        <td>The K-channel and L0–L6 gates are version-independent; abandoning projects does not abandon what they taught.</td>
+        <td><code>.docs/plans/engineering-ladder.md</code></td>
+      </tr>
+    </tbody>
+  </table>
+
+  <div class="ladder-rung-pass-rule">
+    <span class="pass-rule-label">Disposition</span>
+    <span class="pass-rule-badge pass-rule-escalate">Dies at the boundary</span>
+  </div>
+
+  <table class="reviewer-matrix">
+    <thead>
+      <tr>
+        <th>What dies</th>
+        <th>Named successor</th>
+        <th>Citation</th>
+      </tr>
+    </thead>
+    <tbody>
+      <tr>
+        <td><strong>The 26-route mission-control taxonomy</strong></td>
+        <td>Briefing-first taxonomy (§5A): briefing front door, entity drill-downs, deliberately small page inventory, chat escape hatch.</td>
+        <td>§1, §4 row 3</td>
+      </tr>
+      <tr>
+        <td><strong>All hand-wired page data paths (legacy hooks, per-page invoke assembly)</strong></td>
+        <td>CQRS read models the UI subscribes to (§5C). No page-owned fetching; no commits on page load; no unbounded claim reads.</td>
+        <td>§3, <code>db-lock-storm-class-2026-05-27.md</code></td>
+      </tr>
+      <tr>
+        <td><strong>The legacy display grammar (intelligence-JSON as display source) + <code>AccountDetailEditorial</code> generation + dual hybrid hooks</strong></td>
+        <td>Producer-shaped block payloads as the only grammar. The mapper that translates claims back into the legacy JSON shape is deleted with its consumers.</td>
+        <td><code>DOS-852</code>, audit §2.4</td>
+      </tr>
+      <tr>
+        <td><strong>Two of three feedback write paths</strong></td>
+        <td>Unified claim feedback writer — one path into claim state, carried on every block via <code>claim_refs</code>.</td>
+        <td><code>ADR-0138</code>, <code>DOS-854</code></td>
+      </tr>
+      <tr>
+        <td><strong>Tab views inside surfaces</strong></td>
+        <td>Pages-per-view + strip chrome per the DayStrip future-direction note.</td>
+        <td><code>.docs/design/patterns/DayStrip.md</code></td>
+      </tr>
+      <tr>
+        <td><strong>The parity layer (<code>src/parity/</code>, 874 LOC)</strong></td>
+        <td>One producer contract serving every surface (ADR-0128/0135): parity becomes a unit test on the producer, not a fixture-diff between two presentation codebases.</td>
+        <td>audit §2.10, <code>ADR-0128</code>, <code>ADR-0135</code></td>
+      </tr>
+      <tr>
+        <td><strong>Dual same-purpose components (6 heroes, 2 shells, hook twins, 27 orphans)</strong></td>
+        <td>One component per purpose, reuse-first; deletion is an acceptance criterion (§6).</td>
+        <td><code>CLAUDE.md</code>, audit §2.7/§3.4</td>
+      </tr>
+    </tbody>
+  </table>
+
+  <p class="plans-footnote">
+    "Dies" means not ported and not shimmed: v1.x keeps running each surface until its v2.0 successor replaces it, and nothing on this list enters the v2.0 tree.
+  </p>
+
+  <div class="callout-grid">
+    <article class="callout">
+      <h3 class="callout-title">A · Briefing-first surface taxonomy</h3>
+      <p class="callout-prose">The D-spine briefing (±7-day window) is the front door; entity surfaces are drill-downs; the page inventory is deliberately small. Lists and triage are redesigned as consumption surfaces, not database operators. A chat escape hatch ships in v2.0 — available everywhere, primary nowhere — riding the existing ability-invocation surface.</p>
+    </article>
+    <article class="callout">
+      <h3 class="callout-title">B · Blocks are the only rendering system</h3>
+      <p class="callout-prose">One display grammar, one feedback path, salience-driven layout, trust bands carried on every block via <code>claim_refs</code> + <code>provenance_ref</code>. Deletion is an acceptance criterion: the measured precedent — two prior generations left in the tree — is the named failure mode, and a v2.0 that leaves v1.x rendering alive has produced a fourth parallel system, not a replacement.</p>
+    </article>
+    <article class="callout">
+      <h3 class="callout-title">C · Read/write separation — checkpoint-gated</h3>
+      <p class="callout-prose">The UI subscribes to materialized projections; pages never fetch imperatively, never read unbounded claim sets, never write on load. Enrichment persists in capped, phased batches (DOS-866 shape) on the write side. Mechanism (revised post-red-team): <strong>owned Rust projections behind existing service contracts</strong>; a framework must beat that at its L0. The whole read-model build is gated on ADR-0139's re-measurement checkpoint — if the targeted fixes alone hit &lt;500&nbsp;ms p95, the performance argument is dead and the commitment re-justifies on product grounds or not at all.</p>
+    </article>
+  </div>
+</section>
+
+<!-- ============================================================
+     §6 — COSTS AND RISKS
+     ============================================================ -->
+<section class="plans-section" aria-labelledby="costs">
+  <header class="plans-section-header">
+    <p class="plans-section-eyebrow">§6 · Costs and risks</p>
+    <h2 id="costs" class="plans-section-title">Measured, with named mitigations.</h2>
+    <p class="plans-section-lede">
+      The case is only honest if the bill is on the table. Estimates below are labeled estimates, calibrated against this repo's actuals (the 4-surface composition migration spanned multiple weeks).
+    </p>
+  </header>
+
+  <table class="reviewer-matrix">
+    <thead>
+      <tr>
+        <th>Cost / risk</th>
+        <th>Measured basis</th>
+        <th>Mitigation</th>
+      </tr>
+    </thead>
+    <tbody>
+      <tr>
+        <td><strong>~10–15 engineer-weeks of migration surface</strong></td>
+        <td>Per-surface estimates in audit §6: MeetingDetail 2–3&nbsp;wk, briefing 1–2&nbsp;wk, triage 2–3&nbsp;wk, lists 2–3&nbsp;wk, reports 2–3&nbsp;wk, hybrids 3–5&nbsp;d; settings/onboarding carried, not rebuilt.</td>
+        <td>Route-by-route swap behind the existing router is already proven (gen-3 account detail replaced gen-2 without a shell rewrite). ~4–5 users; migration cost near zero, downtime tolerance for customer-zero still not zero.</td>
+      </tr>
+      <tr>
+        <td><strong>Three block-type families don't exist</strong></td>
+        <td>List, triage/action-dispatch, and report blocks have no analog in the 19-renderer registry; salience-ordered lists are a design problem, not a port.</td>
+        <td>Named as v2.0 design work up front (James + Claude collaborative, per the v1.5.0 reconciliation decision) — not discovered mid-wave.</td>
+      </tr>
+      <tr>
+        <td><strong>The graveyard pattern</strong></td>
+        <td>Two prior rebuilds left the old generation in-tree; 27 orphans and an unreachable shell are the measured precedent.</td>
+        <td>Deletion as acceptance criterion on every conversion ticket; the wave is not done while the predecessor compiles.</td>
+      </tr>
+      <tr>
+        <td><strong>The parity / perfection trap</strong></td>
+        <td>v1.4.9 W5 spent three days chasing perfect MCP parity before scope was manually cut.</td>
+        <td>One producer contract per surface is the parity mechanism; multi-day polishing is a standing scope-cut signal at L0.</td>
+      </tr>
+      <tr>
+        <td><strong>Read-model commitment built on stale evidence (§5C)</strong></td>
+        <td>The 8.8&nbsp;s was measured on the legacy path, pre-DOS-866; LiveStore has no native Tauri adapter (red-team-verified); event-sourcing frameworks solve sync this product doesn't need.</td>
+        <td>ADR-0139 checkpoint: targeted fixes land first, latency re-measured on the live path against &lt;500&nbsp;ms p95; owned Rust projections are the default mechanism; a framework must beat them at L0.</td>
+      </tr>
+      <tr>
+        <td><strong>Overfitting the moment</strong></td>
+        <td>The 2026-05-29 adjudication's meta-warning: don't rewrite on the back of one incident.</td>
+        <td>This case rests on the 19-week asymmetry (§2), the measured chain (§3), and an outside-in derivation (§4) — not on last week. And the moat-validation instrumentation from the examination's product-lens finding rides along: prove the judgment layer is <em>felt</em>.</td>
+      </tr>
+    </tbody>
+  </table>
+</section>
+
+<!-- ============================================================
+     RELATED DOCS
+     ============================================================ -->
+<section class="plans-section plans-section-footer">
+  <header class="plans-section-header">
+    <p class="plans-section-eyebrow">Related</p>
+    <h2 class="plans-section-title">How this doc relates to others.</h2>
+  </header>
+  <ul class="plans-related">
+    <li><strong>.docs/plans/v2.0-case-argument-outline.md</strong> — the gated argument outline this document renders; gate answers recorded there.</li>
+    <li><strong>.docs/plans/v2.0-case-redteam-2026-06-11.md</strong> — red-team synthesis (codex + adversarial reviewer); the amendments applied throughout this document.</li>
+    <li><strong>.docs/plans/v2.0-shell-rebuild-boundary.html</strong> — superseded boundary draft; its keep/kill matrices fold into §5 of this document.</li>
+    <li><strong>.docs/plans/v2.0-shell-audit.md</strong> — the measured shell audit (commit <code>0262d6bb</code>) behind §1–§3.</li>
+    <li><strong>.docs/plans/dailyos-rearchitecture-examination-2026-05-29.md</strong> — the clean-sheet examination; its "decouple cheap-certain from contested" conclusion and app-as-control-plane finding carry into §5.</li>
+    <li><strong>.docs/plans/dos-866-l0-packet.md</strong> — the starvation-class fix whose write-side shape §5C builds on.</li>
+    <li><strong>.docs/decisions/0130-surface-independent-composition-contract.md</strong> — the composition contract §4 shows the industry converging on.</li>
+    <li><strong>.docs/design/product/</strong> — MISSION, VISION, PRODUCT-THESIS, PHILOSOPHY, PRINCIPLES: the category §1 argues from.</li>
+    <li><strong>.docs/plans/AUTHORING.md</strong> — Tier 1 ruleset this doc is authored under.</li>
+  </ul>
+</section>
+
+<!-- ============================================================
+     FINIS — see _patterns/finis.html
+     ============================================================ -->
+<div class="finis">
+  <div class="finis-mark">CATEGORY · JOURNEY · SCALE · GREENFIELD</div>
+  <div class="finis-date">v2.0 — The Case for the Rebuild · 2026-06-11</div>
+  <div class="finis-caption">Keep everything below services/. Rebuild everything between the store and the eyes.</div>
+</div>
+
+</div><!-- /.plans-shell -->
+</main>
+</div><!-- /.MagazinePageLayout_magazinePage -->
+</body>
+</html>
