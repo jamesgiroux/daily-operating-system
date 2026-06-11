@@ -34,16 +34,16 @@ import {
   Telescope,
   Users,
 } from "lucide-react";
+import { MarginSection } from "@/components/editorial/MarginSection";
 import { EditorialLoading } from "@/components/editorial/EditorialLoading";
 import { EditorialError } from "@/components/editorial/EditorialError";
 import { EditorialEmpty } from "@/components/editorial/EditorialEmpty";
 import { FinisMarker } from "@/components/editorial/FinisMarker";
 import { ReactBlockRenderer } from "@/components/composition/ReactBlockRenderer";
 import { FolioRefreshButton } from "@/components/ui/folio-refresh-button";
-import { EditableText } from "@/components/ui/EditableText";
 import { Segmented } from "@/components/ui/Segmented";
 import { Switch } from "@/components/ui/Switch";
-import { useChapterLayout, type RenderableCompositionBlock, type RenderableCompositionSection } from "@/hooks/useChapterLayout";
+import { useChapterLayout, type RenderableCompositionBlock } from "@/hooks/useChapterLayout";
 import { useProjectedComposition } from "@/hooks/useProjectedComposition";
 import { useRegisterMagazineShell, useUpdateFolioVolatile } from "@/hooks/useMagazineShell";
 import type { ProjectedBlock } from "@/services/composition/contracts";
@@ -53,16 +53,24 @@ import pageStyles from "./AccountDetailPage.module.css";
 
 const SECTION_ICONS: Record<string, ReactNode> = {
   headline: <AlignLeft size={18} strokeWidth={1.5} />,
+  "your-assessment": <Activity size={18} strokeWidth={1.5} />,
+  "on-track": <Award size={18} strokeWidth={1.5} />,
+  "needs-attention": <Eye size={18} strokeWidth={1.5} />,
   outlook: <Telescope size={18} strokeWidth={1.5} />,
-  "state-of-play": <Activity size={18} strokeWidth={1.5} />,
+  "relationship-health": <Activity size={18} strokeWidth={1.5} />,
+  "about-intelligence": <FileText size={18} strokeWidth={1.5} />,
+  thesis: <AlignLeft size={18} strokeWidth={1.5} />,
   "the-room": <Users size={18} strokeWidth={1.5} />,
-  "whats-next": <Briefcase size={18} strokeWidth={1.5} />,
-  "watch-list": <Eye size={18} strokeWidth={1.5} />,
+  "what-matters": <Compass size={18} strokeWidth={1.5} />,
   "value-commitments": <Award size={18} strokeWidth={1.5} />,
-  "strategic-landscape": <Compass size={18} strokeWidth={1.5} />,
-  "the-record": <Activity size={18} strokeWidth={1.5} />,
+  "their-voice": <Users size={18} strokeWidth={1.5} />,
+  "commercial-shape": <Briefcase size={18} strokeWidth={1.5} />,
+  "technical-shape": <Compass size={18} strokeWidth={1.5} />,
+  "relationship-fabric": <Users size={18} strokeWidth={1.5} />,
+  "about-dossier": <FileText size={18} strokeWidth={1.5} />,
   "the-work": <Briefcase size={18} strokeWidth={1.5} />,
-  reports: <FileText size={18} strokeWidth={1.5} />,
+  outputs: <FileText size={18} strokeWidth={1.5} />,
+  "the-record": <Activity size={18} strokeWidth={1.5} />,
 };
 
 function accountNameFromBlocks(blocks: ProjectedBlock[], accountId: string | undefined): string {
@@ -376,20 +384,6 @@ export default function AccountDetailPage() {
     );
   }
 
-  function sectionTitle(section: RenderableCompositionSection) {
-    if (!editMode || section.coreLocked) {
-      return <h2 className={pageStyles.compositionSectionTitle}>{section.label}</h2>;
-    }
-    return (
-      <EditableText
-        value={section.label}
-        as="h2"
-        multiline={false}
-        className={pageStyles.compositionSectionTitle}
-        onChange={(value) => layout.setSectionLabel(section.section.section_id, value)}
-      />
-    );
-  }
 
   return (
     <main
@@ -458,58 +452,34 @@ export default function AccountDetailPage() {
           return null;
         }
 
-        // StateOfPlay and WatchList render their own ChapterHeading (the
-        // production look) — the page keeps only the margin label for those
-        // chapters instead of stacking a second title on top.
-        const componentOwnsHeading =
-          (section.section_id === "state-of-play" ||
-            section.section_id === "watch-list" ||
-            section.section_id === "outlook") &&
-          blocks.some((item) => !!item.block.payload.intelligence);
-
+        // Main-branch layout: the shared MarginSection grid owns sidebar
+        // label + content widths; block ChapterHeadings own the titles.
         return (
-          <section
-            key={section.section_id}
-            id={section.section_id}
-            className={pageStyles.compositionSection}
-            data-section-id={section.section_id}
-            data-section-layout={section.layout}
-            data-section-salience={section.salience.band}
-          >
-            <div className={pageStyles.compositionSectionLabel}>{renderableSection.label}</div>
-            <div className={pageStyles.compositionSectionBody}>
-              {(!componentOwnsHeading || editMode) && (
-                <header className={pageStyles.compositionSectionHeader}>
-                  <div>
-                    {!componentOwnsHeading && sectionTitle(renderableSection)}
-                    {editMode && (
-                      <label className={pageStyles.compositionSectionVisibility}>
-                        <Switch
-                          checked
-                          disabled={renderableSection.coreLocked}
-                          onCheckedChange={(checked) => layout.setSectionHidden(section.section_id, !checked)}
-                          aria-label={`Toggle section ${renderableSection.label}`}
-                        />
-                        <span>{renderableSection.coreLocked ? "Locked" : "Shown"}</span>
-                      </label>
-                    )}
-                  </div>
-                </header>
+          <MarginSection key={section.section_id} id={section.section_id} label={renderableSection.label}>
+            {editMode && (
+              <label className={pageStyles.compositionSectionVisibility}>
+                <Switch
+                  checked
+                  disabled={renderableSection.coreLocked}
+                  onCheckedChange={(checked) => layout.setSectionHidden(section.section_id, !checked)}
+                  aria-label={`Toggle section ${renderableSection.label}`}
+                />
+                <span>{renderableSection.coreLocked ? "Locked" : "Shown"}</span>
+              </label>
+            )}
+            <div className={pageStyles.compositionBlockStack}>
+              {blocks.length > 0 ? (
+                <SortableContext items={blocks.map((item) => item.block.block_id)} strategy={verticalListSortingStrategy}>
+                  {blocks.map(renderBlock)}
+                </SortableContext>
+              ) : (
+                <div className={pageStyles.compositionDegradedState}>
+                  <p className={pageStyles.compositionStateLabel}>Empty section</p>
+                  <p className={pageStyles.compositionStateText}>No renderable blocks are available for this section.</p>
+                </div>
               )}
-              <div className={pageStyles.compositionBlockStack}>
-                {blocks.length > 0 ? (
-                  <SortableContext items={blocks.map((item) => item.block.block_id)} strategy={verticalListSortingStrategy}>
-                    {blocks.map(renderBlock)}
-                  </SortableContext>
-                ) : (
-                  <div className={pageStyles.compositionDegradedState}>
-                    <p className={pageStyles.compositionStateLabel}>Empty section</p>
-                    <p className={pageStyles.compositionStateText}>No renderable blocks are available for this section.</p>
-                  </div>
-                )}
-              </div>
             </div>
-          </section>
+          </MarginSection>
         );
       })}
       </DndContext>

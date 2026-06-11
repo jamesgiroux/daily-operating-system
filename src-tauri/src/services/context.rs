@@ -1506,12 +1506,45 @@ fn read_account_composition_snapshot_from_db(
         .flatten()
         .map(|(note, _)| note);
     let sentiment = account.user_health_sentiment.as_deref().map(|current| {
+        let history = db
+            .get_sentiment_history(account_id, 90)
+            .ok()
+            .and_then(|rows| serde_json::to_value(rows).ok())
+            .unwrap_or(serde_json::Value::Array(Vec::new()));
+        let sparkline = db
+            .get_health_score_sparkline(account_id, 90)
+            .ok()
+            .and_then(|rows| serde_json::to_value(rows).ok())
+            .unwrap_or(serde_json::Value::Array(Vec::new()));
         serde_json::json!({
             "current": current,
             "setAt": account.sentiment_set_at,
             "note": sentiment_note,
+            "history": history,
+            "sparkline": sparkline,
+            "healthBand": account.health,
         })
     });
+
+    let commercial = Some(serde_json::json!({
+        "arr": account.arr,
+        "renewalDate": account.contract_end,
+    }));
+    let fabric = Some(serde_json::json!({
+        "nps": account.nps,
+        "strategicPrograms": account.strategic_programs_parsed(),
+    }));
+    let record = db
+        .get_account_lifecycle_changes(account_id, 12)
+        .ok()
+        .filter(|rows| !rows.is_empty())
+        .and_then(|rows| serde_json::to_value(rows).ok())
+        .map(|lifecycle_changes| {
+            serde_json::json!({
+                "lifecycleChanges": lifecycle_changes,
+                "recentMeetings": [],
+            })
+        });
 
     let stakeholders = db
         .get_account_stakeholders_full(account_id)
@@ -1543,6 +1576,9 @@ fn read_account_composition_snapshot_from_db(
         sentiment,
         stakeholders,
         technical_footprint: technical_footprint_value,
+        commercial,
+        fabric,
+        record,
     })
 }
 

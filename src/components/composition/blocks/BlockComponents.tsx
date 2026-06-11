@@ -31,7 +31,18 @@ import { StakeholderGrid } from "@/components/entity/StakeholderGrid";
 import { QuoteWall } from "@/components/editorial/QuoteWall";
 import { AccountTechnicalFootprint } from "@/components/account/AccountTechnicalFootprint";
 import { ChapterHeading } from "@/components/editorial/ChapterHeading";
-import type { ConsistencyFinding, HealthOutlookSignals, QuoteWallEntry } from "@/types";
+import { SentimentHero } from "@/components/entity/SentimentHero";
+import { AccountPullQuote } from "@/components/account/AccountPullQuote";
+import { CommercialShape } from "@/components/context/CommercialShape";
+import { RelationshipFabric } from "@/components/context/RelationshipFabric";
+import { UnifiedTimeline } from "@/components/entity/UnifiedTimeline";
+import { ReportCard, ReportFooterNote, ReportGrid } from "@/components/work/WorkSurface";
+import { getAccountReports } from "@/lib/report-config";
+import { useActivePreset } from "@/hooks/useActivePreset";
+import { useNavigate } from "@tanstack/react-router";
+import { buildSentimentView } from "@/hooks/useAccountDetail";
+import { useSentimentBlock } from "@/hooks/useSentimentBlock";
+import type { AccountDetail, ConsistencyFinding, HealthOutlookSignals, QuoteWallEntry, SentimentValue } from "@/types";
 import { useIntelligenceFieldUpdate } from "@/hooks/useIntelligenceFieldUpdate";
 import type { EntityIntelligence } from "@/types";
 
@@ -69,12 +80,72 @@ function useChapterIntelligenceWiring(accountId?: string) {
  * (outlook_panel, on_track) so type components fall through to their own
  * rendering.
  */
-function renderProductionBlock(payload: Payload, accountId?: string): JSX.Element | null {
+function SentimentHeroBlockBody({ payload, accountId }: { payload: Payload; accountId?: string }) {
+  const sentiment = object(payload.sentiment) ?? {};
+  const current = (text(sentiment.current) ?? null) as SentimentValue | null;
+  const writes = useSentimentBlock(accountId, current);
+  const view = buildSentimentView({
+    userHealthSentiment: current,
+    sentimentSetAt: text(sentiment.setAt),
+    sentimentNote: text(sentiment.note),
+    sentimentHistory: Array.isArray(sentiment.history) ? sentiment.history : [],
+    healthSparkline: Array.isArray(sentiment.sparkline) ? sentiment.sparkline : [],
+    health: text(sentiment.healthBand),
+  } as unknown as AccountDetail);
+  return (
+    <SentimentHero
+      view={view}
+      onSetSentiment={writes.onSetSentiment}
+      onAcknowledgeStale={writes.onAcknowledgeStale}
+      onUpdateNote={writes.onUpdateNote}
+    />
+  );
+}
+
+function OutputsBlockBody({ accountId }: { accountId?: string }) {
+  const preset = useActivePreset();
+  const navigate = useNavigate();
+  const reports = getAccountReports(preset?.id);
+  if (!accountId || reports.length === 0) return null;
+  const open = (reportType: string) =>
+    navigate({ to: "/accounts/$accountId/reports/$reportType", params: { accountId, reportType } });
+  return (
+    <>
+      <ChapterHeading title="Outputs" epigraph="Generated reports · open to regenerate" />
+      <ReportGrid>
+        {reports.map((report) => (
+          <ReportCard
+            key={report.reportType}
+            type={report.label}
+            title={report.label}
+            trigger="on-demand"
+            onOpen={() => open(report.reportType)}
+            onRefresh={() => open(report.reportType)}
+          />
+        ))}
+      </ReportGrid>
+      <ReportFooterNote>
+        Full-plan synthesis and export lives in the Report Engine. Open any report above to generate a fresh copy from current intelligence.
+      </ReportFooterNote>
+    </>
+  );
+}
+
+/**
+ * Production-block registry — payload.block names the main-branch component
+ * this block renders through (the blocks model: producers shape content,
+ * blocks are display-only). Returns null for unknown/locally-rendered keys
+ * (outlook_panel, on_track) so type components fall through.
+ */
+function ProductionBlockBody({ payload, accountId }: { payload: Payload; accountId?: string }): JSX.Element | null {
+  const wiring = useChapterIntelligenceWiring(accountId);
   const block = text(payload.block);
-  if (!block) return null;
   const intelligence = chapterIntelligence(payload);
   const glean = (object(payload.gleanSignals) as unknown as HealthOutlookSignals | null) ?? null;
+  if (!block) return null;
   switch (block) {
+    case "sentiment_hero":
+      return <SentimentHeroBlockBody payload={payload} accountId={accountId} />;
     case "triage":
       return (
         <TriageSection
@@ -93,9 +164,18 @@ function renderProductionBlock(payload: Payload, accountId?: string): JSX.Elemen
         />
       );
     case "supporting_tension":
-      return <SupportingTension intelligence={intelligence} gleanSignals={glean} />;
+      return (
+        <>
+          <ChapterHeading title="Health Score vs. Signals" />
+          <SupportingTension intelligence={intelligence} gleanSignals={glean} />
+        </>
+      );
     case "about_intelligence":
       return <AboutIntelligence intelligence={intelligence} gleanSignals={glean} />;
+    case "thesis":
+      return intelligence?.pullQuote ? (
+        <AccountPullQuote intelligence={intelligence} variant="thesis" />
+      ) : null;
     case "stakeholder_grid": {
       const stakeholders = object(payload.stakeholders);
       if (!stakeholders?.stakeholdersFull) return null;
@@ -106,14 +186,49 @@ function renderProductionBlock(payload: Payload, accountId?: string): JSX.Elemen
         />
       );
     }
+    case "what_matters":
+      return intelligence ? (
+        <>
+          <ChapterHeading title="What matters to them" />
+          <StrategicLandscape intelligence={intelligence} onUpdateField={wiring.onUpdateField} />
+        </>
+      ) : null;
+    case "built":
+      return intelligence ? (
+        <>
+          <ChapterHeading title="What we've built together" />
+          <ValueCommitments intelligence={intelligence} onUpdateField={wiring.onUpdateField} />
+        </>
+      ) : null;
+    case "quote_wall":
+      return (
+        <>
+          <ChapterHeading title="Their voice" />
+          <QuoteWall quotes={(Array.isArray(payload.quotes) ? payload.quotes : null) as unknown as QuoteWallEntry[] | null} />
+        </>
+      );
+    case "commercial_shape": {
+      const commercial = object(payload.commercial);
+      return commercial ? (
+        <CommercialShape detail={commercial as unknown as AccountDetail} metadataValues={{}} />
+      ) : null;
+    }
     case "technical_footprint": {
       const footprint = object(payload.technicalFootprint);
       return footprint ? <AccountTechnicalFootprint footprint={footprint as never} /> : null;
     }
-    case "quote_wall":
-      return (
-        <QuoteWall quotes={(Array.isArray(payload.quotes) ? payload.quotes : null) as unknown as QuoteWallEntry[] | null} />
-      );
+    case "relationship_fabric": {
+      const fabric = object(payload.fabric);
+      return fabric ? <RelationshipFabric detail={fabric as unknown as AccountDetail} metadataValues={{}} /> : null;
+    }
+    case "record": {
+      const record = object(payload.record);
+      return record ? (
+        <UnifiedTimeline data={{ recentMeetings: [], ...record } as never} />
+      ) : null;
+    }
+    case "outputs":
+      return <OutputsBlockBody accountId={accountId} />;
     default:
       return null;
   }
@@ -678,11 +793,10 @@ function ClaimSummaryBlock({ block, accountId, entityType, payload, renderedProv
   const intelligence = chapterIntelligence(payload);
   const wiring = useChapterIntelligenceWiring(accountId);
 
-  const production = renderProductionBlock(payload, accountId);
-  if (production) {
+  if (text(payload.block) && !["outlook_panel", "on_track"].includes(text(payload.block) ?? "")) {
     return (
       <BlockShell block={block} accountId={accountId} entityType={entityType} payload={payload} renderedProvenance={renderedProvenance} quiet>
-        {production}
+        <ProductionBlockBody payload={payload} accountId={accountId} />
       </BlockShell>
     );
   }
@@ -764,11 +878,10 @@ function HealthSnapshotBlock({ block, accountId, entityType, payload, renderedPr
   const items = array(payload.items);
   const intelligence = chapterIntelligence(payload);
 
-  const production = renderProductionBlock(payload, accountId);
-  if (production) {
+  if (text(payload.block) && !["outlook_panel", "on_track"].includes(text(payload.block) ?? "")) {
     return (
       <BlockShell block={block} accountId={accountId} entityType={entityType} payload={payload} renderedProvenance={renderedProvenance} quiet>
-        {production}
+        <ProductionBlockBody payload={payload} accountId={accountId} />
       </BlockShell>
     );
   }
@@ -866,11 +979,10 @@ function RiskCalloutBlock({ block, accountId, entityType, payload, renderedProve
   const intelligence = chapterIntelligence(payload);
   const wiring = useChapterIntelligenceWiring(accountId);
 
-  const production = renderProductionBlock(payload, accountId);
-  if (production) {
+  if (text(payload.block) && !["outlook_panel", "on_track"].includes(text(payload.block) ?? "")) {
     return (
       <BlockShell block={block} accountId={accountId} entityType={entityType} payload={payload} renderedProvenance={renderedProvenance} quiet>
-        {production}
+        <ProductionBlockBody payload={payload} accountId={accountId} />
       </BlockShell>
     );
   }
@@ -924,11 +1036,10 @@ function RiskCalloutBlock({ block, accountId, entityType, payload, renderedProve
 
 function RelationshipMapBlock({ block, accountId, entityType, payload, renderedProvenance }: BlockComponentProps) {
   const nodes = array(payload.nodes);
-  const production = renderProductionBlock(payload, accountId);
-  if (production) {
+  if (text(payload.block) && !["outlook_panel", "on_track"].includes(text(payload.block) ?? "")) {
     return (
       <BlockShell block={block} accountId={accountId} entityType={entityType} payload={payload} renderedProvenance={renderedProvenance} quiet>
-        {production}
+        <ProductionBlockBody payload={payload} accountId={accountId} />
       </BlockShell>
     );
   }
@@ -1006,11 +1117,10 @@ function ActionListBlock({ block, accountId, entityType, payload, renderedProven
 
 function EvidenceListBlock({ block, accountId, entityType, payload, renderedProvenance }: BlockComponentProps) {
   const items = array(payload.items);
-  const production = renderProductionBlock(payload, accountId);
-  if (production) {
+  if (text(payload.block) && !["outlook_panel", "on_track"].includes(text(payload.block) ?? "")) {
     return (
       <BlockShell block={block} accountId={accountId} entityType={entityType} payload={payload} renderedProvenance={renderedProvenance} quiet>
-        {production}
+        <ProductionBlockBody payload={payload} accountId={accountId} />
       </BlockShell>
     );
   }

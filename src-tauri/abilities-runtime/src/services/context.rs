@@ -1039,6 +1039,15 @@ pub struct AccountCompositionSnapshot {
     /// Technical footprint row (camelCase), production component contract.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub technical_footprint: Option<serde_json::Value>,
+    /// Commercial shape fields: { arr, renewalDate }.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub commercial: Option<serde_json::Value>,
+    /// Relationship fabric fields: { nps, strategicPrograms }.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub fabric: Option<serde_json::Value>,
+    /// Record/timeline bundle: { lifecycleChanges, recentMeetings }.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub record: Option<serde_json::Value>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]

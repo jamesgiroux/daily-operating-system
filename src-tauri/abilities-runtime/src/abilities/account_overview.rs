@@ -31,27 +31,33 @@ use crate::services::context::{
 };
 use crate::types::{
     prompt_input_sensitivity_allowed, subject_ref_from_json, ClaimState, ClaimSubjectRef,
-    ClaimSensitivity, IntelligenceClaim, SurfacingState,
+    IntelligenceClaim, SurfacingState,
 };
 
 const ABILITY_NAME: &str = "dailyos/account-overview";
 const ABILITY_SCHEMA_VERSION: u32 = 1;
 const ACCOUNT_CLAIM_DEPTH: usize = 3;
-const MAX_TRANSCRIPT_QUOTE_ITEMS: usize = 5;
-const TRANSCRIPT_QUOTE_REDACTION_POLICY: &str = "sensitivity_ceiling";
 
-const VARIANT_D_SECTIONS: [(&str, &str); 11] = [
+const VARIANT_D_SECTIONS: [(&str, &str); 19] = [
     ("headline", "Headline"),
+    ("your-assessment", "Your assessment"),
+    ("on-track", "On Track"),
+    ("needs-attention", "Needs attention"),
     ("outlook", "Outlook"),
-    ("state-of-play", "On track"),
-    ("the-room", "The room"),
-    ("whats-next", "What's next"),
-    ("watch-list", "Watch list"),
+    ("relationship-health", "The Read"),
+    ("about-intelligence", "About this intelligence"),
+    ("thesis", "Thesis"),
+    ("the-room", "The Room"),
+    ("what-matters", "What matters"),
     ("value-commitments", "What we've built"),
-    ("strategic-landscape", "What matters"),
-    ("the-record", "The record"),
-    ("the-work", "The work"),
-    ("reports", "Reports"),
+    ("their-voice", "Their voice"),
+    ("commercial-shape", "Commercial shape"),
+    ("technical-shape", "Technical shape"),
+    ("relationship-fabric", "Relationship fabric"),
+    ("about-dossier", "About the dossier"),
+    ("the-work", "The Work"),
+    ("outputs", "Outputs"),
+    ("the-record", "The Record"),
 ];
 
 #[derive(Debug, Clone, Deserialize, Serialize, JsonSchema)]
@@ -97,16 +103,7 @@ struct SnapshotReadOutcome {
     degraded_reason: Option<String>,
 }
 
-struct TranscriptQuoteEvidence<'a> {
-    projection: &'a ClaimProjection,
-    quote: TranscriptVerifiedQuote,
-}
 
-struct TranscriptVerifiedQuote {
-    text: String,
-    start_char: u64,
-    end_char: u64,
-}
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum ClaimPlacement {
@@ -453,290 +450,129 @@ fn build_composition(
         salience(0.95, SalienceBand::Critical, "account masthead"),
     ));
 
-    let outlook_claims = projections
-        .iter()
-        .filter(|projection| projection.placement == ClaimPlacement::Health)
-        .collect::<Vec<_>>();
-    sections.push(variant_section(
-        "outlook",
-        "Outlook",
-        build_claim_or_snapshot_section_blocks(
+    // Production spine: one section per main-branch chapter, claims routed by
+    // placement to their natural section, every other section driven by the
+    // snapshot domain payloads. Section emission is uniform: the group builder
+    // decides whether the section has content.
+    let claims_for = |placements: &[ClaimPlacement]| -> Vec<&ClaimProjection> {
+        projections
+            .iter()
+            .filter(|projection| placements.contains(&projection.placement))
+            .collect()
+    };
+    type SectionPlanRow<'p> = (
+        &'static str,
+        &'static str,
+        Vec<&'p ClaimProjection>,
+        SectionLayout,
+        f32,
+        SalienceBand,
+        &'static str,
+    );
+    let plan: [SectionPlanRow<'_>; 16] = [
+        ("your-assessment", "Your assessment", Vec::new(), SectionLayout::Stacked, 0.92, SalienceBand::Critical, "user assessment"),
+        ("on-track", "On Track", claims_for(&[ClaimPlacement::Win, ClaimPlacement::Value, ClaimPlacement::Overview]), SectionLayout::Stacked, 0.84, SalienceBand::Important, "what is on track"),
+        ("needs-attention", "Needs attention", claims_for(&[ClaimPlacement::Risk]), SectionLayout::Stacked, 0.9, SalienceBand::Critical, "needs attention"),
+        ("outlook", "Outlook", claims_for(&[ClaimPlacement::Health]), SectionLayout::Stacked, 0.86, SalienceBand::Important, "renewal outlook"),
+        ("relationship-health", "The Read", Vec::new(), SectionLayout::Stacked, 0.6, SalienceBand::Contextual, "health vs signals"),
+        ("about-intelligence", "About this intelligence", Vec::new(), SectionLayout::Stacked, 0.3, SalienceBand::Background, "about this intelligence"),
+        ("thesis", "Thesis", Vec::new(), SectionLayout::Stacked, 0.7, SalienceBand::Important, "editorial thesis"),
+        ("the-room", "The Room", claims_for(&[ClaimPlacement::Relationship]), SectionLayout::Stacked, 0.72, SalienceBand::Important, "stakeholders"),
+        ("what-matters", "What matters", Vec::new(), SectionLayout::Stacked, 0.62, SalienceBand::Contextual, "what matters to them"),
+        ("value-commitments", "What we've built", claims_for(&[ClaimPlacement::Win, ClaimPlacement::Value]), SectionLayout::Stacked, 0.72, SalienceBand::Important, "value and commitments"),
+        ("their-voice", "Their voice", Vec::new(), SectionLayout::Stacked, 0.5, SalienceBand::Contextual, "their voice"),
+        ("commercial-shape", "Commercial shape", Vec::new(), SectionLayout::Stacked, 0.55, SalienceBand::Contextual, "commercial shape"),
+        ("technical-shape", "Technical shape", Vec::new(), SectionLayout::Stacked, 0.45, SalienceBand::Background, "technical shape"),
+        ("relationship-fabric", "Relationship fabric", Vec::new(), SectionLayout::Stacked, 0.45, SalienceBand::Background, "relationship fabric"),
+        ("about-dossier", "About the dossier", Vec::new(), SectionLayout::Stacked, 0.25, SalienceBand::Background, "about the dossier"),
+        ("the-work", "The Work", claims_for(&[ClaimPlacement::Commitment]), SectionLayout::Stacked, 0.62, SalienceBand::Important, "account work"),
+    ];
+    for (section_id, label, section_claims, layout, weight, band, reason) in plan {
+        let section_index = sections.len();
+        let blocks = build_claim_or_snapshot_section_blocks(
             ctx,
             input,
-            "outlook",
-            1,
-            outlook_claims,
-            snapshot_fields_for_section(snapshot, "outlook"),
+            section_id,
+            section_index,
+            section_claims,
+            Vec::new(),
             snapshot,
             EmptySectionCopy {
-                title: "No current outlook signals",
-                body: "DailyOS has not found current account-health signals with renderable provenance.",
-                status: "source_gap",
+                title: "No content yet",
+                body: "DailyOS has not found renderable content for this chapter.",
+                status: "empty",
             },
             subject,
             invocation_id,
             provenance_builder,
-        )?,
-        SectionLayout::Stacked,
-        salience(0.86, SalienceBand::Important, "account outlook"),
-    ));
+        )?;
+        sections.push(variant_section(section_id, label, blocks, layout, salience(weight, band, reason)));
+    }
 
-    let state_claims = projections
-        .iter()
-        .filter(|projection| {
-            matches!(
-                projection.placement,
-                ClaimPlacement::Health
-                    | ClaimPlacement::Risk
-                    | ClaimPlacement::Win
-                    | ClaimPlacement::Value
-                    | ClaimPlacement::Overview
+    // Outputs: report grid is frontend config keyed by account — the block is
+    // a pure marker the renderer resolves.
+    {
+        let section_index = sections.len();
+        let composition_block_path = format!("/sections/{section_index}/blocks/0");
+        let mut block = Block::new(
+            BlockId::new(block_id(input, "outputs", "action_list", "outputs")),
+            BlockType::ActionList,
+            json!({ "block": "outputs", "items": [] }),
+            Vec::new(),
+            ProvenanceRef::new(
+                invocation_id,
+                FieldPath::new(&composition_block_path).map_err(field_error)?,
+            ),
+            None,
+        )
+        .map_err(block_error)?;
+        block.field_bindings = vec![display_only_binding("/block")?];
+        block.salience = salience(0.35, SalienceBand::Background, "report outputs");
+        attribute_block(provenance_builder, &composition_block_path, subject, Vec::new())?;
+        sections.push(variant_section(
+            "outputs",
+            "Outputs",
+            vec![block],
+            SectionLayout::Grid,
+            salience(0.35, SalienceBand::Background, "report outputs"),
+        ));
+    }
+
+    // The Record: production UnifiedTimeline over the record bundle.
+    {
+        let section_index = sections.len();
+        let record_value = snapshot.and_then(|snap| snap.record.clone());
+        let mut blocks = Vec::new();
+        if let Some(record) = record_value {
+            let composition_block_path = format!("/sections/{section_index}/blocks/0");
+            let mut block = Block::new(
+                BlockId::new(block_id(input, "the-record", "evidence_list", "record")),
+                BlockType::EvidenceList,
+                json!({ "block": "record", "record": record }),
+                Vec::new(),
+                ProvenanceRef::new(
+                    invocation_id,
+                    FieldPath::new(&composition_block_path).map_err(field_error)?,
+                ),
+                None,
             )
-        })
-        .collect::<Vec<_>>();
-    sections.push(variant_section(
-        "state-of-play",
-        "State of play",
-        build_claim_or_snapshot_section_blocks(
-            ctx,
-            input,
-            "state-of-play",
-            2,
-            state_claims,
-            snapshot_fields_for_section(snapshot, "state-of-play"),
-            snapshot,
-            EmptySectionCopy {
-                title: "No active state-of-play signals",
-                body: "No active account claims are currently eligible for this surface.",
-                status: "empty",
-            },
-            subject,
-            invocation_id,
-            provenance_builder,
-        )?,
-        SectionLayout::Stacked,
-        salience(0.82, SalienceBand::Important, "current account state"),
-    ));
-
-    let room_claims = projections
-        .iter()
-        .filter(|projection| projection.placement == ClaimPlacement::Relationship)
-        .collect::<Vec<_>>();
-    sections.push(variant_section(
-        "the-room",
-        "The room",
-        build_claim_or_snapshot_section_blocks(
-            ctx,
-            input,
-            "the-room",
-            3,
-            room_claims,
-            snapshot_fields_for_section(snapshot, "the-room"),
-            snapshot,
-            EmptySectionCopy {
-                title: "No room signals",
-                body: "Stakeholder and relationship inputs are not yet grounded for this account.",
-                status: "empty",
-            },
-            subject,
-            invocation_id,
-            provenance_builder,
-        )?,
-        SectionLayout::Grid,
-        salience(0.72, SalienceBand::Contextual, "account relationships"),
-    ));
-
-    let next_claims = projections
-        .iter()
-        .filter(|projection| projection.placement == ClaimPlacement::Commitment)
-        .collect::<Vec<_>>();
-    sections.push(variant_section(
-        "whats-next",
-        "What's next",
-        build_claim_or_snapshot_section_blocks(
-            ctx,
-            input,
-            "whats-next",
-            4,
-            next_claims,
-            snapshot_fields_for_section(snapshot, "whats-next"),
-            snapshot,
-            EmptySectionCopy {
-                title: "No open next steps",
-                body: "There are no renderable commitments or next-step records for this account.",
-                status: "empty",
-            },
-            subject,
-            invocation_id,
-            provenance_builder,
-        )?,
-        SectionLayout::Stacked,
-        salience(0.8, SalienceBand::Important, "next account work"),
-    ));
-
-    let watch_claims = projections
-        .iter()
-        .filter(|projection| projection.placement == ClaimPlacement::Risk)
-        .collect::<Vec<_>>();
-    sections.push(variant_section(
-        "watch-list",
-        "Watch list",
-        build_claim_or_snapshot_section_blocks(
-            ctx,
-            input,
-            "watch-list",
-            5,
-            watch_claims,
-            snapshot_fields_for_section(snapshot, "watch-list"),
-            snapshot,
-            EmptySectionCopy {
-                title: "No active watch-list signals",
-                body: "No active risk or watch-list claims are eligible for this account.",
-                status: "empty",
-            },
-            subject,
-            invocation_id,
-            provenance_builder,
-        )?,
-        SectionLayout::Stacked,
-        salience(0.76, SalienceBand::Important, "watch-list signals"),
-    ));
-
-    let value_claims = projections
-        .iter()
-        .filter(|projection| {
-            matches!(
-                projection.placement,
-                ClaimPlacement::Value | ClaimPlacement::Win | ClaimPlacement::Commitment
-            )
-        })
-        .collect::<Vec<_>>();
-    sections.push(variant_section(
-        "value-commitments",
-        "Value commitments",
-        build_claim_or_snapshot_section_blocks(
-            ctx,
-            input,
-            "value-commitments",
-            6,
-            value_claims,
-            snapshot_fields_for_section(snapshot, "value-commitments"),
-            snapshot,
-            EmptySectionCopy {
-                title: "No commitments with current evidence",
-                body: "DailyOS has not found value or commitment claims with current evidence.",
-                status: "source_gap",
-            },
-            subject,
-            invocation_id,
-            provenance_builder,
-        )?,
-        SectionLayout::Stacked,
-        salience(0.72, SalienceBand::Important, "value and commitments"),
-    ));
-
-    let strategic_claims = projections
-        .iter()
-        .filter(|projection| {
-            matches!(
-                projection.claim_type,
-                ClaimType::CompanyContext
-                    | ClaimType::AccountFact
-                    | ClaimType::EntityIdentity
-                    | ClaimType::EntitySummary
-                    | ClaimType::UserNote
-            )
-        })
-        .collect::<Vec<_>>();
-    sections.push(variant_section(
-        "strategic-landscape",
-        "Strategic landscape",
-        build_claim_or_snapshot_section_blocks(
-            ctx,
-            input,
-            "strategic-landscape",
-            7,
-            strategic_claims,
-            snapshot_fields_for_section(snapshot, "strategic-landscape"),
-            snapshot,
-            EmptySectionCopy {
-                title: "Strategic context not yet grounded",
-                body: "No source-backed strategic context is available for this account.",
-                status: "needs_grounding",
-            },
-            subject,
-            invocation_id,
-            provenance_builder,
-        )?,
-        SectionLayout::Stacked,
-        salience(0.62, SalienceBand::Contextual, "strategic account context"),
-    ));
-
-    sections.push(variant_section(
-        "the-record",
-        "The record",
-        build_record_section_blocks(
-            ctx,
-            input,
-            projections,
-            snapshot_fields_for_section(snapshot, "the-record"),
-            snapshot
-                .and_then(|snap| snap.glean_signals.as_ref())
-                .and_then(|glean| glean.get("quoteWall"))
-                .filter(|quotes| quotes.as_array().is_some_and(|rows| !rows.is_empty()))
-                .cloned(),
-            8,
-            subject,
-            invocation_id,
-            provenance_builder,
-        )?,
-        SectionLayout::Stacked,
-        salience(0.58, SalienceBand::Contextual, "account evidence record"),
-    ));
-
-    let work_claims = projections
-        .iter()
-        .filter(|projection| projection.placement == ClaimPlacement::Commitment)
-        .collect::<Vec<_>>();
-    sections.push(variant_section(
-        "the-work",
-        "The work",
-        build_claim_or_snapshot_section_blocks(
-            ctx,
-            input,
-            "the-work",
-            9,
-            work_claims,
-            snapshot_fields_for_section(snapshot, "the-work"),
-            snapshot,
-            EmptySectionCopy {
-                title: "No active work items",
-                body: "No active work records are currently grounded for this account.",
-                status: "empty",
-            },
-            subject,
-            invocation_id,
-            provenance_builder,
-        )?,
-        SectionLayout::Stacked,
-        salience(0.46, SalienceBand::Background, "account work"),
-    ));
-
-    sections.push(variant_section(
-        "reports",
-        "Reports",
-        build_reports_section_blocks(
-            ctx,
-            input,
-            snapshot_fields_for_section(snapshot, "reports"),
-            10,
-            subject,
-            invocation_id,
-            provenance_builder,
-        )?,
-        SectionLayout::Grid,
-        salience(0.38, SalienceBand::Background, "account reports"),
-    ));
+            .map_err(block_error)?;
+            block.field_bindings = vec![
+                display_only_binding("/block")?,
+                display_only_binding("/record")?,
+            ];
+            block.salience = salience(0.4, SalienceBand::Background, "account record");
+            attribute_block(provenance_builder, &composition_block_path, subject, Vec::new())?;
+            blocks.push(block);
+        }
+        sections.push(variant_section(
+            "the-record",
+            "The Record",
+            blocks,
+            SectionLayout::Stacked,
+            salience(0.4, SalienceBand::Background, "account record"),
+        ));
+    }
 
     let section_count = sections.len();
     let generated_at = ctx.services().clock.now();
@@ -913,6 +749,7 @@ fn section_intelligence_subset(
 ) -> Option<serde_json::Value> {
     let intelligence = intelligence?.as_object()?;
     let content_keys: &[&str] = match section_id {
+        "on-track" => &["currentState", "executiveAssessment", "pullQuote"],
         "outlook" => &[
             "agreementOutlook",
             "contractContext",
@@ -920,17 +757,16 @@ fn section_intelligence_subset(
             "health",
             "consistencyFindings",
         ],
-        "state-of-play" => &["currentState", "executiveAssessment", "pullQuote"],
         "the-room" => &["stakeholderInsights"],
-        "watch-list" => &["risks", "recentWins", "currentState"],
-        "value-commitments" => &["valueDelivered", "successMetrics", "openCommitments"],
-        "strategic-landscape" => &[
+        "what-matters" => &[
             "strategicPriorities",
             "competitiveContext",
             "marketContext",
             "regulatoryContext",
         ],
-        "whats-next" | "the-work" => &["recommendedActions"],
+        "value-commitments" => &["valueDelivered", "successMetrics", "openCommitments"],
+        "thesis" => &["pullQuote"],
+        "the-work" => &["recommendedActions"],
         _ => return None,
     };
     let mut subset = serde_json::Map::new();
@@ -988,6 +824,8 @@ fn section_block_groups<'a>(
             "sentiment" => snap.sentiment.clone(),
             "stakeholders" => snap.stakeholders.clone(),
             "technicalFootprint" => snap.technical_footprint.clone(),
+            "commercial" => snap.commercial.clone(),
+            "fabric" => snap.fabric.clone(),
             _ => None,
         }
     };
@@ -1009,8 +847,6 @@ fn section_block_groups<'a>(
             Some(serde_json::Value::Object(out))
         }
     };
-    // Build the extras map for a production block: the "block" discriminator
-    // names the main-branch component; entries with None values are omitted.
     let extras = |block: &str, entries: Vec<(&str, Option<serde_json::Value>)>| {
         let mut map = serde_json::Map::new();
         map.insert("block".to_string(), serde_json::json!(block));
@@ -1021,95 +857,63 @@ fn section_block_groups<'a>(
         }
         map
     };
+    // A domain-only block: emitted iff its payload exists (extras > 1 key).
+    let domain_block = |block_type: BlockType,
+                        group_key: &'static str,
+                        block: &str,
+                        entries: Vec<(&str, Option<serde_json::Value>)>,
+                        weight: f32,
+                        band: SalienceBand,
+                        reason: &'static str| {
+        let has_content = entries.iter().any(|(_, value)| value.is_some());
+        SectionBlockGroup {
+            block_type,
+            item_key: "items",
+            intent: None,
+            group_key,
+            projections: Vec::new(),
+            salience_value: weight,
+            salience_band: band,
+            salience_reason: reason,
+            intelligence: None,
+            extras: if has_content {
+                extras(block, entries)
+            } else {
+                serde_json::Map::new()
+            },
+        }
+    };
 
     match section_id {
-        "outlook" => vec![
-            SectionBlockGroup {
-                block_type: BlockType::HealthSnapshot,
-                item_key: "items",
-                intent: None,
-                group_key: "outlook",
-                projections: all(),
-                salience_value: 0.82,
-                salience_band: SalienceBand::Important,
-                salience_reason: "health claims",
-                intelligence: subset(),
-                extras: extras("outlook_panel", vec![]),
-            },
-            SectionBlockGroup {
-                block_type: BlockType::HealthSnapshot,
-                item_key: "items",
-                intent: None,
-                group_key: "supporting-tension",
-                projections: Vec::new(),
-                salience_value: 0.6,
-                salience_band: SalienceBand::Contextual,
-                salience_reason: "health vs signals",
-                intelligence: None,
-                extras: {
-                    // Production SupportingTension: intelligence.health + glean.
-                    let glean = domain("gleanSignals");
-                    let health = intel_keys(&["health", "enrichedAt"]);
-                    if glean.is_none() && health.is_none() {
-                        serde_json::Map::new()
-                    } else {
-                        extras(
-                            "supporting_tension",
-                            vec![("intelligence", health), ("gleanSignals", glean)],
-                        )
-                    }
-                },
-            },
-            SectionBlockGroup {
-                block_type: BlockType::HealthSnapshot,
-                item_key: "items",
-                intent: None,
-                group_key: "about-intelligence",
-                projections: Vec::new(),
-                salience_value: 0.3,
-                salience_band: SalienceBand::Background,
-                salience_reason: "about this intelligence",
-                intelligence: None,
-                extras: {
-                    let about = intel_keys(&[
-                        "enrichedAt",
-                        "sourceFileCount",
-                        "sourceManifest",
-                    ]);
-                    if about.is_none() {
-                        serde_json::Map::new()
-                    } else {
-                        extras(
-                            "about_intelligence",
-                            vec![
-                                ("intelligence", about),
-                                ("gleanSignals", domain("gleanSignals")),
-                            ],
-                        )
-                    }
-                },
-            },
-        ],
-        "state-of-play" => vec![
-            SectionBlockGroup {
-                block_type: BlockType::ClaimSummary,
-                item_key: "items",
-                intent: Some("context"),
-                group_key: "state",
-                projections: all(),
-                salience_value: 0.82,
-                salience_band: SalienceBand::Important,
-                salience_reason: "state-of-play claims",
-                intelligence: subset(),
-                extras: extras("on_track", vec![]),
-            },
+        "your-assessment" => vec![domain_block(
+            BlockType::HealthSnapshot,
+            "sentiment-hero",
+            "sentiment_hero",
+            vec![("sentiment", domain("sentiment"))],
+            0.92,
+            SalienceBand::Critical,
+            "user assessment",
+        )],
+        "on-track" => vec![SectionBlockGroup {
+            block_type: BlockType::ClaimSummary,
+            item_key: "items",
+            intent: Some("context"),
+            group_key: "on-track",
+            projections: all(),
+            salience_value: 0.84,
+            salience_band: SalienceBand::Important,
+            salience_reason: "what is on track",
+            intelligence: subset(),
+            extras: extras("on_track", vec![]),
+        }],
+        "needs-attention" => vec![
             SectionBlockGroup {
                 block_type: BlockType::RiskCallout,
                 item_key: "items",
                 intent: Some("risk"),
                 group_key: "triage",
-                projections: Vec::new(),
-                salience_value: 0.88,
+                projections: all(),
+                salience_value: 0.9,
                 salience_band: SalienceBand::Critical,
                 salience_reason: "needs attention",
                 intelligence: None,
@@ -1164,83 +968,153 @@ fn section_block_groups<'a>(
                 },
             },
         ],
+        "outlook" => vec![SectionBlockGroup {
+            block_type: BlockType::HealthSnapshot,
+            item_key: "items",
+            intent: None,
+            group_key: "outlook",
+            projections: all(),
+            salience_value: 0.86,
+            salience_band: SalienceBand::Important,
+            salience_reason: "renewal outlook",
+            intelligence: subset(),
+            extras: extras("outlook_panel", vec![]),
+        }],
+        "relationship-health" => vec![domain_block(
+            BlockType::HealthSnapshot,
+            "supporting-tension",
+            "supporting_tension",
+            vec![
+                ("intelligence", intel_keys(&["health", "enrichedAt"])),
+                ("gleanSignals", domain("gleanSignals")),
+            ],
+            0.6,
+            SalienceBand::Contextual,
+            "health vs signals",
+        )],
+        "about-intelligence" => vec![domain_block(
+            BlockType::HealthSnapshot,
+            "about-intelligence",
+            "about_intelligence",
+            vec![
+                (
+                    "intelligence",
+                    intel_keys(&["enrichedAt", "sourceFileCount", "sourceManifest"]),
+                ),
+                ("gleanSignals", domain("gleanSignals")),
+            ],
+            0.3,
+            SalienceBand::Background,
+            "about this intelligence",
+        )],
+        "thesis" => vec![domain_block(
+            BlockType::ClaimSummary,
+            "thesis",
+            "thesis",
+            vec![("intelligence", intel_keys(&["pullQuote", "executiveAssessment", "enrichedAt"]))],
+            0.7,
+            SalienceBand::Important,
+            "editorial thesis",
+        )],
         "the-room" => vec![SectionBlockGroup {
             block_type: BlockType::RelationshipMap,
             item_key: "nodes",
             intent: None,
             group_key: "room",
             projections: all(),
-            salience_value: 0.62,
-            salience_band: SalienceBand::Contextual,
-            salience_reason: "relationship claims",
+            salience_value: 0.72,
+            salience_band: SalienceBand::Important,
+            salience_reason: "stakeholders",
             intelligence: subset(),
             extras: extras("stakeholder_grid", vec![("stakeholders", domain("stakeholders"))]),
         }],
-        "watch-list" => vec![SectionBlockGroup {
-            block_type: BlockType::RiskCallout,
+        "what-matters" => vec![SectionBlockGroup {
+            block_type: BlockType::ClaimSummary,
             item_key: "items",
-            intent: Some("risk"),
-            group_key: "risks",
-            projections: all(),
-            salience_value: 0.9,
-            salience_band: SalienceBand::Critical,
-            salience_reason: "risk claims",
+            intent: Some("context"),
+            group_key: "what-matters",
+            projections: Vec::new(),
+            salience_value: 0.62,
+            salience_band: SalienceBand::Contextual,
+            salience_reason: "what matters to them",
             intelligence: subset(),
-            extras: serde_json::Map::new(),
+            extras: extras("what_matters", vec![]),
         }],
         "value-commitments" => vec![SectionBlockGroup {
             block_type: BlockType::ClaimSummary,
             item_key: "items",
             intent: Some("value"),
-            group_key: "value",
+            group_key: "built",
             projections: all(),
             salience_value: 0.72,
             salience_band: SalienceBand::Important,
-            salience_reason: "value and commitment claims",
+            salience_reason: "value and commitments",
             intelligence: subset(),
-            extras: serde_json::Map::new(),
+            extras: extras("built", vec![]),
         }],
-        "strategic-landscape" => vec![
-            SectionBlockGroup {
-                block_type: BlockType::ClaimSummary,
-                item_key: "items",
-                intent: Some("context"),
-                group_key: "strategy",
-                projections: all(),
-                salience_value: 0.58,
-                salience_band: SalienceBand::Contextual,
-                salience_reason: "strategic context claims",
-                intelligence: subset(),
-                extras: serde_json::Map::new(),
-            },
-            SectionBlockGroup {
-                block_type: BlockType::ClaimSummary,
-                item_key: "items",
-                intent: None,
-                group_key: "technical-footprint",
-                projections: Vec::new(),
-                salience_value: 0.4,
-                salience_band: SalienceBand::Background,
-                salience_reason: "technical footprint",
-                intelligence: None,
-                extras: {
-                    let footprint = domain("technicalFootprint");
-                    if footprint.is_none() {
-                        serde_json::Map::new()
-                    } else {
-                        extras("technical_footprint", vec![("technicalFootprint", footprint)])
-                    }
-                },
-            },
-        ],
-        // whats-next, the-work, and any future claim section: one action list.
+        "their-voice" => vec![domain_block(
+            BlockType::EvidenceList,
+            "their-voice",
+            "quote_wall",
+            vec![(
+                "quotes",
+                snapshot
+                    .and_then(|snap| snap.glean_signals.as_ref())
+                    .and_then(|glean| glean.get("quoteWall"))
+                    .filter(|quotes| quotes.as_array().is_some_and(|rows| !rows.is_empty()))
+                    .cloned(),
+            )],
+            0.5,
+            SalienceBand::Contextual,
+            "their voice",
+        )],
+        "commercial-shape" => vec![domain_block(
+            BlockType::ClaimSummary,
+            "commercial-shape",
+            "commercial_shape",
+            vec![("commercial", domain("commercial"))],
+            0.55,
+            SalienceBand::Contextual,
+            "commercial shape",
+        )],
+        "technical-shape" => vec![domain_block(
+            BlockType::ClaimSummary,
+            "technical-shape",
+            "technical_footprint",
+            vec![("technicalFootprint", domain("technicalFootprint"))],
+            0.45,
+            SalienceBand::Background,
+            "technical shape",
+        )],
+        "relationship-fabric" => vec![domain_block(
+            BlockType::ClaimSummary,
+            "relationship-fabric",
+            "relationship_fabric",
+            vec![("fabric", domain("fabric"))],
+            0.45,
+            SalienceBand::Background,
+            "relationship fabric",
+        )],
+        "about-dossier" => vec![domain_block(
+            BlockType::ClaimSummary,
+            "about-dossier",
+            "about_dossier",
+            vec![(
+                "intelligence",
+                intel_keys(&["enrichedAt", "sourceFileCount", "sourceManifest"]),
+            )],
+            0.25,
+            SalienceBand::Background,
+            "about the dossier",
+        )],
+        // the-work and any future claim section: one action list.
         _ => vec![SectionBlockGroup {
             block_type: BlockType::ActionList,
             item_key: "items",
             intent: None,
             group_key: "actions",
             projections: all(),
-            salience_value: 0.78,
+            salience_value: 0.62,
             salience_band: SalienceBand::Important,
             salience_reason: "commitment claims",
             intelligence: subset(),
@@ -1358,304 +1232,6 @@ fn build_aggregate_claim_block(
         source_indexes,
     )?;
     Ok(block)
-}
-
-#[allow(clippy::too_many_arguments)]
-fn build_record_section_blocks(
-    ctx: &AbilityContext<'_>,
-    input: &NormalizedInput,
-    projections: &[ClaimProjection],
-    snapshot_fields: Vec<&AccountCompositionSnapshotField>,
-    quote_wall: Option<serde_json::Value>,
-    section_index: usize,
-    subject: &SubjectAttribution,
-    invocation_id: InvocationId,
-    provenance_builder: &mut ProvenanceBuilder,
-) -> Result<Vec<Block>, AbilityError> {
-    if projections.is_empty() && snapshot_fields.is_empty() {
-        return Ok(vec![build_section_state_block(
-            input,
-            "the-record",
-            EmptySectionCopy {
-                title: "No account record yet",
-                body: "No source-backed account events are available for this record.",
-                status: "empty",
-            },
-            section_index,
-            0,
-            subject,
-            invocation_id,
-            provenance_builder,
-        )?]);
-    }
-
-    let mut blocks = Vec::new();
-    // Production QuoteWall block ("their voice") — glean-sourced quotes.
-    if let Some(quotes) = quote_wall {
-        let block_index = blocks.len();
-        let composition_block_path = format!("/sections/{section_index}/blocks/{block_index}");
-        let mut block = Block::new(
-            BlockId::new(block_id(input, "the-record", "evidence_list", "quote-wall")),
-            BlockType::EvidenceList,
-            json!({ "block": "quote_wall", "quotes": quotes }),
-            Vec::new(),
-            ProvenanceRef::new(
-                invocation_id,
-                FieldPath::new(&composition_block_path).map_err(field_error)?,
-            ),
-            None,
-        )
-        .map_err(block_error)?;
-        block.field_bindings = vec![
-            display_only_binding("/block")?,
-            display_only_binding("/quotes")?,
-        ];
-        block.salience = salience(0.5, SalienceBand::Contextual, "their voice");
-        attribute_block(provenance_builder, &composition_block_path, subject, Vec::new())?;
-        blocks.push(block);
-    }
-    let quote_items = transcript_quote_evidence_items(projections);
-    if !quote_items.is_empty() {
-        let block_index = blocks.len();
-        blocks.push(build_transcript_quote_wall_block(
-            input,
-            quote_items,
-            section_index,
-            block_index,
-            subject,
-            invocation_id,
-            provenance_builder,
-        )?);
-    }
-
-    let mut claim_refs = Vec::new();
-    let mut source_indexes = Vec::new();
-    let mut items = Vec::new();
-    for projection in projections {
-        claim_refs.push(claim_ref_for_projection(projection)?);
-        source_indexes.push(projection.source_index);
-        items.push(json!({
-            "label": projection.rendered_text,
-            "source_label": source_label_for_claim(&projection.claim),
-            "source_asof": projection.claim.source_asof,
-        }));
-    }
-    source_indexes.extend(snapshot_source_indexes(
-        ctx,
-        input,
-        &snapshot_fields,
-        provenance_builder,
-    )?);
-    for field in snapshot_fields {
-        items.push(snapshot_field_evidence_item(field));
-    }
-
-    let block_index = blocks.len();
-    let composition_block_path = format!("/sections/{section_index}/blocks/{block_index}");
-    let mut block = Block::new(
-        BlockId::new(block_id(input, "the-record", "evidence_list", "sources")),
-        BlockType::EvidenceList,
-        json!({ "items": items }),
-        claim_refs,
-        ProvenanceRef::new(
-            invocation_id,
-            FieldPath::new(&composition_block_path).map_err(field_error)?,
-        ),
-        None,
-    )
-    .map_err(block_error)?;
-    block.field_bindings = evidence_list_display_bindings(items.len())?;
-    block.salience = salience(0.58, SalienceBand::Contextual, "source record");
-    attribute_block(
-        provenance_builder,
-        &composition_block_path,
-        subject,
-        source_indexes,
-    )?;
-    blocks.push(block);
-    Ok(blocks)
-}
-
-#[allow(clippy::too_many_arguments)]
-fn build_transcript_quote_wall_block(
-    input: &NormalizedInput,
-    quote_items: Vec<TranscriptQuoteEvidence<'_>>,
-    section_index: usize,
-    block_index: usize,
-    subject: &SubjectAttribution,
-    invocation_id: InvocationId,
-    provenance_builder: &mut ProvenanceBuilder,
-) -> Result<Block, AbilityError> {
-    let claim_refs = quote_items
-        .iter()
-        .map(|item| claim_ref_for_projection(item.projection))
-        .collect::<Result<Vec<_>, _>>()?;
-    let source_indexes = quote_items
-        .iter()
-        .map(|item| item.projection.source_index)
-        .collect::<Vec<_>>();
-    let items = quote_items
-        .iter()
-        .map(|item| {
-            let workspace_file_kind = match data_source_for_claim(&item.projection.claim.data_source)
-            {
-                DataSource::WorkspaceFile { kind } => Some(kind.slug()),
-                _ => None,
-            };
-            json!({
-                "label": item.quote.text.as_str(),
-                "claim_id": item.projection.claim.id.as_str(),
-                "claim_type": item.projection.claim.claim_type.as_str(),
-                "assertion_text": item.projection.rendered_text.as_str(),
-                "evidence_quote": item.quote.text.as_str(),
-                "quote_exactness": "exact_match",
-                "quote_redaction_policy": TRANSCRIPT_QUOTE_REDACTION_POLICY,
-                "source_label": source_label_for_claim(&item.projection.claim),
-                "source_asof": item.projection.claim.source_asof,
-                "workspace_file_kind": workspace_file_kind,
-                "trust_band": trust_band_label(item.projection.trust_band),
-                "sensitivity": claim_sensitivity_label(&item.projection.claim.sensitivity),
-                "redaction_state": "policy_allowed",
-                "source_locator": {
-                    "type": "char_range",
-                    "start_char": item.quote.start_char,
-                    "end_char": item.quote.end_char,
-                },
-                "feedback_allowed": true,
-                "feedback_claim_id": item.projection.claim.id.as_str(),
-                "feedback_route": "claim_feedback",
-            })
-        })
-        .collect::<Vec<_>>();
-    let composition_block_path = format!("/sections/{section_index}/blocks/{block_index}");
-    let mut block = Block::new(
-        BlockId::new(block_id(input, "the-record", "evidence_list", "their-voice")),
-        BlockType::EvidenceList,
-        json!({
-            "title": "Their voice",
-            "items": items
-        }),
-        claim_refs,
-        ProvenanceRef::new(
-            invocation_id,
-            FieldPath::new(&composition_block_path).map_err(field_error)?,
-        ),
-        None,
-    )
-    .map_err(block_error)?;
-    block.field_bindings = transcript_quote_display_bindings(items.len())?;
-    block.salience = salience(0.66, SalienceBand::Contextual, "transcript quotes");
-    attribute_block(
-        provenance_builder,
-        &composition_block_path,
-        subject,
-        source_indexes,
-    )?;
-    Ok(block)
-}
-
-fn transcript_quote_evidence_items(
-    projections: &[ClaimProjection],
-) -> Vec<TranscriptQuoteEvidence<'_>> {
-    projections
-        .iter()
-        .filter_map(|projection| {
-            transcript_verified_quote_text(projection).map(|quote| TranscriptQuoteEvidence {
-                projection,
-                quote,
-            })
-        })
-        .take(MAX_TRANSCRIPT_QUOTE_ITEMS)
-        .collect()
-}
-
-fn transcript_verified_quote_text(projection: &ClaimProjection) -> Option<TranscriptVerifiedQuote> {
-    match data_source_for_claim(&projection.claim.data_source) {
-        DataSource::WorkspaceFile { .. } => {}
-        _ => return None,
-    }
-    let metadata: Value = serde_json::from_str(projection.claim.metadata_json.as_deref()?).ok()?;
-    if metadata.get("producer").and_then(Value::as_str) != Some("transcript_claims") {
-        return None;
-    }
-    if metadata.get("quote_verified").and_then(Value::as_bool) != Some(true) {
-        return None;
-    }
-    let quote = metadata.get("quote")?;
-    if quote.get("verification").and_then(Value::as_str) != Some("exact_match") {
-        return None;
-    }
-    if quote.get("redaction_policy").and_then(Value::as_str)
-        != Some(TRANSCRIPT_QUOTE_REDACTION_POLICY)
-    {
-        return None;
-    }
-    let start = quote.get("start_char").and_then(Value::as_u64)?;
-    let end = quote.get("end_char").and_then(Value::as_u64)?;
-    if start >= end {
-        return None;
-    }
-    let text = quote.get("text").and_then(Value::as_str)?.trim();
-    (!text.is_empty()).then(|| TranscriptVerifiedQuote {
-        text: text.to_string(),
-        start_char: start,
-        end_char: end,
-    })
-}
-
-#[allow(clippy::too_many_arguments)]
-fn build_reports_section_blocks(
-    ctx: &AbilityContext<'_>,
-    input: &NormalizedInput,
-    snapshot_fields: Vec<&AccountCompositionSnapshotField>,
-    section_index: usize,
-    subject: &SubjectAttribution,
-    invocation_id: InvocationId,
-    provenance_builder: &mut ProvenanceBuilder,
-) -> Result<Vec<Block>, AbilityError> {
-    if snapshot_fields.is_empty() {
-        let composition_block_path = format!("/sections/{section_index}/blocks/0");
-        let mut block = Block::new(
-            BlockId::new(block_id(input, "reports", "action_list", "system_config")),
-            BlockType::ActionList,
-            json!({
-                "claim_type": "system_config",
-                "items": [{
-                    "title": "Account report",
-                    "status": "unavailable",
-                    "text": "No generated account report is currently available."
-                }]
-            }),
-            Vec::new(),
-            ProvenanceRef::new(
-                invocation_id,
-                FieldPath::new(&composition_block_path).map_err(field_error)?,
-            ),
-            None,
-        )
-        .map_err(block_error)?;
-        block.field_bindings = action_list_display_bindings(1)?;
-        block.salience = salience(0.32, SalienceBand::Background, "report availability");
-        attribute_block(
-            provenance_builder,
-            &composition_block_path,
-            subject,
-            Vec::new(),
-        )?;
-        return Ok(vec![block]);
-    }
-
-    Ok(vec![build_snapshot_fields_block(
-        ctx,
-        input,
-        "reports",
-        section_index,
-        0,
-        snapshot_fields,
-        subject,
-        invocation_id,
-        provenance_builder,
-    )?])
 }
 
 #[allow(clippy::too_many_arguments)]
@@ -2248,59 +1824,6 @@ fn evidence_list_display_bindings(item_count: usize) -> Result<Vec<FieldBinding>
     Ok(bindings)
 }
 
-fn transcript_quote_display_bindings(item_count: usize) -> Result<Vec<FieldBinding>, AbilityError> {
-    let mut bindings = Vec::with_capacity(item_count * 19);
-    for index in 0..item_count {
-        for field in [
-            "label",
-            "claim_id",
-            "claim_type",
-            "assertion_text",
-            "evidence_quote",
-            "quote_exactness",
-            "quote_redaction_policy",
-            "source_label",
-            "source_asof",
-            "workspace_file_kind",
-            "trust_band",
-            "sensitivity",
-            "redaction_state",
-            "feedback_claim_id",
-            "feedback_route",
-        ] {
-            bindings.push(display_only_binding(&format!("/items/{index}/{field}"))?);
-        }
-        bindings.push(binding(
-            &format!("/items/{index}/evidence_quote"),
-            BindingRole::FeedbackTarget,
-            vec![index],
-        )?);
-        bindings.push(display_only_binding(&format!(
-            "/items/{index}/feedback_allowed"
-        ))?);
-        bindings.push(display_only_binding(&format!(
-            "/items/{index}/source_locator/type"
-        ))?);
-        bindings.push(display_only_binding(&format!(
-            "/items/{index}/source_locator/start_char"
-        ))?);
-        bindings.push(display_only_binding(&format!(
-            "/items/{index}/source_locator/end_char"
-        ))?);
-    }
-    Ok(bindings)
-}
-
-fn action_list_display_bindings(item_count: usize) -> Result<Vec<FieldBinding>, AbilityError> {
-    let mut bindings = Vec::with_capacity(item_count * 3);
-    for index in 0..item_count {
-        bindings.push(display_only_binding(&format!("/items/{index}/title"))?);
-        bindings.push(display_only_binding(&format!("/items/{index}/status"))?);
-        bindings.push(display_only_binding(&format!("/items/{index}/text"))?);
-    }
-    Ok(bindings)
-}
-
 fn binding(
     field_path: &str,
     role: BindingRole,
@@ -2527,19 +2050,6 @@ fn claim_provenance_kind(claim: &IntelligenceClaim) -> &'static str {
     match claim.source_ref.as_deref() {
         Some(reference) if !reference.trim().is_empty() => "sourced",
         _ => "inferred",
-    }
-}
-
-fn source_label_for_claim(claim: &IntelligenceClaim) -> String {
-    data_source_for_claim(&claim.data_source).display_name()
-}
-
-fn claim_sensitivity_label(sensitivity: &ClaimSensitivity) -> &'static str {
-    match sensitivity {
-        ClaimSensitivity::Public => "public",
-        ClaimSensitivity::Internal => "internal",
-        ClaimSensitivity::Confidential => "confidential",
-        ClaimSensitivity::UserOnly => "user_only",
     }
 }
 
@@ -3100,6 +2610,9 @@ mod tests {
             sentiment: None,
             stakeholders: None,
             technical_footprint: None,
+            commercial: None,
+            fabric: None,
+            record: None,
         }
     }
 
@@ -3545,362 +3058,15 @@ mod tests {
                         == Some("Adoption milestone shipped")),
             "claim evidence remains renderable as an aggregate item"
         );
+        // Snapshot-field evidence dumps were removed from sections by design
+        // (production parity): raw vitals never render as section residue.
         assert!(
-            value_section
+            !value_section
                 .blocks
                 .iter()
-                .any(|block| block.block_type == BlockType::EvidenceList
-                    && block.attributes.to_string().contains("Growth potential")),
-            "snapshot evidence remains renderable beside claims"
+                .any(|block| block.attributes.to_string().contains("Growth potential")),
+            "snapshot fields must not leak into section blocks"
         );
-    }
-
-    #[tokio::test]
-    async fn transcript_claim_quotes_render_their_voice_evidence() {
-        let mut verified = claim(
-            "claim-transcript-quote",
-            "entity_win",
-            "/transcript/wins",
-            "Expansion interest surfaced in the transcript",
-            Some(0.91),
-            Some("2026-05-14T09:00:00Z"),
-            ClaimSensitivity::Internal,
-        );
-        verified.data_source = "workspace_file:quill_transcript".to_string();
-        verified.source_ref = Some("workspace_file:file-quill-1".to_string());
-        verified.temporal_scope = TemporalScope::PointInTime;
-        verified.metadata_json = Some(
-            json!({
-                "producer": "transcript_claims",
-                "quote_verified": true,
-                "quote": {
-                    "text": "We would expand if onboarding gets easier.",
-                    "start_char": 12,
-                    "end_char": 55,
-                    "verification": "exact_match",
-                    "redaction_policy": "sensitivity_ceiling"
-                }
-            })
-            .to_string(),
-        );
-
-        let mut unverified = claim(
-            "claim-transcript-unverified",
-            "entity_risk",
-            "/transcript/risks",
-            "Unverified paraphrase should not enter the quote wall",
-            Some(0.84),
-            Some("2026-05-14T09:00:00Z"),
-            ClaimSensitivity::Internal,
-        );
-        unverified.data_source = "workspace_file:quill_transcript".to_string();
-        unverified.source_ref = Some("workspace_file:file-quill-2".to_string());
-        unverified.temporal_scope = TemporalScope::PointInTime;
-        unverified.metadata_json = Some(
-            json!({
-                "producer": "transcript_claims",
-                "quote_verified": false,
-                "quote": {
-                    "text": "This is not exact.",
-                    "start_char": 4,
-                    "end_char": 22,
-                    "verification": "paraphrase",
-                    "redaction_policy": "sensitivity_ceiling"
-                }
-            })
-            .to_string(),
-        );
-
-        let mut missing_policy = claim(
-            "claim-transcript-no-policy",
-            "entity_win",
-            "/transcript/wins",
-            "Policyless quote should not enter the quote wall",
-            Some(0.82),
-            Some("2026-05-14T09:00:00Z"),
-            ClaimSensitivity::Internal,
-        );
-        missing_policy.data_source = "workspace_file:quill_transcript".to_string();
-        missing_policy.source_ref = Some("workspace_file:file-quill-3".to_string());
-        missing_policy.temporal_scope = TemporalScope::PointInTime;
-        missing_policy.metadata_json = Some(
-            json!({
-                "producer": "transcript_claims",
-                "quote_verified": true,
-                "quote": {
-                    "text": "This lacks a quote redaction policy.",
-                    "start_char": 6,
-                    "end_char": 43,
-                    "verification": "exact_match"
-                }
-            })
-            .to_string(),
-        );
-
-        let mut confidential = claim(
-            "claim-transcript-confidential",
-            "entity_win",
-            "/transcript/wins",
-            "Confidential transcript claim should not render",
-            Some(0.8),
-            Some("2026-05-14T09:00:00Z"),
-            ClaimSensitivity::Confidential,
-        );
-        confidential.data_source = "workspace_file:quill_transcript".to_string();
-        confidential.source_ref = Some("workspace_file:file-quill-4".to_string());
-        confidential.temporal_scope = TemporalScope::PointInTime;
-        confidential.metadata_json = Some(
-            json!({
-                "producer": "transcript_claims",
-                "quote_verified": true,
-                "quote": {
-                    "text": "This confidential quote should not render.",
-                    "start_char": 1,
-                    "end_char": 44,
-                    "verification": "exact_match",
-                    "redaction_policy": "sensitivity_ceiling"
-                }
-            })
-            .to_string(),
-        );
-
-        let (clock, rng, external, reader, committer, provider) =
-            fixture_parts(vec![verified, unverified, missing_policy, confidential]);
-        let services = services(&clock, &rng, &external, reader, committer);
-        let ctx = ability_ctx(&services, &provider);
-
-        let output = account_overview(&ctx, input())
-            .await
-            .expect("transcript-backed account overview succeeds");
-        let composition = output.data();
-        let record_section = composition
-            .sections
-            .iter()
-            .find(|section| section.id.as_str() == "the-record")
-            .expect("record section exists");
-        let quote_block = record_section
-            .blocks
-            .iter()
-            .find(|block| {
-                block.block_type == BlockType::EvidenceList
-                    && block.attributes.pointer("/title").and_then(Value::as_str)
-                        == Some("Their voice")
-            })
-            .expect("verified transcript quote block exists");
-
-        assert_eq!(
-            quote_block
-                .attributes
-                .pointer("/items/0/label")
-                .and_then(Value::as_str),
-            Some("We would expand if onboarding gets easier.")
-        );
-        assert_eq!(
-            quote_block
-                .attributes
-                .pointer("/items/0/claim_id")
-                .and_then(Value::as_str),
-            Some("claim-transcript-quote")
-        );
-        assert_eq!(
-            quote_block
-                .attributes
-                .pointer("/items/0/claim_type")
-                .and_then(Value::as_str),
-            Some("entity_win")
-        );
-        assert_eq!(
-            quote_block
-                .attributes
-                .pointer("/items/0/assertion_text")
-                .and_then(Value::as_str),
-            Some("Expansion interest surfaced in the transcript")
-        );
-        assert_eq!(
-            quote_block
-                .attributes
-                .pointer("/items/0/evidence_quote")
-                .and_then(Value::as_str),
-            Some("We would expand if onboarding gets easier.")
-        );
-        assert_eq!(
-            quote_block
-                .attributes
-                .pointer("/items/0/quote_exactness")
-                .and_then(Value::as_str),
-            Some("exact_match")
-        );
-        assert_eq!(
-            quote_block
-                .attributes
-                .pointer("/items/0/quote_redaction_policy")
-                .and_then(Value::as_str),
-            Some(TRANSCRIPT_QUOTE_REDACTION_POLICY)
-        );
-        assert_eq!(
-            quote_block
-                .attributes
-                .pointer("/items/0/source_label")
-                .and_then(Value::as_str),
-            Some("Workspace file (Quill transcript)")
-        );
-        assert_eq!(
-            quote_block
-                .attributes
-                .pointer("/items/0/workspace_file_kind")
-                .and_then(Value::as_str),
-            Some("quill_transcript")
-        );
-        assert_eq!(
-            quote_block
-                .attributes
-                .pointer("/items/0/trust_band")
-                .and_then(Value::as_str),
-            Some("likely_current")
-        );
-        assert_eq!(
-            quote_block
-                .attributes
-                .pointer("/items/0/sensitivity")
-                .and_then(Value::as_str),
-            Some("internal")
-        );
-        assert_eq!(
-            quote_block
-                .attributes
-                .pointer("/items/0/redaction_state")
-                .and_then(Value::as_str),
-            Some("policy_allowed")
-        );
-        assert_eq!(
-            quote_block
-                .attributes
-                .pointer("/items/0/source_locator/type")
-                .and_then(Value::as_str),
-            Some("char_range")
-        );
-        assert_eq!(
-            quote_block
-                .attributes
-                .pointer("/items/0/source_locator/start_char")
-                .and_then(Value::as_u64),
-            Some(12)
-        );
-        assert_eq!(
-            quote_block
-                .attributes
-                .pointer("/items/0/source_locator/end_char")
-                .and_then(Value::as_u64),
-            Some(55)
-        );
-        assert_eq!(
-            quote_block
-                .attributes
-                .pointer("/items/0/feedback_allowed")
-                .and_then(Value::as_bool),
-            Some(true)
-        );
-        assert_eq!(
-            quote_block
-                .attributes
-                .pointer("/items/0/feedback_claim_id")
-                .and_then(Value::as_str),
-            Some("claim-transcript-quote")
-        );
-        assert!(quote_block.field_bindings.iter().any(|binding| {
-            binding.role == BindingRole::FeedbackTarget
-                && binding.field_path.as_str() == "/items/0/evidence_quote"
-                && !binding.claim_refs.is_empty()
-        }));
-        assert_eq!(
-            quote_block
-                .attributes
-                .pointer("/items/0/source_asof")
-                .and_then(Value::as_str),
-            Some("2026-05-14T09:00:00Z")
-        );
-        assert!(!quote_block.attributes.to_string().contains("This is not exact"));
-        assert!(!quote_block
-            .attributes
-            .to_string()
-            .contains("This lacks a quote redaction policy."));
-        assert!(!quote_block
-            .attributes
-            .to_string()
-            .contains("This confidential quote should not render."));
-        assert!(quote_block
-            .claim_refs
-            .iter()
-            .any(|claim_ref| claim_ref.claim_id == "claim-transcript-quote"));
-        assert!(output.provenance().sources.iter().any(|source| {
-            matches!(&source.data_source, DataSource::WorkspaceFile { .. })
-                && source.identifiers.iter().any(|identifier| {
-                    matches!(
-                        identifier,
-                        SourceIdentifier::Document { document_id, .. }
-                            if document_id.0.as_str() == "file-quill-1"
-                    )
-                })
-        }));
-
-        let proj_ctx = FallbackProjectionContext::new(
-            Actor::SurfaceClient {
-                instance: crate::abilities::registry::SurfaceClientId::new("sc_fixture"),
-                scopes: ScopeSet::new([
-                    crate::abilities::registry::SurfaceScope::new("read.account_overview"),
-                    crate::abilities::registry::SurfaceScope::new("submit.feedback"),
-                ])
-                .expect("scope set"),
-            },
-            SurfaceKind::SurfaceClient,
-            3,
-        );
-        let (projected, _audits) = project_composition_for_surface(composition, &proj_ctx)
-            .expect("projected transcript quote preserves contract fields");
-        let projected_record = projected
-            .sections
-            .iter()
-            .find(|section| section.section_id.as_str() == "the-record")
-            .expect("projected record section");
-        let projected_quote = projected_record
-            .block_indexes
-            .iter()
-            .filter_map(|index| projected.blocks.get(*index as usize))
-            .find(|block| block.payload.pointer("/title").and_then(Value::as_str) == Some("Their voice"))
-            .expect("projected quote wall block");
-        assert_eq!(
-            projected_quote
-                .payload
-                .pointer("/items/0/evidence_quote")
-                .and_then(Value::as_str),
-            Some("We would expand if onboarding gets easier.")
-        );
-        assert_eq!(
-            projected_quote
-                .payload
-                .pointer("/items/0/workspace_file_kind")
-                .and_then(Value::as_str),
-            Some("quill_transcript")
-        );
-        assert_eq!(
-            projected_quote
-                .payload
-                .pointer("/items/0/trust_band")
-                .and_then(Value::as_str),
-            Some("likely_current")
-        );
-        assert_eq!(
-            projected_quote
-                .payload
-                .pointer("/items/0/feedback_allowed")
-                .and_then(Value::as_bool),
-            Some(true)
-        );
-        assert!(projected_quote.edit_routes.iter().any(|route| {
-            route.feedback_allowed
-                && route.field_path.as_str() == "/items/0/evidence_quote"
-                && !route.claim_refs.is_empty()
-        }));
     }
 
     #[tokio::test]
@@ -3923,7 +3089,7 @@ mod tests {
             .expect("recommendation-backed account overview succeeds");
         let composition = output.data();
 
-        for section_id in ["whats-next", "the-work"] {
+        for section_id in ["the-work"] {
             let section = composition
                 .sections
                 .iter()
@@ -3988,7 +3154,7 @@ mod tests {
         let (projected, _audits) = project_composition_for_surface(composition, &proj_ctx)
             .expect("projected recommendation action preserves shell metadata");
 
-        for section_id in ["whats-next", "the-work"] {
+        for section_id in ["the-work"] {
             let section = projected
                 .sections
                 .iter()

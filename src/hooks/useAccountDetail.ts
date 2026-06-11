@@ -90,7 +90,7 @@ export interface SentimentView {
   presetLabels: Record<SentimentValue, string>;
 }
 
-function buildSentimentView(detail: AccountDetail | null): SentimentView {
+export function buildSentimentView(detail: AccountDetail | null): SentimentView {
   const current = (detail?.userHealthSentiment ?? null) as SentimentValue | null;
   const setAt = detail?.sentimentSetAt ?? null;
   const note = detail?.sentimentNote ?? null;
