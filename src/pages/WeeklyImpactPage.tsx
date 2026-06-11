@@ -6,7 +6,6 @@
  */
 import { useState, useEffect, useMemo, useCallback, useRef } from "react";
 import { useNavigate } from "@tanstack/react-router";
-import { invoke } from "@tauri-apps/api/core";
 import { toast } from "sonner";
 import { Calendar, Target, CheckSquare, Eye, ArrowRight } from "lucide-react";
 import { Button } from "@/components/ui/button";
@@ -14,6 +13,7 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { useRegisterMagazineShell } from "@/hooks/useMagazineShell";
 import { useRevealObserver } from "@/hooks/useRevealObserver";
 import { useIntelligenceFeedback } from "@/hooks/useIntelligenceFeedback";
+import { useReportCommands } from "@/hooks/useReportCommands";
 import { IntelligenceFeedback } from "@/components/ui/IntelligenceFeedback";
 import { FinisMarker } from "@/components/editorial/FinisMarker";
 import { GeneratingProgress } from "@/components/editorial/GeneratingProgress";
@@ -83,6 +83,12 @@ const EDITORIAL_QUOTES = [
 
 export default function WeeklyImpactPage() {
   const navigate = useNavigate();
+  const {
+    generateReport,
+    getReport,
+    getUserEntityId,
+    saveReport,
+  } = useReportCommands();
 
   const [userId, setUserId] = useState<string | null>(null);
   const [report, setReport] = useState<ReportRow | null>(null);
@@ -99,10 +105,10 @@ export default function WeeklyImpactPage() {
 
   // Fetch user entity id on mount
   useEffect(() => {
-    invoke<{ id: string | number }>("get_user_entity")
-      .then((u) => setUserId(String(u.id)))
+    getUserEntityId()
+      .then(setUserId)
       .catch((err) => console.error("get_user_entity failed:", err)); // Expected: background init on mount
-  }, []);
+  }, [getUserEntityId]);
 
   // Debounced save — persists edited content to the report row
   const debouncedSave = useCallback(
@@ -110,7 +116,7 @@ export default function WeeklyImpactPage() {
       if (!userId) return;
       if (saveTimerRef.current) clearTimeout(saveTimerRef.current);
       saveTimerRef.current = setTimeout(() => {
-        invoke("save_report", {
+        saveReport({
           entityId: userId,
           entityType: "user",
           reportType: "weekly_impact",
@@ -127,7 +133,7 @@ export default function WeeklyImpactPage() {
           });
       }, 500);
     },
-    [userId],
+    [saveReport, userId],
   );
 
   const updateContent = useCallback(
@@ -146,7 +152,7 @@ export default function WeeklyImpactPage() {
   useEffect(() => {
     if (!userId) return;
     setLoading(true);
-    invoke<ReportRow>("get_report", {
+    getReport({
       entityId: userId,
       entityType: "user",
       reportType: "weekly_impact",
@@ -168,7 +174,7 @@ export default function WeeklyImpactPage() {
         setContent(null);
       })
       .finally(() => setLoading(false));
-  }, [userId]);
+  }, [getReport, userId]);
 
   // Generate handler
   const handleGenerate = useCallback(async () => {
@@ -183,7 +189,7 @@ export default function WeeklyImpactPage() {
     timerRef.current = setInterval(() => setGenSeconds((s) => s + 1), 1000);
 
     try {
-      const data = await invoke<ReportRow>("generate_report", {
+      const data = await generateReport({
         entityId: userId,
         entityType: "user",
         reportType: "weekly_impact",
@@ -196,7 +202,7 @@ export default function WeeklyImpactPage() {
       setGenerating(false);
       if (timerRef.current) clearInterval(timerRef.current);
     }
-  }, [userId, generating]);
+  }, [generateReport, userId, generating]);
 
   // Register magazine shell
   const shellConfig = useMemo(

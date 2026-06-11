@@ -1,9 +1,12 @@
 import { useState, useCallback, useRef, useEffect, useMemo } from "react";
-import { invoke } from "@tauri-apps/api/core";
 import { getCurrentWebview } from "@tauri-apps/api/webview";
 import { useSearch } from "@tanstack/react-router";
 import { toast } from "sonner";
-import { useInbox } from "@/hooks/useInbox";
+import {
+  useInbox,
+  useInboxCommands,
+  type InboxPickerAccount as PickerAccount,
+} from "@/hooks/useInbox";
 import { useRegisterMagazineShell } from "@/hooks/useMagazineShell";
 import { EditorialLoading } from "@/components/editorial/EditorialLoading";
 import { EditorialError } from "@/components/editorial/EditorialError";
@@ -12,7 +15,7 @@ import { FinisMarker } from "@/components/editorial/FinisMarker";
 import { usePersonality } from "@/hooks/usePersonality";
 import { getPersonalityCopy } from "@/lib/personality";
 import { GoogleDriveImportModal } from "@/components/inbox/GoogleDriveImportModal";
-import type { CopyToInboxReport, InboxFile, InboxFileType } from "@/types";
+import type { InboxFile, InboxFileType } from "@/types";
 import styles from "./InboxPage.module.css";
 
 // =============================================================================
@@ -34,21 +37,6 @@ const defaultFileState: FileState = {
   expanded: false,
   loadingContent: false,
 };
-
-interface ProcessingResultPayload {
-  status: "routed" | "needs_enrichment" | "needs_entity" | "error";
-  classification?: string;
-  destination?: string;
-  message?: string;
-  suggestedName?: string;
-}
-
-interface PickerAccount {
-  id: string;
-  name: string;
-  parentName?: string;
-  accountType: string;
-}
 
 // =============================================================================
 // File classification
@@ -214,6 +202,14 @@ export default function InboxPage() {
   const { personality } = usePersonality();
   const { entityId } = useSearch({ from: "/inbox" });
   const { files, loading, error, refresh } = useInbox();
+  const {
+    assignInboxEntity,
+    copyToInbox,
+    enrichInboxFile,
+    getInboxFileContent,
+    processAllInbox,
+    processInboxFile,
+  } = useInboxCommands();
   const [refreshing, setRefreshing] = useState(false);
   const [processingAll, setProcessingAll] = useState(false);
   const [fileStates, setFileStates] = useState<Record<string, FileState>>({});
@@ -259,7 +255,7 @@ export default function InboxPage() {
               }
               lastDropRef.current = { signature, at: now };
 
-              invoke<CopyToInboxReport>("copy_to_inbox", { paths: uniquePaths })
+              copyToInbox(uniquePaths)
                 .then((report) => {
                   if (report.copiedCount > 0) {
                     setDropResult({ count: report.copiedCount });
@@ -287,7 +283,7 @@ export default function InboxPage() {
     return () => {
       unlisten?.();
     };
-  }, [refresh]);
+  }, [refresh, copyToInbox]);
 
   // ---------------------------------------------------------------------------
   // Hydrate file states from backend processing status
@@ -376,7 +372,7 @@ export default function InboxPage() {
 
       updateFileState(filename, { expanded: true, loadingContent: true });
       try {
-        const content = await invoke<string>("get_inbox_file_content", { filename });
+        const content = await getInboxFileContent(filename);
         updateFileState(filename, { content, loadingContent: false });
       } catch {
         updateFileState(filename, {
@@ -385,7 +381,7 @@ export default function InboxPage() {
         });
       }
     },
-    [fileStates, updateFileState]
+    [fileStates, updateFileState, getInboxFileContent]
   );
 
   // ---------------------------------------------------------------------------
@@ -396,9 +392,7 @@ export default function InboxPage() {
       cancelledRef.current.delete(filename);
       updateFileState(filename, { status: "processing", error: undefined });
       try {
-        const result = await invoke<ProcessingResultPayload>("process_inbox_file", {
-          filename,
-        });
+        const result = await processInboxFile(filename);
 
         if (cancelledRef.current.has(filename)) {
           cancelledRef.current.delete(filename);
@@ -428,10 +422,7 @@ export default function InboxPage() {
 
         // Auto-escalate to AI enrichment
         const enrichResult = await withTimeout(
-          invoke<{ status: string; message?: string }>("enrich_inbox_file", {
-            filename,
-            entityId,
-          }),
+          enrichInboxFile(filename, entityId),
           ENRICH_TIMEOUT_MS
         );
 
@@ -464,7 +455,7 @@ export default function InboxPage() {
         });
       }
     },
-    [entityId, updateFileState, refresh]
+    [entityId, updateFileState, refresh, processInboxFile, enrichInboxFile]
   );
 
   // ---------------------------------------------------------------------------
@@ -484,7 +475,7 @@ export default function InboxPage() {
     const needsEnrichment: string[] = [];
 
     try {
-      const results = await invoke<[string, ProcessingResultPayload][]>("process_all_inbox");
+      const results = await processAllInbox();
 
       for (const [filename, result] of results) {
         if (result.status === "routed") {
@@ -513,10 +504,7 @@ export default function InboxPage() {
 
         try {
           const enrichResult = await withTimeout(
-            invoke<{ status: string; message?: string }>("enrich_inbox_file", {
-              filename,
-              entityId,
-            }),
+            enrichInboxFile(filename, entityId),
             ENRICH_TIMEOUT_MS
           );
 
@@ -568,7 +556,7 @@ export default function InboxPage() {
     } finally {
       setProcessingAll(false);
     }
-  }, [entityId, files, updateFileState, refresh]);
+  }, [entityId, files, updateFileState, refresh, processAllInbox, enrichInboxFile]);
 
   // ---------------------------------------------------------------------------
   // Derived
@@ -808,13 +796,11 @@ export default function InboxPage() {
                   if (!file.fileId) {
                     throw new Error("Missing lifecycle file id");
                   }
-                  await invoke("assign_inbox_entity", {
-                    fileId: file.fileId,
-                    entityTypeSlug: "account",
-                    entityId: account.id,
-                    entityName: entityNameSlug(account.name, account.id),
-                    sourceTypeSlug: "inbox",
-                  });
+                  await assignInboxEntity(
+                    file.fileId,
+                    account,
+                    entityNameSlug(account.name, account.id),
+                  );
                   updateFileState(file.filename, { status: "processed" });
                   setTimeout(() => refresh(), 500);
                 } catch {
@@ -902,6 +888,7 @@ function InboxRow({
 }) {
   const [hovered, setHovered] = useState(false);
   const [accounts, setAccounts] = useState<PickerAccount[]>([]);
+  const { getAccountsForPicker } = useInboxCommands();
   const isProcessing = state.status === "processing";
   const isError = state.status === "error";
   const needsEntity = file.processingStatus === "needs_entity";
@@ -912,11 +899,11 @@ function InboxRow({
   // Load accounts for entity picker when file needs entity assignment
   useEffect(() => {
     if (needsEntity && accounts.length === 0) {
-      invoke<PickerAccount[]>("get_accounts_for_picker")
+      getAccountsForPicker()
         .then(setAccounts)
         .catch(() => {});
     }
-  }, [needsEntity, accounts.length]);
+  }, [needsEntity, accounts.length, getAccountsForPicker]);
 
   // Determine status display
   const displayStatus = isProcessing

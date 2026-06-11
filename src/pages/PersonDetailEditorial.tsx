@@ -1,6 +1,5 @@
 import React, { useCallback, useEffect, useMemo, useState } from "react";
 import { useParams, useNavigate } from "@tanstack/react-router";
-import { invoke } from "@tauri-apps/api/core";
 import {
   Activity,
   AlignLeft,
@@ -49,6 +48,7 @@ import { PersonRelationships } from "@/components/person/PersonRelationships";
 import { ReactBlockRenderer } from "@/components/composition/ReactBlockRenderer";
 import { FolioRefreshButton } from "@/components/ui/folio-refresh-button";
 import { useActivePreset } from "@/hooks/useActivePreset";
+import { useEntityDetailCommands } from "@/hooks/useEntityDetailCommands";
 import { usePersonDetail } from "@/hooks/usePersonDetail";
 import { useRevealObserver } from "@/hooks/useRevealObserver";
 import { useRegisterMagazineShell } from "@/hooks/useMagazineShell";
@@ -227,6 +227,7 @@ export default function PersonDetailEditorial() {
   const { personId } = useParams({ strict: false });
   const navigate = useNavigate();
   const person = usePersonDetail(personId);
+  const { getPersonRelationships } = useEntityDetailCommands();
   const preset = useActivePreset();
   const composition = useProjectedComposition(
     personId ? { entityType: "person", entityId: personId } : undefined,
@@ -247,10 +248,10 @@ export default function PersonDetailEditorial() {
 
   const loadRelationships = useCallback(() => {
     if (!personId) return;
-    invoke<PersonRelationshipEdge[]>("get_person_relationships", { personId })
+    getPersonRelationships(personId)
       .then(setRelationships)
       .catch(() => setRelationships([]));
-  }, [personId]);
+  }, [personId, getPersonRelationships]);
 
   useEffect(() => {
     loadRelationships();

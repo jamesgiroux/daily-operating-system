@@ -1,5 +1,4 @@
 import { useState, useEffect, useCallback, useMemo } from "react";
-import { invoke } from "@tauri-apps/api/core";
 import { useRegisterMagazineShell } from "@/hooks/useMagazineShell";
 import { InlineCreateForm } from "@/components/ui/inline-create-form";
 import {
@@ -27,19 +26,12 @@ import { BulkArchiveSelectionAction } from "@/components/entity/BulkArchiveSelec
 import { EmptyState } from "@/components/editorial/EmptyState";
 import { usePersonality } from "@/hooks/usePersonality";
 import { getPersonalityCopy } from "@/lib/personality";
+import {
+  useProjectsCommands,
+  type ArchivedProject,
+} from "@/hooks/useProjectsCommands";
 import type { ProjectListItem } from "@/types";
 import type { ReadinessStat } from "@/components/layout/FolioBar";
-
-/** Lightweight shape returned by get_archived_projects (DbProject from Rust). */
-interface ArchivedProject {
-  id: string;
-  name: string;
-  status: string;
-  milestone?: string;
-  owner?: string;
-  targetDate?: string;
-  archived: boolean;
-}
 
 type ArchiveTab = "active" | "archived";
 const statusDotColor: Record<string, string> = {
@@ -56,6 +48,13 @@ const statusLabel: Record<string, string> = {
 
 export default function ProjectsPage() {
   const { personality } = usePersonality();
+  const {
+    bulkCreateProjects,
+    createProject,
+    getArchivedProjects,
+    getChildProjectsList,
+    getProjectsList,
+  } = useProjectsCommands();
   const [projects, setProjects] = useState<ProjectListItem[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -73,7 +72,7 @@ export default function ProjectsPage() {
     try {
       setLoading(true);
       setError(null);
-      const result = await invoke<ProjectListItem[]>("get_projects_list");
+      const result = await getProjectsList();
       setProjects(result);
 
       // Auto-expand all parents and pre-fetch children
@@ -88,7 +87,7 @@ export default function ProjectsPage() {
             expanded.add(p.id);
             if (!cache[p.id]) {
               try {
-                const children = await invoke<ProjectListItem[]>("get_child_projects_list", { parentId: p.id });
+                const children = await getChildProjectsList(p.id);
                 cache[p.id] = children;
                 await expandRecursive(children);
               } catch { /* ignore */ }
@@ -107,20 +106,20 @@ export default function ProjectsPage() {
     } finally {
       setLoading(false);
     }
-  }, []);
+  }, [getChildProjectsList, getProjectsList]);
 
   const loadArchivedProjects = useCallback(async () => {
     try {
       setLoading(true);
       setError(null);
-      const result = await invoke<ArchivedProject[]>("get_archived_projects");
+      const result = await getArchivedProjects();
       setArchivedProjects(result);
     } catch (e) {
       setError(String(e));
     } finally {
       setLoading(false);
     }
-  }, []);
+  }, [getArchivedProjects]);
 
   useEffect(() => {
     if (archiveTab === "active") {
@@ -133,7 +132,7 @@ export default function ProjectsPage() {
   async function handleCreate() {
     if (!newName.trim()) return;
     try {
-      await invoke<string>("create_project", { name: newName.trim() });
+      await createProject(newName.trim());
       setNewName("");
       setCreating(false);
       await loadProjects();
@@ -146,7 +145,7 @@ export default function ProjectsPage() {
     const names = parseBulkCreateInput(bulkValue);
     if (names.length === 0) return;
     try {
-      await invoke<string[]>("bulk_create_projects", { names });
+      await bulkCreateProjects(names);
       setBulkValue("");
       setBulkMode(false);
       await loadProjects();
@@ -163,10 +162,7 @@ export default function ProjectsPage() {
       next.add(parentId);
       if (!childrenCache[parentId]) {
         try {
-          const children = await invoke<ProjectListItem[]>(
-            "get_child_projects_list",
-            { parentId }
-          );
+          const children = await getChildProjectsList(parentId);
           setChildrenCache((prev) => ({ ...prev, [parentId]: children }));
         } catch (e) {
           setError(String(e));

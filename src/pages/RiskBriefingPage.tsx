@@ -10,7 +10,6 @@
  */
 import { useState, useEffect, useMemo, useCallback, useRef } from "react";
 import { useParams, useNavigate } from "@tanstack/react-router";
-import { invoke } from "@tauri-apps/api/core";
 import { listen, type UnlistenFn } from "@tauri-apps/api/event";
 import { toast } from "sonner";
 import {
@@ -26,6 +25,7 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { useRegisterMagazineShell } from "@/hooks/useMagazineShell";
 import { useRevealObserver } from "@/hooks/useRevealObserver";
 import { useIntelligenceFeedback } from "@/hooks/useIntelligenceFeedback";
+import { useReportCommands } from "@/hooks/useReportCommands";
 import { IntelligenceFeedback } from "@/components/ui/IntelligenceFeedback";
 import { FinisMarker } from "@/components/editorial/FinisMarker";
 import { GeneratingProgress } from "@/components/editorial/GeneratingProgress";
@@ -102,6 +102,11 @@ const EDITORIAL_QUOTES = [
 export default function RiskBriefingPage() {
   const { accountId } = useParams({ strict: false });
   const navigate = useNavigate();
+  const {
+    generateRiskBriefing,
+    getReport,
+    saveReport,
+  } = useReportCommands();
 
   const [report, setReport] = useState<ReportRow | null>(null);
   const [briefing, setBriefing] = useState<RiskBriefing | null>(null);
@@ -126,7 +131,7 @@ export default function RiskBriefingPage() {
       if (!accountId) return;
       if (saveTimerRef.current) clearTimeout(saveTimerRef.current);
       saveTimerRef.current = setTimeout(() => {
-        invoke("save_report", {
+        saveReport({
           entityId: accountId,
           entityType: "account",
           reportType: "risk_briefing",
@@ -143,7 +148,7 @@ export default function RiskBriefingPage() {
           });
       }, 500);
     },
-    [accountId],
+    [accountId, saveReport],
   );
 
   // Slide update handlers — update local state + trigger save
@@ -165,7 +170,7 @@ export default function RiskBriefingPage() {
   useEffect(() => {
     if (!accountId) return;
     setLoading(true);
-    invoke<ReportRow | null>("get_report", {
+    getReport<ReportRow | null>({
       entityId: accountId,
       entityType: "account",
       reportType: "risk_briefing",
@@ -191,7 +196,7 @@ export default function RiskBriefingPage() {
         setBriefing(null);
       })
       .finally(() => setLoading(false));
-  }, [accountId]);
+  }, [accountId, getReport]);
 
   // Generate handler — uses dedicated risk briefing pipeline
   const handleGenerate = useCallback(async () => {
@@ -208,10 +213,10 @@ export default function RiskBriefingPage() {
     timerRef.current = setInterval(() => setGenSeconds((s) => s + 1), 1000);
 
     try {
-      const data = await invoke<RiskBriefing>("generate_risk_briefing", { accountId });
+      const data = await generateRiskBriefing(accountId);
       setBriefing(data);
       // Re-fetch the report row to get updated metadata (generatedAt, etc.)
-      invoke<ReportRow | null>("get_report", {
+      getReport<ReportRow | null>({
         entityId: accountId,
         entityType: "account",
         reportType: "risk_briefing",
@@ -224,7 +229,7 @@ export default function RiskBriefingPage() {
       setGenerating(false);
       if (timerRef.current) clearInterval(timerRef.current);
     }
-  }, [accountId, generating]);
+  }, [accountId, generateRiskBriefing, getReport, generating]);
 
   useEffect(() => {
     if (!generating) return;

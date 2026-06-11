@@ -1,5 +1,4 @@
 import { useState, useEffect, useCallback, useMemo, useRef, useTransition } from "react";
-import { invoke } from "@tauri-apps/api/core";
 import { open } from "@tauri-apps/plugin-shell";
 import { useNavigate } from "@tanstack/react-router";
 import { useRegisterMagazineShell } from "@/hooks/useMagazineShell";
@@ -11,6 +10,7 @@ import { getPersonalityCopy } from "@/lib/personality";
 import { usePersonality } from "@/hooks/usePersonality";
 import { useTauriEvent } from "@/hooks/useTauriEvent";
 import { useGoogleAuth } from "@/hooks/useGoogleAuth";
+import { useEmailCommands } from "@/hooks/useEmailCommands";
 import { FolioRefreshButton } from "@/components/ui/folio-refresh-button";
 import { EmailEntityChip } from "@/components/ui/email-entity-chip";
 import { EntityPicker } from "@/components/ui/entity-picker";
@@ -28,18 +28,19 @@ import type { EmailBriefingData, EmailSyncStats, EnrichedEmail, FailedEmailPrevi
 // Self-contained so refreshing-state renders don't bubble to the whole page.
 function EmailRefreshButton() {
   const [refreshing, setRefreshing] = useState(false);
+  const { refreshEmails } = useEmailCommands();
 
   const handleRefresh = useCallback(async () => {
     setRefreshing(true);
     try {
-      await invoke<string>("refresh_emails");
+      await refreshEmails();
     } catch (err) {
       console.error("Email refresh failed:", err);
       toast.error("Failed to refresh emails");
     } finally {
       setRefreshing(false);
     }
-  }, []);
+  }, [refreshEmails]);
 
   return (
     <FolioRefreshButton
@@ -73,6 +74,17 @@ export default function EmailsPage() {
   const navigate = useNavigate();
   const { personality } = usePersonality();
   const { status: googleAuth } = useGoogleAuth();
+  const {
+    dismissEmailItem,
+    dismissEmailSignal,
+    dismissGoneQuiet,
+    listPermanentlyFailedEmails,
+    loadEmailBriefing,
+    refreshEmails,
+    retryFailedEmails,
+    skipFailedEmails,
+    syncEmailInboxPresence,
+  } = useEmailCommands();
   const [data, setData] = useState<EmailBriefingData | null>(null);
   const [syncStats, setSyncStats] = useState<EmailSyncStats | null>(null);
   const [loading, setLoading] = useState(true);
@@ -102,14 +114,11 @@ export default function EmailsPage() {
     }
     loadEmailsInFlight.current = true;
     try {
-      const [result, dismissedItems, stats] = await Promise.all([
-        invoke<EmailBriefingData>("get_emails_enriched"),
-        invoke<string[]>("list_dismissed_email_items").catch((err) => {
-          console.error("list_dismissed_email_items failed:", err);
-          return [] as string[];
-        }),
-        invoke<EmailSyncStats>("get_email_sync_status").catch(() => null),
-      ]);
+      const {
+        data: result,
+        dismissedItems,
+        stats,
+      } = await loadEmailBriefing();
       const apply = () => {
         setData(result);
         setDismissed(new Set(dismissedItems));
@@ -132,7 +141,7 @@ export default function EmailsPage() {
         window.setTimeout(() => { void loadEmails(true); }, 0);
       }
     }
-  }, []);
+  }, [loadEmailBriefing]);
 
   useEffect(() => {
     loadEmails();
@@ -142,13 +151,13 @@ export default function EmailsPage() {
     if (inboxSyncInFlight.current) return;
     inboxSyncInFlight.current = true;
     try {
-      await invoke<boolean>("sync_email_inbox_presence");
+      await syncEmailInboxPresence();
     } catch (err) {
       console.debug("sync_email_inbox_presence failed:", err);
     } finally {
       inboxSyncInFlight.current = false;
     }
-  }, []);
+  }, [syncEmailInboxPresence]);
 
   useEffect(() => {
     void syncInboxPresence();
@@ -208,7 +217,7 @@ export default function EmailsPage() {
     const key = `${itemType}:${itemText}`;
     setDismissed((prev) => new Set(prev).add(key));
     try {
-      await invoke("dismiss_email_item", {
+      await dismissEmailItem({
         itemType,
         emailId,
         itemText,
@@ -219,26 +228,26 @@ export default function EmailsPage() {
     } catch (err) {
       console.error("Dismiss failed:", err);
     }
-  }, []);
+  }, [dismissEmailItem]);
 
   // Dismiss gone-quiet cadence alert
   const handleDismissQuiet = useCallback(async (entityId: string) => {
     setDismissedQuiet((prev) => new Set(prev).add(entityId));
     try {
-      await invoke("dismiss_gone_quiet", { entityId });
+      await dismissGoneQuiet(entityId);
     } catch (err) {
       console.error("Dismiss gone quiet failed:", err);
     }
-  }, []);
+  }, [dismissGoneQuiet]);
 
   const handleDismissSignal = useCallback(async (signalId: number) => {
     setDismissedSignals((prev) => new Set(prev).add(signalId));
     try {
-      await invoke("dismiss_email_signal", { signalId });
+      await dismissEmailSignal(signalId);
     } catch (err) {
       console.error("Dismiss signal failed:", err);
     }
-  }, []);
+  }, [dismissEmailSignal]);
 
   // Email types to exclude — operational noise, not strategic intelligence
   const NOISE_EMAIL_TYPES = new Set([
@@ -509,7 +518,7 @@ export default function EmailsPage() {
                     // this notice reappears on the next stats load.
                     setFailureActionInFlight(true);
                     try {
-                      const count = await invoke<number>("retry_failed_emails");
+                      const count = await retryFailedEmails();
                       if (count > 0) {
                         setTimeout(() => loadEmails(true), 3000);
                       }
@@ -538,13 +547,13 @@ export default function EmailsPage() {
                     setFailureActionInFlight(true);
                     try {
                       const previews = failurePreviews
-                        ?? (await invoke<FailedEmailPreview[]>("list_permanently_failed_emails"));
+                        ?? (await listPermanentlyFailedEmails());
                       const ids = previews.map((p) => p.emailId);
                       if (ids.length === 0) {
                         setDismissedFailedCount(syncStats.permanentlyFailed);
                         return;
                       }
-                      const skipped = await invoke<number>("skip_failed_emails", { emailIds: ids });
+                      const skipped = await skipFailedEmails(ids);
                       toast.success(
                         skipped === 1
                           ? "1 email skipped"
@@ -578,9 +587,7 @@ export default function EmailsPage() {
                     }
                     if (failurePreviews === null) {
                       try {
-                        const previews = await invoke<FailedEmailPreview[]>(
-                          "list_permanently_failed_emails",
-                        );
+                        const previews = await listPermanentlyFailedEmails();
                         setFailurePreviews(previews);
                       } catch (err) {
                         console.error("list_permanently_failed_emails:", err);
@@ -665,7 +672,7 @@ export default function EmailsPage() {
           <EmptyState
             headline="No emails yet"
             explanation="Gmail is connected. Emails will appear after the next sync."
-            action={{ label: "Sync now", onClick: () => invoke("refresh_emails").catch((err) => toast.error(String(err))) }}
+            action={{ label: "Sync now", onClick: () => refreshEmails().catch((err) => toast.error(String(err))) }}
           />
         );
       })()}
@@ -960,6 +967,7 @@ function CommitmentTrackControl({
   compact?: boolean;
 }) {
   const navigate = useNavigate();
+  const { promoteCommitmentToAction } = useEmailCommands();
   const [expanded, setExpanded] = useState(false);
   const [submitting, setSubmitting] = useState(false);
   const [localTracked, setLocalTracked] = useState<TrackedEmailCommitment | undefined>(trackedCommitment);
@@ -991,7 +999,7 @@ function CommitmentTrackControl({
     setSubmitting(true);
     try {
       const actionTitle = title.trim() || commitmentText;
-      const actionId = await invoke<string>("promote_commitment_to_action", {
+      const actionId = await promoteCommitmentToAction({
         emailId,
         commitmentText,
         actionTitle,
@@ -1015,7 +1023,7 @@ function CommitmentTrackControl({
     } finally {
       setSubmitting(false);
     }
-  }, [commitmentText, dueDate, emailId, entityId, entityType, owner, title]);
+  }, [commitmentText, dueDate, emailId, entityId, entityType, owner, promoteCommitmentToAction, title]);
 
   if (localTracked) {
     return (
@@ -1128,6 +1136,7 @@ function EmailIntelItem({
   setArchivedIds?: React.Dispatch<React.SetStateAction<Set<string>>>;
 }) {
   const navigate = useNavigate();
+  const { archiveEmail, pinEmail, unarchiveEmail } = useEmailCommands();
   const [isPinned, setIsPinned] = useState(!!email.pinnedAt);
 
   useEffect(() => {
@@ -1138,13 +1147,13 @@ function EmailIntelItem({
     // Optimistic: hide immediately via local state so refresh doesn't bring it back
     setArchivedIds?.((prev) => new Set(prev).add(email.id));
     try {
-      const archivedId = await invoke<string>("archive_email", { emailId: email.id });
+      const archivedId = await archiveEmail(email.id);
       toast("Archived", {
         action: {
           label: "Undo",
           onClick: async () => {
             try {
-              await invoke("unarchive_email", { emailId: archivedId });
+              await unarchiveEmail(archivedId);
               setArchivedIds?.((prev) => { const next = new Set(prev); next.delete(archivedId); return next; });
               onArchived?.();
             } catch (err) {
@@ -1159,7 +1168,7 @@ function EmailIntelItem({
       toast.error("Failed to archive");
       setArchivedIds?.((prev) => { const next = new Set(prev); next.delete(email.id); return next; });
     }
-  }, [email.id, onArchived, setArchivedIds]);
+  }, [archiveEmail, email.id, onArchived, setArchivedIds, unarchiveEmail]);
 
   const handleOpenInGmail = useCallback(async () => {
     try {
@@ -1171,12 +1180,12 @@ function EmailIntelItem({
 
   const handlePin = useCallback(async () => {
     try {
-      const nowPinned = await invoke<boolean>("pin_email", { emailId: email.id });
+      const nowPinned = await pinEmail(email.id);
       setIsPinned(nowPinned);
     } catch (err) {
       console.error("Pin failed:", err);
     }
-  }, [email.id]);
+  }, [email.id, pinEmail]);
 
   const commitments = (email.commitments ?? []).filter(
     (c) => !dismissed.has(`commitment:${c}`)

@@ -1,7 +1,6 @@
 import { useState, useEffect, useCallback, useRef, useMemo } from "react";
 import type { ReactNode } from "react";
 import { useParams, Link, useNavigate } from "@tanstack/react-router";
-import { invoke } from "@tauri-apps/api/core";
 import { toast } from "sonner";
 import { useRegisterMagazineShell } from "@/hooks/useMagazineShell";
 import { useRevealObserver } from "@/hooks/useRevealObserver";
@@ -11,6 +10,7 @@ import {
   type RenderableCompositionSection,
 } from "@/hooks/useChapterLayout";
 import { useProjectedComposition } from "@/hooks/useProjectedComposition";
+import { useActionDetailCommands } from "@/hooks/useActionDetailCommands";
 import { PriorityPicker } from "@/components/ui/priority-picker";
 import { EntityPicker } from "@/components/ui/entity-picker";
 import { EditableInline } from "@/components/ui/editable-inline";
@@ -26,7 +26,7 @@ import { ReactBlockRenderer } from "@/components/composition/ReactBlockRenderer"
 import { formatFullDate } from "@/lib/utils";
 import { classifyAction } from "@/lib/entity-utils";
 import { Check, Circle, ExternalLink, FileText, Flag, Link as LinkIcon, ListChecks, Send } from "lucide-react";
-import type { ActionDetail, LinearPushResult } from "@/types";
+import type { ActionDetail } from "@/types";
 import type { ProjectedBlock } from "@/services/composition/contracts";
 import shared from "@/styles/entity-detail.module.css";
 import accountStyles from "./AccountDetailPage.module.css";
@@ -86,6 +86,15 @@ function actionTitleFromBlocks(
 export default function ActionDetailPage() {
   const { actionId } = useParams({ strict: false });
   const navigate = useNavigate();
+  const {
+    completeAction,
+    getActionDetail,
+    getLinearStatus,
+    getLinearTeams,
+    pushActionToLinear,
+    reopenAction,
+    updateAction,
+  } = useActionDetailCommands();
   const [detail, setDetail] = useState<ActionDetail | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -161,16 +170,14 @@ export default function ActionDetailPage() {
     try {
       setLoading(true);
       setError(null);
-      const result = await invoke<ActionDetail>("get_action_detail", {
-        actionId,
-      });
+      const result = await getActionDetail(actionId);
       setDetail(result);
     } catch (e) {
       setError(String(e));
     } finally {
       setLoading(false);
     }
-  }, [actionId]);
+  }, [actionId, getActionDetail]);
 
   const reloadAfterActionMutation = useCallback(async () => {
     await Promise.all([
@@ -184,27 +191,27 @@ export default function ActionDetailPage() {
   }, [load]);
 
   useEffect(() => {
-    invoke<{ enabled: boolean; apiKeySet: boolean }>("get_linear_status")
+    getLinearStatus()
       .then((s) => {
         const enabled = s.enabled && s.apiKeySet;
         setLinearEnabled(enabled);
         if (enabled) {
-          invoke<Array<{ id: string; name: string }>>("get_linear_teams")
+          getLinearTeams()
             .then((t) => { setTeams(t); })
             .catch(() => {});
         }
       })
       .catch(() => {});
-  }, []);
+  }, [getLinearStatus, getLinearTeams]);
 
   async function toggleStatus() {
     if (!detail) return;
     setToggling(true);
     try {
       if (detail.status === "completed") {
-        await invoke("reopen_action", { id: detail.id });
+        await reopenAction(detail.id);
       } else {
-        await invoke("complete_action", { id: detail.id });
+        await completeAction(detail.id);
       }
       await reloadAfterActionMutation();
     } finally {
@@ -217,9 +224,7 @@ export default function ActionDetailPage() {
     clearTimeout(saveTimerRef.current);
     setSaveStatus("saving");
     try {
-      await invoke("update_action", {
-        request: { id: detail.id, ...updates },
-      });
+      await updateAction({ id: detail.id, ...updates });
       await reloadAfterActionMutation();
       setSaveStatus("saved");
       saveTimerRef.current = setTimeout(() => setSaveStatus("idle"), 1500);
@@ -234,7 +239,7 @@ export default function ActionDetailPage() {
     if (!detail || !selectedTeamId || pushing) return;
     setPushing(true);
     try {
-      const result = await invoke<LinearPushResult>("push_action_to_linear", {
+      const result = await pushActionToLinear({
         actionId: detail.id,
         teamId: selectedTeamId,
         title: detail.title,

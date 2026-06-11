@@ -1,7 +1,7 @@
-import { useState, useEffect, useCallback, useTransition } from "react";
+import { useState, useEffect, useCallback, useMemo, useTransition } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { useTauriEvent } from "./useTauriEvent";
-import type { InboxFile } from "@/types";
+import type { CopyToInboxReport, InboxFile } from "@/types";
 
 interface InboxUpdate {
   count: number;
@@ -98,4 +98,83 @@ export function useInboxCount(): number {
   useTauriEvent("inbox-updated", onCountUpdated);
 
   return count;
+}
+
+export interface InboxProcessingResultPayload {
+  status: "routed" | "needs_enrichment" | "needs_entity" | "error";
+  classification?: string;
+  destination?: string;
+  message?: string;
+  suggestedName?: string;
+}
+
+export interface InboxPickerAccount {
+  id: string;
+  name: string;
+  parentName?: string;
+  accountType: string;
+}
+
+export function useInboxCommands() {
+  const copyToInbox = useCallback((paths: string[]) => {
+    return invoke<CopyToInboxReport>("copy_to_inbox", { paths });
+  }, []);
+
+  const getInboxFileContent = useCallback((filename: string) => {
+    return invoke<string>("get_inbox_file_content", { filename });
+  }, []);
+
+  const processInboxFile = useCallback((filename: string) => {
+    return invoke<InboxProcessingResultPayload>("process_inbox_file", { filename });
+  }, []);
+
+  const enrichInboxFile = useCallback((filename: string, entityId: unknown) => {
+    return invoke<{ status: string; message?: string }>("enrich_inbox_file", {
+      filename,
+      entityId,
+    });
+  }, []);
+
+  const processAllInbox = useCallback(() => {
+    return invoke<[string, InboxProcessingResultPayload][]>("process_all_inbox");
+  }, []);
+
+  const assignInboxEntity = useCallback((
+    fileId: string,
+    account: InboxPickerAccount,
+    entityName: string,
+  ) => {
+    return invoke("assign_inbox_entity", {
+      fileId,
+      entityTypeSlug: "account",
+      entityId: account.id,
+      entityName,
+      sourceTypeSlug: "inbox",
+    });
+  }, []);
+
+  const getAccountsForPicker = useCallback(() => {
+    return invoke<InboxPickerAccount[]>("get_accounts_for_picker");
+  }, []);
+
+  return useMemo(
+    () => ({
+      assignInboxEntity,
+      copyToInbox,
+      enrichInboxFile,
+      getAccountsForPicker,
+      getInboxFileContent,
+      processAllInbox,
+      processInboxFile,
+    }),
+    [
+      assignInboxEntity,
+      copyToInbox,
+      enrichInboxFile,
+      getAccountsForPicker,
+      getInboxFileContent,
+      processAllInbox,
+      processInboxFile,
+    ],
+  );
 }

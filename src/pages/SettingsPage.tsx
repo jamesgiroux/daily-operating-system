@@ -1,9 +1,9 @@
 import { useCallback, useMemo, useEffect, useRef, useState } from "react";
 import { useSearch } from "@tanstack/react-router";
 import { User, Link2, Monitor, PanelsTopLeft, RotateCcw, Shield, Wrench, Loader2 } from "lucide-react";
-import { invoke } from "@tauri-apps/api/core";
 import { useAppState } from "@/hooks/useAppState";
 import { useClaudeStatus } from "@/hooks/useClaudeStatus";
+import { useClaudeCommands } from "@/hooks/useClaudeCommands";
 import {
   getCompositionLayoutOverlay,
   resetCompositionLayoutOverlay,
@@ -33,17 +33,18 @@ import s from "./SettingsPage.module.css";
 
 function ClaudeCodeSection() {
   const { status, aiUnavailable, checking, forceRefresh } = useClaudeStatus();
+  const { installClaudeCli, launchClaudeLogin } = useClaudeCommands();
   const ready = status !== null && !aiUnavailable;
   const [installing, setInstalling] = useState(false);
 
   async function handleSignIn() {
-    await invoke("launch_claude_login");
+    await launchClaudeLogin();
   }
 
   async function handleInstall() {
     setInstalling(true);
     try {
-      await invoke("install_claude_cli");
+      await installClaudeCli();
       await forceRefresh();
     } catch {
       // Error is shown via the status check
