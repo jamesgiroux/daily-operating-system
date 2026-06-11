@@ -5,16 +5,16 @@
  */
 import { useState, useEffect, useMemo, useCallback, useRef } from "react";
 import { User, Target, FileText, Paperclip, Upload } from "lucide-react";
-import { invoke } from "@tauri-apps/api/core";
 import { open as openFileDialog } from "@tauri-apps/plugin-dialog";
 import { useNavigate } from "@tanstack/react-router";
 import { toast } from "sonner";
 import { getPortfolioReportLabel } from "@/lib/report-config";
 
 import { useMe } from "@/hooks/useMe";
+import { useMeCommands } from "@/hooks/useMeCommands";
 import { useRevealObserver } from "@/hooks/useRevealObserver";
 import { useRegisterMagazineShell } from "@/hooks/useMagazineShell";
-import type { AnnualPriority, QuarterlyPriority, FeatureFlags } from "@/types";
+import type { AnnualPriority, QuarterlyPriority } from "@/types";
 
 import { EditorialLoading } from "@/components/editorial/EditorialLoading";
 import { EditorialError } from "@/components/editorial/EditorialError";
@@ -175,18 +175,19 @@ function PrioritySection({
 export default function MePage() {
   const me = useMe();
   const navigate = useNavigate();
+  const { getConfig, getFeatureFlags } = useMeCommands();
   const [activePreset, setActivePreset] = useState<string>("core");
   const [bobEnabled, setBobEnabled] = useState(false);
   useRevealObserver(!me.loading && !!me.userEntity);
 
   useEffect(() => {
-    invoke<{ role?: string }>("get_config")
+    getConfig()
       .then((c) => setActivePreset(c.role ?? "core"))
       .catch(() => {});
-    invoke<FeatureFlags>("get_feature_flags")
+    getFeatureFlags()
       .then((flags) => setBobEnabled(flags.book_of_business_enabled))
       .catch(() => {});
-  }, []);
+  }, [getConfig, getFeatureFlags]);
 
   const shellConfig = useMemo(
     () => ({
@@ -411,20 +412,21 @@ interface AttachmentFile {
 }
 
 function AttachmentsSection() {
+  const { processUserAttachment } = useMeCommands();
   const [files, setFiles] = useState<AttachmentFile[]>([]);
   const [dragOver, setDragOver] = useState(false);
   const dropRef = useRef<HTMLDivElement>(null);
 
   const processFile = useCallback(async (filePath: string) => {
     try {
-      const result = await invoke<string>("process_user_attachment", { path: filePath });
+      const result = await processUserAttachment(filePath);
       const name = filePath.split(/[\\/]/).pop() || filePath;
       setFiles((prev) => [...prev, { name, path: result }]);
     } catch (err) {
       console.error("Failed to process attachment:", err);
       toast.error("Failed to process file");
     }
-  }, []);
+  }, [processUserAttachment]);
 
   const handleDrop = useCallback(
     (e: React.DragEvent) => {

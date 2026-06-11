@@ -5,7 +5,7 @@ import { EditorialLoading } from "@/components/editorial/EditorialLoading";
 import { EditorialError } from "@/components/editorial/EditorialError";
 import { usePersonality } from "@/hooks/usePersonality";
 import { getPersonalityCopy } from "@/lib/personality";
-import { invoke } from "@tauri-apps/api/core";
+import { useWeekCommands } from "@/hooks/useWeekCommands";
 
 import type { DayShape, TimelineMeeting } from "@/types";
 import { cn } from "@/lib/utils";
@@ -37,6 +37,7 @@ import { HealthBadge } from "@/components/shared/HealthBadge";
 export default function WeekPage() {
   const navigate = useNavigate();
   const { personality } = usePersonality();
+  const { getMeetingTimeline, refreshMeetingPreps } = useWeekCommands();
   const [timeline, setTimeline] = useState<TimelineMeeting[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -48,10 +49,7 @@ export default function WeekPage() {
 
   const loadTimeline = useCallback(async (silent = false) => {
     try {
-      const data = await invoke<TimelineMeeting[]>("get_meeting_timeline", {
-        daysBefore: 7,
-        daysAfter: 7,
-      });
+      const data = await getMeetingTimeline(7, 7);
       const apply = () => {
         setTimeline(data);
         setError(null);
@@ -67,7 +65,7 @@ export default function WeekPage() {
     } finally {
       setLoading(false);
     }
-  }, []);
+  }, [getMeetingTimeline]);
 
   useEffect(() => {
     loadTimeline();
@@ -78,7 +76,7 @@ export default function WeekPage() {
   const handleRefresh = useCallback(async () => {
     setRefreshing(true);
     try {
-      await invoke("refresh_meeting_preps");
+      await refreshMeetingPreps();
       await loadTimeline();
     } catch (err) {
       setError(
@@ -87,7 +85,7 @@ export default function WeekPage() {
     } finally {
       setRefreshing(false);
     }
-  }, [loadTimeline]);
+  }, [loadTimeline, refreshMeetingPreps]);
 
   // ─── Live events — keep the page current without user action ──────────────
 

@@ -1,5 +1,4 @@
 import { useState, useEffect, useCallback, useMemo } from "react";
-import { invoke } from "@tauri-apps/api/core";
 import { useNavigate } from "@tanstack/react-router";
 import { toast } from "sonner";
 import { useRegisterMagazineShell } from "@/hooks/useMagazineShell";
@@ -29,22 +28,16 @@ import { EmptyState } from "@/components/editorial/EmptyState";
 import { EphemeralBriefing } from "@/components/editorial/EphemeralBriefing";
 import { usePersonality } from "@/hooks/usePersonality";
 import { getPersonalityCopy } from "@/lib/personality";
+import {
+  useAccountsCommands,
+  type ArchivedAccount,
+} from "@/hooks/useAccountsCommands";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { formatArr } from "@/lib/utils";
-import type { AccountListItem, DiscoveredAccount, EphemeralBriefing as EphemeralBriefingType, FeatureFlags } from "@/types";
+import type { AccountListItem, DiscoveredAccount, EphemeralBriefing as EphemeralBriefingType } from "@/types";
 import type { ReadinessStat } from "@/components/layout/FolioBar";
 import { HealthBadge } from "@/components/shared/HealthBadge";
 import styles from "./AccountsPage.module.css";
-
-/** Lightweight shape returned by get_archived_accounts (DbAccount from Rust). */
-interface ArchivedAccount {
-  id: string;
-  name: string;
-  lifecycle?: string;
-  arr?: number;
-  health?: string;
-  archived: boolean;
-}
 
 type ArchiveTab = "active" | "archived";
 
@@ -67,6 +60,18 @@ const ACCOUNT_SECTIONS: {
 export default function AccountsPage() {
   const { personality } = usePersonality();
   const navigate = useNavigate();
+  const {
+    bulkCreateAccounts,
+    createAccount,
+    discoverAccountsFromGlean,
+    getAccountsList,
+    getArchivedAccounts,
+    getChildAccountsList,
+    getFeatureFlags,
+    getGleanAuthStatus,
+    importAccountFromGlean,
+    queryEphemeralAccount,
+  } = useAccountsCommands();
   const [accounts, setAccounts] = useState<AccountListItem[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -99,7 +104,7 @@ export default function AccountsPage() {
     try {
       setLoading(true);
       setError(null);
-      const result = await invoke<AccountListItem[]>("get_accounts_list");
+      const result = await getAccountsList();
       setAccounts(result);
 
       // Auto-expand all parents recursively and pre-fetch the full tree
@@ -114,7 +119,7 @@ export default function AccountsPage() {
             expanded.add(p.id);
             if (!cache[p.id]) {
               try {
-                const children = await invoke<AccountListItem[]>("get_child_accounts_list", { parentId: p.id });
+                const children = await getChildAccountsList(p.id);
                 cache[p.id] = children;
                 await expandRecursive(children);
               } catch { /* ignore */ }
@@ -133,20 +138,20 @@ export default function AccountsPage() {
     } finally {
       setLoading(false);
     }
-  }, []);
+  }, [getAccountsList, getChildAccountsList]);
 
   const loadArchivedAccounts = useCallback(async () => {
     try {
       setLoading(true);
       setError(null);
-      const result = await invoke<ArchivedAccount[]>("get_archived_accounts");
+      const result = await getArchivedAccounts();
       setArchivedAccounts(result);
     } catch (e) {
       setError(String(e));
     } finally {
       setLoading(false);
     }
-  }, []);
+  }, [getArchivedAccounts]);
 
   useEffect(() => {
     if (archiveTab === "active") {
@@ -159,17 +164,17 @@ export default function AccountsPage() {
   // Check Glean connection status + feature flag on mount
   const [discoveryEnabled, setDiscoveryEnabled] = useState(false);
   useEffect(() => {
-    invoke<FeatureFlags>("get_feature_flags")
+    getFeatureFlags()
       .then((flags) => {
         if (flags.glean_discovery_enabled) {
           setDiscoveryEnabled(true);
-          invoke<{ status: string }>("get_glean_auth_status")
+          getGleanAuthStatus()
             .then((result) => setGleanConnected(result.status === "authenticated"))
             .catch(() => setGleanConnected(false));
         }
       })
       .catch(() => setDiscoveryEnabled(false)); // Expected: feature flag check on init
-  }, []);
+  }, [getFeatureFlags, getGleanAuthStatus]);
 
   // Discover accounts from Glean
   async function handleDiscoverAccounts() {
@@ -177,7 +182,7 @@ export default function AccountsPage() {
     setDiscoveryLoading(true);
     setDiscoveredAccounts([]);
     try {
-      const result = await invoke<DiscoveredAccount[]>("discover_accounts_from_glean");
+      const result = await discoverAccountsFromGlean();
       setDiscoveredAccounts(result);
     } catch (e) {
       console.error("discover_accounts_from_glean failed:", e);
@@ -191,18 +196,16 @@ export default function AccountsPage() {
   // Add a discovered account
   async function handleAddDiscovered(account: DiscoveredAccount) {
     try {
-      await invoke<string>("import_account_from_glean", {
-        request: {
-          name: account.name,
-          myRole: account.myRole,
-          evidence: account.evidence,
-          source: account.source,
-          domain: account.domain,
-          industry: account.industry,
-          contextPreview: account.contextPreview,
-          sections: [],
-          summary: null,
-        },
+      await importAccountFromGlean({
+        name: account.name,
+        myRole: account.myRole,
+        evidence: account.evidence,
+        source: account.source,
+        domain: account.domain,
+        industry: account.industry,
+        contextPreview: account.contextPreview,
+        sections: [],
+        summary: null,
       });
       setAddedNames((prev) => new Set(prev).add(account.name.toLowerCase()));
       await loadAccounts();
@@ -221,9 +224,7 @@ export default function AccountsPage() {
     setEphemeralBriefing(null);
     setEphemeralAdded(false);
     try {
-      const result = await invoke<EphemeralBriefingType>("query_ephemeral_account", {
-        name: ephemeralQuery.trim(),
-      });
+      const result = await queryEphemeralAccount(ephemeralQuery.trim());
       setEphemeralBriefing(result);
     } catch (e) {
       console.error("query_ephemeral_account failed:", e);
@@ -238,18 +239,16 @@ export default function AccountsPage() {
   async function handleAddFromBriefing() {
     if (!ephemeralBriefing) return;
     try {
-      await invoke<string>("import_account_from_glean", {
-        request: {
-          name: ephemeralBriefing.name,
-          summary: ephemeralBriefing.summary,
-          sections: ephemeralBriefing.sections,
-          contextPreview: ephemeralBriefing.summary,
-          myRole: null,
-          evidence: null,
-          source: "Glean briefing",
-          domain: null,
-          industry: null,
-        },
+      await importAccountFromGlean({
+        name: ephemeralBriefing.name,
+        summary: ephemeralBriefing.summary,
+        sections: ephemeralBriefing.sections,
+        contextPreview: ephemeralBriefing.summary,
+        myRole: null,
+        evidence: null,
+        source: "Glean briefing",
+        domain: null,
+        industry: null,
       });
       setEphemeralAdded(true);
       await loadAccounts();
@@ -265,11 +264,7 @@ export default function AccountsPage() {
   async function handleCreate() {
     if (!newName.trim()) return;
     try {
-      await invoke<string>("create_account", {
-        name: newName.trim(),
-        accountType: newAccountType,
-        parentId: newParentId,
-      });
+      await createAccount(newName.trim(), newAccountType, newParentId);
       setNewName("");
       setNewAccountType("customer");
       setNewParentId(null);
@@ -311,7 +306,7 @@ export default function AccountsPage() {
     const names = parseBulkCreateInput(bulkValue);
     if (names.length === 0) return;
     try {
-      await invoke<string[]>("bulk_create_accounts", { names });
+      await bulkCreateAccounts(names);
       setBulkValue("");
       setBulkMode(false);
       await loadAccounts();
@@ -331,10 +326,7 @@ export default function AccountsPage() {
       if (!childrenCache[parentId]) {
         try {
           // Use get_descendant_accounts for n-level nesting support
-          const children = await invoke<AccountListItem[]>(
-            "get_child_accounts_list",
-            { parentId }
-          );
+          const children = await getChildAccountsList(parentId);
           setChildrenCache((prev) => ({ ...prev, [parentId]: children }));
         } catch (e) {
           console.error("get_child_accounts_list failed:", e);

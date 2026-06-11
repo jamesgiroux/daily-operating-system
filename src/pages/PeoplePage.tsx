@@ -1,5 +1,4 @@
 import { useState, useEffect, useCallback, useMemo } from "react";
-import { invoke } from "@tauri-apps/api/core";
 import { toast } from "sonner";
 import { useTauriEvent } from "@/hooks/useTauriEvent";
 import { useNavigate, useSearch, Link } from "@tanstack/react-router";
@@ -39,6 +38,7 @@ import { BulkArchiveSelectionAction } from "@/components/entity/BulkArchiveSelec
 import { EmptyState } from "@/components/editorial/EmptyState";
 import { Avatar } from "@/components/ui/Avatar";
 import { ChapterHeading } from "@/components/editorial/ChapterHeading";
+import { usePeopleCommands } from "@/hooks/usePeopleCommands";
 import type { PersonListItem, DuplicateCandidate } from "@/types";
 import type { ReadinessStat } from "@/components/layout/FolioBar";
 
@@ -79,6 +79,13 @@ export default function PeoplePage() {
   const { personality } = usePersonality();
   const search = useSearch({ from: "/people" });
   const navigate = useNavigate();
+  const {
+    createPerson,
+    getArchivedPeople,
+    getDuplicatePeople,
+    getPeople,
+    mergePeople,
+  } = usePeopleCommands();
   const initialRelationshipTab = parseRelationshipTab(search.relationship);
   const activeHygieneFilter = parseHygieneFilter(search.hygiene);
   const [people, setPeople] = useState<PersonListItem[]>([]);
@@ -96,13 +103,13 @@ export default function PeoplePage() {
   const [showDuplicates, setShowDuplicates] = useState(activeHygieneFilter === "duplicates");
 
   const loadDuplicates = useCallback(() => {
-    invoke<DuplicateCandidate[]>("get_duplicate_people")
+    getDuplicatePeople()
       .then(setDuplicates)
       .catch((err) => {
         console.error("get_duplicate_people failed:", err); // Expected: background data fetch on mount
         setDuplicates([]);
       });
-  }, []);
+  }, [getDuplicatePeople]);
 
   useEffect(() => { loadDuplicates(); }, [loadDuplicates]);
 
@@ -118,10 +125,7 @@ export default function PeoplePage() {
     if (!newEmail.trim() || !newName.trim()) return;
     try {
       setCreating(true);
-      const personId = await invoke<string>("create_person", {
-        email: newEmail.trim(),
-        name: newName.trim(),
-      });
+      const personId = await createPerson(newEmail.trim(), newName.trim());
       setShowAddForm(false);
       setNewEmail("");
       setNewName("");
@@ -131,35 +135,33 @@ export default function PeoplePage() {
     } finally {
       setCreating(false);
     }
-  }, [newEmail, newName, navigate]);
+  }, [createPerson, newEmail, newName, navigate]);
 
   const loadPeople = useCallback(async () => {
     try {
       setLoading(true);
       setError(null);
-      const result = await invoke<PersonListItem[]>("get_people", {
-        relationship: null,
-      });
+      const result = await getPeople();
       setPeople(result);
     } catch (e) {
       setError(String(e));
     } finally {
       setLoading(false);
     }
-  }, []);
+  }, [getPeople]);
 
   const loadArchivedPeople = useCallback(async () => {
     try {
       setLoading(true);
       setError(null);
-      const result = await invoke<PersonListItem[]>("get_archived_people");
+      const result = await getArchivedPeople();
       setArchivedPeople(result);
     } catch (e) {
       setError(String(e));
     } finally {
       setLoading(false);
     }
-  }, []);
+  }, [getArchivedPeople]);
 
   useEffect(() => {
     if (archiveTab === "active") {
@@ -493,7 +495,7 @@ export default function PeoplePage() {
                             <AlertDialogAction
                               onClick={async () => {
                                 try {
-                                  await invoke("merge_people", { keepId: d.person1Id, removeId: d.person2Id });
+                                  await mergePeople(d.person1Id, d.person2Id);
                                   loadPeople();
                                   loadDuplicates();
                                 } catch (err) {

@@ -1,6 +1,5 @@
 import React, { useCallback, useEffect, useMemo, useState } from "react";
 import { useParams, useNavigate } from "@tanstack/react-router";
-import { invoke } from "@tauri-apps/api/core";
 import {
   Activity,
   AlignLeft,
@@ -44,6 +43,7 @@ import {
 import { LinearIssuesChapter } from "@/components/entity/LinearIssuesChapter";
 import { ReactBlockRenderer } from "@/components/composition/ReactBlockRenderer";
 import { FolioRefreshButton } from "@/components/ui/folio-refresh-button";
+import { useEntityDetailCommands } from "@/hooks/useEntityDetailCommands";
 import { useProjectDetail } from "@/hooks/useProjectDetail";
 import { useRevealObserver } from "@/hooks/useRevealObserver";
 import { useRegisterMagazineShell } from "@/hooks/useMagazineShell";
@@ -293,6 +293,7 @@ export default function ProjectDetailEditorial() {
   const { projectId } = useParams({ strict: false });
   const navigate = useNavigate();
   const project = useProjectDetail(projectId);
+  const { getProjectAncestors } = useEntityDetailCommands();
   const composition = useProjectedComposition(
     projectId ? { entityType: "project", entityId: projectId } : undefined,
   );
@@ -312,13 +313,13 @@ export default function ProjectDetailEditorial() {
 
   useEffect(() => {
     if (!projectId) return;
-    invoke<{ id: string; name: string }[]>("get_project_ancestors", { projectId })
+    getProjectAncestors(projectId)
       .then(setAncestors)
       .catch((err) => {
         console.error("get_project_ancestors failed:", err);
         setAncestors([]);
       });
-  }, [projectId]);
+  }, [projectId, getProjectAncestors]);
 
   const chapters = useMemo(
     () => [

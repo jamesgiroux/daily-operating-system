@@ -8,14 +8,13 @@
  */
 import { useState, useEffect, useMemo, useCallback, useRef } from "react";
 import { useNavigate } from "@tanstack/react-router";
-import { invoke } from "@tauri-apps/api/core";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
 import { useRegisterMagazineShell } from "@/hooks/useMagazineShell";
 import { useRevealObserver } from "@/hooks/useRevealObserver";
+import { useReportCommands } from "@/hooks/useReportCommands";
 import { GeneratingProgress } from "@/components/editorial/GeneratingProgress";
-import type { ReportRow } from "@/types/reports";
 
 import type { MonthlyWrappedContent } from "./types";
 import { SLIDES, ANALYSIS_PHASES, EDITORIAL_QUOTES, normalizeMonthlyWrapped } from "./constants";
@@ -40,6 +39,12 @@ import "./animations.css";
 
 export default function MonthlyWrappedPage() {
   const navigate = useNavigate();
+  const {
+    generateReport,
+    getReport,
+    getUserEntityId,
+    saveReport,
+  } = useReportCommands();
 
   const [userId, setUserId] = useState<string | null>(null);
   const [content, setContent] = useState<MonthlyWrappedContent | null>(null);
@@ -55,19 +60,19 @@ export default function MonthlyWrappedPage() {
 
   // Load user entity ID first
   useEffect(() => {
-    invoke<{ id: string | number }>("get_user_entity")
-      .then((u) => setUserId(String(u.id)))
+    getUserEntityId()
+      .then(setUserId)
       .catch((err) => {
         console.error("get_user_entity failed:", err); // Expected: background init on mount
         setLoading(false);
       });
-  }, []);
+  }, [getUserEntityId]);
 
   // Load cached report once userId is known
   useEffect(() => {
     if (!userId) return;
     setLoading(true);
-    invoke<ReportRow>("get_report", {
+    getReport({
       entityId: userId,
       entityType: "user",
       reportType: "monthly_wrapped",
@@ -87,7 +92,7 @@ export default function MonthlyWrappedPage() {
         setContent(null);
       })
       .finally(() => setLoading(false));
-  }, [userId]);
+  }, [getReport, userId]);
 
   useRevealObserver(!loading && !!content);
 
@@ -97,7 +102,7 @@ export default function MonthlyWrappedPage() {
       if (!userId) return;
       if (saveTimerRef.current) clearTimeout(saveTimerRef.current);
       saveTimerRef.current = setTimeout(() => {
-        invoke("save_report", {
+        saveReport({
           entityId: userId,
           entityType: "user",
           reportType: "monthly_wrapped",
@@ -114,7 +119,7 @@ export default function MonthlyWrappedPage() {
           });
       }, 500);
     },
-    [userId],
+    [saveReport, userId],
   );
 
   // Generate handler
@@ -129,7 +134,7 @@ export default function MonthlyWrappedPage() {
     timerRef.current = setInterval(() => setGenSeconds((s) => s + 1), 1000);
 
     try {
-      const data = await invoke<ReportRow>("generate_report", {
+      const data = await generateReport({
         entityId: userId,
         entityType: "user",
         reportType: "monthly_wrapped",
@@ -143,7 +148,7 @@ export default function MonthlyWrappedPage() {
       setGenerating(false);
       if (timerRef.current) clearInterval(timerRef.current);
     }
-  }, [userId, generating, debouncedSave]);
+  }, [debouncedSave, generateReport, userId, generating]);
 
   // Register magazine shell
   const shellConfig = useMemo(

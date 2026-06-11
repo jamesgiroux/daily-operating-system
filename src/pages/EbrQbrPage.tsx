@@ -6,7 +6,6 @@
  */
 import { useState, useEffect, useMemo, useCallback, useRef } from "react";
 import { useParams, useNavigate } from "@tanstack/react-router";
-import { invoke } from "@tauri-apps/api/core";
 import { toast } from "sonner";
 import {
   Building2,
@@ -22,6 +21,7 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { useRegisterMagazineShell } from "@/hooks/useMagazineShell";
 import { useRevealObserver } from "@/hooks/useRevealObserver";
 import { useIntelligenceFeedback } from "@/hooks/useIntelligenceFeedback";
+import { useReportCommands } from "@/hooks/useReportCommands";
 import { IntelligenceFeedback } from "@/components/ui/IntelligenceFeedback";
 import { FinisMarker } from "@/components/editorial/FinisMarker";
 import { GeneratingProgress } from "@/components/editorial/GeneratingProgress";
@@ -120,6 +120,12 @@ const EDITORIAL_QUOTES = [
 export default function EbrQbrPage() {
   const { accountId } = useParams({ strict: false });
   const navigate = useNavigate();
+  const {
+    generateReport,
+    getAccountDetail,
+    getReport,
+    saveReport,
+  } = useReportCommands();
 
   const [report, setReport] = useState<ReportRow | null>(null);
   const [content, setContent] = useState<EbrQbrContent | null>(null);
@@ -140,7 +146,7 @@ export default function EbrQbrPage() {
       if (!accountId) return;
       if (saveTimerRef.current) clearTimeout(saveTimerRef.current);
       saveTimerRef.current = setTimeout(() => {
-        invoke("save_report", {
+        saveReport({
           entityId: accountId,
           entityType: "account",
           reportType: "ebr_qbr",
@@ -157,7 +163,7 @@ export default function EbrQbrPage() {
           });
       }, 500);
     },
-    [accountId],
+    [accountId, saveReport],
   );
 
   const updateContent = useCallback(
@@ -175,16 +181,16 @@ export default function EbrQbrPage() {
   // Load account name
   useEffect(() => {
     if (!accountId) return;
-    invoke<AccountDetail>("get_account_detail", { accountId })
+    getAccountDetail<AccountDetail>(accountId)
       .then((detail) => setAccountName(detail.name))
       .catch((e) => console.error("Failed to load account detail:", e)); // Expected: background data fetch on mount
-  }, [accountId]);
+  }, [accountId, getAccountDetail]);
 
   // Load cached report on mount
   useEffect(() => {
     if (!accountId) return;
     setLoading(true);
-    invoke<ReportRow | null>("get_report", {
+    getReport<ReportRow | null>({
       entityId: accountId,
       entityType: "account",
       reportType: "ebr_qbr",
@@ -206,7 +212,7 @@ export default function EbrQbrPage() {
         setContent(null);
       })
       .finally(() => setLoading(false));
-  }, [accountId]);
+  }, [accountId, getReport]);
 
   // Generate handler
   const handleGenerate = useCallback(async () => {
@@ -221,7 +227,7 @@ export default function EbrQbrPage() {
     timerRef.current = setInterval(() => setGenSeconds((s) => s + 1), 1000);
 
     try {
-      const data = await invoke<ReportRow>("generate_report", {
+      const data = await generateReport({
         entityId: accountId,
         entityType: "account",
         reportType: "ebr_qbr",
@@ -234,7 +240,7 @@ export default function EbrQbrPage() {
       setGenerating(false);
       if (timerRef.current) clearInterval(timerRef.current);
     }
-  }, [accountId, generating]);
+  }, [accountId, generateReport, generating]);
 
   // Register magazine shell
   const shellConfig = useMemo(

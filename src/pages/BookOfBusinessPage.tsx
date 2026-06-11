@@ -4,7 +4,6 @@
  */
 import { useState, useEffect, useMemo, useCallback, useRef } from "react";
 import { useNavigate } from "@tanstack/react-router";
-import { invoke } from "@tauri-apps/api/core";
 import { listen, type UnlistenFn } from "@tauri-apps/api/event";
 import { toast } from "sonner";
 import {
@@ -17,6 +16,7 @@ import type { AccountListItem } from "@/types";
 import { useRegisterMagazineShell } from "@/hooks/useMagazineShell";
 import { useRevealObserver } from "@/hooks/useRevealObserver";
 import { useIntelligenceFeedback } from "@/hooks/useIntelligenceFeedback";
+import { useReportCommands } from "@/hooks/useReportCommands";
 import { IntelligenceFeedback } from "@/components/ui/IntelligenceFeedback";
 import { FinisMarker } from "@/components/editorial/FinisMarker";
 import { CoverSlide } from "@/components/book-of-business/CoverSlide";
@@ -127,6 +127,14 @@ const EDITORIAL_QUOTES = [
 
 export default function BookOfBusinessPage() {
   const navigate = useNavigate();
+  const {
+    generateReport,
+    getAccountsList,
+    getChildAccountsList,
+    getReport,
+    getUserEntityId,
+    saveReport,
+  } = useReportCommands();
 
   const [userId, setUserId] = useState<string | null>(null);
   const [report, setReport] = useState<ReportRow | null>(null);
@@ -147,21 +155,21 @@ export default function BookOfBusinessPage() {
 
   // Fetch user entity id on mount
   useEffect(() => {
-    invoke<{ id: string | number }>("get_user_entity")
-      .then((u) => setUserId(String(u.id)))
+    getUserEntityId()
+      .then(setUserId)
       .catch((err) => console.error("get_user_entity failed:", err)); // Expected: background init on mount
-  }, []);
+  }, [getUserEntityId]);
 
   // Fetch accounts for spotlight picker (parents + all children)
   useEffect(() => {
     (async () => {
       try {
-        const topLevel = await invoke<AccountListItem[]>("get_accounts_list");
+        const topLevel = await getAccountsList();
         const customers = topLevel.filter((a) => !a.archived && a.accountType === "customer");
         const parents = customers.filter((a) => a.isParent && a.childCount > 0);
         const childLists = await Promise.all(
           parents.map((p) =>
-            invoke<AccountListItem[]>("get_child_accounts_list", { parentId: p.id })
+            getChildAccountsList(p.id)
               .then((children) => children.filter((c) => !c.archived))
               .catch(() => [] as AccountListItem[]),
           ),
@@ -172,14 +180,14 @@ export default function BookOfBusinessPage() {
         console.error("Failed to fetch accounts for picker:", err); // Expected: background data fetch on mount
       }
     })();
-  }, []);
+  }, [getAccountsList, getChildAccountsList]);
 
   // Debounced save
   const debouncedSave = useCallback((updated: BookOfBusinessContent) => {
     if (!userId) return;
     if (saveTimerRef.current) clearTimeout(saveTimerRef.current);
     saveTimerRef.current = setTimeout(() => {
-      invoke("save_report", {
+      saveReport({
         entityId: userId,
         entityType: "user",
         reportType: "book_of_business",
@@ -195,7 +203,7 @@ export default function BookOfBusinessPage() {
           toast.error("Failed to save report");
         });
     }, 500);
-  }, [userId]);
+  }, [saveReport, userId]);
 
   const updateContent = useCallback(
     (updated: BookOfBusinessContent) => {
@@ -257,7 +265,7 @@ export default function BookOfBusinessPage() {
   useEffect(() => {
     if (!userId) return;
     setLoading(true);
-    invoke<ReportRow>("get_report", {
+    getReport({
       entityId: userId,
       entityType: "user",
       reportType: "book_of_business",
@@ -279,7 +287,7 @@ export default function BookOfBusinessPage() {
         setContent(null);
       })
       .finally(() => setLoading(false));
-  }, [userId]);
+  }, [getReport, userId]);
 
   // Toggle spotlight selection
   const toggleSpotlight = useCallback((accountId: string) => {
@@ -334,7 +342,7 @@ export default function BookOfBusinessPage() {
 
     try {
       const spotlightIds = selectedSpotlights.size > 0 ? [...selectedSpotlights] : undefined;
-      const data = await invoke<ReportRow>("generate_report", {
+      const data = await generateReport({
         entityId: userId,
         entityType: "user",
         reportType: "book_of_business",
@@ -348,7 +356,7 @@ export default function BookOfBusinessPage() {
       setGenerating(false);
       if (timerRef.current) clearInterval(timerRef.current);
     }
-  }, [userId, generating, selectedSpotlights]);
+  }, [generateReport, userId, generating, selectedSpotlights]);
 
   // Return to spotlight picker (for regeneration)
   const handleRegenerate = useCallback(() => {

@@ -1,6 +1,6 @@
 import { useState, useEffect, useMemo } from "react";
-import { invoke } from "@tauri-apps/api/core";
 import { useNavigate } from "@tanstack/react-router";
+import { useHistoryCommands } from "@/hooks/useHistoryCommands";
 import { useRegisterMagazineShell } from "@/hooks/useMagazineShell";
 import { EmptyState } from "@/components/editorial/EmptyState";
 import { EditorialLoading } from "@/components/editorial/EditorialLoading";
@@ -15,6 +15,7 @@ import styles from "./HistoryPage.module.css";
 export default function HistoryPage() {
   const navigate = useNavigate();
   const { personality } = usePersonality();
+  const { getProcessingHistory } = useHistoryCommands();
   const [entries, setEntries] = useState<ProcessingLogEntry[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -32,10 +33,7 @@ export default function HistoryPage() {
   useEffect(() => {
     async function load() {
       try {
-        const result = await invoke<ProcessingLogEntry[]>(
-          "get_processing_history",
-          { limit: 50 },
-        );
+        const result = await getProcessingHistory(50);
         setEntries(result);
       } catch (err) {
         setError(err instanceof Error ? err.message : String(err));
@@ -44,7 +42,7 @@ export default function HistoryPage() {
       }
     }
     load();
-  }, []);
+  }, [getProcessingHistory]);
 
   if (loading) {
     return <EditorialLoading count={5} />;

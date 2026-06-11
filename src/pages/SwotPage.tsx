@@ -6,7 +6,6 @@
  */
 import { useState, useEffect, useMemo, useCallback, useRef } from "react";
 import { useParams, useNavigate } from "@tanstack/react-router";
-import { invoke } from "@tauri-apps/api/core";
 import { listen, type UnlistenFn } from "@tauri-apps/api/event";
 import { toast } from "sonner";
 import { Compass, TrendingUp, AlertTriangle, Lightbulb, LayoutGrid } from "lucide-react";
@@ -15,6 +14,7 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { useRegisterMagazineShell } from "@/hooks/useMagazineShell";
 import { useRevealObserver } from "@/hooks/useRevealObserver";
 import { useIntelligenceFeedback } from "@/hooks/useIntelligenceFeedback";
+import { useReportCommands } from "@/hooks/useReportCommands";
 import { useTauriEvent } from "@/hooks/useTauriEvent";
 import { IntelligenceFeedback } from "@/components/ui/IntelligenceFeedback";
 import { FinisMarker } from "@/components/editorial/FinisMarker";
@@ -91,6 +91,12 @@ const EDITORIAL_QUOTES = [
 export default function SwotPage() {
   const { accountId } = useParams({ strict: false });
   const navigate = useNavigate();
+  const {
+    generateReport,
+    getAccountDetail,
+    getReport,
+    saveReport,
+  } = useReportCommands();
 
   const [report, setReport] = useState<ReportRow | null>(null);
   const [content, setContent] = useState<SwotContent | null>(null);
@@ -112,7 +118,7 @@ export default function SwotPage() {
       if (!accountId) return;
       if (saveTimerRef.current) clearTimeout(saveTimerRef.current);
       saveTimerRef.current = setTimeout(() => {
-        invoke("save_report", {
+        saveReport({
           entityId: accountId,
           entityType: "account",
           reportType: "swot",
@@ -129,7 +135,7 @@ export default function SwotPage() {
           });
       }, 500);
     },
-    [accountId],
+    [accountId, saveReport],
   );
 
   const updateContent = useCallback(
@@ -148,7 +154,7 @@ export default function SwotPage() {
   useEffect(() => {
     if (!accountId) return;
     setLoading(true);
-    invoke<ReportRow>("get_report", {
+    getReport({
       entityId: accountId,
       entityType: "account",
       reportType: "swot",
@@ -170,15 +176,15 @@ export default function SwotPage() {
         setContent(null);
       })
       .finally(() => setLoading(false));
-  }, [accountId]);
+  }, [accountId, getReport]);
 
   // Fetch account name separately
   useEffect(() => {
     if (!accountId) return;
-    invoke<{ name: string }>("get_account_detail", { accountId })
+    getAccountDetail<{ name: string }>(accountId)
       .then((acct) => setAccountName(acct.name))
       .catch((err) => console.error("get_account_detail failed:", err)); // Expected: background data fetch on mount
-  }, [accountId]);
+  }, [accountId, getAccountDetail]);
 
   // Generate handler
   const handleGenerate = useCallback(async () => {
@@ -193,7 +199,7 @@ export default function SwotPage() {
     timerRef.current = setInterval(() => setGenSeconds((s) => s + 1), 1000);
 
     try {
-      const data = await invoke<ReportRow>("generate_report", {
+      const data = await generateReport({
         entityId: accountId,
         entityType: "account",
         reportType: "swot",
@@ -206,7 +212,7 @@ export default function SwotPage() {
       setGenerating(false);
       if (timerRef.current) clearInterval(timerRef.current);
     }
-  }, [accountId, generating]);
+  }, [accountId, generateReport, generating]);
 
   useEffect(() => {
     if (!generating) return;

@@ -7,8 +7,8 @@
  */
 import { useState, useEffect, useMemo } from "react";
 import { useParams, useNavigate } from "@tanstack/react-router";
-import { invoke } from "@tauri-apps/api/core";
 import { useAccountDetail } from "@/hooks/useAccountDetail";
+import { useEntityDetailCommands } from "@/hooks/useEntityDetailCommands";
 import { useActivePreset } from "@/hooks/useActivePreset";
 import { useIntelligenceFieldUpdate } from "@/hooks/useIntelligenceFieldUpdate";
 import { useRevealObserver } from "@/hooks/useRevealObserver";
@@ -55,6 +55,7 @@ export default function AccountDetailEditorial() {
   const { accountId } = useParams({ strict: false });
   const navigate = useNavigate();
   const acct = useAccountDetail(accountId);
+  const { getAccountAncestors, getEntityMetadata } = useEntityDetailCommands();
   const preset = useActivePreset();
   useRevealObserver(!acct.loading && !!acct.detail);
 
@@ -73,9 +74,9 @@ export default function AccountDetailEditorial() {
   const [ancestors, setAncestors] = useState<{ id: string; name: string }[]>([]);
   useEffect(() => {
     if (!accountId) return;
-    invoke<{ id: string; name: string }[]>("get_account_ancestors", { accountId })
+    getAccountAncestors(accountId)
       .then(setAncestors).catch(() => setAncestors([]));
-  }, [accountId]);
+  }, [accountId, getAccountAncestors]);
 
   const shellConfig = useMemo(() => ({
     folioLabel: acct.detail?.accountType === "internal" ? "Internal" : acct.detail?.accountType === "partner" ? "Partner" : "Account",
@@ -116,10 +117,10 @@ export default function AccountDetailEditorial() {
   const [metadataValues, setMetadataValues] = useState<Record<string, string>>({});
   useEffect(() => {
     if (!accountId) return;
-    invoke<string>("get_entity_metadata", { entityType: "account", entityId: accountId })
+    getEntityMetadata("account", accountId)
       .then((json) => { try { setMetadataValues(JSON.parse(json) ?? {}); } catch { setMetadataValues({}); } })
       .catch(() => setMetadataValues({}));
-  }, [accountId]);
+  }, [accountId, getEntityMetadata]);
 
   const feedback = useIntelligenceFeedback(accountId, "account");
   const entityCtx = useEntityContextEntries("account", accountId ?? null);

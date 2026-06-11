@@ -6,14 +6,13 @@
  */
 import { useState, useEffect, useCallback } from "react";
 import { useParams } from "@tanstack/react-router";
-import { invoke } from "@tauri-apps/api/core";
+import { useReportCommands } from "@/hooks/useReportCommands";
 import { ReportShell } from "@/components/reports/ReportShell";
 import { SwotReport } from "@/components/reports/SwotReport";
 import { AccountHealthReport } from "@/components/reports/AccountHealthReport";
 import { EbrQbrReport } from "@/components/reports/EbrQbrReport";
 import { REPORT_TYPE_LABELS } from "@/types/reports";
 import type { ReportRow, ReportType, SwotContent, AccountHealthContent, EbrQbrContent } from "@/types/reports";
-import type { UserEntity } from "@/types";
 import styles from "./report-page.module.css";
 
 export default function ReportPage() {
@@ -24,6 +23,7 @@ export default function ReportPage() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [userEntityId, setUserEntityId] = useState<string | null>(null);
+  const { getReport, getUserEntityId } = useReportCommands();
 
   // Determine if this is the /me/reports route (no entity params)
   const isUserReport = !accountId && !projectId && !personId;
@@ -31,13 +31,11 @@ export default function ReportPage() {
   // Fetch user entity ID for /me/reports routes
   useEffect(() => {
     if (isUserReport) {
-      invoke<UserEntity>("get_user_entity")
-        .then((ue) => {
-          if (ue) setUserEntityId(String(ue.id));
-        })
+      getUserEntityId()
+        .then((id) => setUserEntityId(id))
         .catch(() => {});
     }
-  }, [isUserReport]);
+  }, [isUserReport, getUserEntityId]);
 
   // Determine entity from route params (or user entity for /me routes)
   const entityId = accountId ?? projectId ?? personId ?? userEntityId ?? "";
@@ -55,7 +53,7 @@ export default function ReportPage() {
     if (!entityId) return;
     setLoading(true);
     try {
-      const result = await invoke<ReportRow | null>("get_report", {
+      const result = await getReport<ReportRow | null>({
         entityId,
         entityType,
         reportType: rt,
@@ -66,7 +64,7 @@ export default function ReportPage() {
     } finally {
       setLoading(false);
     }
-  }, [entityId, entityType, rt]);
+  }, [entityId, entityType, rt, getReport]);
 
   useEffect(() => {
     fetchReport();

@@ -1,6 +1,5 @@
 import { useState, useEffect, useCallback, useMemo, useRef, useId } from "react";
 import { useParams, Link, useNavigate } from "@tanstack/react-router";
-import { invoke } from "@tauri-apps/api/core";
 import { open } from "@tauri-apps/plugin-dialog";
 import { toast } from "sonner";
 import {
@@ -26,7 +25,6 @@ import type {
   MeetingPostIntelligence,
   CalendarEvent,
   StakeholderInsight,
-  ApplyPrepPrefillResult,
   LinkedEntity,
   ContinuityThread,
   PredictionScorecard,
@@ -54,6 +52,7 @@ import { ClaimTextRenderer } from "@/components/ui/ClaimTextRenderer";
 import { TrustBandIndicator } from "@/components/ui/TrustBandIndicator";
 import { useIntelligenceFeedback } from "@/hooks/useIntelligenceFeedback";
 import { useMeetingEntityIntelligence } from "@/hooks/useMeetingEntityIntelligence";
+import { useMeetingDetailCommands } from "@/hooks/useMeetingDetailCommands";
 import {
   fieldPathCandidates,
   partitionTrustEvidence,
@@ -131,15 +130,6 @@ interface MeetingBriefingRefreshProgress {
   total?: number;
 }
 
-interface MeetingBriefingRefreshResult {
-  meetingId: string;
-  refreshedEntities: number;
-  failedEntities: number;
-  failedEntityIds: string[];
-  prepRebuiltSync: boolean;
-  prepQueued: boolean;
-}
-
 interface PrepReadyPayload {
   meetingId: string;
 }
@@ -160,13 +150,6 @@ interface TranscriptProgressPayload {
 }
 
 type TranscriptProcessedPayload = MeetingOutcomeData | string;
-
-interface GranolaManualSyncResult {
-  status: "attached" | "not_found" | "already_in_progress" | "already_completed";
-  message: string;
-  documentTitle?: string;
-  contentType?: "transcript" | "notes";
-}
 
 interface MeetingTrustEvidenceItem {
   id: string;
@@ -202,6 +185,28 @@ export default function MeetingDetailPage() {
   // Intelligence quality feedback
   const feedback = useIntelligenceFeedback(meetingId ?? undefined, "meeting");
   const meetingEntityIntelligence = useMeetingEntityIntelligence(meetingId);
+  const {
+    acceptSuggestedAction,
+    applyMeetingPrepPrefill,
+    attachMeetingTranscript,
+    attachMeetingTranscriptText,
+    completeAction,
+    getGranolaStatus,
+    getMeetingContinuityThread,
+    getMeetingIntelligence,
+    getMeetingPostIntelligence,
+    getPredictionScorecard,
+    getQuillStatus,
+    markMeetingIntelligenceViewed,
+    refreshMeetingBriefing,
+    rejectSuggestedAction,
+    reopenAction,
+    reprocessMeetingTranscript,
+    triggerGranolaSyncForMeeting,
+    triggerQuillSyncForMeeting,
+    updateActionPriority,
+    updateMeetingPrepField,
+  } = useMeetingDetailCommands(meetingId);
 
   // Entity mutation in progress — shows "Updating briefing..."
   const [briefingUpdating, setBriefingUpdating] = useState(false);
@@ -246,11 +251,8 @@ export default function MeetingDetailPage() {
     if (!meetingId) {
       throw new Error("No meeting ID specified");
     }
-    return invoke<GranolaManualSyncResult>("trigger_granola_sync_for_meeting", {
-      meetingId,
-      force,
-    });
-  }, [meetingId]);
+    return triggerGranolaSyncForMeeting(force);
+  }, [meetingId, triggerGranolaSyncForMeeting]);
 
   const loadMeetingIntelligence = useCallback(async () => {
     if (!meetingId) {
@@ -263,9 +265,7 @@ export default function MeetingDetailPage() {
       // keep existing content visible to preserve scroll position.
       if (!data) setLoading(true);
       setError(null);
-      const intel = await invoke<MeetingIntelligence>("get_meeting_intelligence", {
-        meetingId,
-      });
+      const intel = await getMeetingIntelligence();
       setMeetingMeta(intel.meeting);
       setOutcomes(intel.outcomes ?? null);
       setCanEditUserLayer(intel.canEditUserLayer);
@@ -273,7 +273,7 @@ export default function MeetingDetailPage() {
       setEntityHealthMap(intel.entityHealthMap ?? {});
       setIntelligenceQuality(intel.intelligenceQuality);
       const hadNewSignals = Boolean(intel.intelligenceQuality?.hasNewSignals);
-      void invoke("mark_meeting_intelligence_viewed", { meetingId })
+      void markMeetingIntelligenceViewed()
         .then(() => {
           if (hadNewSignals) {
             setIntelligenceQuality((current) =>
@@ -312,9 +312,9 @@ export default function MeetingDetailPage() {
       // Fetch post-meeting intelligence (non-blocking — only relevant for past meetings with transcripts)
       if (intel.outcomes || intel.transcriptProcessedAt) {
         void Promise.allSettled([
-          invoke<MeetingPostIntelligence>("get_meeting_post_intelligence", { meetingId }),
-          invoke<ContinuityThread | null>("get_meeting_continuity_thread", { meetingId }),
-          invoke<PredictionScorecard | null>("get_prediction_scorecard", { meetingId }),
+          getMeetingPostIntelligence(),
+          getMeetingContinuityThread(),
+          getPredictionScorecard(),
         ]).then(([postIntelResult, continuityResult, predictionResult]) => {
           if (postIntelResult.status === "fulfilled") {
             const pi = postIntelResult.value;
@@ -361,16 +361,20 @@ export default function MeetingDetailPage() {
     } finally {
       setLoading(false);
     }
-  }, [meetingId]);
+  }, [
+    getMeetingContinuityThread,
+    getMeetingIntelligence,
+    getMeetingPostIntelligence,
+    getPredictionScorecard,
+    markMeetingIntelligenceViewed,
+    meetingId,
+  ]);
 
   const handleSyncTranscript = useCallback(async () => {
     if (!meetingId) return;
     setSyncing(true);
     try {
-      const result = await invoke<string>("trigger_quill_sync_for_meeting", {
-        meetingId,
-        force: true,
-      });
+      const result = await triggerQuillSyncForMeeting(true);
       if (result === "already_in_progress") {
         toast.success("Sync already in progress");
       } else if (result === "resyncing") {
@@ -383,7 +387,7 @@ export default function MeetingDetailPage() {
     } finally {
       setSyncing(false);
     }
-  }, [meetingId]);
+  }, [meetingId, triggerQuillSyncForMeeting]);
 
   const handleSyncGranolaTranscript = useCallback(async () => {
     if (!meetingId) return;
@@ -471,14 +475,7 @@ export default function MeetingDetailPage() {
         attendees: [],
         isAllDay: false,
       };
-      const result = await invoke<{
-        status: string;
-        message?: string;
-        summary?: string;
-      }>("attach_meeting_transcript", {
-        filePath: selected,
-        meeting: calendarEvent,
-      });
+      const result = await attachMeetingTranscript(selected, calendarEvent);
 
       if (result.status !== "success") {
         toast.error("Transcript processing failed", {
@@ -499,7 +496,7 @@ export default function MeetingDetailPage() {
     } finally {
       setAttaching(false);
     }
-  }, [meetingId, data, meetingMeta, loadMeetingIntelligence]);
+  }, [attachMeetingTranscript, meetingId, data, meetingMeta, loadMeetingIntelligence]);
 
   const handlePasteTranscript = useCallback(() => {
     if (!meetingId || !data) return;
@@ -533,15 +530,7 @@ export default function MeetingDetailPage() {
 
     void (async () => {
       try {
-        const result = await invoke<{
-          status: string;
-          message?: string;
-          summary?: string;
-        }>("attach_meeting_transcript_text", {
-          text: trimmed,
-          format: submittedFormat,
-          meeting: calendarEvent,
-        });
+        const result = await attachMeetingTranscriptText(trimmed, submittedFormat, calendarEvent);
 
         if (result.status !== "success") {
           toast.error("Transcript processing failed", {
@@ -576,6 +565,7 @@ export default function MeetingDetailPage() {
     pasteText,
     pasteFormat,
     loadMeetingIntelligence,
+    attachMeetingTranscriptText,
   ]);
 
   const handleReprocessTranscript = useCallback(async () => {
@@ -584,11 +574,7 @@ export default function MeetingDetailPage() {
     setRetryingExtraction(true);
     toast.loading("Reprocessing transcript…", { id: "reprocess-transcript" });
     try {
-      const result = await invoke<{
-        status: string;
-        message?: string;
-        summary?: string;
-      }>("reprocess_meeting_transcript", { meetingId });
+      const result = await reprocessMeetingTranscript();
 
       if (result.status !== "success") {
         toast.error("Reprocessing failed", {
@@ -611,7 +597,7 @@ export default function MeetingDetailPage() {
     } finally {
       setRetryingExtraction(false);
     }
-  }, [meetingId, loadMeetingIntelligence]);
+  }, [meetingId, loadMeetingIntelligence, reprocessMeetingTranscript]);
 
   const handleRetryTranscriptExtraction = useCallback(async () => {
     if (!meetingId || !data || !outcomes?.transcriptPath) return;
@@ -632,14 +618,7 @@ export default function MeetingDetailPage() {
         isAllDay: false,
       };
 
-      const result = await invoke<{
-        status: string;
-        message?: string;
-        summary?: string;
-      }>("attach_meeting_transcript", {
-        filePath: outcomes.transcriptPath,
-        meeting: calendarEvent,
-      });
+      const result = await attachMeetingTranscript(outcomes.transcriptPath, calendarEvent);
 
       if (result.status !== "success") {
         toast.error("Retry failed", {
@@ -660,7 +639,7 @@ export default function MeetingDetailPage() {
     } finally {
       setRetryingExtraction(false);
     }
-  }, [meetingId, data, meetingMeta, outcomes?.transcriptPath, loadMeetingIntelligence]);
+  }, [attachMeetingTranscript, meetingId, data, meetingMeta, outcomes?.transcriptPath, loadMeetingIntelligence]);
 
   const handleDraftAgendaMessage = useCallback(async () => {
     if (!meetingId) return;
@@ -678,13 +657,9 @@ export default function MeetingDetailPage() {
 
     setPrefilling(true);
     try {
-      const result = await invoke<ApplyPrepPrefillResult>(
-        "apply_meeting_prep_prefill",
-        {
-          meetingId,
-          agendaItems: candidateItems,
-          notesAppend: data?.meetingContext || "",
-        }
+      const result = await applyMeetingPrepPrefill(
+        candidateItems,
+        data?.meetingContext || "",
       );
       if (result.addedAgendaItems > 0 || result.notesAppended) {
         setPrefillNotice(true);
@@ -698,17 +673,14 @@ export default function MeetingDetailPage() {
     } finally {
       setPrefilling(false);
     }
-  }, [meetingId, canEditUserLayer, data, loadMeetingIntelligence]);
+  }, [applyMeetingPrepPrefill, meetingId, canEditUserLayer, data, loadMeetingIntelligence]);
 
   const handleRefreshIntelligence = useCallback(async () => {
     if (!meetingId) return;
     setRefreshingIntel(true);
     toast("Refreshing briefing…", { duration: 10_000, id: "intel-refresh" });
     try {
-      const refreshed = await invoke<MeetingBriefingRefreshResult>(
-        "refresh_meeting_briefing",
-        { meetingId },
-      );
+      const refreshed = await refreshMeetingBriefing();
       await loadMeetingIntelligence();
       if (refreshed.failedEntities > 0) {
         toast.success(
@@ -723,7 +695,7 @@ export default function MeetingDetailPage() {
     } finally {
       setRefreshingIntel(false);
     }
-  }, [meetingId, loadMeetingIntelligence]);
+  }, [meetingId, loadMeetingIntelligence, refreshMeetingBriefing]);
 
   const handleRefreshProgress = useCallback((progress: MeetingBriefingRefreshProgress) => {
     if (!meetingId || progress.meetingId !== meetingId) return;
@@ -864,13 +836,13 @@ Thanks!`;
   }, [loadMeetingIntelligence]);
 
   useEffect(() => {
-    invoke<{ enabled: boolean }>("get_quill_status")
+    getQuillStatus()
       .then((s) => setQuillEnabled(s.enabled))
       .catch(() => {});
-    invoke<{ enabled: boolean }>("get_granola_status")
+    getGranolaStatus()
       .then((s) => setGranolaEnabled(s.enabled))
       .catch(() => {});
-  }, []);
+  }, [getGranolaStatus, getQuillStatus]);
 
   // Reveal observer for editorial-reveal animations
   useRevealObserver(!loading && !!data);
@@ -893,10 +865,7 @@ Thanks!`;
     if (!meetingId || !isEditable) return;
     setSaveStatus("saving");
     try {
-      await invoke("update_meeting_prep_field", {
-        meetingId, fieldPath, value,
-        targetPersonId: targetPersonId ?? null,
-      });
+      await updateMeetingPrepField(fieldPath, value, targetPersonId);
       setSaveStatus("saved");
       setTimeout(() => setSaveStatus("idle"), 2000);
     } catch (err) {
@@ -904,7 +873,7 @@ Thanks!`;
       toast.error("Failed to save change");
       setSaveStatus("idle");
     }
-  }, [meetingId, isEditable]);
+  }, [meetingId, isEditable, updateMeetingPrepField]);
 
   // Collaboration action visibility
   const isFutureMeeting = !isPastMeeting;
@@ -1151,13 +1120,13 @@ Thanks!`;
                 onItemFeedback={feedback.submitFeedback}
                 onAcceptAction={async (id) => {
                   const y = window.scrollY;
-                  try { await invoke("accept_suggested_action", { id }); await loadMeetingIntelligence(); }
+                  try { await acceptSuggestedAction(id); await loadMeetingIntelligence(); }
                   catch { toast.error("Failed to accept action"); }
                   requestAnimationFrame(() => window.scrollTo(0, y));
                 }}
                 onDismissAction={async (id) => {
                   const y = window.scrollY;
-                  try { await invoke("reject_suggested_action", { id, source: "meeting_detail" }); await loadMeetingIntelligence(); }
+                  try { await rejectSuggestedAction(id); await loadMeetingIntelligence(); }
                   catch { toast.error("Failed to dismiss action"); }
                   requestAnimationFrame(() => window.scrollTo(0, y));
                 }}
@@ -1165,8 +1134,8 @@ Thanks!`;
                   const y = window.scrollY;
                   try {
                     const action = outcomes?.actions.find(a => a.id === id);
-                    if (action?.status === "completed") { await invoke("reopen_action", { id }); }
-                    else { await invoke("complete_action", { id }); }
+                    if (action?.status === "completed") { await reopenAction(id); }
+                    else { await completeAction(id); }
                     await loadMeetingIntelligence();
                   } catch { toast.error("Failed to update action"); }
                   requestAnimationFrame(() => window.scrollTo(0, y));
@@ -1176,7 +1145,7 @@ Thanks!`;
                   const action = outcomes?.actions.find(a => a.id === id);
                   const p = action?.priority ?? 3;
                   const next = p <= 1 ? "3" : p <= 3 ? "4" : "1";
-                  try { await invoke("update_action_priority", { id, priority: next }); await loadMeetingIntelligence(); }
+                  try { await updateActionPriority(id, next); await loadMeetingIntelligence(); }
                   catch { toast.error("Failed to update priority"); }
                   requestAnimationFrame(() => window.scrollTo(0, y));
                 }}
@@ -1879,6 +1848,7 @@ function UnifiedAttendeeList({
   const [hiddenNames, setHiddenNames] = useState<Set<string>>(
     new Set((initialHiddenNames ?? []).map(normalizePersonKey))
   );
+  const { updateMeetingUserAgenda } = useMeetingDetailCommands(meetingId);
   const filtered = attendees.filter((p) => !hiddenNames.has(normalizePersonKey(p.name)));
   const visible = showAll ? filtered : filtered.slice(0, 4);
   const remaining = filtered.length - 4;
@@ -2041,8 +2011,7 @@ function UnifiedAttendeeList({
                   if (meetingId) {
                     onSaveStatus?.("saving");
                     try {
-                      await invoke("update_meeting_user_agenda", {
-                        meetingId,
+                      await updateMeetingUserAgenda({
                         hiddenAttendees: Array.from(newHidden),
                       });
                       onSaveStatus?.("saved");
@@ -2261,6 +2230,7 @@ function UnifiedPlanEditor({
   const [dismissedTopics, setDismissedTopics] = useState<Set<string>>(
     new Set(initialDismissedTopics ?? [])
   );
+  const { updateMeetingUserAgenda } = useMeetingDetailCommands(meetingId);
   // Overrides for proposed items edited in-place (keeps position, persists as user items)
   const [proposedOverrides, setProposedOverrides] = useState<Map<string, string>>(new Map());
 
@@ -2307,8 +2277,7 @@ function UnifiedPlanEditor({
     onSaveStatus("saving");
     try {
       const dismissed = Array.from(updatedDismissed ?? dismissedTopics);
-      await invoke("update_meeting_user_agenda", {
-        meetingId,
+      await updateMeetingUserAgenda({
         agenda: updatedItems,
         dismissedTopics: dismissed.length > 0 ? dismissed : null,
       });
@@ -2540,6 +2509,13 @@ function OutcomesSection({
   onRetryTranscriptExtraction: () => void;
   retryingExtraction: boolean;
 }) {
+  const {
+    acceptSuggestedAction,
+    completeAction,
+    rejectSuggestedAction,
+    reopenAction,
+    updateActionPriority,
+  } = useMeetingDetailCommands(undefined);
   const summary = outcomes.summary?.trim();
   const wins = outcomes.wins.filter((item) => item.trim().length > 0);
   const risks = outcomes.risks.filter((item) => item.trim().length > 0);
@@ -2621,25 +2597,25 @@ function OutcomesSection({
                   onComplete={async () => {
                     try {
                       if (action.status === "completed") {
-                        await invoke("reopen_action", { id: action.id });
+                        await reopenAction(action.id);
                       } else {
-                        await invoke("complete_action", { id: action.id });
+                        await completeAction(action.id);
                       }
                       onRefresh();
                     } catch (err) { console.error("Failed to toggle action:", err); toast.error("Failed to update action"); }
                   }}
                   onAccept={async () => {
-                    try { await invoke("accept_suggested_action", { id: action.id }); onRefresh(); }
+                    try { await acceptSuggestedAction(action.id); onRefresh(); }
                     catch (err) { console.error("Failed to accept action:", err); toast.error("Failed to accept action"); }
                   }}
                   onReject={async () => {
-                    try { await invoke("reject_suggested_action", { id: action.id, source: "meeting_detail" }); onRefresh(); }
+                    try { await rejectSuggestedAction(action.id); onRefresh(); }
                     catch (err) { console.error("Failed to reject action:", err); toast.error("Failed to dismiss action"); }
                   }}
                   onCyclePriority={async () => {
                     const p = action.priority ?? 3;
                     const next = p <= 1 ? "3" : p <= 3 ? "4" : "1";
-                    try { await invoke("update_action_priority", { id: action.id, priority: next }); onRefresh(); }
+                    try { await updateActionPriority(action.id, next); onRefresh(); }
                     catch (err) { console.error("Failed to update priority:", err); toast.error("Failed to update priority"); }
                   }}
                 />
