@@ -295,6 +295,18 @@ pub struct AccountVitalsFileMask {
     pub nps: bool,
 }
 
+/// Which person profile fields changed in a file-sync pass and should have
+/// their provenance stamped as workspace-file-origin (WR-R1). Each flag gates
+/// the corresponding `enrichment_sources` entry in
+/// `set_person_profile_file_provenance`.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub struct PersonProfileFileMask {
+    pub name: bool,
+    pub organization: bool,
+    pub role: bool,
+    pub relationship: bool,
+}
+
 /// A logged automatic lifecycle change for an account.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]

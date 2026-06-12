@@ -15,7 +15,7 @@ use std::path::{Path, PathBuf};
 use chrono::Utc;
 use serde::{Deserialize, Serialize};
 
-use crate::db::{ActionDb, DbMeeting, DbPerson, PersonSignals};
+use crate::db::{ActionDb, DbMeeting, DbPerson, PersonProfileFileMask, PersonSignals};
 use crate::util::{classify_relationship_multi, person_id_from_email};
 
 /// JSON schema for person.json files.
@@ -74,6 +74,25 @@ pub struct PersonStructured {
 
 fn default_relationship() -> String {
     "unknown".to_string()
+}
+
+/// Compute which person profile fields a file-sync pass actually changed,
+/// gating the workspace-file provenance stamp (WR-R1).
+fn person_profile_file_mask(file: &DbPerson, db: Option<&DbPerson>) -> PersonProfileFileMask {
+    match db {
+        Some(db) => PersonProfileFileMask {
+            name: file.name != db.name,
+            organization: file.organization != db.organization,
+            role: file.role != db.role,
+            relationship: db.relationship == "unknown" && file.relationship != db.relationship,
+        },
+        None => PersonProfileFileMask {
+            name: !file.name.trim().is_empty(),
+            organization: file.organization.is_some(),
+            role: file.role.is_some(),
+            relationship: file.relationship != "unknown",
+        },
+    }
 }
 
 /// Dashboard JSON for person entities (three-file pattern).
@@ -610,6 +629,18 @@ pub fn sync_people_from_workspace(
     db: &ActionDb,
     user_domains: &[String],
 ) -> Result<usize, String> {
+    // WR-R1: idempotent no-bump backfill for pre-existing person profile
+    // fields that have values but no provenance. The distinct
+    // `workspace_file:backfilled` label is intentionally honest about unknown
+    // pre-provenance origin.
+    match db.backfill_missing_person_profile_provenance() {
+        Ok(n) if n > 0 => {
+            log::info!("WR-R1: backfilled provenance for {n} pre-existing person profile fields")
+        }
+        Ok(_) => {}
+        Err(e) => log::warn!("WR-R1: person profile provenance backfill failed: {e}"),
+    }
+
     let people_dir = workspace.join("People");
     if !people_dir.exists() {
         return Ok(0);
@@ -648,6 +679,8 @@ pub fn sync_people_from_workspace(
                         // Compare: file mtime vs SQLite updated_at
                         if file_person.updated_at > db_person.updated_at {
                             // File is newer — update SQLite
+                            let file_mask =
+                                person_profile_file_mask(&file_person, Some(&db_person));
                             // Preserve meeting_count and first_seen from DB
                             file_person.meeting_count = db_person.meeting_count;
                             file_person.first_seen = db_person.first_seen.clone();
@@ -657,6 +690,15 @@ pub fn sync_people_from_workspace(
                                 &file_person,
                                 &linked_entities,
                             )?;
+                            #[allow(
+                                clippy::let_underscore_must_use,
+                                reason = "intentional best-effort discard; preserves existing non-blocking behavior"
+                            )]
+                            let _ = db.set_person_profile_file_provenance(
+                                file_person.id.as_str(),
+                                file_person.updated_at.as_str(),
+                                file_mask,
+                            );
                             write_person_markdown(workspace, &file_person, db)?;
                             synced += 1;
                         } else if db_person.updated_at > file_person.updated_at {
@@ -678,7 +720,17 @@ pub fn sync_people_from_workspace(
                     Ok(None) => {
                         // New person from file — insert to SQLite
                         file_person.first_seen = Some(Utc::now().to_rfc3339());
+                        let file_mask = person_profile_file_mask(&file_person, None);
                         upsert_person_and_restore_entity_links(db, &file_person, &linked_entities)?;
+                        #[allow(
+                            clippy::let_underscore_must_use,
+                            reason = "intentional best-effort discard; preserves existing non-blocking behavior"
+                        )]
+                        let _ = db.set_person_profile_file_provenance(
+                            file_person.id.as_str(),
+                            file_person.updated_at.as_str(),
+                            file_mask,
+                        );
                         write_person_markdown(workspace, &file_person, db)?;
                         synced += 1;
                     }
@@ -728,6 +780,21 @@ pub(crate) fn upsert_person_and_restore_entity_links(
 mod tests {
     use super::*;
     use crate::db::test_utils::test_db;
+
+    fn person_field_source(db: &ActionDb, id: &str, field: &str) -> Option<String> {
+        let raw: Option<String> = db
+            .conn_ref()
+            .query_row(
+                "SELECT enrichment_sources FROM people WHERE id = ?1",
+                rusqlite::params![id],
+                |row| row.get(0),
+            )
+            .expect("query enrichment_sources");
+        let sources: std::collections::HashMap<String, crate::db::people::FieldSource> = raw
+            .and_then(|json| serde_json::from_str(&json).ok())
+            .unwrap_or_default();
+        sources.get(field).map(|source| source.source.clone())
+    }
 
     #[test]
     fn test_infer_cadence_weekly() {
@@ -826,6 +893,40 @@ mod tests {
             "dashboard.json missing"
         );
         assert!(dir.join("person.md").exists(), "person.md missing");
+    }
+
+    #[test]
+    fn test_sync_people_stamps_profile_file_provenance() {
+        let db = test_db();
+        let workspace = tempfile::tempdir().expect("workspace");
+        let dir = workspace.path().join("People/Pat Example");
+        std::fs::create_dir_all(&dir).expect("create person dir");
+        let json = serde_json::json!({
+            "version": 1,
+            "entityType": "person",
+            "structured": {
+                "email": "pat@example.com",
+                "organization": "Example Org",
+                "role": "Sponsor",
+                "relationship": "external"
+            }
+        });
+        std::fs::write(
+            dir.join("person.json"),
+            serde_json::to_string_pretty(&json).expect("serialize"),
+        )
+        .expect("write person json");
+
+        let synced = sync_people_from_workspace(workspace.path(), &db, &[]).expect("sync people");
+        assert_eq!(synced, 1);
+        assert_eq!(
+            person_field_source(&db, "pat-example-com", "organization").as_deref(),
+            Some("workspace_file:entity_doc")
+        );
+        assert_eq!(
+            person_field_source(&db, "pat-example-com", "role").as_deref(),
+            Some("workspace_file:entity_doc")
+        );
     }
 
     #[test]

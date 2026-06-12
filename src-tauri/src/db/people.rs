@@ -997,6 +997,186 @@ impl ActionDb {
         Ok(())
     }
 
+    /// Record the person's workspace entity file as the provenance source for
+    /// profile fields it supplied this sync pass.
+    ///
+    /// Safety contract (WR-R1):
+    /// - Does not touch `people.updated_at`, so provenance-only writes never
+    ///   flip the file↔DB sync-direction comparison.
+    /// - For each masked field, stamps the source only when the value is
+    ///   present and the existing source is empty or already file-origin
+    ///   (`workspace_file%`). A user / user_edit / Clay / Glean attribution is
+    ///   never downgraded to file-origin.
+    /// - The caller sets the mask to fields whose value actually changed this
+    ///   pass, so unchanged user-edited values round-tripped through
+    ///   `person.json` are left untouched.
+    #[must_use = "check whether person profile file provenance was recorded"]
+    pub fn set_person_profile_file_provenance(
+        &self,
+        person_id: &str,
+        asof: &str,
+        mask: PersonProfileFileMask,
+    ) -> Result<(), DbError> {
+        const SRC: &str = "workspace_file:entity_doc";
+        let (name, organization, role, relationship, current_sources_json): (
+            String,
+            Option<String>,
+            Option<String>,
+            String,
+            Option<String>,
+        ) = self
+            .conn
+            .query_row(
+                "SELECT name, organization, role, relationship, enrichment_sources
+                 FROM people WHERE id = ?1",
+                params![person_id],
+                |row| {
+                    Ok((
+                        row.get(0)?,
+                        row.get(1)?,
+                        row.get(2)?,
+                        row.get(3)?,
+                        row.get(4)?,
+                    ))
+                },
+            )
+            .map_err(|e| DbError::Migration(format!("read person provenance row: {}", e)))?;
+
+        let mut sources: std::collections::HashMap<String, FieldSource> = current_sources_json
+            .as_deref()
+            .and_then(|json| serde_json::from_str(json).ok())
+            .unwrap_or_default();
+        let mut changed = false;
+
+        changed |= stamp_workspace_file_source(
+            &mut sources,
+            "name",
+            mask.name && !name.trim().is_empty(),
+            asof,
+            SRC,
+        );
+        changed |= stamp_workspace_file_source(
+            &mut sources,
+            "organization",
+            mask.organization
+                && organization
+                    .as_deref()
+                    .is_some_and(|value| !value.trim().is_empty()),
+            asof,
+            SRC,
+        );
+        changed |= stamp_workspace_file_source(
+            &mut sources,
+            "role",
+            mask.role
+                && role
+                    .as_deref()
+                    .is_some_and(|value| !value.trim().is_empty()),
+            asof,
+            SRC,
+        );
+        changed |= stamp_workspace_file_source(
+            &mut sources,
+            "relationship",
+            mask.relationship && !relationship.trim().is_empty(),
+            asof,
+            SRC,
+        );
+
+        if changed {
+            let sources_json = serde_json::to_string(&sources).unwrap_or_else(|_| "{}".to_string());
+            self.conn.execute(
+                "UPDATE people SET enrichment_sources = ?1 WHERE id = ?2",
+                params![sources_json, person_id],
+            )?;
+        }
+        Ok(())
+    }
+
+    /// One-time idempotent backfill for pre-provenance person profile fields.
+    ///
+    /// Uses `workspace_file:backfilled`, distinct from forward-sync
+    /// `entity_doc`, so it never claims the value was read from the file this
+    /// run. Existing provenance is left untouched. Does not touch
+    /// `people.updated_at`.
+    #[must_use = "check whether person profile provenance backfill ran"]
+    pub fn backfill_missing_person_profile_provenance(&self) -> Result<usize, DbError> {
+        const SRC: &str = "workspace_file:backfilled";
+        let rows = {
+            let mut stmt = self.conn.prepare(
+                "SELECT id, name, organization, role, relationship, enrichment_sources
+                 FROM people",
+            )?;
+            let rows = stmt.query_map([], |row| {
+                Ok((
+                    row.get::<_, String>(0)?,
+                    row.get::<_, String>(1)?,
+                    row.get::<_, Option<String>>(2)?,
+                    row.get::<_, Option<String>>(3)?,
+                    row.get::<_, String>(4)?,
+                    row.get::<_, Option<String>>(5)?,
+                ))
+            })?;
+            rows.collect::<Result<Vec<_>, _>>()?
+        };
+
+        let mut total = 0usize;
+        for (person_id, name, organization, role, relationship, current_sources_json) in rows {
+            let mut sources: std::collections::HashMap<String, FieldSource> = current_sources_json
+                .as_deref()
+                .and_then(|json| serde_json::from_str(json).ok())
+                .unwrap_or_default();
+            let mut changed = 0usize;
+
+            if stamp_missing_workspace_file_source(
+                &mut sources,
+                "name",
+                !name.trim().is_empty(),
+                SRC,
+            ) {
+                changed += 1;
+            }
+            if stamp_missing_workspace_file_source(
+                &mut sources,
+                "organization",
+                organization
+                    .as_deref()
+                    .is_some_and(|value| !value.trim().is_empty()),
+                SRC,
+            ) {
+                changed += 1;
+            }
+            if stamp_missing_workspace_file_source(
+                &mut sources,
+                "role",
+                role.as_deref()
+                    .is_some_and(|value| !value.trim().is_empty()),
+                SRC,
+            ) {
+                changed += 1;
+            }
+            if stamp_missing_workspace_file_source(
+                &mut sources,
+                "relationship",
+                !relationship.trim().is_empty() && relationship != "unknown",
+                SRC,
+            ) {
+                changed += 1;
+            }
+
+            if changed > 0 {
+                let sources_json =
+                    serde_json::to_string(&sources).unwrap_or_else(|_| "{}".to_string());
+                self.conn.execute(
+                    "UPDATE people SET enrichment_sources = ?1 WHERE id = ?2",
+                    params![sources_json, person_id],
+                )?;
+                total += changed;
+            }
+        }
+        Ok(total)
+    }
+
     /// Helper: map a row to `DbPerson`.
     pub(crate) fn map_person_row(row: &rusqlite::Row<'_>) -> rusqlite::Result<DbPerson> {
         Ok(DbPerson {
@@ -1586,14 +1766,14 @@ pub struct FieldSource {
 }
 
 /// Returns the numeric priority for a given enrichment source.
-/// Higher values win: User (4) > Clay (3) > Glean/Google/Gravatar (2) > AI (1).
+/// Higher values win: User (4) > Clay (3) > Glean/Google/Gravatar (2) > AI/workspace file (1).
 pub fn source_priority(source: &str) -> u8 {
     match source {
-        "user" => 4,
+        "user" | "user_edit" => 4,
         "clay" => 3,
         "glean" | "google" => 2,
         "gravatar" => 2,
-        "ai" => 1,
+        "ai" | "workspace_file:entity_doc" | "workspace_file:backfilled" => 1,
         _ => 0,
     }
 }
@@ -1612,5 +1792,218 @@ pub fn can_write_field(current_sources_json: Option<&str>, field: &str, source: 
     match sources.get(field) {
         Some(existing) => source_priority(&existing.source) <= new_priority,
         None => true,
+    }
+}
+
+fn stamp_workspace_file_source(
+    sources: &mut std::collections::HashMap<String, FieldSource>,
+    field: &str,
+    present: bool,
+    asof: &str,
+    source: &str,
+) -> bool {
+    if !present || !workspace_file_source_can_replace(sources.get(field)) {
+        return false;
+    }
+    sources.insert(
+        field.to_string(),
+        FieldSource {
+            source: source.to_string(),
+            at: asof.to_string(),
+        },
+    );
+    true
+}
+
+fn stamp_missing_workspace_file_source(
+    sources: &mut std::collections::HashMap<String, FieldSource>,
+    field: &str,
+    present: bool,
+    source: &str,
+) -> bool {
+    if !present || sources.contains_key(field) {
+        return false;
+    }
+    sources.insert(
+        field.to_string(),
+        FieldSource {
+            source: source.to_string(),
+            at: chrono::Utc::now().to_rfc3339(),
+        },
+    );
+    true
+}
+
+fn workspace_file_source_can_replace(existing: Option<&FieldSource>) -> bool {
+    existing
+        .map(|field_source| {
+            field_source.source.trim().is_empty()
+                || field_source.source.starts_with("workspace_file")
+        })
+        .unwrap_or(true)
+}
+
+#[cfg(test)]
+mod wr_r1_person_profile_provenance_tests {
+    use super::FieldSource;
+    use crate::db::{test_utils::test_db, DbPerson, PersonProfileFileMask};
+
+    fn person_with_profile(id: &str) -> DbPerson {
+        DbPerson {
+            id: id.to_string(),
+            email: format!("{id}@example.com"),
+            name: id.to_string(),
+            organization: Some("Example Org".to_string()),
+            role: Some("Sponsor".to_string()),
+            relationship: "external".to_string(),
+            notes: None,
+            tracker_path: None,
+            last_seen: None,
+            first_seen: None,
+            meeting_count: 0,
+            updated_at: "2026-01-01T00:00:00Z".to_string(),
+            archived: false,
+            linkedin_url: None,
+            twitter_handle: None,
+            phone: None,
+            photo_url: None,
+            bio: None,
+            title_history: None,
+            company_industry: None,
+            company_size: None,
+            company_hq: None,
+            last_enriched_at: None,
+            enrichment_sources: None,
+        }
+    }
+
+    fn source_for(db: &crate::db::ActionDb, id: &str, field: &str) -> Option<String> {
+        let raw: Option<String> = db
+            .conn_ref()
+            .query_row(
+                "SELECT enrichment_sources FROM people WHERE id = ?1",
+                rusqlite::params![id],
+                |row| row.get(0),
+            )
+            .expect("query enrichment_sources");
+        let sources: std::collections::HashMap<String, FieldSource> = raw
+            .and_then(|json| serde_json::from_str(&json).ok())
+            .unwrap_or_default();
+        sources.get(field).map(|source| source.source.clone())
+    }
+
+    fn updated_at(db: &crate::db::ActionDb, id: &str) -> String {
+        db.conn_ref()
+            .query_row(
+                "SELECT updated_at FROM people WHERE id = ?1",
+                rusqlite::params![id],
+                |row| row.get(0),
+            )
+            .expect("query updated_at")
+    }
+
+    fn full_mask() -> PersonProfileFileMask {
+        PersonProfileFileMask {
+            name: true,
+            organization: true,
+            role: true,
+            relationship: true,
+        }
+    }
+
+    #[test]
+    fn file_provenance_stamps_empty_source_but_never_clobbers_user_edit() {
+        let db = test_db();
+        db.upsert_person(&person_with_profile("person-r1"))
+            .expect("insert");
+        db.set_person_field_source("person-r1", "role", "user_edit")
+            .expect("user edit provenance");
+
+        db.set_person_profile_file_provenance("person-r1", "2026-06-01T00:00:00Z", full_mask())
+            .expect("file provenance");
+
+        assert_eq!(
+            source_for(&db, "person-r1", "role").as_deref(),
+            Some("user_edit")
+        );
+        assert_eq!(
+            source_for(&db, "person-r1", "organization").as_deref(),
+            Some("workspace_file:entity_doc")
+        );
+        assert_eq!(
+            source_for(&db, "person-r1", "relationship").as_deref(),
+            Some("workspace_file:entity_doc")
+        );
+    }
+
+    #[test]
+    fn file_provenance_only_stamps_masked_fields() {
+        let db = test_db();
+        db.upsert_person(&person_with_profile("person-mask"))
+            .expect("insert");
+
+        db.set_person_profile_file_provenance(
+            "person-mask",
+            "2026-06-01T00:00:00Z",
+            PersonProfileFileMask {
+                name: false,
+                organization: false,
+                role: true,
+                relationship: false,
+            },
+        )
+        .expect("file provenance");
+
+        assert_eq!(
+            source_for(&db, "person-mask", "role").as_deref(),
+            Some("workspace_file:entity_doc")
+        );
+        assert_eq!(source_for(&db, "person-mask", "organization"), None);
+    }
+
+    #[test]
+    fn file_provenance_does_not_bump_updated_at() {
+        let db = test_db();
+        db.upsert_person(&person_with_profile("person-bump"))
+            .expect("insert");
+        db.set_person_profile_file_provenance("person-bump", "2026-06-01T00:00:00Z", full_mask())
+            .expect("file provenance");
+
+        assert_eq!(
+            updated_at(&db, "person-bump"),
+            "2026-01-01T00:00:00Z",
+            "set_person_profile_file_provenance must not bump people.updated_at"
+        );
+    }
+
+    #[test]
+    fn backfill_fills_only_missing_sources_and_is_idempotent() {
+        let db = test_db();
+        db.upsert_person(&person_with_profile("person-bf"))
+            .expect("insert");
+        db.set_person_field_source("person-bf", "role", "user_edit")
+            .expect("user edit");
+
+        let first = db
+            .backfill_missing_person_profile_provenance()
+            .expect("backfill");
+        assert!(first >= 3, "fills the null-source profile fields");
+        assert_eq!(
+            source_for(&db, "person-bf", "role").as_deref(),
+            Some("user_edit")
+        );
+        assert_eq!(
+            source_for(&db, "person-bf", "organization").as_deref(),
+            Some("workspace_file:backfilled")
+        );
+        assert_eq!(
+            source_for(&db, "person-bf", "relationship").as_deref(),
+            Some("workspace_file:backfilled")
+        );
+
+        let second = db
+            .backfill_missing_person_profile_provenance()
+            .expect("backfill 2");
+        assert_eq!(second, 0, "backfill must be a no-op on the second run");
     }
 }
