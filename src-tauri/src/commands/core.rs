@@ -871,7 +871,7 @@ async fn refresh_week_calendar_cache(
 /// Force-refresh meeting preps for all future meetings.
 ///
 /// Clears existing prep_frozen_json and enqueues all future meetings into the
-/// MeetingPrepQueue at Manual priority. Used by the WeekPage refresh button.
+/// MeetingPrepQueue at Manual priority. Kept for the legacy week workflow.
 #[allow(
     clippy::let_underscore_must_use,
     reason = "tauri::command macro emits internal Result glue that discards generated metadata"

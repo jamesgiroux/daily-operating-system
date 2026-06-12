@@ -1598,7 +1598,7 @@ Thanks!`;
                 <div className={styles.risksContainer}>
                   {data.emailDigest.threads.map((thread, i) => (
                     <div key={`${thread.from}-${thread.date}-${i}`} className={styles.subordinateRisk}>
-                      <Link to="/emails" className={styles.emailSignalLink}>
+                      <div className={styles.emailSignalLink}>
                         <div className={styles.emailSignalHeader}>
                           <span className={styles.emailSignalSender}>{thread.from}</span>
                           <span className={styles.emailSignalDate}>
@@ -1611,7 +1611,7 @@ Thanks!`;
                           <p className={styles.emailSignalMeta}>{thread.source}</p>
                         )}
                         <p className={styles.subordinateRiskText}>{thread.snippet}</p>
-                      </Link>
+                      </div>
                       <span className={styles.itemActions}>
                         <IntelligenceFeedback
                           value={feedback.getFeedback(`correspondence[${i}]`)}
@@ -1632,7 +1632,7 @@ Thanks!`;
                   {data.recentEmailSignals.map((signal, i) => (
                     <div key={i} className={styles.subordinateRisk}>
                       <div className={styles.intelRow}>
-                        <Link to="/emails" className={styles.emailSignalLink}>
+                        <div className={styles.emailSignalLink}>
                           <div className={styles.emailSignalHeader}>
                             <span className={styles.emailSignalSender}>
                               {signal.senderEmail}
@@ -1644,7 +1644,7 @@ Thanks!`;
                             )}
                           </div>
                           <p className={styles.subordinateRiskText}>{signal.signalText}</p>
-                        </Link>
+                        </div>
                         <span className={styles.itemActions}>
                           <IntelligenceFeedback
                             value={feedback.getFeedback(`correspondence[${i}]`)}

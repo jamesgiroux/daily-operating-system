@@ -8,7 +8,7 @@ use std::collections::{HashMap, HashSet};
 use std::path::Path;
 
 use chrono::{Datelike, NaiveDate, Utc};
-use serde_json::{json, Value};
+use serde_json::{Value, json};
 
 use crate::error::ExecutionError;
 use crate::google_api;
@@ -301,6 +301,11 @@ pub async fn prepare_today(state: &AppState, workspace: &Path) -> Result<(), Exe
 
             // Inbox reconciliation — mark vanished emails resolved, reappear resolved ones
             reconcile_inbox_emails(&email_result.raw_emails, &db);
+
+            let ready = mark_fetched_emails_metadata_ready(&db, &email_result.raw_emails);
+            if ready > 0 {
+                log::info!("prepare_today: marked {} emails metadata-ready", ready);
+            }
         }
     }
 
@@ -322,36 +327,22 @@ pub async fn prepare_today(state: &AppState, workspace: &Path) -> Result<(), Exe
         }
     }
 
-    // Mandatory email enrichment (entity resolution + AI analysis)
-    // Uses two-phase approach: short DB locks for reads/writes, no lock during PTY calls
-    {
-        let ai_config = {
-            let cfg = state.config.read();
-            cfg.as_ref()
-                .map(|c| c.ai_models.clone())
-                .unwrap_or_default()
-        };
-        let enriched =
-            super::email_enrich::enrich_pending_emails_two_phase(state, workspace, &ai_config, 20)
-                .await;
-        if enriched > 0 {
-            log::info!("prepare_today: enriched {} emails", enriched);
+    // Emit metadata-derived entity signals from linked emails.
+    let email_signal_engine = state.signals.engine.clone();
+    match state.with_db(|db| {
+        Ok(crate::signals::email_bridge::emit_linked_email_signals(
+            db,
+            &email_signal_engine,
+        ))
+    }) {
+        Ok(emitted) if emitted > 0 => {
+            log::info!("prepare_today: emitted {} email metadata signals", emitted);
         }
-        // Emit entity signals from enriched emails
-        if let Ok(db) =
-            crate::db::ActionDb::open(std::sync::Arc::new(crate::db::LocalKeychain::new()))
-        {
-            let emitted = crate::signals::email_bridge::emit_enriched_email_signals(
-                &db,
-                &state.signals.engine,
-            );
-            if emitted > 0 {
-                log::info!("prepare_today: emitted {} email-entity signals", emitted);
-            }
-        }
+        Err(e) => log::warn!("prepare_today: email metadata signal emission failed: {e}"),
+        _ => {}
     }
 
-    // Score enriched emails after enrichment + signal emission
+    // Score active emails after metadata linkage + signal emission
     {
         // Split-lock: read active emails, score on a separate DB connection, then
         // write scores back under lock. Avoids holding DB mutex during ONNX inference.
@@ -399,90 +390,6 @@ pub async fn prepare_today(state: &AppState, workspace: &Path) -> Result<(), Exe
                 }
             }
             log::info!("prepare_today: scored {} emails", scores.len());
-        }
-    }
-
-    // Step 4a3: Email commitment extraction (extract actions from high-priority email bodies)
-    {
-        let body_access_enabled = {
-            let config_guard = state.config.read();
-            config_guard
-                .as_ref()
-                .map(|c| crate::types::is_feature_enabled(c, "emailBodyAccess"))
-                .unwrap_or(false)
-        };
-
-        if body_access_enabled {
-            let access_token = google_api::get_valid_access_token().await.ok();
-            if let Some(token) = access_token {
-                // Phase 1: Fetch bodies (async, no db lock held)
-                let mut fetched_bodies: Vec<(String, String, String, String)> = Vec::new();
-                for email_val in &email_result.high {
-                    let email_id = email_val.get("id").and_then(|v| v.as_str()).unwrap_or("");
-                    let subject = email_val
-                        .get("subject")
-                        .and_then(|v| v.as_str())
-                        .unwrap_or("");
-                    let from_email = email_val
-                        .get("from_email")
-                        .and_then(|v| v.as_str())
-                        .unwrap_or("");
-
-                    if email_id.is_empty() {
-                        continue;
-                    }
-
-                    match google_api::gmail::fetch_message_body(&token, email_id).await {
-                        Ok(Some(body)) => {
-                            fetched_bodies.push((
-                                email_id.to_string(),
-                                subject.to_string(),
-                                from_email.to_string(),
-                                body,
-                            ));
-                        }
-                        Ok(None) => {
-                            log::debug!("prepare_today: no body for email {}", email_id);
-                        }
-                        Err(e) => {
-                            log::debug!(
-                                "prepare_today: failed to fetch body for {}: {}",
-                                email_id,
-                                e
-                            );
-                        }
-                    }
-                }
-
-                // Phase 2: Extract commitments via PTY (blocking — runs in background task, not UI thread)
-                if !fetched_bodies.is_empty() {
-                    let ai_config = {
-                        let cfg = state.config.read();
-                        cfg.as_ref()
-                            .map(|c| c.ai_models.clone())
-                            .unwrap_or_default()
-                    };
-                    if let Ok(db) = crate::db::ActionDb::open(std::sync::Arc::new(
-                        crate::db::LocalKeychain::new(),
-                    )) {
-                        let mut total_commitments = 0usize;
-                        for (email_id, subject, from_email, body) in &fetched_bodies {
-                            let commitments =
-                                crate::processor::email_actions::extract_email_commitments(
-                                    workspace, &ai_config, body, email_id, subject, from_email, &db,
-                                );
-                            total_commitments += commitments.len();
-                        }
-                        if total_commitments > 0 {
-                            log::info!(
-                                "prepare_today: extracted {} commitments from {} high-priority emails",
-                                total_commitments,
-                                email_result.high.len()
-                            );
-                        }
-                    }
-                }
-            }
         }
     }
 
@@ -924,7 +831,10 @@ pub async fn prepare_today(state: &AppState, workspace: &Path) -> Result<(), Exe
 
         log::info!(
             "prepare_today: intelligence freshness check took {:?} — {} refreshed, {} already current, {} skipped",
-            intel_start.elapsed(), refreshed, already_current, skipped
+            intel_start.elapsed(),
+            refreshed,
+            already_current,
+            skipped
         );
     }
 
@@ -1662,6 +1572,11 @@ pub async fn refresh_emails_with_retry_batch(
         // Inbox reconciliation — mark vanished emails resolved, reappear resolved ones
         reconcile_inbox_emails(&email_result.raw_emails, &db);
 
+        let ready = mark_fetched_emails_metadata_ready(&db, &email_result.raw_emails);
+        if ready > 0 {
+            log::info!("refresh_emails: marked {} emails metadata-ready", ready);
+        }
+
         // Record that a Gmail fetch succeeded (independent of whether
         // downstream enrichment succeeds below). This is the canonical "fetch
         // is healthy" timestamp surfaced in the sync status UI, as opposed to
@@ -1762,41 +1677,22 @@ pub async fn refresh_emails_with_retry_batch(
         }
     }
 
-    // Mandatory email enrichment (entity resolution + AI analysis)
-    // Uses two-phase approach: short DB locks for reads/writes, no lock during PTY calls
-    // Only hold orchestration permit during the PTY enrichment call.
-    {
-        let ai_config = {
-            let cfg = state.config.read();
-            cfg.as_ref()
-                .map(|c| c.ai_models.clone())
-                .unwrap_or_default()
-        };
-        let _enrich_permit = state.permits.orchestration.acquire().await.map_err(|_| {
-            ExecutionError::ConfigurationError("Orchestration permit closed".to_string())
-        })?;
-        let enriched =
-            super::email_enrich::enrich_pending_emails_two_phase(state, workspace, &ai_config, 20)
-                .await;
-        drop(_enrich_permit);
-        if enriched > 0 {
-            log::info!("refresh_emails: enriched {} emails", enriched);
+    // Emit metadata-derived entity signals from linked emails.
+    let email_signal_engine = state.signals.engine.clone();
+    match state.with_db(|db| {
+        Ok(crate::signals::email_bridge::emit_linked_email_signals(
+            db,
+            &email_signal_engine,
+        ))
+    }) {
+        Ok(emitted) if emitted > 0 => {
+            log::info!("refresh_emails: emitted {} email metadata signals", emitted);
         }
-        // Emit entity signals from enriched emails
-        if let Ok(db) =
-            crate::db::ActionDb::open(std::sync::Arc::new(crate::db::LocalKeychain::new()))
-        {
-            let emitted = crate::signals::email_bridge::emit_enriched_email_signals(
-                &db,
-                &state.signals.engine,
-            );
-            if emitted > 0 {
-                log::info!("refresh_emails: emitted {} email-entity signals", emitted);
-            }
-        }
+        Err(e) => log::warn!("refresh_emails: email metadata signal emission failed: {e}"),
+        _ => {}
     }
 
-    // Score enriched emails after enrichment + signal emission
+    // Score active emails after metadata linkage + signal emission
     {
         // Split-lock: read active emails, score on a separate DB connection, then
         // write scores back under lock. Avoids holding DB mutex during ONNX inference.
@@ -2523,6 +2419,52 @@ async fn fetch_and_classify_emails(
     }
 }
 
+fn resolve_email_entity_metadata(
+    db: &crate::db::ActionDb,
+    sender_email: &str,
+) -> (Option<String>, Option<String>) {
+    if sender_email.trim().is_empty() {
+        return (None, None);
+    }
+
+    if let Ok(Some(person)) = db.get_person_by_email_or_alias(sender_email) {
+        return (Some(person.id), Some("person".to_string()));
+    }
+
+    let domain = email_classify::extract_domain(sender_email);
+    if !domain.is_empty() {
+        if let Ok(accounts) = db.lookup_account_candidates_by_domain(&domain) {
+            if let Some(account) = accounts.first() {
+                return (Some(account.id.clone()), Some("account".to_string()));
+            }
+        }
+    }
+
+    (None, None)
+}
+
+fn mark_fetched_emails_metadata_ready(
+    db: &crate::db::ActionDb,
+    raw_emails: &[google_api::gmail::RawEmail],
+) -> usize {
+    let mut ready = 0usize;
+    for raw in raw_emails {
+        let sender_email = email_classify::extract_email_address(&raw.from);
+        let (entity_id, entity_type) = resolve_email_entity_metadata(db, &sender_email);
+        match db.mark_email_metadata_ready(&raw.id, entity_id.as_deref(), entity_type.as_deref()) {
+            Ok(()) => ready += 1,
+            Err(error) => {
+                log::warn!(
+                    "email metadata ready: failed to update {}: {}",
+                    raw.id,
+                    error
+                );
+            }
+        }
+    }
+    ready
+}
+
 /// Update thread positions using pre-fetched sent thread IDs.
 ///
 /// Compares sent thread IDs against active emails in the DB and updates
@@ -2650,11 +2592,7 @@ fn extract_recipient_addresses(header: &str) -> Option<String> {
             let part = part.trim();
             if let (Some(lt), Some(gt)) = (part.find('<'), part.rfind('>')) {
                 let addr = part[lt + 1..gt].trim().to_lowercase();
-                if addr.contains('@') {
-                    Some(addr)
-                } else {
-                    None
-                }
+                if addr.contains('@') { Some(addr) } else { None }
             } else if part.contains('@') {
                 Some(part.to_lowercase())
             } else {
@@ -2700,7 +2638,7 @@ fn track_thread_positions(
             .entry(thread_id.to_string())
             .or_insert((email, date.clone(), 0));
         entry.2 += 1; // increment message count
-                      // Keep the email with the later date
+        // Keep the email with the later date
         if date > entry.1 {
             entry.0 = email;
             entry.1 = date;
@@ -4174,15 +4112,19 @@ mod tests {
         // both customer and team_sync are now prep-eligible
         assert_eq!(checks.len(), 2);
         assert_eq!(checks[0]["checkType"], "no_prep");
-        assert!(checks[0]["message"]
-            .as_str()
-            .unwrap()
-            .contains("Customer Sync"));
+        assert!(
+            checks[0]["message"]
+                .as_str()
+                .unwrap()
+                .contains("Customer Sync")
+        );
         assert_eq!(checks[1]["checkType"], "no_prep");
-        assert!(checks[1]["message"]
-            .as_str()
-            .unwrap()
-            .contains("Team Standup"));
+        assert!(
+            checks[1]["message"]
+                .as_str()
+                .unwrap()
+                .contains("Team Standup")
+        );
     }
 
     #[test]
@@ -4227,10 +4169,12 @@ mod tests {
         let checks = build_readiness_checks(&directive, Path::new(""));
         assert_eq!(checks.len(), 1);
         assert_eq!(checks[0]["checkType"], "overdue_action");
-        assert!(checks[0]["message"]
-            .as_str()
-            .unwrap()
-            .contains("2 overdue actions"));
+        assert!(
+            checks[0]["message"]
+                .as_str()
+                .unwrap()
+                .contains("2 overdue actions")
+        );
     }
 
     #[test]

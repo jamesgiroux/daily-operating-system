@@ -15,7 +15,6 @@ use tauri::{AppHandle, Emitter};
 use crate::activity::ActivityLevel;
 use crate::google_api;
 use crate::people;
-use crate::pty::{AiUsageContext, ModelTier, PtyManager};
 use crate::state::AppState;
 use crate::types::{CalendarEvent, GoogleAuthStatus, MeetingType};
 #[cfg(test)]
@@ -1336,156 +1335,9 @@ pub async fn run_email_poller(state: Arc<AppState>, app_handle: AppHandle) {
 
                         if !new_ids.is_empty() {
                             log::info!(
-                                "Email poll: {} new emails detected, running AI enrichment",
+                                "Email poll: {} new emails detected; metadata sync complete",
                                 new_ids.len()
                             );
-
-                            if crate::pty::background_ai_paused() {
-                                log::info!(
-                                    "Email poll: skipping AI enrichment while background AI is paused"
-                                );
-                            } else {
-                                // Serialize expensive poller enrichment/scoring work so wake/unlock
-                                // paths don't compete with other heavy queues.
-                                let _heavy_work_permit = match state.permits.pty.acquire().await {
-                                    Ok(permit) => permit,
-                                    Err(e) => {
-                                        log::warn!(
-                                            "Email poll: PTY permit closed, skipping enrichment: {}",
-                                            e
-                                        );
-                                        continue;
-                                    }
-                                };
-
-                                // Reuse Executor's enrichment pipeline (same data shaping as manual refresh),
-                                // but keep the background pass cheap and extraction-only.
-                                let executor = crate::executor::Executor::new(
-                                    state.clone(),
-                                    app_handle.clone(),
-                                );
-                                let user_ctx = state
-                                    .config
-                                    .read()
-                                    .as_ref()
-                                    .map(crate::types::UserContext::from_config)
-                                    .unwrap_or_default();
-                                let ai_config = executor.ai_model_config();
-                                let background_pty =
-                                    PtyManager::for_tier(ModelTier::Background, &ai_config)
-                                        .with_usage_context(
-                                            AiUsageContext::new(
-                                                "gmail",
-                                                "background_email_enrichment",
-                                            )
-                                            .with_trigger("poller")
-                                            .with_tier(ModelTier::Background)
-                                            .with_background(true),
-                                        );
-
-                                match executor.enrich_emails_with_fallback(
-                                    &data_dir,
-                                    &workspace,
-                                    &user_ctx,
-                                    &background_pty,
-                                    None,
-                                ) {
-                                    Ok(()) => {
-                                        log::info!("Email poll: AI enrichment succeeded");
-                                        #[allow(
-                                            clippy::let_underscore_must_use,
-                                            reason = "intentional best-effort discard; preserves existing non-blocking behavior"
-                                        )]
-                                        let _ = app_handle.emit("emails-updated", ());
-                                    }
-                                    Err(e) => {
-                                        log::warn!(
-                                            "Email poll: AI enrichment failed (non-fatal): {}",
-                                            e
-                                        );
-                                    }
-                                }
-
-                                // Sync enriched signals to DB
-                                match executor.sync_email_signals_from_payload(&data_dir) {
-                                    Ok(count) if count > 0 => {
-                                        log::info!(
-                                            "Email poll: persisted {} email signal rows",
-                                            count
-                                        );
-                                    }
-                                    Err(e) => {
-                                        log::warn!(
-                                            "Email poll: signal sync failed (non-fatal): {}",
-                                            e
-                                        );
-                                    }
-                                    _ => {}
-                                }
-
-                                // Re-score after enrichment so new intelligence is reflected.
-                                let scores = {
-                                    let active = crate::db::ActionDb::open(std::sync::Arc::new(
-                                        crate::db::LocalKeychain::new(),
-                                    ))
-                                    .ok()
-                                    .and_then(|db| db.get_all_active_emails().ok())
-                                    .unwrap_or_default();
-                                    if !active.is_empty() {
-                                        match crate::db::ActionDb::open(std::sync::Arc::new(
-                                            crate::db::LocalKeychain::new(),
-                                        )) {
-                                            Ok(scoring_db) => {
-                                                let model = state.embedding_model.clone();
-                                                let merged_kws = state
-                                                    .get_merged_signal_config()
-                                                    .signal_keywords;
-                                                crate::signals::email_scoring::score_emails(
-                                                    &scoring_db,
-                                                    Some(&model),
-                                                    &active,
-                                                    &merged_kws,
-                                                )
-                                            }
-                                            Err(e) => {
-                                                log::warn!(
-                                                    "Email poll: failed to open scoring DB: {}",
-                                                    e
-                                                );
-                                                Vec::new()
-                                            }
-                                        }
-                                    } else {
-                                        Vec::new()
-                                    }
-                                };
-                                if !scores.is_empty() {
-                                    if let Ok(db) = crate::db::ActionDb::open(std::sync::Arc::new(
-                                        crate::db::LocalKeychain::new(),
-                                    )) {
-                                        for (email_id, score, reason) in &scores {
-                                            #[allow(
-                                                clippy::let_underscore_must_use,
-                                                reason = "intentional best-effort discard; preserves existing non-blocking behavior"
-                                            )]
-                                            let _ =
-                                                db.set_relevance_score(email_id, *score, reason);
-                                        }
-                                    }
-                                    log::info!("Email poll: scored {} emails", scores.len());
-                                }
-
-                                #[allow(
-                                    clippy::let_underscore_must_use,
-                                    reason = "intentional best-effort discard; preserves existing non-blocking behavior"
-                                )]
-                                let _ = app_handle.emit("operation-delivered", "emails-enriched");
-                                #[allow(
-                                    clippy::let_underscore_must_use,
-                                    reason = "intentional best-effort discard; preserves existing non-blocking behavior"
-                                )]
-                                let _ = app_handle.emit("emails-updated", ());
-                            }
                         } else {
                             log::info!("Email poll: no new emails");
                         }

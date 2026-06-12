@@ -3,7 +3,7 @@
  *
  * Renders type-based accent bars, time/duration, entity bylines,
  * intelligence badges, temporal states. Used by BriefingMeetingCard
- * (composition) and WeekPage timeline (direct).
+ * and entity meeting surfaces.
  */
 import { Link } from "@tanstack/react-router";
 import clsx from "clsx";

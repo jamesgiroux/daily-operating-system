@@ -51,10 +51,10 @@ export const PHASE3_SURFACE_OWNERSHIP: SurfaceOwnership[] = [
   },
   {
     id: "inbox_emails",
-    label: "Inbox / Emails",
-    routes: ["/inbox", "/emails"],
-    owners: ["hooks/useInbox.ts", "pages/InboxPage.tsx", "pages/EmailsPage.tsx"],
-    notes: "Inbox and Emails remain separate routes but share one parity surface because both depend on inbox/email command shapes.",
+    label: "Inbox",
+    routes: ["/inbox"],
+    owners: ["hooks/useInbox.ts", "pages/InboxPage.tsx"],
+    notes: "Inbox remains the routed capture/dropbox surface; email is signal-only and no longer has a standalone route.",
   },
   {
     id: "settings_data",

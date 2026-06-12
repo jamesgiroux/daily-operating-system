@@ -1273,10 +1273,10 @@ pub fn dev_run_today_mechanical(state: State<'_, Arc<AppState>>) -> Result<Strin
     crate::devtools::run_today_mechanical(&state)
 }
 
-/// Daily briefing — full pipeline with AI enrichment.
+/// Daily briefing — full pipeline with prep and briefing AI enrichment.
 ///
 /// Requires `simulate_briefing` scenario + Claude Code CLI installed.
-/// Mechanical delivery + enrich_emails, enrich_preps, enrich_briefing.
+/// Mechanical delivery + enrich_preps, enrich_briefing.
 #[tauri::command]
 pub fn dev_run_today_full(state: State<'_, Arc<AppState>>) -> Result<String, String> {
     if !cfg!(debug_assertions) {

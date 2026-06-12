@@ -452,8 +452,7 @@ export interface EmailSyncStats {
   permanentlyFailed: number;
 }
 
-/** Lightweight preview of a permanently-failed email for the
- *  "View details" expansion on the EmailsPage failure UX. */
+/** Lightweight preview of a permanently-failed email for legacy retry details. */
 export interface FailedEmailPreview {
   emailId: string;
   subject: string | null;

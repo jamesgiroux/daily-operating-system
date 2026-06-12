@@ -33,7 +33,6 @@ import ActionsPage from "@/pages/ActionsPage";
 import InboxPage from "@/pages/InboxPage";
 import MeetingDetailPage from "@/pages/MeetingDetailPage";
 import MeetingHistoryDetailPage from "@/pages/MeetingHistoryDetailPage";
-import EmailsPage from "@/pages/EmailsPage";
 import HistoryPage from "@/pages/HistoryPage";
 import PeoplePage from "@/pages/PeoplePage";
 import PersonDetailEditorial from "@/pages/PersonDetailEditorial";
@@ -49,7 +48,6 @@ import MonthlyWrappedPage from "@/pages/monthly-wrapped/MonthlyWrappedPage";
 import BookOfBusinessPage from "@/pages/BookOfBusinessPage";
 import SettingsPage from "@/pages/SettingsPage";
 import MePage from "@/pages/MePage";
-import WeekPage from "@/pages/WeekPage";
 
 
 // Magazine shell
@@ -96,7 +94,7 @@ const peopleHygieneFilters = new Set(["unnamed", "duplicates"]);
 
 // Route IDs that use the magazine shell instead of the sidebar shell.
 // Add new editorial routes here as they're built.
-const MAGAZINE_ROUTE_IDS = new Set(["/", "/week", "/actions", "/actions/$actionId", "/accounts", "/projects", "/people", "/accounts/$accountId", "/accounts/$accountId/reports/risk_briefing", "/accounts/$accountId/reports/$reportType", "/accounts/$accountId/reports/account_health", "/accounts/$accountId/reports/ebr_qbr", "/accounts/$accountId/reports/swot", "/me/reports/weekly_impact", "/me/reports/monthly_wrapped", "/me/reports/book_of_business", "/me/reports/$reportType", "/projects/$projectId", "/people/$personId", "/emails", "/inbox", "/history", "/settings", "/me", "/meeting/$meetingId", "/meeting/history/$meetingId"]);
+const MAGAZINE_ROUTE_IDS = new Set(["/", "/actions", "/actions/$actionId", "/accounts", "/projects", "/people", "/accounts/$accountId", "/accounts/$accountId/reports/risk_briefing", "/accounts/$accountId/reports/$reportType", "/accounts/$accountId/reports/account_health", "/accounts/$accountId/reports/ebr_qbr", "/accounts/$accountId/reports/swot", "/me/reports/weekly_impact", "/me/reports/monthly_wrapped", "/me/reports/book_of_business", "/me/reports/$reportType", "/projects/$projectId", "/people/$personId", "/inbox", "/history", "/settings", "/me", "/meeting/$meetingId", "/meeting/history/$meetingId"]);
 
 const WELCOME_MIN_MS = 1500;
 const WELCOME_MAX_MS = 5000;
@@ -174,8 +172,6 @@ function RootLayout() {
   function handleNavNavigate(page: string) {
     const routes: Record<string, string> = {
       today: "/",
-      week: "/week",
-      emails: "/emails",
       dropbox: "/inbox",
       actions: "/actions",
       me: "/me",
@@ -537,12 +533,6 @@ const inboxRoute = createRoute({
   }),
 });
 
-const emailsRoute = createRoute({
-  getParentRoute: () => rootRoute,
-  path: "/emails",
-  component: EmailsPage,
-});
-
 const meetingDetailRoute = createRoute({
   getParentRoute: () => rootRoute,
   path: "/meeting/$meetingId",
@@ -584,12 +574,6 @@ const meRoute = createRoute({
   getParentRoute: () => rootRoute,
   path: "/me",
   component: MePage,
-});
-
-const weekRoute = createRoute({
-  getParentRoute: () => rootRoute,
-  path: "/week",
-  component: WeekPage,
 });
 
 const historyRoute = createRoute({
@@ -642,7 +626,6 @@ const routeTree = rootRoute.addChildren([
   meReportRoute,
   actionDetailRoute,
   actionsRoute,
-  emailsRoute,
   historyRoute,
   inboxRoute,
   meRoute,
@@ -653,7 +636,6 @@ const routeTree = rootRoute.addChildren([
   projectsRoute,
   projectDetailRoute,
   settingsRoute,
-  weekRoute,
 ]);
 
 // Create router

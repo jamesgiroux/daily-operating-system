@@ -117,8 +117,8 @@ export const PHASE3_SURFACE_CONTRACTS: SurfaceContract[] = [
   },
   {
     id: "inbox_emails",
-    label: "Inbox / Emails",
-    consumers: ["pages/InboxPage.tsx", "pages/EmailsPage.tsx"],
+    label: "Inbox",
+    consumers: ["pages/InboxPage.tsx"],
     commands: [
       {
         command: "get_inbox_files",

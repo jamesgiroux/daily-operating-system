@@ -7,7 +7,7 @@
  * - hero: large score + band tint + trend rationale + confidence qualifier
  *
  * Wired across AccountsPage, AccountHero, MeetingDetailPage,
- * DailyBriefing, and WeekPage.
+ * and DailyBriefing.
  */
 import { TrendingUp, TrendingDown, Minus, Zap } from "lucide-react";
 import type { IntelligenceHealthTrend, HealthDivergence } from "@/types";

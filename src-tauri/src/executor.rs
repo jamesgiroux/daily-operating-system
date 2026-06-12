@@ -6,7 +6,6 @@
 //! - Archive: pure Rust reconciliation + file moves
 //! - InboxBatch: direct processor calls
 
-use std::collections::HashSet;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
@@ -93,332 +92,6 @@ impl Executor {
             enrichment_failed: None,
             total_active: None,
         }
-    }
-
-    fn is_model_unavailable_error(err: &str) -> bool {
-        err.to_lowercase().contains("model_unavailable")
-    }
-
-    /// Build set of known external domains from account_domains + person emails.
-    pub(crate) fn build_known_domains(&self) -> HashSet<String> {
-        let mut domains = HashSet::new();
-        if let Ok(db) =
-            crate::db::ActionDb::open(std::sync::Arc::new(crate::db::LocalKeychain::new()))
-        {
-            {
-                // Account domains
-                if let Ok(rows) = db
-                    .conn_ref()
-                    .prepare("SELECT DISTINCT lower(domain) FROM account_domains")
-                    .and_then(|mut stmt| {
-                        let rows = stmt.query_map([], |row| row.get::<_, String>(0))?;
-                        Ok(rows.filter_map(|r| r.ok()).collect::<Vec<_>>())
-                    })
-                {
-                    domains.extend(rows);
-                }
-                // Person email domains
-                if let Ok(rows) = db.conn_ref().prepare(
-                    "SELECT DISTINCT lower(substr(email, instr(email, '@') + 1)) FROM people WHERE email IS NOT NULL AND email != ''"
-                ).and_then(|mut stmt| {
-                    let rows = stmt.query_map([], |row| row.get::<_, String>(0))?;
-                    Ok(rows.filter_map(|r| r.ok()).collect::<Vec<_>>())
-                }) {
-                    domains.extend(rows);
-                }
-            }
-        }
-        domains
-    }
-
-    pub(crate) fn enrich_emails_with_fallback(
-        &self,
-        data_dir: &Path,
-        workspace: &Path,
-        user_ctx: &crate::types::UserContext,
-        extraction_pty: &PtyManager,
-        synthesis_pty: Option<&PtyManager>,
-    ) -> Result<(), String> {
-        let known_domains = self.build_known_domains();
-        match crate::workflow::deliver::enrich_emails(
-            data_dir,
-            extraction_pty,
-            workspace,
-            user_ctx,
-            &known_domains,
-        ) {
-            Ok(()) => Ok(()),
-            Err(err) if Self::is_model_unavailable_error(&err) => {
-                let Some(synthesis_pty) = synthesis_pty else {
-                    return Err(err);
-                };
-                log::warn!(
-                    "Email enrichment extraction model unavailable, retrying with synthesis tier: {}",
-                    err
-                );
-                match crate::workflow::deliver::enrich_emails(
-                    data_dir,
-                    synthesis_pty,
-                    workspace,
-                    user_ctx,
-                    &known_domains,
-                ) {
-                    Ok(()) => {
-                        #[allow(
-                            clippy::let_underscore_must_use,
-                            reason = "intentional best-effort discard; preserves existing non-blocking behavior"
-                        )]
-                        let _ = self.app_handle.emit(
-                            "email-enrichment-warning",
-                            "Email enrichment used synthesis fallback model",
-                        );
-                        Ok(())
-                    }
-                    Err(fallback_err) => Err(format!(
-                        "Email enrichment fallback failed after extraction model error: {}",
-                        fallback_err
-                    )),
-                }
-            }
-            Err(err) => Err(err),
-        }
-    }
-
-    pub(crate) fn sync_email_signals_from_payload(&self, data_dir: &Path) -> Result<usize, String> {
-        let emails_path = data_dir.join("emails.json");
-        if !emails_path.exists() {
-            return Ok(0);
-        }
-
-        let raw = std::fs::read_to_string(&emails_path)
-            .map_err(|e| format!("Failed to read emails.json for signal sync: {}", e))?;
-        let payload: serde_json::Value = serde_json::from_str(&raw)
-            .map_err(|e| format!("Failed to parse emails.json for signal sync: {}", e))?;
-
-        let mut emails_with_signals: Vec<serde_json::Value> = Vec::new();
-        if let Some(arr) = payload.get("highPriority").and_then(|v| v.as_array()) {
-            emails_with_signals.extend(arr.iter().cloned());
-        }
-        if let Some(arr) = payload.get("mediumPriority").and_then(|v| v.as_array()) {
-            emails_with_signals.extend(arr.iter().cloned());
-        }
-
-        if emails_with_signals.is_empty() {
-            return Ok(0);
-        }
-
-        self.state.with_db(|db| {
-            db.conn_ref()
-                .execute_batch("BEGIN")
-                .map_err(|e| e.to_string())?;
-
-            let mut inserted = 0usize;
-
-            let result = (|| -> Result<usize, String> {
-                for email in emails_with_signals {
-                    let email_id = email
-                        .get("id")
-                        .and_then(|v| v.as_str())
-                        .unwrap_or("")
-                        .trim();
-                    if email_id.is_empty() {
-                        continue;
-                    }
-
-                    let sender_email = email
-                        .get("senderEmail")
-                        .and_then(|v| v.as_str())
-                        .map(|s| s.trim().to_lowercase())
-                        .filter(|s| !s.is_empty());
-                    let domain = sender_email
-                        .as_deref()
-                        .and_then(|sender| sender.split('@').nth(1))
-                        .unwrap_or("")
-                        .to_string();
-                    let received_at = email
-                        .get("received")
-                        .and_then(|v| v.as_str())
-                        .map(|s| s.to_string());
-
-                    let person = sender_email
-                        .as_deref()
-                        .and_then(|sender| db.get_person_by_email_or_alias(sender).ok().flatten());
-                    let person_id = person.as_ref().map(|p| p.id.clone());
-
-                    let mut targets: HashSet<(String, String)> = HashSet::new();
-
-                    // Only fan out person→entity signals for external contacts.
-                    // Internal people are linked to many accounts as team members —
-                    // fanning their email signals to all those accounts creates noise.
-                    // For internal senders, fall through to domain-based attribution.
-                    let is_external = person
-                        .as_ref()
-                        .map(|p| p.relationship == "external")
-                        .unwrap_or(false);
-
-                    if is_external {
-                        if let Some(ref pid) = person_id {
-                            if let Ok(entities) = db.get_entities_for_person(pid) {
-                                for entity in entities {
-                                    targets.insert((
-                                        entity.id,
-                                        entity.entity_type.as_str().to_string(),
-                                    ));
-                                }
-                            }
-                        }
-                    }
-
-                    if targets.is_empty() && !domain.is_empty() {
-                        if let Ok(accounts) = db.lookup_account_candidates_by_domain(&domain) {
-                            for account in accounts
-                                .into_iter()
-                                .filter(|a| !a.account_type.is_internal())
-                            {
-                                targets.insert((account.id, "account".to_string()));
-                            }
-                        }
-                    }
-
-                    if targets.is_empty() {
-                        continue;
-                    }
-
-                    let signals = email
-                        .get("emailSignals")
-                        .and_then(|v| v.as_array())
-                        .cloned()
-                        .unwrap_or_default();
-                    for signal in signals {
-                        let signal_type = signal
-                            .get("signalType")
-                            .and_then(|v| v.as_str())
-                            .unwrap_or("")
-                            .trim();
-                        let signal_text = signal
-                            .get("signalText")
-                            .and_then(|v| v.as_str())
-                            .unwrap_or("")
-                            .trim();
-                        if signal_type.is_empty() || signal_text.is_empty() {
-                            continue;
-                        }
-
-                        let confidence = signal.get("confidence").and_then(|v| v.as_f64());
-                        let sentiment = signal
-                            .get("sentiment")
-                            .and_then(|v| v.as_str())
-                            .map(|s| s.trim())
-                            .filter(|s| !s.is_empty());
-                        let urgency = signal
-                            .get("urgency")
-                            .and_then(|v| v.as_str())
-                            .map(|s| s.trim())
-                            .filter(|s| !s.is_empty());
-                        let signal_source = signal
-                            .get("source")
-                            .and_then(|v| v.as_str())
-                            .map(|s| s.trim())
-                            .filter(|s| !s.is_empty());
-                        let detected_at = signal
-                            .get("detectedAt")
-                            .and_then(|v| v.as_str())
-                            .or(received_at.as_deref());
-
-                        for (entity_id, entity_type) in &targets {
-                            let was_inserted = db
-                                .upsert_email_signal(&crate::db::signals::EmailSignalInput {
-                                    email_id,
-                                    sender_email: sender_email.as_deref(),
-                                    person_id: person_id.as_deref(),
-                                    entity_id,
-                                    entity_type,
-                                    signal_type,
-                                    signal_text,
-                                    confidence,
-                                    sentiment,
-                                    urgency,
-                                    detected_at,
-                                    source: signal_source,
-                                })
-                                .map_err(|e| e.to_string())?;
-                            if was_inserted {
-                                inserted += 1;
-                                // Bridge email_signals → signal_events
-                                // Emit email_received for person entities to trigger hygiene rules
-                                if entity_type == "person" {
-                                    if let Some(ref pid) = person_id {
-                                        let clock = crate::services::context::SystemClock;
-                                        let rng = crate::services::context::SystemRng;
-                                        let ext =
-                                            crate::services::context::ExternalClients::default();
-                                        let ctx =
-                                            crate::services::context::ServiceContext::new_live(
-                                                &clock, &rng, &ext,
-                                            );
-                                        let display_name = sender_email.as_deref().and_then(|e| {
-                                            // Extract display name from "Name <email>" format
-                                            let trimmed = e.trim();
-                                            trimmed.find('<').and_then(|pos| {
-                                                let name =
-                                                    trimmed[..pos].trim().trim_matches('"').trim();
-                                                if name.is_empty() || !name.contains(' ') {
-                                                    None
-                                                } else {
-                                                    Some(name.to_string())
-                                                }
-                                            })
-                                        });
-                                        crate::services::signals::emit_or_log(
-                                            &ctx,
-                                            db,
-                                            "person",
-                                            pid,
-                                            "email_received",
-                                            "email_signal",
-                                            display_name.as_deref(),
-                                            0.8,
-                                        );
-                                        // Emit negative_sentiment for propagation rules
-                                        // (e.g. rule_champion_sentiment → champion_risk)
-                                        if sentiment == Some("negative") {
-                                            crate::services::signals::emit_or_log(
-                                                &ctx,
-                                                db,
-                                                "person",
-                                                pid,
-                                                "negative_sentiment",
-                                                "email_signal",
-                                                Some(signal_text),
-                                                confidence.unwrap_or(0.7),
-                                            );
-                                        }
-                                    }
-                                }
-                            }
-                        }
-                    }
-                }
-                Ok(inserted)
-            })();
-
-            match result {
-                Ok(count) => {
-                    db.conn_ref()
-                        .execute_batch("COMMIT")
-                        .map_err(|e| e.to_string())?;
-                    Ok(count)
-                }
-                Err(e) => {
-                    if let Err(rollback_error) = db.conn_ref().execute_batch("ROLLBACK") {
-                        log::warn!(
-                            "email enrichment transaction rollback failed: {rollback_error}"
-                        );
-                    }
-                    Err(e)
-                }
-            }
-        })
     }
 
     /// Start the executor loop
@@ -1005,7 +678,7 @@ impl Executor {
     /// 3. Deliver mechanical operations (schedule, actions, preps) — instant
     /// 4. Sync actions to SQLite
     /// 5. Write manifest (partial: true initially, partial: false when done)
-    /// 6. AI enrichment for emails + briefing narrative
+    /// 6. AI enrichment for prep agendas + briefing narrative
     ///
     /// Each mechanical operation emits an `operation-delivered:{op}` event
     /// so the frontend can progressively render sections as they land.
@@ -1111,7 +784,7 @@ impl Executor {
             .as_ref()
             .map(|c| crate::types::is_feature_enabled(c, "emailTriage"))
             .unwrap_or(true);
-        let mut emails_data = if email_enabled {
+        let emails_data = if email_enabled {
             match crate::workflow::deliver::deliver_emails(&directive, &data_dir) {
                 Ok(data) => {
                     #[allow(
@@ -1145,7 +818,7 @@ impl Executor {
                     crate::notification::emit_system_status(
                         &self.app_handle,
                         "pipeline_error",
-                        &format!("Email enrichment paused: {}", e),
+                        &format!("Email delivery paused: {}", e),
                     );
                     crate::workflow::deliver::set_email_sync_status(&data_dir, &sync)
                         .unwrap_or_else(|_| {
@@ -1158,7 +831,7 @@ impl Executor {
             crate::workflow::deliver::empty_emails_payload(None)
         };
 
-        // Write manifest (partial: true — AI enrichment not yet done)
+        // Write manifest (partial: true — prep/briefing AI enrichment not yet done)
         crate::workflow::deliver::deliver_manifest(
             &directive,
             &schedule_data,
@@ -1198,7 +871,7 @@ impl Executor {
         let ai_config = self.ai_model_config();
         let extraction_pty = PtyManager::for_tier(ModelTier::Extraction, &ai_config)
             .with_usage_context(
-                AiUsageContext::new("workflow", "today_email_enrichment")
+                AiUsageContext::new("workflow", "today_prep_enrichment")
                     .with_trigger("today")
                     .with_tier(ModelTier::Extraction),
             );
@@ -1208,57 +881,6 @@ impl Executor {
                     .with_trigger("today")
                     .with_tier(ModelTier::Synthesis),
             );
-
-        // AI: Enrich emails (high-priority only, feature-gated)
-        if email_enabled {
-            if let Err(e) = self.enrich_emails_with_fallback(
-                &data_dir,
-                workspace,
-                &user_ctx,
-                &extraction_pty,
-                Some(&synthesis_pty),
-            ) {
-                log::warn!("Email enrichment failed (non-fatal): {}", e);
-                let sync = self.build_email_sync_status(
-                    EmailSyncState::Warning,
-                    EmailSyncStage::Enrich,
-                    Some("email_enrichment_failed".to_string()),
-                    Some(format!("Email AI summaries unavailable: {}", e)),
-                    Some(true),
-                );
-                if let Ok(updated) =
-                    crate::workflow::deliver::set_email_sync_status(&data_dir, &sync)
-                {
-                    emails_data = updated;
-                }
-                self.emit_email_sync_status(&sync);
-                #[allow(
-                    clippy::let_underscore_must_use,
-                    reason = "intentional best-effort discard; preserves existing non-blocking behavior"
-                )]
-                let _ = self.app_handle.emit(
-                    "email-enrichment-warning",
-                    format!("Email AI summaries unavailable: {}", e),
-                );
-            }
-            match self.sync_email_signals_from_payload(&data_dir) {
-                Ok(count) => {
-                    if count > 0 {
-                        log::info!("Email signal sync: persisted {} signal rows", count);
-                    }
-                }
-                Err(e) => {
-                    log::warn!("Email signal sync failed (non-fatal): {}", e);
-                }
-            }
-            #[allow(
-                clippy::let_underscore_must_use,
-                reason = "intentional best-effort discard; preserves existing non-blocking behavior"
-            )]
-            let _ = self
-                .app_handle
-                .emit("operation-delivered", "emails-enriched");
-        }
 
         // AI: Enrich prep agendas (feature-gated)
         if prep_enabled {
@@ -1382,9 +1004,8 @@ impl Executor {
     /// 1. Check that /today pipeline is not currently running
     /// 2. Fetch emails from Gmail, classify, write directive (Rust-native)
     /// 3. Read refresh directive and deliver via deliver_emails()
-    /// 4. Optionally run AI enrichment (fault-tolerant)
-    /// 5. Emit operation-delivered for frontend refresh
-    /// 6. Clean up refresh directive
+    /// 4. Emit operation-delivered for frontend refresh
+    /// 5. Clean up refresh directive
     pub async fn execute_email_refresh(&self, workspace: &Path) -> Result<(), String> {
         self.execute_email_refresh_with_retry_batch(workspace, None)
             .await
@@ -1438,7 +1059,7 @@ impl Executor {
             crate::notification::emit_system_status(
                 &self.app_handle,
                 "pipeline_error",
-                &format!("Email enrichment paused: {}", e),
+                &format!("Email refresh paused: {}", e),
             );
             return Err(format!("Email refresh failed: {}", e));
         }
@@ -1457,77 +1078,6 @@ impl Executor {
         )]
         let _ = self.app_handle.emit("emails-updated", ());
 
-        // Step 4: AI enrichment (fault-tolerant)
-        let user_ctx = self
-            .state
-            .config
-            .read()
-            .as_ref()
-            .map(crate::types::UserContext::from_config)
-            .unwrap_or(crate::types::UserContext {
-                name: None,
-                company: None,
-                title: None,
-                focus: None,
-            });
-        let ai_config = self.ai_model_config();
-        let extraction_pty = PtyManager::for_tier(ModelTier::Extraction, &ai_config)
-            .with_usage_context(
-                AiUsageContext::new("email", "manual_refresh_enrichment")
-                    .with_trigger("manual_refresh")
-                    .with_tier(ModelTier::Extraction),
-            );
-        let synthesis_pty = PtyManager::for_tier(ModelTier::Synthesis, &ai_config)
-            .with_usage_context(
-                AiUsageContext::new("email", "manual_refresh_enrichment_fallback")
-                    .with_trigger("manual_refresh")
-                    .with_tier(ModelTier::Synthesis),
-            );
-        if let Err(e) = self.enrich_emails_with_fallback(
-            &data_dir,
-            workspace,
-            &user_ctx,
-            &extraction_pty,
-            Some(&synthesis_pty),
-        ) {
-            log::warn!("Email refresh: AI enrichment failed (non-fatal): {}", e);
-            let sync = self.build_email_sync_status(
-                EmailSyncState::Warning,
-                EmailSyncStage::Enrich,
-                Some("email_enrichment_failed".to_string()),
-                Some(format!("Email AI summaries unavailable: {}", e)),
-                Some(true),
-            );
-            #[allow(
-                clippy::let_underscore_must_use,
-                reason = "intentional best-effort discard; preserves existing non-blocking behavior"
-            )]
-            let _ = crate::workflow::deliver::set_email_sync_status(&data_dir, &sync);
-            self.emit_email_sync_status(&sync);
-            #[allow(
-                clippy::let_underscore_must_use,
-                reason = "intentional best-effort discard; preserves existing non-blocking behavior"
-            )]
-            let _ = self.app_handle.emit(
-                "email-enrichment-warning",
-                format!("Email AI summaries unavailable: {}", e),
-            );
-        }
-        match self.sync_email_signals_from_payload(&data_dir) {
-            Ok(count) => {
-                if count > 0 {
-                    log::info!("Email refresh: persisted {} email signal rows", count);
-                }
-            }
-            Err(e) => log::warn!("Email refresh: email signal sync failed (non-fatal): {}", e),
-        }
-        #[allow(
-            clippy::let_underscore_must_use,
-            reason = "intentional best-effort discard; preserves existing non-blocking behavior"
-        )]
-        let _ = self
-            .app_handle
-            .emit("operation-delivered", "emails-enriched");
         #[allow(
             clippy::let_underscore_must_use,
             reason = "intentional best-effort discard; preserves existing non-blocking behavior"
@@ -1578,34 +1128,4 @@ pub fn request_workflow_execution(
     sender
         .try_send(SchedulerMessage::new(workflow, ExecutionTrigger::Manual))
         .map_err(|e| format!("Failed to queue workflow: {}", e))
-}
-
-#[cfg(test)]
-mod tests {
-    use super::Executor;
-
-    #[test]
-    fn test_model_unavailable_error_detection() {
-        assert!(Executor::is_model_unavailable_error(
-            "Configuration error: model_unavailable: unknown model"
-        ));
-        assert!(!Executor::is_model_unavailable_error(
-            "Claude enrichment failed: timeout"
-        ));
-    }
-
-    // --- Pipeline Restructuring for Async Enrichment Tests ---
-    //
-    // Key test scenarios:
-    // 1. Phase 1 completes and returns result (<45 seconds)
-    // 2. Phase 2 enrichment spawned via tokio::spawn (fire-and-forget)
-    // 3. Phase 2 params contain all required data for async task
-    // 4. Feature flags (prep_enabled, email_enabled) respected in Phase 2
-    //
-    // Note: Phase 2EnrichmentParams is private (internal data structure),
-    // so full unit tests are deferred to integration/E2E testing.
-    // The restructuring is validated by:
-    // - Successful compilation (type checking)
-    // - Runtime behavior verification in integration tests
-    // - Absence of blocking calls in Phase 1 completion path
 }

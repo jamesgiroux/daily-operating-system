@@ -5,7 +5,6 @@
 
 pub mod archive;
 pub mod deliver;
-pub mod email_filter;
 pub mod impact_rollup;
 pub mod operations;
 pub mod reconcile;
