@@ -82,8 +82,8 @@ fn person_profile_file_mask(file: &DbPerson, db: Option<&DbPerson>) -> PersonPro
     match db {
         Some(db) => PersonProfileFileMask {
             name: file.name != db.name,
-            organization: file.organization != db.organization,
-            role: file.role != db.role,
+            organization: file.organization.is_some() && file.organization != db.organization,
+            role: file.role.is_some() && file.role != db.role,
             relationship: db.relationship == "unknown" && file.relationship != db.relationship,
         },
         None => PersonProfileFileMask {
@@ -926,6 +926,59 @@ mod tests {
         assert_eq!(
             person_field_source(&db, "pat-example-com", "role").as_deref(),
             Some("workspace_file:entity_doc")
+        );
+    }
+
+    #[test]
+    fn test_sync_people_omitted_optional_fields_preserve_db_value_and_provenance() {
+        let db = test_db();
+        let workspace = tempfile::tempdir().expect("workspace");
+        let person_id = person_id_from_email("riley@example.com");
+        let mut person = sample_person();
+        person.id = person_id.clone();
+        person.email = "riley@example.com".to_string();
+        person.name = "Riley Example".to_string();
+        person.organization = Some("Existing Org".to_string());
+        person.role = Some("Principal".to_string());
+        person.relationship = "external".to_string();
+        person.updated_at = "2026-01-01T00:00:00Z".to_string();
+        db.upsert_person(&person).expect("insert person");
+        db.set_person_field_source(&person_id, "organization", "glean")
+            .expect("organization provenance");
+
+        std::thread::sleep(std::time::Duration::from_millis(10));
+        let dir = workspace.path().join("People/Riley Example");
+        std::fs::create_dir_all(&dir).expect("create person dir");
+        let json = serde_json::json!({
+            "version": 1,
+            "entityType": "person",
+            "structured": {
+                "email": "riley@example.com",
+                "relationship": "external"
+            }
+        });
+        std::fs::write(
+            dir.join("person.json"),
+            serde_json::to_string_pretty(&json).expect("serialize"),
+        )
+        .expect("write person json");
+
+        let synced = sync_people_from_workspace(workspace.path(), &db, &[]).expect("sync people");
+        assert_eq!(synced, 1);
+
+        let stored = db
+            .get_person_by_email_or_alias("riley@example.com")
+            .expect("query person")
+            .expect("person exists");
+        assert_eq!(stored.organization.as_deref(), Some("Existing Org"));
+        assert_eq!(stored.role.as_deref(), Some("Principal"));
+        assert_eq!(
+            person_field_source(&db, &person_id, "organization").as_deref(),
+            Some("glean")
+        );
+        assert_eq!(
+            person_field_source(&db, &person_id, "role").as_deref(),
+            Some("workspace_file:backfilled")
         );
     }
 
