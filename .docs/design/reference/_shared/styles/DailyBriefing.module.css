@@ -68,6 +68,8 @@
 
 .DailyBriefing_projectedCompositionSection {
   margin-top: 10px;
+  margin-bottom: 72px;
+  padding-top: 72px;
 }
 
 .DailyBriefing_projectedCompositionStack {
@@ -88,6 +90,185 @@
   text-transform: uppercase;
   letter-spacing: 0.08em;
   color: var(--color-text-tertiary);
+}
+
+.DailyBriefing_dspine-sharp {
+  color: var(--color-spice-turmeric);
+}
+
+.DailyBriefing_dspine-section-heading {
+  margin: 0;
+  font-family: var(--font-serif);
+  font-size: 32px;
+  font-weight: 400;
+  letter-spacing: 0;
+  line-height: 1.15;
+  color: var(--color-text-primary);
+}
+
+.DailyBriefing_dspine-section-summary {
+  max-width: 660px;
+  margin: var(--space-xs) 0 var(--space-lg);
+  font-family: var(--font-serif);
+  font-size: 16px;
+  font-style: italic;
+  font-weight: 300;
+  letter-spacing: 0;
+  line-height: 1.5;
+  color: var(--color-text-secondary);
+}
+
+.DailyBriefing_dspine-stack {
+  display: grid;
+  gap: 0;
+}
+
+.DailyBriefing_dspine-moving-list {
+  display: grid;
+  gap: 0;
+}
+
+.DailyBriefing_dspine-moving-row {
+  display: grid;
+  grid-template-columns: minmax(120px, 0.2fr) minmax(0, 1fr) minmax(120px, auto);
+  gap: var(--space-md);
+  align-items: start;
+  padding: var(--space-md) 0;
+  border-bottom: 1px solid var(--color-rule-light);
+  position: relative;
+}
+
+.DailyBriefing_dspine-moving-row:last-child {
+  border-bottom: none;
+}
+
+.DailyBriefing_dspine-moving-row::before {
+  content: "";
+  position: absolute;
+  left: -28px;
+  top: 12px;
+  bottom: 12px;
+  width: 3px;
+  border-radius: 2px;
+  background: var(--moving-accent, transparent);
+}
+
+.DailyBriefing_dspine-moving-row[data-kind="customer"] {
+  --moving-accent: var(--color-spice-turmeric);
+}
+
+.DailyBriefing_dspine-moving-row[data-kind="person"] {
+  --moving-accent: var(--color-garden-larkspur);
+}
+
+.DailyBriefing_dspine-moving-name {
+  min-width: 0;
+  font-family: var(--font-mono);
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0;
+  text-transform: uppercase;
+  color: var(--moving-accent, var(--color-text-tertiary));
+}
+
+.DailyBriefing_dspine-moving-copy {
+  min-width: 0;
+}
+
+.DailyBriefing_dspine-moving-title {
+  font-family: var(--font-sans);
+  font-size: 15px;
+  font-weight: 500;
+  line-height: 1.45;
+  color: var(--color-text-primary);
+}
+
+.DailyBriefing_dspine-moving-context {
+  margin-top: 3px;
+  max-width: 620px;
+  font-family: var(--font-serif);
+  font-size: 15px;
+  font-style: italic;
+  font-weight: 300;
+  line-height: 1.45;
+  color: var(--color-text-secondary);
+}
+
+.DailyBriefing_dspine-moving-meta {
+  justify-self: end;
+  font-family: var(--font-mono);
+  font-size: 11px;
+  font-weight: 500;
+  letter-spacing: 0;
+  color: var(--color-text-tertiary);
+  white-space: nowrap;
+}
+
+.DailyBriefing_dspine-watch-list {
+  display: grid;
+  gap: 0;
+  margin-top: var(--space-md);
+}
+
+.DailyBriefing_dspine-watch-row {
+  display: grid;
+  grid-template-columns: minmax(110px, 0.22fr) minmax(0, 1fr) auto;
+  gap: var(--space-md);
+  align-items: center;
+  padding: var(--space-md) 0;
+  border-bottom: 1px solid var(--color-rule-light);
+}
+
+.DailyBriefing_dspine-watch-row:last-child {
+  border-bottom: none;
+}
+
+.DailyBriefing_dspine-watch-who {
+  min-width: 0;
+  font-family: var(--font-mono);
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0;
+  text-transform: uppercase;
+  color: var(--color-text-tertiary);
+}
+
+.DailyBriefing_dspine-watch-what {
+  min-width: 0;
+  font-family: var(--font-serif);
+  font-size: 16px;
+  font-style: italic;
+  font-weight: 300;
+  letter-spacing: 0;
+  line-height: 1.45;
+  color: var(--color-text-secondary);
+}
+
+.DailyBriefing_dspine-watch-quiet {
+  color: var(--color-text-tertiary);
+}
+
+@media (max-width: 720px) {
+  .DailyBriefing_dspine-section-heading {
+    font-size: 26px;
+  }
+
+  .DailyBriefing_dspine-watch-row {
+    grid-template-columns: 1fr;
+    gap: var(--space-xs);
+  }
+
+  .DailyBriefing_dspine-moving-row {
+    grid-template-columns: 1fr;
+  }
+
+  .DailyBriefing_dspine-moving-row::before {
+    left: -16px;
+  }
+
+  .DailyBriefing_dspine-moving-meta {
+    justify-self: start;
+  }
 }
 
 /* ─────────────────────────────────────────────────────────────────────────────
