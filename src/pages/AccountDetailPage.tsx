@@ -1,6 +1,5 @@
 import { useCallback, useMemo, useState } from "react";
 import type { ReactNode } from "react";
-import { invoke } from "@tauri-apps/api/core";
 import { useNavigate, useParams } from "@tanstack/react-router";
 import {
   closestCenter,
@@ -43,6 +42,7 @@ import { ReactBlockRenderer } from "@/components/composition/ReactBlockRenderer"
 import { FolioRefreshButton } from "@/components/ui/folio-refresh-button";
 import { Segmented } from "@/components/ui/Segmented";
 import { Switch } from "@/components/ui/Switch";
+import { useAccountSnapshotActions } from "@/hooks/useAccountSnapshotActions";
 import { useChapterLayout, type RenderableCompositionBlock } from "@/hooks/useChapterLayout";
 import { useProjectedComposition } from "@/hooks/useProjectedComposition";
 import { useRegisterMagazineShell, useUpdateFolioVolatile } from "@/hooks/useMagazineShell";
@@ -225,23 +225,15 @@ export default function AccountDetailPage() {
   const layout = useChapterLayout({ projection, entityType: "account" });
   const visibleSections = layout.view.sections;
   const accountName = accountNameFromBlocks(projection?.blocks ?? [], accountId);
+  const {
+    onSnapshotFieldSave: handleSnapshotFieldSave,
+    onEnrich: handleEnrich,
+    enriching,
+    enrichError,
+  } = useAccountSnapshotActions(accountId, composition.refetch);
   const sensors = useSensors(
     useSensor(PointerSensor),
     useSensor(KeyboardSensor, { coordinateGetter: sortableKeyboardCoordinates }),
-  );
-
-  // Snapshot-field edits (account name/type/vitals) route through the
-  // service-layer correction command (ADR-0123), never the bespoke React
-  // hook. It writes the column + "user_edit" provenance + records an
-  // account_field_correction; refetch re-projects so the edit shows. Layout
-  // (useChapterLayout) is untouched (ADR-0136).
-  const handleSnapshotFieldSave = useCallback(
-    async (field: string, value: string) => {
-      if (!accountId) return;
-      await invoke("update_account_field", { accountId, field, value });
-      await composition.refetch();
-    },
-    [accountId, composition],
   );
 
   const blockLabels = useMemo(() => {
@@ -277,27 +269,12 @@ export default function AccountDetailPage() {
   );
   useRegisterMagazineShell(shellConfig);
 
-  // Folio refresh runs a REAL enrichment (production parity with the
-  // account-detail enrich button), then re-projects the composition so the
-  // refreshed intelligence content lands in the chapters.
-  const [enriching, setEnriching] = useState(false);
-  const handleEnrich = useCallback(async () => {
-    if (!accountId || enriching) return;
-    setEnriching(true);
-    try {
-      await invoke("enrich_account", { accountId });
-      await composition.refetch();
-    } catch (error) {
-      console.error("enrich_account failed:", error);
-    } finally {
-      setEnriching(false);
-    }
-  }, [accountId, composition, enriching]);
-
   useUpdateFolioVolatile(
     {
       folioStatusText: enriching
         ? "Refreshing intelligence..."
+        : enrichError
+          ? "Refresh failed"
         : composition.loading
         ? "Composing..."
         : layout.saving
