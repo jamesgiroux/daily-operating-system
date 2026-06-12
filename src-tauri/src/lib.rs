@@ -461,6 +461,104 @@ async fn run_db_service_startup_tasks(init_state: Arc<AppState>) {
     });
 }
 
+const NONESSENTIAL_BACKGROUND_WORKERS: &[&str] = &[
+    "StartupSync",
+    "Scheduler",
+    "Executor",
+    "FileWatcher",
+    "CalendarPoller",
+    "EmailPoller",
+    "CaptureLoop",
+    "IntelProcessor",
+    "MeetingPrepProcessor",
+    "EmbeddingProcessor",
+    "HygieneLoop",
+    "QuillPoller",
+    "GranolaPoller",
+    "EnrichmentProcessor",
+    "LinearPoller",
+    "DrivePoller",
+    "EntityLinkingOneShotSweep",
+    "MeetingTypeReclassification",
+    "StakeholderDomainsBootSweep",
+];
+
+fn log_nonessential_background_worker_skips() {
+    for worker in NONESSENTIAL_BACKGROUND_WORKERS {
+        log::info!("Background worker {worker} skipped because background workers are disabled");
+    }
+}
+
+#[cfg(test)]
+mod quiet_mode_tests {
+    use super::*;
+    use std::ffi::OsString;
+    use std::sync::Mutex;
+
+    static QUIET_MODE_ENV_LOCK: Mutex<()> = Mutex::new(());
+
+    struct EnvGuard {
+        key: &'static str,
+        previous: Option<OsString>,
+    }
+
+    impl EnvGuard {
+        fn set(key: &'static str, value: &str) -> Self {
+            let previous = std::env::var_os(key);
+            std::env::set_var(key, value);
+            Self { key, previous }
+        }
+
+        fn remove(key: &'static str) -> Self {
+            let previous = std::env::var_os(key);
+            std::env::remove_var(key);
+            Self { key, previous }
+        }
+    }
+
+    impl Drop for EnvGuard {
+        fn drop(&mut self) {
+            match self.previous.as_ref() {
+                Some(value) => std::env::set_var(self.key, value),
+                None => std::env::remove_var(self.key),
+            }
+        }
+    }
+
+    #[test]
+    fn ac_d5_existing_quiet_mode_env_vars_gate_background_workers() {
+        let _lock = QUIET_MODE_ENV_LOCK.lock().expect("quiet env lock");
+        let _disable_workers = EnvGuard::remove("DAILYOS_DISABLE_BACKGROUND_WORKERS");
+        let _disable_intel = EnvGuard::remove("DAILYOS_DISABLE_BACKGROUND_INTEL");
+        assert!(!crate::pty::background_workers_disabled());
+
+        {
+            let _guard = EnvGuard::set("DAILYOS_DISABLE_BACKGROUND_WORKERS", "1");
+            assert!(crate::pty::background_workers_disabled());
+        }
+        assert!(!crate::pty::background_workers_disabled());
+
+        {
+            let _guard = EnvGuard::set("DAILYOS_DISABLE_BACKGROUND_INTEL", "true");
+            assert!(crate::pty::background_workers_disabled());
+        }
+        assert!(!crate::pty::background_workers_disabled());
+
+        for worker in [
+            "IntelProcessor",
+            "MeetingPrepProcessor",
+            "EmbeddingProcessor",
+            "Scheduler",
+            "Executor",
+        ] {
+            assert!(
+                NONESSENTIAL_BACKGROUND_WORKERS.contains(&worker),
+                "missing quiet-mode skip log coverage for {worker}"
+            );
+        }
+    }
+}
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     // Initialize logger — writes to stderr, filtered by RUST_LOG env var.
@@ -581,6 +679,7 @@ pub fn run() {
             let background_workers_disabled = crate::pty::background_workers_disabled();
             if background_workers_disabled {
                 log::info!("Nonessential startup/background workers disabled for this run");
+                log_nonessential_background_worker_skips();
             } else {
                 // Defer startup workspace sync/indexing so app setup stays responsive.
                 let startup_state = state.clone();
@@ -1139,6 +1238,7 @@ pub fn run() {
             // Entity Enrichment
             commands::enrich_account,
             commands::enrich_person,
+            commands::cleanup_over_cap_generated_intelligence,
             // Content Index
             commands::get_entity_files,
             commands::index_entity_files,

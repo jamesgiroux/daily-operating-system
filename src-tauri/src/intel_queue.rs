@@ -6,9 +6,11 @@
 //! during the 30-120s PTY operation.
 
 use parking_lot::Mutex;
-use std::collections::{HashMap, VecDeque};
+use std::collections::{BTreeMap, HashMap, VecDeque};
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
+#[cfg(test)]
+use std::sync::OnceLock;
 use std::time::{Duration, Instant};
 
 use chrono::Utc;
@@ -18,8 +20,9 @@ use tauri::{AppHandle, Emitter};
 
 use crate::intelligence::dimension_prompts::{self, DIMENSION_NAMES};
 use crate::intelligence::{
+    InferredRelationship, IntelligenceJson, SourceManifestEntry,
     build_intelligence_prompt_with_preset, extract_inferred_relationships,
-    parse_intelligence_response, InferredRelationship, IntelligenceJson, SourceManifestEntry,
+    parse_intelligence_response,
 };
 use crate::presets::schema::RolePreset;
 use crate::pty::{AiUsageContext, ModelTier, PtyManager};
@@ -41,6 +44,55 @@ const DIMENSION_ENRICHMENT_TIMEOUT_SECS: u64 = 240;
 
 /// How often the background processor checks for work.
 const POLL_INTERVAL_SECS: u64 = 5;
+
+#[cfg(test)]
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(crate) enum EnrichmentPersistPhaseEvent {
+    BeginTask,
+    BatchTask { offset: usize, limit: usize },
+    BatchCommitted { offset: usize },
+    FinalizerTask,
+}
+
+#[cfg(test)]
+type EnrichmentPersistPhaseObserver =
+    Arc<dyn Fn(EnrichmentPersistPhaseEvent) + Send + Sync + 'static>;
+
+#[cfg(test)]
+static ENRICHMENT_PERSIST_PHASE_OBSERVER: OnceLock<Mutex<Option<EnrichmentPersistPhaseObserver>>> =
+    OnceLock::new();
+
+#[cfg(test)]
+pub(crate) struct EnrichmentPersistPhaseObserverGuard;
+
+#[cfg(test)]
+pub(crate) fn install_enrichment_persist_phase_observer(
+    observer: EnrichmentPersistPhaseObserver,
+) -> EnrichmentPersistPhaseObserverGuard {
+    *ENRICHMENT_PERSIST_PHASE_OBSERVER
+        .get_or_init(|| Mutex::new(None))
+        .lock() = Some(observer);
+    EnrichmentPersistPhaseObserverGuard
+}
+
+#[cfg(test)]
+impl Drop for EnrichmentPersistPhaseObserverGuard {
+    fn drop(&mut self) {
+        if let Some(observer) = ENRICHMENT_PERSIST_PHASE_OBSERVER.get() {
+            *observer.lock() = None;
+        }
+    }
+}
+
+#[cfg(test)]
+fn emit_enrichment_persist_phase_event(event: EnrichmentPersistPhaseEvent) {
+    let observer = ENRICHMENT_PERSIST_PHASE_OBSERVER
+        .get()
+        .and_then(|observer| observer.lock().clone());
+    if let Some(observer) = observer {
+        observer(event);
+    }
+}
 
 /// Maximum retry attempts for entities that fail validation.
 const MAX_VALIDATION_RETRIES: u8 = 2;
@@ -502,8 +554,8 @@ fn emit_leading_signals_failed(
 #[cfg(test)]
 mod queue_policy_tests {
     use super::{
-        debounce_window_secs, is_background_priority, IntelPriority, CALENDAR_DEBOUNCE_SECS,
-        CONTENT_DEBOUNCE_SECS,
+        CALENDAR_DEBOUNCE_SECS, CONTENT_DEBOUNCE_SECS, IntelPriority, debounce_window_secs,
+        is_background_priority,
     };
 
     #[test]
@@ -953,57 +1005,59 @@ pub async fn run_intel_processor(state: Arc<AppState>, app: AppHandle) {
         let mut error_categories: HashMap<String, &str> = HashMap::new();
 
         let enrichment_start = Instant::now();
-        let results: Vec<(IntelRequest, EnrichmentInput, EnrichmentParseResult)> =
-            if state.context_provider().is_remote() {
-                // /ADR-0100: Glean-first path — use chat MCP tool for enrichment.
-                // Falls back to PTY on failure (per entity).
-                run_glean_enrichment_with_fallback(inputs, &ai_config, &state, &app).await
-            } else {
-                // Per-entity enrichment (tries parallel fan-out, falls back to legacy)
-                // Run PTY enrichment on blocking threads to avoid stalling Tokio workers.
-                let mut entity_results = Vec::new();
-                for (request, input) in inputs {
-                    // per-entity checkpoint inside the PTY batch loop.
-                    // Symmetric to the Glean path — abort early when a
-                    // schema-epoch migration starts mid-batch.
-                    if state.intel_queue.is_paused() {
-                        log::info!(
+        let results: Vec<(IntelRequest, EnrichmentInput, EnrichmentParseResult)> = if state
+            .context_provider()
+            .is_remote()
+        {
+            // /ADR-0100: Glean-first path — use chat MCP tool for enrichment.
+            // Falls back to PTY on failure (per entity).
+            run_glean_enrichment_with_fallback(inputs, &ai_config, &state, &app).await
+        } else {
+            // Per-entity enrichment (tries parallel fan-out, falls back to legacy)
+            // Run PTY enrichment on blocking threads to avoid stalling Tokio workers.
+            let mut entity_results = Vec::new();
+            for (request, input) in inputs {
+                // per-entity checkpoint inside the PTY batch loop.
+                // Symmetric to the Glean path — abort early when a
+                // schema-epoch migration starts mid-batch.
+                if state.intel_queue.is_paused() {
+                    log::info!(
                         "IntelProcessor: pause detected mid-PTY-batch; aborting after {} entities",
                         entity_results.len()
                     );
-                        break;
+                    break;
+                }
+                let ai_cfg = ai_config.clone();
+                let input_clone = input.clone();
+                let app_clone = app.clone();
+                let usage_context = usage_context_for_priority(request.priority);
+                match tauri::async_runtime::spawn_blocking(move || {
+                    run_enrichment(&input_clone, &ai_cfg, Some(&app_clone), usage_context)
+                })
+                .await
+                {
+                    Ok(Ok(parsed)) => entity_results.push((request, input, parsed)),
+                    Ok(Err(e)) => {
+                        let category = categorize_enrichment_error(&e);
+                        error_categories.insert(request.entity_id.clone(), category);
+                        log::warn!(
+                            "IntelProcessor: enrichment failed for {}: {}",
+                            request.entity_id,
+                            e
+                        );
                     }
-                    let ai_cfg = ai_config.clone();
-                    let input_clone = input.clone();
-                    let app_clone = app.clone();
-                    let usage_context = usage_context_for_priority(request.priority);
-                    match tauri::async_runtime::spawn_blocking(move || {
-                        run_enrichment(&input_clone, &ai_cfg, Some(&app_clone), usage_context)
-                    })
-                    .await
-                    {
-                        Ok(Ok(parsed)) => entity_results.push((request, input, parsed)),
-                        Ok(Err(e)) => {
-                            let category = categorize_enrichment_error(&e);
-                            error_categories.insert(request.entity_id.clone(), category);
-                            log::warn!(
-                                "IntelProcessor: enrichment failed for {}: {}",
-                                request.entity_id,
-                                e
-                            );
-                        }
-                        Err(e) => {
-                            error_categories.insert(request.entity_id.clone(), "panic");
-                            log::error!(
-                                "IntelProcessor: enrichment task panicked for {}: {}",
-                                request.entity_id,
-                                e
-                            );
-                        }
+                    Err(e) => {
+                        error_categories.insert(request.entity_id.clone(), "panic");
+                        log::error!(
+                            "IntelProcessor: enrichment task panicked for {}: {}",
+                            request.entity_id,
+                            e
+                        );
                     }
                 }
-                entity_results
-            };
+            }
+            entity_results
+        };
         let enrichment_duration_ms = enrichment_start.elapsed().as_millis() as u64;
 
         // Re-enqueue entities that failed validation (up to MAX_VALIDATION_RETRIES)
@@ -2342,6 +2396,7 @@ impl PreparedEnrichment {
 #[derive(Debug, Clone, Default)]
 struct EnrichmentSideWrites {
     malformed_suppression_audits: Vec<MalformedSuppressionAudit>,
+    parse_overflow_records: Vec<EnrichmentParseOverflowRecord>,
 }
 
 #[derive(Debug, Clone)]
@@ -2352,6 +2407,11 @@ struct MalformedSuppressionAudit {
     caller_context: &'static str,
 }
 
+#[derive(Debug, Clone)]
+struct EnrichmentParseOverflowRecord {
+    dropped_counts: BTreeMap<String, usize>,
+}
+
 fn filter_suppressed_risks_and_wins(
     db: &crate::db::ActionDb,
     input: &EnrichmentInput,
@@ -2359,7 +2419,7 @@ fn filter_suppressed_risks_and_wins(
     mut side_writes: Option<&mut EnrichmentSideWrites>,
 ) {
     use crate::db::intelligence_feedback::SuppressionDecision;
-    use crate::intelligence::canonicalization::{item_hash as canonical_item_hash, ItemKind};
+    use crate::intelligence::canonicalization::{ItemKind, item_hash as canonical_item_hash};
 
     let pre_risk_count = intel.risks.len();
     intel.risks.retain(|risk| {
@@ -2459,6 +2519,49 @@ pub fn compose_enrichment_intelligence(
     ai_config: Option<&AiModelConfig>,
 ) -> Result<PreparedEnrichment, String> {
     compose_enrichment_intelligence_payload(db, input, intel, producer, ai_config)
+}
+
+fn defer_enrichment_parse_overflow(
+    side_writes: &mut EnrichmentSideWrites,
+    dropped_counts: &BTreeMap<String, usize>,
+) {
+    if dropped_counts.is_empty() {
+        return;
+    }
+    side_writes
+        .parse_overflow_records
+        .push(EnrichmentParseOverflowRecord {
+            dropped_counts: dropped_counts.clone(),
+        });
+}
+
+fn record_enrichment_parse_overflow_in_tx(
+    ctx: &crate::services::context::ServiceContext<'_>,
+    db: &crate::db::ActionDb,
+    input: &EnrichmentInput,
+    record: &EnrichmentParseOverflowRecord,
+) {
+    let message = serde_json::json!({
+        "maxItemsPerDimension": crate::services::intelligence::MAX_ITEMS_PER_DIMENSION,
+        "dropped": &record.dropped_counts,
+    })
+    .to_string();
+    if let Err(error) = crate::services::mutations::record_pipeline_failure(
+        ctx,
+        db,
+        "intel_queue",
+        Some(&input.entity_id),
+        Some(&input.entity_type),
+        "enrichment_parse_overflow",
+        Some(&message),
+        0,
+    ) {
+        log::warn!(
+            "IntelProcessor: failed to record enrichment overflow for {}:{}: {error}",
+            input.entity_type,
+            input.entity_id
+        );
+    }
 }
 
 pub(crate) fn compose_enrichment_intelligence_payload(
@@ -2592,6 +2695,15 @@ pub(crate) fn compose_enrichment_intelligence_payload(
         );
     }
 
+    let mut dropped_counts = BTreeMap::new();
+    for drop in
+        crate::services::intelligence::rank_then_cap_intelligence_dimensions(&mut final_intel)
+    {
+        *dropped_counts
+            .entry(drop.dimension.to_string())
+            .or_insert(0) += drop.dropped;
+    }
+
     let mut projection_intelligence = if producer.is_glean() {
         intel.clone()
     } else {
@@ -2613,7 +2725,15 @@ pub(crate) fn compose_enrichment_intelligence_payload(
             &input.entity_type,
             input.relationship.as_deref(),
         );
+        for drop in crate::services::intelligence::rank_then_cap_intelligence_dimensions(
+            &mut projection_intelligence,
+        ) {
+            *dropped_counts
+                .entry(format!("projection.{}", drop.dimension))
+                .or_insert(0) += drop.dropped;
+        }
     }
+    defer_enrichment_parse_overflow(&mut side_writes, &dropped_counts);
 
     Ok(PreparedEnrichment {
         intelligence: final_intel,
@@ -2707,6 +2827,10 @@ pub fn apply_enrichment_side_writes(
         })?;
     }
 
+    for record in &prepared.side_writes.parse_overflow_records {
+        record_enrichment_parse_overflow_in_tx(ctx, tx, input, record);
+    }
+
     Ok(())
 }
 
@@ -2716,27 +2840,91 @@ pub(crate) async fn persist_enrichment_write_results_via_db_service(
     prepared: &PreparedEnrichment,
     producer: EnrichmentProducer,
 ) -> Result<(), String> {
+    let projection_data_source = producer.projection_data_source().to_string();
     let state_for_write = Arc::clone(state);
     let input_for_write = input.clone();
     let prepared_for_write = prepared.clone();
-    state
+    #[cfg(test)]
+    emit_enrichment_persist_phase_event(EnrichmentPersistPhaseEvent::BeginTask);
+    let plan = state
         .db_write(move |db| {
-            let engine = Arc::clone(&state_for_write.signals.engine);
             let ctx = state_for_write.live_service_context();
             db.with_transaction(|tx| {
-                apply_enrichment_side_writes(&ctx, tx, &input_for_write, &prepared_for_write)?;
-                crate::services::intelligence::upsert_assessment_from_enrichment_in_active_transaction(
-                    &ctx,
+                let plan = crate::services::intelligence::prepare_enrichment_assessment_phased_plan(
                     tx,
-                    &engine,
                     crate::services::intelligence::EnrichmentAssessmentUpsert {
                         entity_type: &input_for_write.entity_type,
                         entity_id: &input_for_write.entity_id,
                         intel: prepared_for_write.intelligence(),
                         projection_intel: prepared_for_write.projection_intelligence(),
-                        projection_data_source: producer.projection_data_source(),
+                        projection_data_source: &projection_data_source,
                         cleared_dimensions: prepared_for_write.cleared_dimensions(),
                     },
+                )?;
+                crate::services::intelligence::begin_enrichment_assessment_phased_persist_in_active_transaction(
+                    &ctx, tx, &plan,
+                )?;
+                Ok(plan)
+            })
+        })
+        .await
+        .map_err(String::from)?;
+
+    let batch_size = crate::services::intelligence::ENRICHMENT_PROJECTION_CLAIM_BATCH_SIZE;
+    for offset in (0..plan.projection_claim_count).step_by(batch_size) {
+        let state_for_write = Arc::clone(state);
+        let plan_for_write = plan.clone();
+        #[cfg(test)]
+        emit_enrichment_persist_phase_event(EnrichmentPersistPhaseEvent::BatchTask {
+            offset,
+            limit: batch_size,
+        });
+        state
+            .db_write(move |db| {
+                let ctx = state_for_write.live_service_context();
+                let result = db.with_transaction(|tx| {
+                    crate::services::intelligence::commit_enrichment_assessment_projection_batch_in_active_transaction(
+                        &ctx,
+                        tx,
+                        &plan_for_write,
+                        offset,
+                        batch_size,
+                    )
+                });
+                #[cfg(test)]
+                if result.is_ok() {
+                    emit_enrichment_persist_phase_event(EnrichmentPersistPhaseEvent::BatchCommitted {
+                        offset,
+                    });
+                }
+                result
+            })
+            .await
+            .map_err(String::from)?;
+        if offset.saturating_add(batch_size) < plan.projection_claim_count {
+            tokio::task::yield_now().await;
+        }
+    }
+
+    let state_for_write = Arc::clone(state);
+    let input_for_write = input.clone();
+    let prepared_for_write = prepared.clone();
+    let plan_for_write = plan.clone();
+    #[cfg(test)]
+    emit_enrichment_persist_phase_event(EnrichmentPersistPhaseEvent::FinalizerTask);
+    state
+        .db_write(move |db| {
+            let engine = Arc::clone(&state_for_write.signals.engine);
+            let ctx = state_for_write
+                .live_service_context()
+                .with_actor("system:intel_queue");
+            db.with_transaction(|tx| {
+                apply_enrichment_side_writes(&ctx, tx, &input_for_write, &prepared_for_write)?;
+                crate::services::intelligence::finalize_enrichment_assessment_phased_persist_in_active_transaction(
+                    &ctx,
+                    tx,
+                    &engine,
+                    &plan_for_write,
                 )
             })
         })
@@ -4138,8 +4326,8 @@ mod tests {
     use super::*;
     use crate::abilities::feedback::FeedbackAction;
     use crate::services::claims::{
-        commit_claim, record_claim_feedback, record_corroboration, update_claim_trust,
-        ClaimFeedbackInput, ClaimProposal, CommittedClaim,
+        ClaimFeedbackInput, ClaimProposal, CommittedClaim, commit_claim, record_claim_feedback,
+        record_corroboration, update_claim_trust,
     };
     use crate::services::context::{
         ClaimDismissalSurface, ExternalClients, FixedClock, SeedableRng, ServiceContext,
@@ -4153,8 +4341,14 @@ mod tests {
     use chrono::TimeZone;
     use rusqlite::params;
     use std::path::Path;
+    use std::sync::OnceLock;
 
     const TRUST_TS: &str = "2999-01-01T00:00:00+00:00";
+    static ENRICHMENT_PHASE_OBSERVER_TEST_LOCK: OnceLock<tokio::sync::Mutex<()>> = OnceLock::new();
+
+    fn enrichment_phase_observer_test_lock() -> &'static tokio::sync::Mutex<()> {
+        ENRICHMENT_PHASE_OBSERVER_TEST_LOCK.get_or_init(|| tokio::sync::Mutex::new(()))
+    }
 
     fn trust_test_db() -> crate::db::ActionDb {
         crate::db::test_utils::test_db()
@@ -4352,6 +4546,809 @@ mod tests {
             executive_assessment: Some("Trust recompute fixture".to_string()),
             ..Default::default()
         }
+    }
+
+    #[tokio::test]
+    async fn ac1_prepare_ranks_before_cap_records_overflow_and_persists_cap() {
+        let temp = tempfile::tempdir().expect("tempdir");
+        let db_path = temp.path().join("ac1-rank-cap.db");
+        let svc = crate::db_service::DbService::open_at_unencrypted(db_path)
+            .await
+            .expect("open db service");
+        let state = Arc::new(AppState::test_with_db_service(svc));
+        let account_id = "ac1-rank-cap";
+        let dir = tempfile::tempdir().expect("tempdir");
+        let input = trust_input(account_id, dir.path());
+        let mut intel = trust_intel(account_id);
+        intel.risks = (0..301)
+            .map(|idx| crate::intelligence::io::IntelRisk {
+                text: format!("low risk {idx}"),
+                urgency: "low".to_string(),
+                item_source: Some(crate::intelligence::io::ItemSource {
+                    source: "meeting".to_string(),
+                    confidence: if idx == 0 { 0.01 } else { 0.8 },
+                    sourced_at: if idx == 0 {
+                        "2026-04-01T00:00:00Z"
+                    } else {
+                        "2026-05-01T00:00:00Z"
+                    }
+                    .to_string(),
+                    reference: None,
+                }),
+                ..Default::default()
+            })
+            .collect();
+        intel.risks[300] = crate::intelligence::io::IntelRisk {
+            text: "critical retained".to_string(),
+            urgency: "critical".to_string(),
+            item_source: Some(crate::intelligence::io::ItemSource {
+                source: "meeting".to_string(),
+                confidence: 0.99,
+                sourced_at: "2026-05-10T00:00:00Z".to_string(),
+                reference: None,
+            }),
+            ..Default::default()
+        };
+
+        let seed_account_id = account_id.to_string();
+        let prepare_input = input.clone();
+        let prepare_intel = intel.clone();
+        let prepared = state
+            .db_write(move |db| {
+                seed_trust_account(db, &seed_account_id);
+                compose_enrichment_intelligence_payload(
+                    db,
+                    &prepare_input,
+                    &prepare_intel,
+                    EnrichmentProducer::Pty,
+                    None,
+                )
+            })
+            .await
+            .expect("prepare enrichment");
+
+        assert_eq!(
+            prepared.intelligence().risks.len(),
+            crate::services::intelligence::MAX_ITEMS_PER_DIMENSION
+        );
+        assert!(prepared
+            .intelligence()
+            .risks
+            .iter()
+            .any(|risk| risk.text == "critical retained"));
+        assert!(!prepared
+            .intelligence()
+            .risks
+            .iter()
+            .any(|risk| risk.text == "low risk 0"));
+
+        persist_enrichment_write_results_via_db_service(
+            &state,
+            &input,
+            &prepared,
+            EnrichmentProducer::Pty,
+        )
+        .await
+        .expect("persist capped enrichment");
+        let (overflow_count, persisted_risks) = state
+            .db_write(move |db| {
+                let overflow_count: i64 = db
+                    .conn_ref()
+                    .query_row(
+                        "SELECT COUNT(*) FROM pipeline_failures
+                         WHERE pipeline = 'intel_queue'
+                           AND error_type = 'enrichment_parse_overflow'",
+                        [],
+                        |row| row.get(0),
+                    )
+                    .map_err(|error| format!("count overflow failures: {error}"))?;
+                let persisted_risks: i64 = db
+                    .conn_ref()
+                    .query_row(
+                        "SELECT COUNT(*) FROM intelligence_claims
+                         WHERE claim_state = 'active'
+                           AND surfacing_state = 'active'
+                           AND field_path LIKE 'risks[%]'",
+                        [],
+                        |row| row.get(0),
+                    )
+                    .map_err(|error| format!("count persisted risks: {error}"))?;
+                Ok((overflow_count, persisted_risks))
+            })
+            .await
+            .expect("read persisted cap state");
+        assert_eq!(overflow_count, 1);
+        assert_eq!(
+            persisted_risks as usize,
+            crate::services::intelligence::MAX_ITEMS_PER_DIMENSION
+        );
+    }
+
+    fn assert_contains_bounded_task_sequence(markers: &[String], expected_claims: usize) {
+        let batch_size = crate::services::intelligence::ENRICHMENT_PROJECTION_CLAIM_BATCH_SIZE;
+        let expected_batch_count = expected_claims.div_ceil(batch_size);
+        let task_markers = markers
+            .iter()
+            .filter(|marker| {
+                marker.starts_with("BeginTask")
+                    || marker.starts_with("BatchTask")
+                    || marker.starts_with("FinalizerTask")
+            })
+            .collect::<Vec<_>>();
+        let mut expected_task_markers = Vec::with_capacity(expected_batch_count + 2);
+        expected_task_markers.push("BeginTask".to_string());
+        for batch_index in 0..expected_batch_count {
+            expected_task_markers.push(format!(
+                "BatchTask {{ offset: {}, limit: {} }}",
+                batch_index * batch_size,
+                batch_size
+            ));
+        }
+        expected_task_markers.push("FinalizerTask".to_string());
+        let mut search_from = 0;
+        for expected in &expected_task_markers {
+            let Some(relative_index) = task_markers[search_from..]
+                .iter()
+                .position(|marker| marker.as_str() == expected)
+            else {
+                panic!(
+                    "expected bounded task sequence {expected_task_markers:?}, got {task_markers:?}"
+                );
+            };
+            search_from += relative_index + 1;
+        }
+    }
+
+    #[tokio::test]
+    async fn ac2_phased_persist_uses_bounded_tasks_and_allows_interleaving() {
+        let _observer_guard = enrichment_phase_observer_test_lock().lock().await;
+        let temp = tempfile::tempdir().expect("tempdir");
+        let db_path = temp.path().join("ac2-phased-persist.db");
+        let svc = crate::db_service::DbService::open_at_unencrypted(db_path.clone())
+            .await
+            .expect("open db service");
+        let state = Arc::new(AppState::test_with_db_service(svc));
+        let account_id = "ac2-phased";
+        let dir = tempfile::tempdir().expect("tempdir");
+        let input = trust_input(account_id, dir.path());
+        let mut intel = trust_intel(account_id);
+        intel.risks = (0..40)
+            .map(|idx| crate::intelligence::io::IntelRisk {
+                text: format!("risk {idx}"),
+                urgency: if idx % 2 == 0 { "high" } else { "watch" }.to_string(),
+                ..Default::default()
+            })
+            .collect();
+        intel.recent_wins = (0..40)
+            .map(|idx| crate::intelligence::io::IntelWin {
+                text: format!("win {idx}"),
+                impact: Some(if idx % 2 == 0 { "high" } else { "low" }.to_string()),
+                ..Default::default()
+            })
+            .collect();
+        let seed_account_id = account_id.to_string();
+        let prepare_input = input.clone();
+        let prepare_intel = intel.clone();
+        let prepared = state
+            .db_write(move |db| {
+                seed_trust_account(db, &seed_account_id);
+                compose_enrichment_intelligence_payload(
+                    db,
+                    &prepare_input,
+                    &prepare_intel,
+                    EnrichmentProducer::Pty,
+                    None,
+                )
+            })
+            .await
+            .expect("prepare enrichment");
+        let expected_claims =
+            crate::services::intelligence::projection_claim_shaped_intelligence_projection_claim_count(
+                prepared.projection_intelligence(),
+                "agent:intelligence",
+                EnrichmentProducer::Pty.projection_data_source(),
+            )
+            .expect("count projection claims");
+        assert!(
+            expected_claims > crate::services::intelligence::ENRICHMENT_PROJECTION_CLAIM_BATCH_SIZE,
+            "fixture should require multiple batches"
+        );
+        let markers = Arc::new(parking_lot::Mutex::new(Vec::<String>::new()));
+        let (injected_tx, injected_rx) = tokio::sync::oneshot::channel::<()>();
+        let injected_tx = Arc::new(parking_lot::Mutex::new(Some(injected_tx)));
+        let observer_state = Arc::clone(&state);
+        let observer_markers = Arc::clone(&markers);
+        let observer_injected_tx = Arc::clone(&injected_tx);
+        let _observer = install_enrichment_persist_phase_observer(Arc::new(move |event| {
+            observer_markers.lock().push(format!("{event:?}"));
+            if matches!(
+                event,
+                EnrichmentPersistPhaseEvent::BatchCommitted { offset: 0 }
+            ) {
+                let Some(sender) = observer_injected_tx.lock().take() else {
+                    return;
+                };
+                let state = Arc::clone(&observer_state);
+                let markers = Arc::clone(&observer_markers);
+                tauri::async_runtime::spawn(async move {
+                    let state_for_ctx = Arc::clone(&state);
+                    let result = state
+                        .db_write(move |db| {
+                            markers.lock().push("InjectedWrite".to_string());
+                            let ctx = state_for_ctx.live_service_context();
+                            crate::services::mutations::upsert_app_state_kv_json(
+                                &ctx,
+                                db,
+                                "ac2_interleaved_write",
+                                "\"committed\"",
+                            )
+                        })
+                        .await;
+                    assert!(result.is_ok(), "injected write failed: {result:?}");
+                    let _ = sender.send(());
+                });
+            }
+        }));
+
+        persist_enrichment_write_results_via_db_service(
+            &state,
+            &input,
+            &prepared,
+            EnrichmentProducer::Pty,
+        )
+        .await
+        .expect("phased persist");
+        tokio::time::timeout(std::time::Duration::from_secs(10), injected_rx)
+            .await
+            .expect("injected write should finish")
+            .expect("injected sender should complete");
+
+        let markers = markers.lock().clone();
+        assert_contains_bounded_task_sequence(&markers, expected_claims);
+        let first_batch_done = markers
+            .iter()
+            .position(|marker| marker == "BatchCommitted { offset: 0 }")
+            .expect("first batch committed marker");
+        let injected = markers
+            .iter()
+            .position(|marker| marker == "InjectedWrite")
+            .expect("injected write marker");
+        let second_batch = markers
+            .iter()
+            .position(|marker| marker.starts_with("BatchTask { offset: 20"))
+            .expect("second batch marker");
+        assert!(
+            first_batch_done < injected && injected < second_batch,
+            "expected injected write between batches, got {markers:?}"
+        );
+    }
+
+    #[test]
+    fn ac3_partial_batch_failure_publishes_no_assessment_and_rerun_converges() {
+        fn active_claim_count(db: &crate::db::ActionDb, account_id: &str) -> i64 {
+            let subject_ref =
+                serde_json::json!({ "kind": "account", "id": account_id }).to_string();
+            db.conn_ref()
+                .query_row(
+                    "SELECT COUNT(*) FROM intelligence_claims
+                     WHERE subject_ref = ?1
+                       AND claim_state = 'active'
+                       AND surfacing_state = 'active'",
+                    params![subject_ref],
+                    |row| row.get(0),
+                )
+                .expect("active claim count")
+        }
+
+        fn prepared_fixture(
+            db: &crate::db::ActionDb,
+            account_id: &str,
+            dir: &Path,
+        ) -> (EnrichmentInput, PreparedEnrichment) {
+            let input = trust_input(account_id, dir);
+            let mut intel = trust_intel(account_id);
+            intel.risks = (0..35)
+                .map(|idx| crate::intelligence::io::IntelRisk {
+                    text: format!("partial risk {idx}"),
+                    urgency: "high".to_string(),
+                    ..Default::default()
+                })
+                .collect();
+            intel.recent_wins = (0..35)
+                .map(|idx| crate::intelligence::io::IntelWin {
+                    text: format!("partial win {idx}"),
+                    impact: Some("high".to_string()),
+                    ..Default::default()
+                })
+                .collect();
+            let prepared = compose_enrichment_intelligence_payload(
+                db,
+                &input,
+                &intel,
+                EnrichmentProducer::Pty,
+                None,
+            )
+            .expect("prepare fixture");
+            (input, prepared)
+        }
+
+        let account_id = "ac3-partial";
+        let db = trust_test_db();
+        seed_trust_account(&db, account_id);
+        let dir = tempfile::tempdir().expect("tempdir");
+        let (input, prepared) = prepared_fixture(&db, account_id, dir.path());
+        let state = AppState::new();
+        let engine = crate::signals::propagation::PropagationEngine::default();
+        let ctx = state.live_service_context();
+        let plan = db
+            .with_transaction(|tx| {
+                let plan = crate::services::intelligence::prepare_enrichment_assessment_phased_plan(
+                    tx,
+                    crate::services::intelligence::EnrichmentAssessmentUpsert {
+                        entity_type: &input.entity_type,
+                        entity_id: &input.entity_id,
+                        intel: prepared.intelligence(),
+                        projection_intel: prepared.projection_intelligence(),
+                        projection_data_source: EnrichmentProducer::Pty.projection_data_source(),
+                        cleared_dimensions: prepared.cleared_dimensions(),
+                    },
+                )?;
+                crate::services::intelligence::begin_enrichment_assessment_phased_persist_in_active_transaction(
+                    &ctx, tx, &plan,
+                )?;
+                Ok(plan)
+            })
+            .expect("begin phased persist");
+        db.with_transaction(|tx| {
+            crate::services::intelligence::commit_enrichment_assessment_projection_batch_in_active_transaction(
+                &ctx,
+                tx,
+                &plan,
+                0,
+                crate::services::intelligence::ENRICHMENT_PROJECTION_CLAIM_BATCH_SIZE,
+            )
+        })
+        .expect("commit first batch");
+
+        assert!(
+            db.get_entity_intelligence(account_id)
+                .expect("read entity intelligence")
+                .is_none()
+        );
+        assert_eq!(signal_count(&db, "entity_intelligence_updated"), 0);
+
+        db.with_transaction(|tx| {
+            crate::services::intelligence::upsert_assessment_from_enrichment_in_active_transaction(
+                &ctx,
+                tx,
+                &engine,
+                crate::services::intelligence::EnrichmentAssessmentUpsert {
+                    entity_type: &input.entity_type,
+                    entity_id: &input.entity_id,
+                    intel: prepared.intelligence(),
+                    projection_intel: prepared.projection_intelligence(),
+                    projection_data_source: EnrichmentProducer::Pty.projection_data_source(),
+                    cleared_dimensions: prepared.cleared_dimensions(),
+                },
+            )
+        })
+        .expect("rerun full persist");
+        let rerun_snapshot = db
+            .get_entity_intelligence(account_id)
+            .expect("read rerun snapshot")
+            .expect("rerun snapshot exists");
+        let rerun_claims = active_claim_count(&db, account_id);
+
+        let fresh = trust_test_db();
+        seed_trust_account(&fresh, account_id);
+        let fresh_dir = tempfile::tempdir().expect("tempdir");
+        let (fresh_input, fresh_prepared) = prepared_fixture(&fresh, account_id, fresh_dir.path());
+        let fresh_state = AppState::new();
+        let fresh_ctx = fresh_state.live_service_context();
+        fresh
+            .with_transaction(|tx| {
+                crate::services::intelligence::upsert_assessment_from_enrichment_in_active_transaction(
+                    &fresh_ctx,
+                    tx,
+                    &engine,
+                    crate::services::intelligence::EnrichmentAssessmentUpsert {
+                        entity_type: &fresh_input.entity_type,
+                        entity_id: &fresh_input.entity_id,
+                        intel: fresh_prepared.intelligence(),
+                        projection_intel: fresh_prepared.projection_intelligence(),
+                        projection_data_source: EnrichmentProducer::Pty.projection_data_source(),
+                        cleared_dimensions: fresh_prepared.cleared_dimensions(),
+                    },
+                )
+            })
+            .expect("fresh full persist");
+        let fresh_snapshot = fresh
+            .get_entity_intelligence(account_id)
+            .expect("read fresh snapshot")
+            .expect("fresh snapshot exists");
+        assert_eq!(rerun_snapshot.risks.len(), fresh_snapshot.risks.len());
+        assert_eq!(
+            rerun_snapshot.recent_wins.len(),
+            fresh_snapshot.recent_wins.len()
+        );
+        assert_eq!(rerun_claims, active_claim_count(&fresh, account_id));
+    }
+
+    #[tokio::test]
+    async fn ac4_over_cap_cleanup_dry_run_apply_and_stability_preserve_user_claims() {
+        fn active_generated_risk_count(db: &crate::db::ActionDb, account_id: &str) -> i64 {
+            let subject_ref =
+                serde_json::json!({ "kind": "account", "id": account_id }).to_string();
+            db.conn_ref()
+                .query_row(
+                    "SELECT COUNT(*) FROM intelligence_claims
+                     WHERE subject_ref = ?1
+                       AND claim_state = 'active'
+                       AND surfacing_state = 'active'
+                       AND field_path LIKE 'risks[%]'
+                       AND json_valid(metadata_json) = 1
+                       AND json_extract(metadata_json, '$.projection_producer') = 'ai_enrichment'",
+                    params![subject_ref],
+                    |row| row.get(0),
+                )
+                .expect("active generated risk count")
+        }
+
+        let temp = tempfile::tempdir().expect("tempdir");
+        let db_path = temp.path().join("ac4-cleanup.db");
+        let svc = crate::db_service::DbService::open_at_unencrypted(db_path)
+            .await
+            .expect("open db service");
+        let state = Arc::new(AppState::test_with_db_service(svc));
+        let account_id = "ac4-cleanup";
+        let mut intel = trust_intel(account_id);
+        intel.risks = (0..600)
+            .map(|idx| crate::intelligence::io::IntelRisk {
+                text: format!("cleanup generated risk {idx}"),
+                urgency: if idx == 599 { "critical" } else { "low" }.to_string(),
+                ..Default::default()
+            })
+            .collect();
+        let seed_account_id = account_id.to_string();
+        let seed_intel = intel.clone();
+        let state_for_seed = Arc::clone(&state);
+        state
+            .db_write(move |db| {
+                seed_trust_account(db, &seed_account_id);
+                let ctx = state_for_seed
+                    .live_service_context()
+                    .with_actor("system:intelligence_maintenance");
+                db.with_transaction(|tx| {
+                    crate::services::intelligence::commit_claim_shaped_intelligence_projection(
+                        &ctx,
+                        tx,
+                        &seed_intel,
+                        "agent:intelligence",
+                        "ai_enrichment",
+                    )?;
+                    crate::services::derived_state::upsert_entity_intelligence_legacy_snapshot(
+                        &ctx,
+                        tx,
+                        &seed_intel,
+                    )
+                    .map_err(|error| error.to_string())?;
+                    Ok(())
+                })?;
+                with_trust_ctx(|user_ctx| {
+                    commit_claim(
+                        user_ctx,
+                        db,
+                        ClaimProposal {
+                            id: None,
+                            expected_claim_version: None,
+                            subject_ref: serde_json::json!({
+                                "kind": "account",
+                                "id": &seed_account_id
+                            })
+                            .to_string(),
+                            claim_type: "user_note".to_string(),
+                            field_path: Some("risks[999]".to_string()),
+                            topic_key: None,
+                            text: "user-authored risk stays".to_string(),
+                            actor: "user:test".to_string(),
+                            data_source: "user".to_string(),
+                            source_ref: None,
+                            source_asof: Some(TRUST_TS.to_string()),
+                            observed_at: TRUST_TS.to_string(),
+                            provenance_json: "{}".to_string(),
+                            metadata_json: None,
+                            thread_id: None,
+                            temporal_scope: Some(crate::db::claims::TemporalScope::State),
+                            sensitivity: Some(crate::db::claims::ClaimSensitivity::Internal),
+                            supersedes: None,
+                            tombstone: None,
+                        },
+                    )
+                    .map_err(|error| format!("commit user-authored claim: {error}"))
+                })?;
+                Ok(())
+            })
+            .await
+            .expect("seed over-cap generated projections");
+
+        let dry_run =
+            crate::services::intelligence::cleanup_over_cap_generated_projection_claims_for_subject_via_db_service(
+                &state,
+                crate::services::intelligence::OverCapGeneratedProjectionCleanupInput {
+                    entity_type: "account".to_string(),
+                    entity_id: account_id.to_string(),
+                    projection_producer: Some("ai_enrichment".to_string()),
+                    dry_run: true,
+                },
+            )
+            .await
+            .expect("cleanup dry run");
+        assert_eq!(dry_run.claims_to_withdraw, 575);
+        assert_eq!(dry_run.claims_withdrawn, 0);
+        assert_eq!(dry_run.snapshot_items_to_trim, 575);
+
+        let applied =
+            crate::services::intelligence::cleanup_over_cap_generated_projection_claims_for_subject_via_db_service(
+                &state,
+                crate::services::intelligence::OverCapGeneratedProjectionCleanupInput {
+                    entity_type: "account".to_string(),
+                    entity_id: account_id.to_string(),
+                    projection_producer: Some("ai_enrichment".to_string()),
+                    dry_run: false,
+                },
+            )
+            .await
+            .expect("cleanup apply");
+        assert_eq!(applied.claims_withdrawn, 575);
+        let active_after_apply = state
+            .db_write({
+                let account_id = account_id.to_string();
+                move |db| Ok(active_generated_risk_count(db, &account_id))
+            })
+            .await
+            .expect("count active generated risks after apply");
+        assert_eq!(active_after_apply, 25);
+        let snapshot = state
+            .db_write({
+                let account_id = account_id.to_string();
+                move |db| {
+                    db.get_entity_intelligence(&account_id)
+                        .map_err(|error| error.to_string())
+                }
+            })
+            .await
+            .expect("read trimmed snapshot")
+            .expect("snapshot exists");
+        assert_eq!(
+            snapshot.risks.len(),
+            crate::services::intelligence::MAX_ITEMS_PER_DIMENSION
+        );
+        assert!(snapshot
+            .risks
+            .iter()
+            .any(|risk| risk.text == "cleanup generated risk 599"));
+        let user_claim_state: String = state
+            .db_write(move |db| {
+                db.conn_ref()
+                    .query_row(
+                        "SELECT claim_state FROM intelligence_claims WHERE text = 'user-authored risk stays'",
+                        [],
+                        |row| row.get(0),
+                    )
+                    .map_err(|error| format!("read user claim state: {error}"))
+            })
+            .await
+            .expect("read user claim state");
+        assert_eq!(user_claim_state, "active");
+
+        let recompute_snapshot = snapshot.clone();
+        let state_for_recompute = Arc::clone(&state);
+        state
+            .db_write(move |db| {
+                let ctx = state_for_recompute
+                    .live_service_context()
+                    .with_actor("system:intelligence_maintenance");
+                let engine = crate::signals::propagation::PropagationEngine::default();
+                db.with_transaction(|tx| {
+                    crate::services::intelligence::upsert_assessment_from_enrichment_in_active_transaction(
+                        &ctx,
+                        tx,
+                        &engine,
+                        crate::services::intelligence::EnrichmentAssessmentUpsert {
+                            entity_type: &recompute_snapshot.entity_type,
+                            entity_id: &recompute_snapshot.entity_id,
+                            intel: &recompute_snapshot,
+                            projection_intel: &recompute_snapshot,
+                            projection_data_source: "ai_enrichment",
+                            cleared_dimensions: &[],
+                        },
+                    )
+                })
+            })
+            .await
+            .expect("recompute projection from trimmed snapshot");
+
+        let second =
+            crate::services::intelligence::cleanup_over_cap_generated_projection_claims_for_subject_via_db_service(
+                &state,
+                crate::services::intelligence::OverCapGeneratedProjectionCleanupInput {
+                    entity_type: "account".to_string(),
+                    entity_id: account_id.to_string(),
+                    projection_producer: Some("ai_enrichment".to_string()),
+                    dry_run: false,
+                },
+            )
+            .await
+            .expect("second cleanup apply");
+        assert_eq!(second.claims_to_withdraw, 0);
+        assert_eq!(second.snapshot_items_to_trim, 0);
+    }
+
+    #[tokio::test]
+    async fn ac5_pathological_full_persist_batches_without_starving_queued_write() {
+        let _observer_guard = enrichment_phase_observer_test_lock().lock().await;
+        let temp = tempfile::tempdir().expect("tempdir");
+        let db_path = temp.path().join("ac5-pathological-persist.db");
+        let svc = crate::db_service::DbService::open_at_unencrypted(db_path.clone())
+            .await
+            .expect("open db service");
+        let state = Arc::new(AppState::test_with_db_service(svc));
+        let account_id = "ac5-pathological";
+        let seed_account_id = account_id.to_string();
+        state
+            .db_write(move |db| {
+                seed_trust_account(db, &seed_account_id);
+                Ok(())
+            })
+            .await
+            .expect("seed account");
+        let dir = tempfile::tempdir().expect("tempdir");
+        let input = trust_input(account_id, dir.path());
+        let mut intel = trust_intel(account_id);
+        intel.risks = (0..1300)
+            .map(|idx| crate::intelligence::io::IntelRisk {
+                text: format!("pathological risk {idx}"),
+                urgency: "watch".to_string(),
+                ..Default::default()
+            })
+            .collect();
+        let prepared = PreparedEnrichment {
+            intelligence: intel.clone(),
+            projection_intelligence: intel,
+            side_writes: EnrichmentSideWrites::default(),
+            cleared_dimensions: Vec::new(),
+        };
+        let expected_claims =
+            crate::services::intelligence::projection_claim_shaped_intelligence_projection_claim_count(
+                prepared.projection_intelligence(),
+                "agent:intelligence",
+                EnrichmentProducer::Pty.projection_data_source(),
+            )
+            .expect("count pathological projection claims");
+        assert!(expected_claims >= 1300);
+
+        let markers = Arc::new(parking_lot::Mutex::new(Vec::<String>::new()));
+        let (injected_tx, injected_rx) = tokio::sync::oneshot::channel::<()>();
+        let injected_tx = Arc::new(parking_lot::Mutex::new(Some(injected_tx)));
+        let observer_state = Arc::clone(&state);
+        let observer_markers = Arc::clone(&markers);
+        let observer_injected_tx = Arc::clone(&injected_tx);
+        let _observer = install_enrichment_persist_phase_observer(Arc::new(move |event| {
+            observer_markers.lock().push(format!("{event:?}"));
+            if matches!(
+                event,
+                EnrichmentPersistPhaseEvent::BatchCommitted { offset: 0 }
+            ) {
+                let Some(sender) = observer_injected_tx.lock().take() else {
+                    return;
+                };
+                let state = Arc::clone(&observer_state);
+                let markers = Arc::clone(&observer_markers);
+                tauri::async_runtime::spawn(async move {
+                    let state_for_ctx = Arc::clone(&state);
+                    let result = state
+                        .db_write(move |db| {
+                            markers.lock().push("InjectedComposition".to_string());
+                            let ctx = state_for_ctx.live_service_context();
+                            crate::services::mutations::upsert_app_state_kv_json(
+                                &ctx,
+                                db,
+                                "ac5_composition_write",
+                                "\"committed\"",
+                            )
+                        })
+                        .await;
+                    assert!(result.is_ok(), "injected composition failed: {result:?}");
+                    let _ = sender.send(());
+                });
+            }
+        }));
+
+        persist_enrichment_write_results_via_db_service(
+            &state,
+            &input,
+            &prepared,
+            EnrichmentProducer::Pty,
+        )
+        .await
+        .expect("pathological phased persist");
+        tokio::time::timeout(std::time::Duration::from_secs(30), injected_rx)
+            .await
+            .expect("injected composition should finish")
+            .expect("injected sender should complete");
+        let markers = markers.lock().clone();
+        assert_contains_bounded_task_sequence(&markers, expected_claims);
+        let injected = markers
+            .iter()
+            .position(|marker| marker == "InjectedComposition")
+            .expect("injected composition marker");
+        let finalizer = markers
+            .iter()
+            .position(|marker| marker == "FinalizerTask")
+            .expect("finalizer marker");
+        assert!(
+            injected < finalizer,
+            "composition should complete before finalizer after interleaving, got {markers:?}"
+        );
+        fn risk_field_index(field_path: &str) -> usize {
+            field_path
+                .strip_prefix("risks[")
+                .and_then(|rest| rest.split(']').next())
+                .and_then(|value| value.parse::<usize>().ok())
+                .unwrap_or(usize::MAX)
+        }
+
+        let (snapshot, active_projection_risk_texts) = state
+            .db_write({
+                let account_id = account_id.to_string();
+                move |db| {
+                    let snapshot = db
+                        .get_entity_intelligence(&account_id)
+                        .map_err(|e| e.to_string())?
+                        .ok_or_else(|| "snapshot exists".to_string())?;
+                    let subject_ref =
+                        serde_json::json!({ "kind": "account", "id": &account_id }).to_string();
+                    let mut stmt = db
+                        .conn_ref()
+                        .prepare(
+                            "SELECT field_path, text
+                               FROM intelligence_claims
+                              WHERE subject_ref = ?1
+                                AND claim_state = 'active'
+                                AND surfacing_state = 'active'
+                                AND field_path LIKE 'risks[%]'
+                                AND json_valid(metadata_json) = 1
+                                AND json_extract(metadata_json, '$.projection_producer') = 'ai_enrichment'",
+                        )
+                        .map_err(|error| format!("prepare active risk claims query: {error}"))?;
+                    let mut rows = stmt
+                        .query_map(params![subject_ref], |row| {
+                            Ok((row.get::<_, String>(0)?, row.get::<_, String>(1)?))
+                        })
+                        .map_err(|error| format!("query active risk claims: {error}"))?
+                        .collect::<Result<Vec<_>, _>>()
+                        .map_err(|error| format!("collect active risk claims: {error}"))?;
+                    rows.sort_by_key(|(field_path, _)| risk_field_index(field_path));
+                    let claim_texts = rows
+                        .into_iter()
+                        .map(|(_, text)| text)
+                        .collect::<Vec<_>>();
+                    Ok((snapshot, claim_texts))
+                }
+            })
+            .await
+            .map_err(String::from)
+            .expect("read snapshot");
+        assert_eq!(snapshot.risks.len(), 1300);
+        let snapshot_risk_texts = snapshot
+            .risks
+            .iter()
+            .map(|risk| risk.text.clone())
+            .collect::<Vec<_>>();
+        assert_eq!(
+            active_projection_risk_texts, snapshot_risk_texts,
+            "active projection risk claims must match the published assessment surface"
+        );
     }
 
     fn run_trust_finalize_result(
@@ -5837,12 +6834,16 @@ mod tests {
         let confirming: Vec<_> = corroborators.iter().filter(|c| c.confirms).collect();
         let contradicting: Vec<_> = corroborators.iter().filter(|c| !c.confirms).collect();
         assert_eq!(confirming.len(), 2, "two corroboration rows must surface");
-        assert!(confirming
-            .iter()
-            .any(|c| (c.evidence_weight - 0.7).abs() < 1e-9));
-        assert!(confirming
-            .iter()
-            .any(|c| (c.evidence_weight - 0.4).abs() < 1e-9));
+        assert!(
+            confirming
+                .iter()
+                .any(|c| (c.evidence_weight - 0.7).abs() < 1e-9)
+        );
+        assert!(
+            confirming
+                .iter()
+                .any(|c| (c.evidence_weight - 0.4).abs() < 1e-9)
+        );
         assert_eq!(
             contradicting.len(),
             1,

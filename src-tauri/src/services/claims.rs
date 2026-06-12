@@ -22,43 +22,43 @@ use std::sync::{Arc, OnceLock};
 use chrono::{DateTime, Duration, NaiveDateTime, SecondsFormat, Utc};
 use parking_lot::Mutex;
 use regex::Regex;
-use rusqlite::{params, Connection, OptionalExtension, Params};
+use rusqlite::{Connection, OptionalExtension, Params, params};
 use schemars::JsonSchema;
 use serde::de::DeserializeOwned;
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
 
 use crate::abilities::claims::{
-    metadata_for_claim_type, ClaimActorClass, ClaimType, CommitPolicyClass,
+    ClaimActorClass, ClaimType, CommitPolicyClass, metadata_for_claim_type,
 };
 use crate::abilities::feedback::{
-    compute_needs_nuance_trust_effect, feedback_semantics, transition_for_feedback,
     ClaimFeedbackMetadata, ClaimRenderPolicy, ClaimVerificationState, FeedbackAction, RepairAction,
+    compute_needs_nuance_trust_effect, feedback_semantics, transition_for_feedback,
 };
 pub use crate::abilities::trust::TrustScore;
-use crate::abilities::trust::{types as factors, TrustConfig};
+use crate::abilities::trust::{TrustConfig, types as factors};
 use crate::db::claim_invalidation::SubjectRef;
 use crate::db::claims::{
     ClaimSensitivity, ClaimState, IntelligenceClaim, ReconciliationKind, SurfacingState,
     TemporalScope,
 };
 use crate::db::{ActionDb, DbError};
-use crate::intelligence::canonicalization::{item_hash, ItemKind};
+use crate::intelligence::canonicalization::{ItemKind, item_hash};
 use crate::services::claim_feedback_propagation::{
-    record_feedback_propagation_in_tx, FeedbackPropagationWrite,
+    FeedbackPropagationWrite, record_feedback_propagation_in_tx,
 };
 use crate::services::claim_receipt::feedback::sanitize_metadata_payload_for_writer;
 use crate::services::comparator_thresholds::{
-    ambiguous_base_interval, COMPARATOR_THRESHOLD_VERSION, HIGH_THRESHOLD, LOW_THRESHOLD,
+    COMPARATOR_THRESHOLD_VERSION, HIGH_THRESHOLD, LOW_THRESHOLD, ambiguous_base_interval,
 };
 use crate::services::context::{ClaimDismissalSurface, ServiceContext};
 use crate::services::versioning::{
-    checked_next_version, insert_committed_secondary_attempt, insert_version_event,
-    mark_mutation_attempt_committed, mark_mutation_attempt_committed_noop, version_to_i64,
     MutationAttempt, MutationGuard, MutationSubject, SignalCursor, VersionActorKind,
-    VersionEventInsert, VersionEventKind,
+    VersionEventInsert, VersionEventKind, checked_next_version, insert_committed_secondary_attempt,
+    insert_version_event, mark_mutation_attempt_committed, mark_mutation_attempt_committed_noop,
+    version_to_i64,
 };
-use abilities_runtime::predicates::registry::{PredicateRef, PREDICATE_REGISTRY_VERSION};
+use abilities_runtime::predicates::registry::{PREDICATE_REGISTRY_VERSION, PredicateRef};
 use abilities_runtime::structured_claim::{
     CanonicalStatus, ClaimStatus as StructuredClaimStatus, EntityRef, ObjectValue, Polarity,
     QualifierSet, StructuredClaim,
@@ -897,8 +897,8 @@ impl Drop for ShadowCanonicalizationSuppressionGuard {
 /// Suppress the post-commit shadow canonicalization audit for bulk historical
 /// backfills. `commit_claim` still runs the live tombstone, duplicate, and
 /// contradiction gates before writing the claim.
-pub(crate) fn suppress_shadow_canonicalization_for_current_thread(
-) -> ShadowCanonicalizationSuppressionGuard {
+pub(crate) fn suppress_shadow_canonicalization_for_current_thread()
+-> ShadowCanonicalizationSuppressionGuard {
     SHADOW_CANONICALIZATION_SUPPRESSION_DEPTH.with(|depth| {
         depth.set(depth.get().saturating_add(1));
     });
@@ -2708,10 +2708,9 @@ fn compare_free_text_object(
         return object_literal_result(left_text == right_text);
     }
 
-    let similarity =
-        config
-            .free_text_similarity
-            .unwrap_or_else(|| if left_text == right_text { 1.0 } else { 0.0 });
+    let similarity = config
+        .free_text_similarity
+        .unwrap_or_else(|| if left_text == right_text { 1.0 } else { 0.0 });
     if similarity >= HIGH_THRESHOLD {
         ObjectComparison::Match {
             score: serde_json::json!(similarity),
@@ -10241,11 +10240,7 @@ pub fn shadow_update_claim_trust_shadow_only(
 
 fn trust_score_db_value(trust_score: TrustScore) -> Option<f64> {
     let value = trust_score.value();
-    if value.is_finite() {
-        Some(value)
-    } else {
-        None
-    }
+    if value.is_finite() { Some(value) } else { None }
 }
 
 // ---------------------------------------------------------------------------
@@ -11364,6 +11359,15 @@ fn withdraw_claim_ids_for_source_purge_in_tx(
     Ok(withdrawn)
 }
 
+pub fn withdraw_generated_projection_claim_ids_for_maintenance_in_tx(
+    ctx: &ServiceContext<'_>,
+    db: &ActionDb,
+    claim_ids: Vec<String>,
+    retraction_reason: &str,
+) -> Result<usize, ClaimError> {
+    withdraw_claim_ids_for_source_purge_in_tx(ctx, db, claim_ids, retraction_reason)
+}
+
 pub fn withdraw_generated_projection_claims_for_field_path_roots_in_tx(
     ctx: &ServiceContext<'_>,
     db: &ActionDb,
@@ -12212,9 +12216,11 @@ mod tests {
         let outcome = canonical_match_v2(&query, &candidate, &CanonicalMatchConfig::default());
         assert_eq!(outcome.decision, CanonicalDecisionKind::ForkFiltered);
         assert_eq!(outcome.reason, "candidate_legacy_unmigrated");
-        assert!(outcome
-            .reason_secondary
-            .contains(&"candidate_tombstoned".to_string()));
+        assert!(
+            outcome
+                .reason_secondary
+                .contains(&"candidate_tombstoned".to_string())
+        );
     }
 
     #[test]
@@ -12693,9 +12699,11 @@ mod tests {
                 5,
                 "SQL subject predicates must prevent cross-subject row materialization for {kind}"
             );
-            assert!(decoded_ids
-                .iter()
-                .all(|id| id.starts_with(&expected_prefix)));
+            assert!(
+                decoded_ids
+                    .iter()
+                    .all(|id| id.starts_with(&expected_prefix))
+            );
             for index in 0..5 {
                 let expected = format!("{expected_prefix}{index:03}");
                 assert!(
@@ -12706,10 +12714,12 @@ mod tests {
                 );
             }
             assert_eq!(tombstone_lookup_count.get(), 5);
-            assert!(tombstone_looked_up_ids
-                .borrow()
-                .iter()
-                .all(|id| id.starts_with(&expected_prefix)));
+            assert!(
+                tombstone_looked_up_ids
+                    .borrow()
+                    .iter()
+                    .all(|id| id.starts_with(&expected_prefix))
+            );
         }
     }
 
@@ -16559,9 +16569,11 @@ mod tests {
             .expect("read W4 correction envelope");
         assert_eq!(envelope_action, "wrong_source");
         assert_eq!(surface, "entity_detail");
-        assert!(source_ref_hash
-            .as_deref()
-            .is_some_and(|hash| !hash.is_empty()));
+        assert!(
+            source_ref_hash
+                .as_deref()
+                .is_some_and(|hash| !hash.is_empty())
+        );
         assert!(!source_key_hash.is_empty());
         assert!(!replay_key.is_empty());
         assert_eq!(lifecycle_state, "active");
@@ -17993,12 +18005,14 @@ mod tests {
         assert!(drained, "targeted repair queue should drain");
 
         assert!(is_claim_dismissed_on_surface(&db, &claim_id, "briefing").unwrap());
-        assert!(is_claim_dismissed_on_surface(
-            &db,
-            &claim_id,
-            ClaimDismissalSurface::TauriEntityDetail.as_str()
-        )
-        .unwrap());
+        assert!(
+            is_claim_dismissed_on_surface(
+                &db,
+                &claim_id,
+                ClaimDismissalSurface::TauriEntityDetail.as_str()
+            )
+            .unwrap()
+        );
 
         let surfaces = db
             .conn_ref()
@@ -18249,11 +18263,13 @@ mod tests {
         let activity_json: serde_json::Value =
             serde_json::from_str(&activity).expect("activity payload JSON");
         assert_eq!(activity_json["contradictions_reconciled"], 1);
-        assert!(activity_json["changed_claim_ids"]
-            .as_array()
-            .unwrap()
-            .iter()
-            .any(|value| value.as_str() == Some(user_claim_id.as_str())));
+        assert!(
+            activity_json["changed_claim_ids"]
+                .as_array()
+                .unwrap()
+                .iter()
+                .any(|value| value.as_str() == Some(user_claim_id.as_str()))
+        );
     }
 
     #[test]
@@ -18280,12 +18296,14 @@ mod tests {
         assert_eq!(retraction_reason, None);
 
         assert!(is_claim_dismissed_on_surface(&db, &claim_id, "briefing").unwrap());
-        assert!(!is_claim_dismissed_on_surface(
-            &db,
-            &claim_id,
-            ClaimDismissalSurface::TauriReport.as_str()
-        )
-        .unwrap());
+        assert!(
+            !is_claim_dismissed_on_surface(
+                &db,
+                &claim_id,
+                ClaimDismissalSurface::TauriReport.as_str()
+            )
+            .unwrap()
+        );
 
         let briefing_ids = load_claims_active_for_surface(&db, SUBJECT, Some("risk"), "briefing")
             .unwrap()
@@ -18659,9 +18677,11 @@ mod tests {
         );
         let (state, error) = repair_job_status_and_error(&db, &source_claim_id);
         assert_eq!(state, "pending");
-        assert!(error
-            .as_deref()
-            .is_some_and(|message| message.contains("tombstone PRE-GATE")));
+        assert!(
+            error
+                .as_deref()
+                .is_some_and(|message| message.contains("tombstone PRE-GATE"))
+        );
     }
 
     #[test]
@@ -19631,7 +19651,7 @@ mod tests {
             other => panic!("expected fork from contradiction detection, got {other:?}"),
         };
         let _ = (primary_id, contradicting_id); // referenced via the
-                                                // contradiction_id
+        // contradiction_id
 
         let before = read_account_claim_version(&db);
 

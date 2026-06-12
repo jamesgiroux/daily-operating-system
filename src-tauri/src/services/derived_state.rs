@@ -1245,6 +1245,47 @@ pub(crate) fn upsert_entity_health_legacy_projection(
     Ok(())
 }
 
+pub(crate) fn replace_entity_intelligence_snapshot_lists(
+    ctx: &ServiceContext<'_>,
+    db: &ActionDb,
+    intel: &crate::intelligence::IntelligenceJson,
+) -> Result<(), String> {
+    ctx.check_mutation_allowed().map_err(|e| e.to_string())?;
+    let dimensions_json = serde_json::to_string(&intel.dimensions_blob())
+        .map_err(|error| format!("serialize trimmed dimensions failed: {error}"))?;
+    db.conn_ref()
+        .execute(
+            "UPDATE entity_assessment
+                SET risks_json = ?1,
+                    recent_wins_json = ?2,
+                    stakeholder_insights_json = ?3,
+                    value_delivered = ?4,
+                    success_metrics = ?5,
+                    open_commitments = ?6,
+                    health_json = ?7,
+                    dimensions_json = ?8
+              WHERE entity_id = ?9
+                AND entity_type = ?10",
+            rusqlite::params![
+                serde_json::to_string(&intel.risks).ok(),
+                serde_json::to_string(&intel.recent_wins).ok(),
+                serde_json::to_string(&intel.stakeholder_insights).ok(),
+                serde_json::to_string(&intel.value_delivered).ok(),
+                serde_json::to_string(&intel.success_metrics).ok(),
+                serde_json::to_string(&intel.open_commitments).ok(),
+                intel
+                    .health
+                    .as_ref()
+                    .and_then(|health| serde_json::to_string(health).ok()),
+                dimensions_json,
+                intel.entity_id,
+                intel.entity_type,
+            ],
+        )
+        .map(|_| ())
+        .map_err(|error| format!("replace intelligence snapshot lists failed: {error}"))
+}
+
 pub(crate) fn upsert_health_outlook_signals_legacy_projection(
     db: &ActionDb,
     entity_id: &str,
