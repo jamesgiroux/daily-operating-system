@@ -5486,8 +5486,8 @@ mod tests {
         db.conn_ref()
             .execute(
                 "INSERT INTO meetings (id, title, meeting_type, start_time, end_time, attendees, created_at)
-                 VALUES (?1, 'Actor Boundary Prep', 'external', '2026-06-10T17:00:00Z',
-                         '2026-06-10T17:30:00Z', '[]', '2026-06-05T09:00:00Z')",
+                 VALUES (?1, 'Actor Boundary Prep', 'external', '2099-06-10T17:00:00Z',
+                         '2099-06-10T17:30:00Z', '[]', '2026-06-05T09:00:00Z')",
                 rusqlite::params![meeting_id],
             )
             .expect("seed future meeting");

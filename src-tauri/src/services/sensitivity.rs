@@ -13,6 +13,7 @@ use crate::intelligence::{
     ValueItem,
 };
 pub use abilities_runtime::sensitivity::{
+    render_policy_for_surface, renderable_claim_text_with_value, renderable_from_decision,
     ClaimDismissalSurface, RedactionAffordance, RenderActor, RenderDecision, RenderPolicy,
     RenderPolicyKind, RenderSurface, RenderableClaimText,
 };
@@ -101,19 +102,6 @@ pub enum RenderableMcpText {
     Static(RenderableMcpStaticText),
 }
 
-pub fn render_policy_for_surface(
-    claim: &IntelligenceClaim,
-    surface: RenderSurface,
-    actor: &RenderActor,
-) -> RenderDecision {
-    match claim.sensitivity {
-        ClaimSensitivity::Public => public_policy(surface),
-        ClaimSensitivity::Internal => internal_policy(surface),
-        ClaimSensitivity::Confidential => confidential_policy(claim, surface),
-        ClaimSensitivity::UserOnly => user_only_policy(claim, surface, actor),
-    }
-}
-
 pub fn render_policy_for_surface_name(
     claim: &IntelligenceClaim,
     surface: &str,
@@ -152,47 +140,6 @@ pub fn renderable_claim_text(
     actor: &RenderActor,
 ) -> Option<RenderableClaimText> {
     renderable_claim_text_with_value(claim, &claim.text, surface, actor)
-}
-
-pub fn renderable_claim_text_with_value(
-    claim: &IntelligenceClaim,
-    value: &str,
-    surface: RenderSurface,
-    actor: &RenderActor,
-) -> Option<RenderableClaimText> {
-    let decision = render_policy_for_surface(claim, surface, actor);
-    renderable_from_decision(claim, value, surface, decision)
-}
-
-pub fn renderable_from_decision(
-    claim: &IntelligenceClaim,
-    value: &str,
-    surface: RenderSurface,
-    decision: RenderDecision,
-) -> Option<RenderableClaimText> {
-    match decision {
-        RenderDecision::Render => Some(RenderableClaimText {
-            text: value.to_string(),
-            policy: RenderPolicy {
-                kind: RenderPolicyKind::Render,
-                sensitivity: claim.sensitivity.clone(),
-                surface,
-                claim_id: Some(claim.id.clone()),
-                affordance: None,
-            },
-        }),
-        RenderDecision::RenderRedacted { affordance } => Some(RenderableClaimText {
-            text: affordance.label().to_string(),
-            policy: RenderPolicy {
-                kind: RenderPolicyKind::Redacted,
-                sensitivity: claim.sensitivity.clone(),
-                surface,
-                claim_id: Some(claim.id.clone()),
-                affordance: Some(affordance),
-            },
-        }),
-        RenderDecision::Drop => None,
-    }
 }
 
 /// Render a text leaf from a static MCP DTO.
@@ -2132,77 +2079,6 @@ fn claim_type_is_owned_by_active_substrate(claims: &[IntelligenceClaim], claim_t
 
 fn render_surface_dismissal_key(surface: RenderSurface) -> &'static str {
     ClaimDismissalSurface::from(surface).as_str()
-}
-
-fn public_policy(surface: RenderSurface) -> RenderDecision {
-    if matches!(surface, RenderSurface::LogStructured) {
-        RenderDecision::Drop
-    } else {
-        RenderDecision::Render
-    }
-}
-
-fn internal_policy(surface: RenderSurface) -> RenderDecision {
-    if surface.is_first_party_tauri() || surface.is_agent_surface() {
-        RenderDecision::Render
-    } else {
-        RenderDecision::Drop
-    }
-}
-
-fn confidential_policy(claim: &IntelligenceClaim, surface: RenderSurface) -> RenderDecision {
-    if surface.allows_reveal() {
-        RenderDecision::RenderRedacted {
-            affordance: RedactionAffordance::ConfidentialClickToReveal {
-                claim_id: claim.id.clone(),
-                label: "Confidential claim hidden".to_string(),
-                audit_required: true,
-            },
-        }
-    } else if surface.is_first_party_tauri() {
-        RenderDecision::RenderRedacted {
-            affordance: RedactionAffordance::ConfidentialHidden {
-                label: "Confidential claim hidden".to_string(),
-            },
-        }
-    } else {
-        RenderDecision::Drop
-    }
-}
-
-fn user_only_policy(
-    claim: &IntelligenceClaim,
-    surface: RenderSurface,
-    actor: &RenderActor,
-) -> RenderDecision {
-    if surface.is_first_party_tauri() && actor_owns_user_only_claim(claim, actor) {
-        RenderDecision::Render
-    } else if surface.is_first_party_tauri() {
-        RenderDecision::RenderRedacted {
-            affordance: RedactionAffordance::UserOnlyHidden {
-                label: "User-only claim hidden".to_string(),
-            },
-        }
-    } else {
-        RenderDecision::Drop
-    }
-}
-
-fn actor_owns_user_only_claim(claim: &IntelligenceClaim, actor: &RenderActor) -> bool {
-    if !actor.is_user() {
-        return false;
-    }
-    let claim_actor = claim.actor.trim();
-    let actor_label = actor.actor.trim();
-    let Some(user_id) = actor.user_id.as_deref() else {
-        return claim_actor.eq_ignore_ascii_case("user")
-            && actor_label.eq_ignore_ascii_case("user");
-    };
-    claim_actor.eq_ignore_ascii_case(user_id)
-        || claim_actor
-            .strip_prefix("user:")
-            .is_some_and(|suffix| suffix.eq_ignore_ascii_case(user_id))
-        || (claim_actor.eq_ignore_ascii_case("user") && user_id.eq_ignore_ascii_case("user"))
 }
 
 fn rendered_json_values_for_claim_type(

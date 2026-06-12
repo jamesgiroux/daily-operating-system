@@ -1,7 +1,7 @@
 use abilities_runtime::sensitivity::{
     renderable_claim_text_with_value, RenderActor, RenderSurface,
 };
-use chrono::{DateTime, Duration, NaiveDateTime, Utc};
+use chrono::{DateTime, NaiveDateTime, Utc};
 
 use crate::db::ActionDb;
 use crate::services::claim_receipt::contracts::*;
@@ -251,20 +251,6 @@ fn render_surface_for(surface: SurfaceContext) -> RenderSurface {
     }
 }
 
-fn freshness_for(source_asof: Option<DateTime<Utc>>, now: DateTime<Utc>) -> Freshness {
-    let Some(source_asof) = source_asof else {
-        return Freshness::Unknown;
-    };
-    let age = now.signed_duration_since(source_asof);
-    if age <= Duration::days(7) {
-        Freshness::Current
-    } else if age <= Duration::days(30) {
-        Freshness::Aging
-    } else {
-        Freshness::Stale
-    }
-}
-
 fn parse_claim_timestamp(value: &str) -> Option<DateTime<Utc>> {
     let trimmed = value.trim();
     if trimmed.is_empty() {
@@ -292,8 +278,10 @@ mod tests {
     use abilities_runtime::abilities::trust::types::TrustBand;
     use abilities_runtime::sensitivity::{ClaimVerificationState, RenderPolicyKind};
     use abilities_runtime::types::{ClaimState, SurfacingState};
-    use chrono::TimeZone;
+    use chrono::{Duration, TimeZone};
     use rusqlite::params;
+
+    use crate::services::claim_receipt::render_rules::freshness_for;
 
     async fn test_state() -> (AppState, tempfile::TempDir) {
         let tempdir = tempfile::tempdir().expect("tempdir");
