@@ -1,0 +1,216 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>v2.0 Wave Plan · DailyOS Planning</title>
+  <link rel="stylesheet" href="../design/reference/_shared/fonts.css">
+  <link rel="stylesheet" href="../design/reference/_shared/styles/design-tokens.css">
+  <link rel="stylesheet" href="../design/reference/_shared/styles/AtmosphereLayer.module.css">
+  <link rel="stylesheet" href="../design/reference/_shared/styles/MagazinePageLayout.module.css">
+  <link rel="stylesheet" href="../design/reference/_shared/chrome.css">
+  <link rel="stylesheet" href="plans.css">
+</head>
+<body
+  data-tint="eucalyptus"
+  data-active-page="planning">
+<div class="MagazinePageLayout_magazinePage">
+<main class="MagazinePageLayout_pageContainer">
+<div class="plans-shell">
+
+<!-- ============================================================
+     TOP NAV — see _patterns/topnav.html
+     ============================================================ -->
+<nav class="plans-topnav" aria-label="Planning surface">
+  <a class="plans-mark" href="index.html">
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 433 407" width="16" height="16" aria-hidden="true">
+      <path d="M159 407 161 292 57 355 0 259 102 204 0 148 57 52 161 115 159 0H273L271 115L375 52L433 148L331 204L433 259L375 355L271 292L273 407Z" fill="currentColor"/>
+    </svg>
+    DailyOS · Planning
+  </a>
+  <div class="plans-topnav-links">
+    <a href="engineering-ladder.html">Engineering Ladder</a>
+    <a href="v2.0-case.html">v2.0 Case</a>
+    <a href="v2.0-waves.html" data-active="true">v2.0 Waves</a>
+  </div>
+</nav>
+
+<!-- ============================================================
+     COVER
+     ============================================================ -->
+<section class="plans-cover">
+  <p class="plans-eyebrow">DailyOS · v2.0 · Wave Plan</p>
+  <h1 class="plans-title">v2.0 Waves</h1>
+  <p class="plans-kicker">Two gates stand in front of the conversion waves: the latency checkpoint and the moat-instrumentation readout. Everything before them is firm; everything after them is named but not promised.</p>
+  <p class="plans-lede">
+    Authority: <strong>ADR-0139</strong> (Accepted 2026-06-11, red-team-amended) and the gated sequencing decision — substrate prerequisites and instrumentation run first, the design phase runs in parallel, conversion waves start only after the readout. Linear project: <strong>v2.0 — Rebuild (Shell + Read Path)</strong>. The conversion waves (W1–W5) are deliberately coarse: their L0s are written after the readout exists to cite, per the ADR. Deletion of the predecessor surface is an acceptance criterion on every conversion.
+  </p>
+  <div class="plans-meta">
+    <span>Drafted 2026-06-11 · prep, pending James review</span>
+    <span>Gate 1: latency checkpoint (&lt;500 ms p95)</span>
+    <span>Gate 2: instrumentation readout</span>
+    <span>Waves L0'd only after Gate 2</span>
+  </div>
+</section>
+
+<!-- ============================================================
+     PRE-GATE TRACKS (firm, running now)
+     ============================================================ -->
+<section class="plans-section" aria-labelledby="tracks">
+  <header class="plans-section-header">
+    <p class="plans-section-eyebrow">Pre-gate tracks · firm</p>
+    <h2 id="tracks" class="plans-section-title">W0 · WI · WD — three tracks, two gates.</h2>
+    <p class="plans-section-lede">
+      W0 and WD run concurrently starting now. WI starts when W0's fixes land (so latency doesn't contaminate the readout) and ends at Gate 2.
+    </p>
+  </header>
+
+  <table class="reviewer-matrix">
+    <thead>
+      <tr>
+        <th>Track</th>
+        <th>Contents</th>
+        <th>Exit gate</th>
+      </tr>
+    </thead>
+    <tbody>
+      <tr>
+        <td><strong>W0 — Substrate prerequisites</strong><br><em>running now</em></td>
+        <td><strong>DOS-866</strong> phased persist + caps (codex, in flight) · <strong>DOS-868</strong> checkpoint fixes (bound recompute call sites, limit producer reads, commit off the read path) · <strong>DOS-837</strong> accept ADR-0130/0122 (doc-only, quick) · <strong>DOS-835</strong> bank WP + CI-gate sweep · <strong>DOS-856</strong> feedback unification (ADR-0138 — the one-feedback-path commitment is load-bearing for every later wave).</td>
+        <td><strong>Gate 1 — the latency checkpoint:</strong> entity click re-measured on the live composition path at current context volume. <strong>&lt;500 ms p95 kills the performance argument for read models</strong>; the read-model L0 then opens only on product grounds. Readout posted to the Linear project.</td>
+      </tr>
+      <tr>
+        <td><strong>WI — Moat instrumentation</strong><br><em>after W0 fixes land</em></td>
+        <td><strong>DOS-869</strong>: the careful L0 (predeclared pass/fail thresholds, A/B judgment-vs-recency mechanism, behavioral signals, token-cost axis from <code>ai_usage</code>) → build → <strong>2-week window on the daily-driven app</strong> → readout doc.</td>
+        <td><strong>Gate 2 — the readout:</strong> does the judgment layer change behavior, and what does it cost per token? Gates all conversion waves; briefing-first designs must cite it. If the moat isn't felt, the roadmap question reopens before W1 — that is the point of the gate.</td>
+      </tr>
+      <tr>
+        <td><strong>WD — Design phase</strong><br><em>parallel, James + Claude</em></td>
+        <td>Page inventory (deliberately small) · D-spine briefing pattern (±7-day window, from the DS mockups) · the three missing block families: <strong>list</strong>, <strong>triage/action-dispatch</strong>, <strong>report</strong> (DOS-870 umbrella splits when designed) · one EntityHero · chat-hatch minimum shape · patterns land in <code>.docs/design/reference/</code> first, surfaces consume them.</td>
+        <td>Design artifacts approved by James; block-family patterns in the reference canon. No timebox theater — but WD must not outlive Gate 2 by more than one working session before W1's L0 starts.</td>
+      </tr>
+    </tbody>
+  </table>
+
+  <p class="plans-footnote">
+    Also in W0's window, independent of v2.0 gates: land the open PRs (DOS-852 WR branch, DOS-851 dedup) and validate DOS-866 ACs when codex reports. DOS-820 (replica startup flag) hardens the dev workflow and can ride any W0 slot.
+  </p>
+</section>
+
+<!-- ============================================================
+     CONVERSION WAVES (named, not promised)
+     ============================================================ -->
+<section class="plans-section" aria-labelledby="waves">
+  <header class="plans-section-header">
+    <p class="plans-section-eyebrow">Conversion waves · post-Gate-2 · coarse by design</p>
+    <h2 id="waves" class="plans-section-title">W1–W5 — route-by-route, deletion as AC.</h2>
+    <p class="plans-section-lede">
+      Each wave converts surfaces behind the existing router (the proven mechanism), carries an old/new output-equivalence check, and is not done while its predecessor compiles. Per-wave L0s are written after Gate 2. Ordering rationale: front door first, then the richest daily surface, then the families that need new block types.
+    </p>
+  </header>
+
+  <table class="reviewer-matrix">
+    <thead>
+      <tr>
+        <th>Wave</th>
+        <th>Converts</th>
+        <th>Substrate riders</th>
+        <th>Gates</th>
+      </tr>
+    </thead>
+    <tbody>
+      <tr>
+        <td><strong>W1 — Briefing front door</strong></td>
+        <td>D-spine daily briefing replaces <code>DailyBriefing</code> + dual data path; briefing-first taxonomy lands (briefing IS the open-the-app moment).</td>
+        <td><strong>DOS-855</strong> trigger-side cutover (scheduled producers via WorkerAbilityBridge, legacy PTY deleted) · <strong>DOS-861</strong> context assembly consolidation · <strong>DOS-278</strong> resolved structurally (one canonical candidate set is a W1 AC).</td>
+        <td>James L4 hands-on before predecessor deletion. Design cites the WI readout.</td>
+      </tr>
+      <tr>
+        <td><strong>W2 — Entity detail completion</strong></td>
+        <td>Person/project hybrids finished (legacy hooks deleted) · <strong>MeetingDetailPage</strong> converted (meeting producer + write-intent blocks — the richest surface, 2,940 LOC / 28 invokes).</td>
+        <td><strong>DOS-857/858/859</strong> post-WC feedback consolidations (after DOS-856) · DOS-811/812 registry work as capacity allows.</td>
+        <td>James L4 hands-on on MeetingDetail before predecessor deletion.</td>
+      </tr>
+      <tr>
+        <td><strong>W3 — Lists &amp; triage</strong></td>
+        <td>Accounts/People/Projects/Actions list surfaces on the list block family · Emails + Inbox on the triage/action-dispatch family (one interaction grammar, two sources).</td>
+        <td>DOS-870 umbrella splits into implementation tickets · <strong>DOS-828</strong> archive folder reconciliation lands with bulk archive.</td>
+        <td>Block families must exist from WD — no mid-wave design.</td>
+      </tr>
+      <tr>
+        <td><strong>W4 — Reports &amp; me-surfaces</strong></td>
+        <td>Seven report pages → report block family with claim-backed producers; Me page; generic report route absorbs bespoke ones.</td>
+        <td>Reports become claim-backed (closes the §2.6 provenance gap) · v1.4.15 project re-sequences behind this wave.</td>
+        <td>Report family from WD; adversarial hundred-claims fixture (ex-DOS-446) is a wave AC.</td>
+      </tr>
+      <tr>
+        <td><strong>W5 — Deletion &amp; consolidation sweep</strong></td>
+        <td>Parity layer retired (per-surface, after each conversion it policed) · unreachable sidebar shell, <code>MAGAZINE_ROUTE_IDS</code> allowlist, 27 orphans, legacy display grammar + mapper deleted · settings/onboarding/recovery carried with shell-integration glue.</td>
+        <td><strong>Conditional read-model wave</strong> slots here ONLY if Gate 1 failed: owned Rust projections L0 (framework must beat it), scoped by the re-measurement data.</td>
+        <td>The audit's §3 numbers re-run as the exit proof: zero dual systems, zero orphans, one rendering grammar.</td>
+      </tr>
+    </tbody>
+  </table>
+
+  <p class="plans-footnote">
+    <strong>Migration slot reservations</strong> (standing rule from v1.4.1): parallel wave agents claim non-overlapping migration-slot blocks in this file before implementation starts. None claimed yet — W0's tickets ship no schema migrations; first claims happen at W1/W2 L0.
+    <strong>MCP riders:</strong> DOS-777 / DOS-479 / DOS-173 attach to whichever wave ships their producer (briefing tools → W1, portfolio/list tools → W3) — one producer contract serves both surfaces, so the MCP tool is a thin head, not a lane.
+  </p>
+</section>
+
+<!-- ============================================================
+     OPERATING RULES
+     ============================================================ -->
+<section class="plans-section" aria-labelledby="rules">
+  <header class="plans-section-header">
+    <p class="plans-section-eyebrow">Operating rules</p>
+    <h2 id="rules" class="plans-section-title">The whole control surface, restated once.</h2>
+  </header>
+
+  <div class="callout-grid">
+    <article class="callout">
+      <h3 class="callout-title">Two gates, no covenants</h3>
+      <p class="callout-prose">Gate 1 (latency checkpoint) and Gate 2 (instrumentation readout) are the only program-level gates — the over-hardening correction stands. Everything else is the normal ladder: per-ticket L0, L2 before merge, L4 on user-facing conversions.</p>
+    </article>
+    <article class="callout">
+      <h3 class="callout-title">Deletion is the acceptance criterion</h3>
+      <p class="callout-prose">A conversion is done when its predecessor is deleted — the measured precedent (two generations left in-tree, 27 orphans) is the named failure mode. Per-surface rollback: the old route stays addressable until the new surface survives daily use.</p>
+    </article>
+    <article class="callout">
+      <h3 class="callout-title">Substrate changes run their own L0s</h3>
+      <p class="callout-prose">Any wave item touching claim semantics, the writer queue, the abilities contract, or the composition model beyond consuming them exits the wave and runs as substrate work (ADR-0139 sequencing rule).</p>
+    </article>
+  </div>
+</section>
+
+<!-- ============================================================
+     RELATED
+     ============================================================ -->
+<section class="plans-section plans-section-footer">
+  <header class="plans-section-header">
+    <p class="plans-section-eyebrow">Related</p>
+    <h2 class="plans-section-title">Authority chain.</h2>
+  </header>
+  <ul class="plans-related">
+    <li><strong>.docs/decisions/0139-v2-rebuild-shell-and-read-path-on-existing-substrate.md</strong> — the decision this plan executes, checkpoint and sequencing included.</li>
+    <li><strong>.docs/plans/v2.0-case.html</strong> — the argument; <strong>v2.0-case-redteam-2026-06-11.md</strong> — why the gates exist.</li>
+    <li><strong>.docs/plans/v2.0-shell-audit.md</strong> — the measured baseline W5's exit proof re-runs.</li>
+    <li><strong>.docs/plans/v2.0-linear-sweep-proposal.md</strong> — executed sweep record; ticket dispositions.</li>
+    <li><strong>Linear: v2.0 — Rebuild (Shell + Read Path)</strong> — canonical execution record; all verdicts land as ticket comments.</li>
+  </ul>
+</section>
+
+<!-- ============================================================
+     FINIS
+     ============================================================ -->
+<div class="finis">
+  <div class="finis-mark">W0 · WI · WD — THEN THE GATES DECIDE</div>
+  <div class="finis-date">v2.0 Wave Plan · 2026-06-11</div>
+  <div class="finis-caption">Firm before the gates. Named, not promised, after them.</div>
+</div>
+
+</div><!-- /.plans-shell -->
+</main>
+</div><!-- /.MagazinePageLayout_magazinePage -->
+</body>
+</html>

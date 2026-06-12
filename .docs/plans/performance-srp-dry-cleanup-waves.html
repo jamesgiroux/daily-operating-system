@@ -1,0 +1,591 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>Performance SRP/DRY Cleanup Wave Plan &middot; DailyOS Planning</title>
+  <link rel="stylesheet" href="../design/reference/_shared/fonts.css">
+  <link rel="stylesheet" href="../design/reference/_shared/styles/design-tokens.css">
+  <link rel="stylesheet" href="../design/reference/_shared/styles/AtmosphereLayer.module.css">
+  <link rel="stylesheet" href="../design/reference/_shared/styles/MagazinePageLayout.module.css">
+  <link rel="stylesheet" href="../design/reference/_shared/chrome.css">
+  <link rel="stylesheet" href="plans.css">
+</head>
+<body data-tint="turmeric">
+<div class="MagazinePageLayout_magazinePage">
+<main class="MagazinePageLayout_pageContainer">
+<div class="plans-shell">
+
+<nav class="plans-topnav" aria-label="Planning surface">
+  <a class="plans-mark" href="README.md">
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 433 407" width="16" height="16" aria-hidden="true">
+      <path d="M159 407 161 292 57 355 0 259 102 204 0 148 57 52 161 115 159 0H273L271 115L375 52L433 148L331 204L433 259L375 355L271 292L273 407Z" fill="currentColor"/>
+    </svg>
+    DailyOS &middot; Planning
+  </a>
+  <div class="plans-topnav-links">
+    <a href="engineering-ladder.html">Engineering Ladder</a>
+    <a href="v1.4.9-waves.html">v1.4.9 Waves</a>
+    <a href="db-throughput-architecture.html">Throughput Architecture</a>
+    <a href="performance-srp-dry-cleanup-waves.html" data-active="true">Performance Cleanup</a>
+  </div>
+</nav>
+
+<section class="plans-cover">
+  <p class="plans-eyebrow">DailyOS &middot; Maintenance &middot; Performance Cleanup</p>
+  <h1 class="plans-title">Make the app faster by removing duplicate work, not by adding new product surface.</h1>
+  <p class="plans-kicker">A separate branch and maintenance-plan track for SRP, DRY, render-time, and response-time cleanup on top of <code>dev</code>.</p>
+  <p class="plans-lede">
+    This plan is deliberately not v1.4.9 and not v1.5.0. It starts from <code>dev</code> on
+    <code>codex/performance-srp-dry-audit</code>, files maintenance issues, and sequences cleanup that reduces duplicate
+    paths and avoidable work without shipping net-new features. Anything owned by v1.4.9 - DB ownership, MCP auth/parity,
+    claims-to-files, correction loop, trust parity, or transcript substrate - is dependency, measurement, or exclusion.
+  </p>
+  <div class="plans-meta">
+    <span>Branch: <code>codex/performance-srp-dry-audit</code></span>
+    <span>Worktree: <code>/Users/jamesgiroux/Documents/dailyos-performance</code></span>
+    <span>Source: Codebase Maintenance &amp; Production Quality</span>
+    <span>Started: 2026-06-01</span>
+  </div>
+</section>
+
+<section class="plans-section" aria-labelledby="non-overlap">
+  <header class="plans-section-header">
+    <p class="plans-section-eyebrow">Boundary</p>
+    <h2 id="non-overlap" class="plans-section-title">The performance branch must not step on v1.4.9 or v1.5.0.</h2>
+    <p class="plans-section-lede">
+      v1.4.9 is the active substrate reset and judgment maturation plan. This cleanup track can measure and document
+      adjacent problems, but it does not implement the same ownership, correction, MCP, projection, or Composition-renderer
+      changes in parallel.
+    </p>
+  </header>
+
+  <table class="reviewer-matrix">
+    <thead>
+      <tr>
+        <th>v1.4.9 owner</th>
+        <th>Performance branch disposition</th>
+        <th>Examples from audit</th>
+      </tr>
+    </thead>
+    <tbody>
+      <tr>
+        <td>W1 DB ownership + storage hardening</td>
+        <td>Measure only until v1.4.9 W1a single-writer work lands and telemetry exists; no DB writer/read ownership changes.</td>
+        <td><code>DOS-845</code>, dashboard writer refresh, email hydration, list query batching; report DB lifecycle is v1.4.15 audit input only.</td>
+      </tr>
+      <tr>
+        <td>W2 security right-size</td>
+        <td>Excluded; no MCP gateway/auth dispatch cleanup here.</td>
+        <td>MCP v2 paired/local dispatch duplication remains W2/W5-owned.</td>
+      </tr>
+      <tr>
+        <td>W3 claims to editable files</td>
+        <td>Excluded except read-only inventories; no projection or file write-back refactors.</td>
+        <td>Entity artifact regeneration while holding writers, readable-file projection shape.</td>
+      </tr>
+      <tr>
+        <td>W4 correction loop / judgment moat</td>
+        <td>Excluded for semantics; frontend selectors may preserve existing render behavior only.</td>
+        <td>Trust rendering parity, health invalidation, auto-link judgment scoring.</td>
+      </tr>
+      <tr>
+        <td>W5 MCP-first parity</td>
+        <td>Excluded unless v1.4.9 explicitly hands off a bounded maintenance task.</td>
+        <td>MCP meeting search/gateway duplicate paths, action write parity.</td>
+      </tr>
+      <tr>
+        <td>W6 transcript substrate</td>
+        <td>Excluded for backend meeting/transcript lifecycle; MeetingDetail cleanup is measurement or reusable-helper only.</td>
+        <td>Meeting writer adapter mapping, transcript-owned backend paths.</td>
+      </tr>
+    </tbody>
+  </table>
+
+  <p class="plans-section-lede">
+    A handoff or reroute is valid only when the owning version/wave leaves an explicit Linear comment or plan amendment naming
+    the issue, allowed file/route boundary, forbidden adjacent work, and expected reviewer. Absence of that artifact means
+    exclusion wins.
+  </p>
+
+  <table class="reviewer-matrix">
+    <thead>
+      <tr>
+        <th>v1.5.0 owner</th>
+        <th>Performance branch disposition</th>
+        <th>Examples from audit</th>
+      </tr>
+    </thead>
+    <tbody>
+      <tr>
+        <td>Account Detail as Composition reference vertical</td>
+        <td><code>DOS-838</code> and any Account Detail hierarchy work are measurement-only unless the v1.5.0 owner confirms the old account template will not be replaced before this branch lands. Without that handoff, close or reroute implementation to v1.5.0.</td>
+        <td>Inactive tab render avoidance, hierarchy expansion fetch deferral.</td>
+      </tr>
+      <tr>
+        <td>Briefing/meeting Composition-rendered surfaces</td>
+        <td><code>DOS-840</code> and <code>DOS-130</code> may extract reusable formatting, memoization, or selector helpers; no new DailyBriefing or MeetingDetail surface, no controller/page rewrite, and no renderer-block schema work.</td>
+        <td>Daily briefing action indexes, MeetingDetail transcript/action view helpers.</td>
+      </tr>
+      <tr>
+        <td>Composition data contracts and BlockRenderer ownership</td>
+        <td>Excluded unless v1.5.0 hands off a bounded helper. If v1.5.0 lands first, old-template cleanup closes or reroutes instead of rebasing into replaced surfaces.</td>
+        <td>Surface section schemas, block props, account/meeting composition producers.</td>
+      </tr>
+    </tbody>
+  </table>
+
+  <table class="reviewer-matrix">
+    <thead>
+      <tr>
+        <th>Frontend helper work</th>
+        <th>Ownership rule</th>
+      </tr>
+    </thead>
+    <tbody>
+      <tr>
+        <td>Formatting, memoization, render guards, stable sorting by already-computed fields, and prop-shape normalization</td>
+        <td>Allowed when tests prove unchanged visible output and interactions.</td>
+      </tr>
+      <tr>
+        <td>Email ranking, salience, lifecycle grouping, account health, DailyBriefing attention filters, and MeetingDetail action state</td>
+        <td>Semantic computation may not move into new display helpers. A helper may only call or wrap a named canonical source/owner with strict parity tests; recomputing ranking, salience, lifecycle, health, or action state in display code requires owner handoff.</td>
+      </tr>
+      <tr>
+        <td>Trust band, source/provenance, claim lifecycle, feedback, correction, or invalidation logic</td>
+        <td>Forbidden in this branch except read-only preservation of already-rendered data. Any semantic change routes to the v1.4.9 owner.</td>
+      </tr>
+    </tbody>
+  </table>
+</section>
+
+<section class="plans-section" aria-labelledby="audit-inventory">
+  <header class="plans-section-header">
+    <p class="plans-section-eyebrow">Audit baseline</p>
+    <h2 id="audit-inventory" class="plans-section-title">The codebase is large enough that cleanup needs routing, not taste.</h2>
+    <p class="plans-section-lede">
+      The read-only pass counted roughly 571k runtime Rust/TypeScript lines under <code>src</code> and
+      <code>src-tauri</code>, and roughly 1.1M tracked lines across runtime, scripts, docs, and archives. The largest
+      runtime files include <code>services/claims.rs</code>, <code>services/intelligence.rs</code>,
+      <code>surface_runtime/mod.rs</code>, <code>workflow/deliver.rs</code>, and <code>MeetingDetailPage.tsx</code>.
+    </p>
+  </header>
+
+  <table class="reviewer-matrix">
+    <thead>
+      <tr>
+        <th>Signal</th>
+        <th>Finding</th>
+        <th>Route</th>
+      </tr>
+    </thead>
+    <tbody>
+      <tr>
+        <td>Clone scan</td>
+        <td><code>jscpd --min-tokens 80</code> reported 216 clones and 4,301 duplicated lines in runtime-heavy clusters.</td>
+        <td>Use as W0 evidence; do not chase generated/archive duplicates.</td>
+      </tr>
+      <tr>
+        <td>Frontend render work</td>
+        <td>Heavy pages build hidden tabs and repeated selectors; report lifecycle duplication exists but is already deferred to v1.4.15.</td>
+        <td>W1/W2 safe implementation for non-report surfaces; reports use the default-off guard and entrypoint-removal model.</td>
+      </tr>
+      <tr>
+        <td>Backend read/query work</td>
+        <td>Dashboard, email, list, proactive-suggestion, and entity-edit paths need telemetry before code changes.</td>
+        <td><code>DOS-845</code>, blocked by v1.4.9 W1.</td>
+      </tr>
+      <tr>
+        <td>Substrate size</td>
+        <td>Claims and intelligence services are legitimate split candidates, but active v1.4.9 W3/W4 work owns those contracts.</td>
+        <td>Post-v1.4.9 planning only.</td>
+      </tr>
+    </tbody>
+  </table>
+</section>
+
+<section class="plans-section" aria-labelledby="baseline-artifact">
+  <header class="plans-section-header">
+    <p class="plans-section-eyebrow">Proof baseline</p>
+    <h2 id="baseline-artifact" class="plans-section-title">No wave can claim speed without a before/after artifact.</h2>
+    <p class="plans-section-lede">
+      W0 creates one proof bundle per implementation issue under <code>.docs/proof/performance-srp-dry/&lt;issue&gt;/</code>
+      before code changes start. A wave is blocked until the bundle names fixture data, exact commands, scenario steps,
+      raw before metrics, and the pass/fail thresholds below.
+    </p>
+  </header>
+
+  <table class="reviewer-matrix">
+    <thead>
+      <tr>
+        <th>Metric</th>
+        <th>Required baseline</th>
+        <th>Pass rule</th>
+      </tr>
+    </thead>
+    <tbody>
+      <tr>
+        <td>Frontend render work</td>
+        <td>React Profiler export for account detail tab switch, daily briefing load, accounts hierarchy expand, email list/detail render, and MeetingDetail transcript/action render.</td>
+        <td>Claimed render cleanup must remove at least 20% of avoidable renders for the named interaction, or the PR must be framed as code reduction only. No affected interaction may regress p95 commit time by more than 5%.</td>
+      </tr>
+      <tr>
+        <td>Response time</td>
+        <td>Three cold and five warm runs recording p50/p95/p99 for the affected route or Tauri command, with the database/profile fixture named in the bundle.</td>
+        <td>Claimed response-time improvement requires at least 10% p95 reduction and no p99 regression greater than 5%. Otherwise the issue remains measurement/routing.</td>
+      </tr>
+      <tr>
+        <td>Query and command count</td>
+        <td>Before count of Tauri invokes, report commands, and DB read/write queries for the scenario, captured from logs or instrumentation named in the bundle.</td>
+        <td>No new writes, hidden UI paths make no report command calls, direct report invokes return disabled before reads/writes/generation, query count is less than or equal to baseline, and each claimed duplicate path identifies the specific removed call/query.</td>
+      </tr>
+      <tr>
+        <td>Repeatability</td>
+        <td>The bundle includes the command sequence used, including <code>pnpm dev</code>, browser/profile steps or test command, and <code>pnpm tsc --noEmit</code>.</td>
+        <td>A reviewer can rerun the command sequence against the same fixture and reproduce the direction of change.</td>
+      </tr>
+    </tbody>
+  </table>
+</section>
+
+<section class="plans-section" aria-labelledby="wave-overview">
+  <header class="plans-section-header">
+    <p class="plans-section-eyebrow">Wave shape</p>
+    <h2 id="wave-overview" class="plans-section-title">Five waves: audit first, then safe cleanup, then post-W1 response-time work.</h2>
+    <p class="plans-section-lede">
+      The waves are ordered by collision risk. Frontend render-time cleanup and behavior-preserving helper extraction can
+      proceed first only where it survives v1.5.0. DB-adjacent response-time work remains measurement-only until v1.4.9
+      W1a and telemetry are complete and an owning-wave handoff exists.
+    </p>
+  </header>
+
+  <table class="reviewer-matrix">
+    <thead>
+      <tr>
+        <th>Wave</th>
+        <th>Issues</th>
+        <th>Scope</th>
+        <th>Gate</th>
+      </tr>
+    </thead>
+    <tbody>
+      <tr>
+        <td>W0 - Audit and routing</td>
+        <td><code>DOS-845</code> plus Linear document/status</td>
+        <td>K-in, subagent audit, clone inventory, v1.4.9/v1.5.0 exclusion maps, issue filing, and per-issue baseline bundles.</td>
+        <td>L0 plan review; no app code.</td>
+      </tr>
+      <tr>
+        <td>W1 - Frontend render-time hot paths</td>
+        <td><code>DOS-838</code>, <code>DOS-840</code>, <code>DOS-841</code></td>
+        <td>Account Detail and account hierarchy are measurement-only unless v1.5.0 hands off the old-template path. Daily briefing work is limited to memoization or calls to named canonical selectors; no Composition, route, layout, old-template rewrite, or semantic recomputation work.</td>
+        <td>Baseline bundle, profiler/render-count evidence, preservation table checks, mandatory L4, and <code>pnpm tsc --noEmit</code>.</td>
+      </tr>
+      <tr>
+        <td>W2 - Route guards + frontend presentation helpers</td>
+        <td><code>DOS-839</code>, <code>DOS-842</code>, <code>DOS-130</code></td>
+        <td>Default-off report route/command/scheduler guard and entrypoint removal; shared email formatting/memoization helpers; MeetingDetail presentation helpers only. Ranking, action state, lifecycle, trust, and provenance semantics stay with named owners unless handed off.</td>
+        <td>Direct-url and direct-invoke report tests, disabled command/scheduler early-exit tests, RTL/hook parity tests, accessibility checks, and mandatory L4.</td>
+      </tr>
+      <tr>
+        <td>W3 - Backend DRY without substrate movement</td>
+        <td><code>DOS-843</code>; <code>DOS-844</code> is deferred evidence</td>
+        <td>Entity-linking precondition helpers. Report prompt/context duplication is carried to v1.4.15, not cleaned here.</td>
+        <td>Golden/fixture parity; no DB ownership, schema, or report-engine changes.</td>
+      </tr>
+      <tr>
+        <td>W4 - Post-W1 response-time cleanup</td>
+        <td><code>DOS-845</code> spans W0 measurement and W4 follow-up routing</td>
+        <td>Measurement/routing only until handoff. Later allowed work is pure read-query batching with no DB ownership, service routing, schema, signal, trust, proactive, or correction semantics; v1.4.9 W3/W4-owned substrate remains excluded.</td>
+        <td>Requires v1.4.9 W1a dependency closure, telemetry availability, explicit owning-wave handoff, and measured p50/p95/p99 targets.</td>
+      </tr>
+    </tbody>
+  </table>
+</section>
+
+<section class="plans-section" aria-labelledby="report-boundary">
+  <header class="plans-section-header">
+    <p class="plans-section-eyebrow">Report boundary</p>
+    <h2 id="report-boundary" class="plans-section-title">Reports are deferred; do not polish the current report stack.</h2>
+    <p class="plans-section-lede">
+      Linear already routes reports to <code>v1.4.15 - Reports as Shareable Intelligence</code>. The maintenance finding is
+      not "extract the current report lifecycle hook now"; <code>DOS-96</code> already tracks that as deferred work if the
+      current UI survives. The near-term cleanup is to make reports default-off at the route boundary.
+    </p>
+  </header>
+
+  <p class="plans-section-lede">
+    <code>DOS-839</code> uses one model: introduce or reuse a real default-false <code>reports_enabled</code> feature flag
+    enforced before report pages, hooks, Tauri report commands, scheduled report generation, or report service write work
+    run. The guard removes report entry points from normal chrome and redirects direct report URLs with <code>replace</code>;
+    direct command invokes return a disabled-feature result before DB write work. It does not add a new disabled-report page
+    or new explanatory copy.
+  </p>
+
+  <table class="reviewer-matrix">
+    <thead>
+      <tr>
+        <th>Current evidence</th>
+        <th>Disposition</th>
+      </tr>
+    </thead>
+    <tbody>
+      <tr>
+        <td><code>src/router.tsx:488-539</code> registers account and personal report routes.</td>
+        <td><code>DOS-839</code>: guard <code>/accounts/$accountId/reports/*</code>, <code>/me/reports/*</code>, and any legacy report URLs before report page effects run. Account report deep links redirect to the account detail overview; personal report deep links redirect to the existing personal/home surface.</td>
+      </tr>
+      <tr>
+        <td><code>AccountDetailPage</code>, <code>AccountReportsSection</code>, and <code>FolioReportsDropdown</code> expose report navigation.</td>
+        <td>Hide report nav, account chapter entries, dropdown items, and cards while disabled. Hidden controls must not be focusable or reachable by keyboard search/order.</td>
+      </tr>
+      <tr>
+        <td><code>book_of_business_enabled</code> is default-off, but the rest of reports are not covered by an equivalent flag.</td>
+        <td>One default-off reports guard covers the family; do not create per-report accidental exposure. Tests assert <code>get_report</code>, <code>generate_report</code>, <code>save_report</code>, direct Tauri invokes, and scheduled report entry points return/exit before report reads, writes, or generation when disabled.</td>
+      </tr>
+      <tr>
+        <td>Report prompt/context duplication exists in backend modules.</td>
+        <td><code>DOS-844</code>: carry evidence to v1.4.15; no current-branch report engine cleanup.</td>
+      </tr>
+    </tbody>
+  </table>
+
+  <table class="reviewer-matrix">
+    <thead>
+      <tr>
+        <th><code>DOS-839</code> scope fence</th>
+        <th>Allowed / forbidden</th>
+      </tr>
+    </thead>
+    <tbody>
+      <tr>
+        <td>Allowed</td>
+        <td>Route guard, visible entrypoint removal, Tauri command guard, minimal scheduler/service guard that exits before report reads/writes/generation when <code>reports_enabled</code> is false, feature-flag plumbing needed for default-off behavior, and route/direct-invoke/scheduler/accessibility tests.</td>
+      </tr>
+      <tr>
+        <td>Forbidden</td>
+        <td>Report page polish, report prompt/context cleanup, source-contract changes, backend report engine changes beyond the disabled-state early return, MCP dispatch/auth changes, scheduled report lifecycle cleanup, and trust/provenance rendering changes.</td>
+      </tr>
+    </tbody>
+  </table>
+</section>
+
+<section class="plans-section" aria-labelledby="reviewer-matrix">
+  <header class="plans-section-header">
+    <p class="plans-section-eyebrow">Engineering ladder</p>
+    <h2 id="reviewer-matrix" class="plans-section-title">Reviewers route by collision risk.</h2>
+  </header>
+
+  <table class="reviewer-matrix">
+    <thead>
+      <tr>
+        <th>Profile</th>
+        <th>L0 / L2 reviewers</th>
+        <th>Extra condition</th>
+      </tr>
+    </thead>
+    <tbody>
+      <tr>
+        <td>Wave plan</td>
+        <td><code>/codex challenge</code>, <code>ce-feasibility-reviewer</code>, K-in <code>ce-learnings-researcher</code></td>
+        <td>Add <code>ce-scope-guardian-reviewer</code> if a wave attempts to pull v1.4.9-owned work.</td>
+      </tr>
+      <tr>
+        <td>Frontend render/lifecycle cleanup</td>
+        <td><code>l2-bounded-reviewer</code>, <code>ce-performance-reviewer</code>, <code>ce-julik-frontend-races-reviewer</code> for timing/lifecycle-sensitive diffs</td>
+        <td>L4 is mandatory for W1 and W2; W4 requires L4 whenever visible dashboard, email, list, proactive, or entity-edit behavior changes.</td>
+      </tr>
+      <tr>
+        <td>Backend helper extraction</td>
+        <td><code>l2-bounded-reviewer</code>, <code>ce-maintainability-reviewer</code>, <code>ce-correctness-reviewer</code></td>
+        <td>Add <code>ce-data-integrity-guardian</code> if a helper touches persisted semantics.</td>
+      </tr>
+      <tr>
+        <td>DB-adjacent performance</td>
+        <td><code>ce-performance-oracle</code>, <code>ce-reliability-reviewer</code>, <code>ce-data-migrations-reviewer</code> if schema appears</td>
+        <td>Blocked until v1.4.9 W1a settles ownership, telemetry is available, and the owning wave records a handoff.</td>
+      </tr>
+    </tbody>
+  </table>
+</section>
+
+<section class="plans-section" aria-labelledby="intelligence-loop">
+  <header class="plans-section-header">
+    <p class="plans-section-eyebrow">Intelligence loop</p>
+    <h2 id="intelligence-loop" class="plans-section-title">Cleanup is not allowed to make display-only intelligence.</h2>
+    <p class="plans-section-lede">
+      This plan adds no tables, claim fields, or user-visible intelligence features. If an implementation touches trust,
+      provenance, claim lifecycle, signal invalidation, ability runtime, or feedback behavior, it stops and moves to the
+      v1.4.9 owner. Frontend presentation-helper extraction may preserve existing rendered trust data; it may not recompute trust,
+      salience, or provenance in the display layer.
+    </p>
+  </header>
+
+  <table class="reviewer-matrix">
+    <thead>
+      <tr>
+        <th>Question</th>
+        <th>Answer for this plan</th>
+      </tr>
+    </thead>
+    <tbody>
+      <tr>
+        <td>Claim model</td>
+        <td>No new claims, claim fields, tables, or claim producers.</td>
+      </tr>
+      <tr>
+        <td>Provenance + trust</td>
+        <td>Do not change trust scoring or trust-band rendering contracts; trust UI consolidation is deferred to v1.4.9 W4/W5.</td>
+      </tr>
+      <tr>
+        <td>Signals + invalidation</td>
+        <td>No signal semantics change. Health/invalidation overlap remains measurement-only for v1.4.9 W4.</td>
+      </tr>
+      <tr>
+        <td>Runtime + surfaces</td>
+        <td>Tauri React cleanup preserves existing commands and ability outputs. MCP parity work is excluded.</td>
+      </tr>
+      <tr>
+        <td>Feedback loop</td>
+        <td>No correction, dismissal, contradiction, source-reliability, or feedback writer changes.</td>
+      </tr>
+    </tbody>
+  </table>
+</section>
+
+<section class="plans-section" aria-labelledby="preservation">
+  <header class="plans-section-header">
+    <p class="plans-section-eyebrow">Surface preservation</p>
+    <h2 id="preservation" class="plans-section-title">Lazy work must preserve the interaction contract users already have.</h2>
+    <p class="plans-section-lede">
+      W1 and W2 are cleanup waves, not redesign waves. Each implementation issue must prove the states below still behave
+      the same on desktop, tablet, and mobile widths before L2 can pass.
+    </p>
+  </header>
+
+  <table class="reviewer-matrix">
+    <thead>
+      <tr>
+        <th>Surface</th>
+        <th>States that must be preserved</th>
+        <th>Accessibility / route checks</th>
+      </tr>
+    </thead>
+    <tbody>
+      <tr>
+        <td>Account detail tabs</td>
+        <td>Initial load, active tab selection, inactive tab lazy render, empty tab, error/not-found account, partial data, and browser back/forward tab state.</td>
+        <td>Keyboard tab switching still works, focus lands on the selected tab panel, and no hidden inactive-tab controls enter the tab order.</td>
+      </tr>
+      <tr>
+        <td>Accounts hierarchy list</td>
+        <td>Collapsed root list, expanded children, loading children, empty child set, fetch error, retry, and previously expanded account state.</td>
+        <td>Expansion remains keyboard reachable, announces loading/error state, and does not shift layout across mobile/tablet/desktop checks.</td>
+      </tr>
+      <tr>
+        <td>Daily briefing and email surfaces</td>
+        <td>Loading, empty, partial data, existing ranking order produced by the current canonical source, email meta display, trust badge display, action links, and error fallback.</td>
+        <td>Shared helpers must not change reading order, labels, or screen-reader text for ranked items and metadata.</td>
+      </tr>
+      <tr>
+        <td>MeetingDetail</td>
+        <td>Transcript loading/empty/error, existing action state from the current owner, notes/agenda sections, partial transcript data, and unchanged command wiring.</td>
+        <td>Reusable helpers preserve focus after section changes and do not introduce new surface chrome or Composition renderer behavior.</td>
+      </tr>
+      <tr>
+        <td>Reports default-off</td>
+        <td>Hidden nav, direct account report URL redirect, direct personal report URL redirect, browser history replacement, and no report page mount.</td>
+        <td>Redirect target receives focus, no disabled report control is focusable, and tests prove disabled routes, commands, and scheduler paths exit before reads/writes/generation.</td>
+      </tr>
+    </tbody>
+  </table>
+</section>
+
+<section class="plans-section" aria-labelledby="suites">
+  <header class="plans-section-header">
+    <p class="plans-section-eyebrow">Test suites</p>
+    <h2 id="suites" class="plans-section-title">Performance cleanup needs proof beyond compiling.</h2>
+  </header>
+
+  <div class="suite-grid">
+    <article class="suite-card" data-suite="s">
+      <span class="suite-letter">S</span>
+      <h3 class="suite-name">Scope</h3>
+      <p class="suite-prose">Static check in review: no DB ownership, MCP auth/parity, claim correction, projection, trust parity, transcript substrate, or v1.5.0 Composition edits unless the owning wave records the handoff artifact defined above.</p>
+      <p class="suite-owner"><span class="suite-owner-label">Owner</span> <code>ce-scope-guardian-reviewer</code></p>
+      <p class="suite-pass-rule"><span class="suite-pass-label">Pass</span> zero v1.4.9/v1.5.0 collisions or a named handoff artifact</p>
+    </article>
+    <article class="suite-card" data-suite="p">
+      <span class="suite-letter">P</span>
+      <h3 class="suite-name">Performance</h3>
+      <p class="suite-prose">Profiler/render-count or query-count evidence for every claimed response-time improvement; baseline p50/p95/p99, render count, and query count are captured before implementation.</p>
+      <p class="suite-owner"><span class="suite-owner-label">Owner</span> <code>ce-performance-reviewer</code></p>
+      <p class="suite-pass-rule"><span class="suite-pass-label">Pass</span> 10% p95 improvement for speed claims, no p99 regression over 5%, and named duplicate work removed</p>
+    </article>
+    <article class="suite-card" data-suite="e">
+      <span class="suite-letter">E</span>
+      <h3 class="suite-name">Equivalence</h3>
+      <p class="suite-prose">Behavior-preserving cleanup requires snapshot, golden, hook, or selector tests proving existing output and interactions still hold.</p>
+      <p class="suite-owner"><span class="suite-owner-label">Owner</span> <code>ce-testing-reviewer</code></p>
+      <p class="suite-pass-rule"><span class="suite-pass-label">Pass</span> unchanged visible behavior</p>
+    </article>
+    <article class="suite-card" data-suite="a">
+      <span class="suite-letter">A</span>
+      <h3 class="suite-name">Access</h3>
+      <p class="suite-prose">L4 is mandatory for W1 and W2. Keyboard, focus, screen-reader, redirect, and mobile/tablet checks are required for every visible or route-level change.</p>
+      <p class="suite-owner"><span class="suite-owner-label">Owner</span> <code>/qa-only</code> plus accessibility reviewer when user-facing behavior changes</p>
+      <p class="suite-pass-rule"><span class="suite-pass-label">Pass</span> no focus traps, no focusable hidden report controls, and no responsive overlap</p>
+    </article>
+  </div>
+</section>
+
+<section class="plans-section plans-section-callouts">
+  <div class="callout-grid">
+    <article class="callout">
+      <h3 class="callout-title">No net-new features</h3>
+      <p class="callout-prose">Each issue is cleanup, measurement, or behavior-preserving extraction. New UI, new abilities, or new schema means the task is misrouted.</p>
+    </article>
+    <article class="callout">
+      <h3 class="callout-title">Stop on same-shape drift</h3>
+      <p class="callout-prose">If two review cycles find the same duplicate-path shape inside the approved issue boundary, sweep that approved class and add a guard rather than patching a third local offender. New modules, substrate owners, report paths, MCP paths, DB paths, or v1.5.0 surfaces require a new L0 or owner handoff first.</p>
+    </article>
+    <article class="callout">
+      <h3 class="callout-title">K-in stays live</h3>
+      <p class="callout-prose">Every wave cites <code>docs/solutions/</code> and <code>.docs/decisions/</code>. Reinventing DB throughput, claim, or ability substrate is a blocking finding.</p>
+    </article>
+  </div>
+</section>
+
+<section class="plans-section plans-section-footer">
+  <header class="plans-section-header">
+    <p class="plans-section-eyebrow">Related</p>
+    <h2 class="plans-section-title">Cross-references and issue map.</h2>
+  </header>
+  <ul class="plans-related">
+    <li><strong>engineering-ladder.html</strong> L0-L6 review protocol, K-channel, and maintenance routing.</li>
+    <li><strong>v1.4.9-waves.html</strong> Active substrate reset and judgment maturation boundary for exclusions.</li>
+    <li><strong>v1.5.0-waves.html</strong> Composition-rendered surface boundary for account, briefing, and meeting work.</li>
+    <li><strong>db-throughput-architecture.html</strong> Existing DB throughput plan consumed, not re-authored.</li>
+    <li><strong>DOS-96</strong> Deferred report lifecycle hook cleanup, owned by future report work if the current report UI survives.</li>
+    <li><strong>DOS-838</strong> Account detail inactive tabs.</li>
+    <li><strong>DOS-839</strong> Default-off deferred report route guard and entrypoint removal.</li>
+    <li><strong>DOS-840</strong> Daily briefing selector memoization.</li>
+    <li><strong>DOS-841</strong> Accounts list eager hierarchy prefetch.</li>
+    <li><strong>DOS-842</strong> Email ranking/meta sharing.</li>
+    <li><strong>DOS-843</strong> Entity-linking rule precondition helpers.</li>
+    <li><strong>DOS-844</strong> Deferred report prompt/context cleanup evidence for v1.4.15.</li>
+    <li><strong>DOS-845</strong> W0 baseline measurement and W4 response-time follow-up routing.</li>
+    <li><strong>DOS-130</strong> Existing MeetingDetail decomposition issue with performance addendum.</li>
+  </ul>
+</section>
+
+<div class="finis">
+  <div class="finis-mark">AUDIT &middot; CLEANUP &middot; MEASURE &middot; DEFER</div>
+  <div class="finis-date">Performance SRP/DRY Cleanup Wave Plan &middot; 2026-06-01</div>
+  <div class="finis-caption">The win is fewer paths doing the same work, with v1.4.9 left to own the substrate reset.</div>
+</div>
+
+</div>
+</main>
+</div>
+</body>
+</html>
