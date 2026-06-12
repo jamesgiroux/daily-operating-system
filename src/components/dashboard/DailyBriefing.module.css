@@ -66,6 +66,30 @@
   color: var(--color-text-secondary);
 }
 
+.projectedCompositionSection {
+  margin-top: 10px;
+}
+
+.projectedCompositionStack {
+  display: grid;
+  gap: 22px;
+}
+
+.projectedCompositionGroup {
+  display: grid;
+  gap: 10px;
+}
+
+.projectedCompositionLabel {
+  margin: 0;
+  font-family: var(--font-mono);
+  font-size: 11px;
+  line-height: 1.4;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: var(--color-text-tertiary);
+}
+
 /* ─────────────────────────────────────────────────────────────────────────────
    LIFECYCLE CORRECTION MODAL
    ───────────────────────────────────────────────────────────────────────────── */

@@ -256,6 +256,7 @@ pub fn build_ownership_policy_for_invocation(
         .map_err(|_| OwnershipError::InvalidAbilityEnvelope)?;
     let target_subject = target_subject_for_invocation(ability_meta, input_json)
         .unwrap_or_else(|| provenance.subject.subject.clone());
+    let require_entity_link_evidence = target_requires_entity_link_evidence(&target_subject);
     let mut scope_subjects = vec![target_subject.clone()];
     collect_provenance_subjects(&provenance, &mut scope_subjects);
     let scope_subjects = distinct_subjects(&scope_subjects);
@@ -279,13 +280,17 @@ pub fn build_ownership_policy_for_invocation(
 
     let mut policy =
         OwnershipPolicy::confident().with_target_footprint(target_footprint, portfolio_footprints);
-    policy.require_entity_link_evidence = true;
+    policy.require_entity_link_evidence = require_entity_link_evidence;
     policy.source_entity_links = source_entity_links_for_provenance(&provenance, &scope_subjects);
     policy.canonical_subject_groups = canonical_subject_groups_for_provenance(&provenance);
     if ability_meta.category == AbilityCategory::Transform {
         policy.prompt_input_claims = prompt_input_claims_from_invocation(input_json);
     }
     Ok(policy)
+}
+
+fn target_requires_entity_link_evidence(subject: &SubjectRef) -> bool {
+    !matches!(subject, SubjectRef::Global)
 }
 
 fn validate_provenance_ownership(
@@ -1066,5 +1071,13 @@ mod tests {
     #[test]
     fn subject_from_kind_and_id_rejects_empty_action_ids() {
         assert_eq!(subject_from_kind_and_id("action", " "), None);
+    }
+
+    #[test]
+    fn global_targets_do_not_require_entity_link_evidence() {
+        assert!(!target_requires_entity_link_evidence(&SubjectRef::Global));
+        assert!(target_requires_entity_link_evidence(&SubjectRef::Meeting(
+            "meeting-1".to_string()
+        )));
     }
 }

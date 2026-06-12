@@ -181,6 +181,55 @@ details[open] .detailsChevron {
   color: var(--color-spice-turmeric);
 }
 
+.projectedCompositionSurface {
+  display: grid;
+  gap: 22px;
+  margin-bottom: 42px;
+  padding-bottom: 28px;
+  border-bottom: 1px solid var(--color-rule-light);
+}
+
+.projectedCompositionSection {
+  display: grid;
+  grid-template-columns: minmax(96px, 140px) minmax(0, 1fr);
+  gap: 24px;
+}
+
+.projectedCompositionBlocks {
+  display: grid;
+  gap: 12px;
+  min-width: 0;
+}
+
+.projectedCompositionLabel {
+  margin: 0;
+  font-family: var(--font-mono);
+  font-size: 11px;
+  line-height: 1.4;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: var(--color-text-tertiary);
+}
+
+.projectedCompositionMeta {
+  margin: 6px 0 0;
+  color: var(--color-text-tertiary);
+  font-size: 13px;
+}
+
+.projectedCompositionUnavailable {
+  margin-bottom: 28px;
+  padding-bottom: 18px;
+  border-bottom: 1px solid var(--color-rule-light);
+}
+
+@media (max-width: 760px) {
+  .projectedCompositionSection {
+    grid-template-columns: 1fr;
+    gap: 8px;
+  }
+}
+
 /* Spinner animation for loader icons */
 .spinAnimation {
   animation: spin 1s linear infinite;

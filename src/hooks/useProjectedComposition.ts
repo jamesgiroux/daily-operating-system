@@ -13,7 +13,7 @@ interface UseProjectedCompositionState {
   refetch: (options?: UseProjectedCompositionRefetchOptions) => Promise<void>;
 }
 
-export type CompositionSubjectKind = "account" | "project" | "person" | "action";
+export type CompositionSubjectKind = "account" | "project" | "person" | "action" | "briefing" | "meeting";
 
 export interface ProjectedCompositionSubject {
   entityType: CompositionSubjectKind;
@@ -31,6 +31,8 @@ const PRODUCER_BY_SUBJECT: Record<CompositionSubjectKind, string> = {
   project: "dailyos/project-overview",
   person: "dailyos/person-overview",
   action: "dailyos/action-detail",
+  briefing: "dailyos/daily-briefing",
+  meeting: "dailyos/meeting-detail",
 };
 
 function normalizeSubject(input: UseProjectedCompositionInput): ProjectedCompositionSubject | null {

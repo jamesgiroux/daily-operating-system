@@ -75,6 +75,7 @@ pub struct LiveAccountCompositionSnapshotReader;
 pub struct LiveProjectCompositionSnapshotReader;
 pub struct LivePersonCompositionSnapshotReader;
 pub struct LiveActionCompositionSnapshotReader;
+pub struct LiveMeetingCompositionSnapshotReader;
 pub struct LivePrepareMeetingContextReader;
 pub struct LiveDailyReadinessContextReader;
 pub struct LiveTemporalWorkspaceReader;
@@ -134,6 +135,9 @@ pub fn attach_live_workspace_readers_with_signal_engine(
         ))
         .with_action_composition_snapshot_reader(Arc::new(
             LiveActionCompositionSnapshotReader,
+        ))
+        .with_meeting_composition_snapshot_reader(Arc::new(
+            LiveMeetingCompositionSnapshotReader,
         ))
         .with_prepare_meeting_context_reader(Arc::new(LivePrepareMeetingContextReader))
         .with_daily_readiness_context_reader(Arc::new(LiveDailyReadinessContextReader))
@@ -1280,6 +1284,33 @@ impl ActionCompositionSnapshotReadHandle for LiveActionCompositionSnapshotReader
             .map_err(|error| {
                 ActionCompositionSnapshotReadError::ReadFailed(format!(
                     "action composition snapshot task failed: {error}"
+                ))
+            })?
+        })
+    }
+}
+
+impl MeetingCompositionSnapshotReadHandle for LiveMeetingCompositionSnapshotReader {
+    fn read_meeting_composition_snapshot<'a>(
+        &'a self,
+        query: MeetingCompositionSnapshotQuery,
+    ) -> MeetingCompositionSnapshotReadFuture<'a> {
+        Box::pin(async move {
+            tokio::task::spawn_blocking(move || {
+                let db = crate::db::ActionDb::open_readonly(std::sync::Arc::new(
+                    crate::db::LocalKeychain::new(),
+                ))
+                .map_err(|error| {
+                    MeetingCompositionSnapshotReadError::ReadFailed(format!(
+                        "Database unavailable: {error}"
+                    ))
+                })?;
+                read_meeting_composition_snapshot_from_db(&db, query)
+            })
+            .await
+            .map_err(|error| {
+                MeetingCompositionSnapshotReadError::ReadFailed(format!(
+                    "meeting composition snapshot task failed: {error}"
                 ))
             })?
         })
@@ -2521,6 +2552,707 @@ fn read_action_composition_snapshot_from_db(
     })
 }
 
+fn read_meeting_composition_snapshot_from_db(
+    db: &crate::db::ActionDb,
+    query: MeetingCompositionSnapshotQuery,
+) -> Result<MeetingCompositionSnapshot, MeetingCompositionSnapshotReadError> {
+    let meeting = db
+        .get_meeting_intelligence_row(&query.meeting_id)
+        .map_err(|error| {
+            MeetingCompositionSnapshotReadError::ReadFailed(format!("meeting read failed: {error}"))
+        })?
+        .or_else(|| db.get_meeting_by_id(&query.meeting_id).ok().flatten())
+        .ok_or_else(|| {
+            MeetingCompositionSnapshotReadError::MeetingNotFound(query.meeting_token.clone())
+        })?;
+    let expected_token = crate::services::meetings::meeting_composition_token_for_id(&meeting.id);
+    if expected_token != query.meeting_token {
+        return Err(MeetingCompositionSnapshotReadError::MeetingNotFound(
+            query.meeting_token,
+        ));
+    }
+
+    let now = chrono::Utc::now();
+    let start_dt = crate::services::meetings::parse_meeting_datetime(&meeting.start_time);
+    let end_dt = meeting
+        .end_time
+        .as_deref()
+        .and_then(crate::services::meetings::parse_meeting_datetime)
+        .or(start_dt.map(|start| start + chrono::Duration::hours(1)));
+    let is_current = start_dt
+        .zip(end_dt)
+        .is_some_and(|(start, end)| start <= now && now <= end);
+    let is_past = end_dt.is_some_and(|end| end < now);
+    let source_ref = format!("meeting:{}", query.meeting_token);
+    let source_asof = meeting
+        .last_enriched_at
+        .as_deref()
+        .or(meeting.transcript_processed_at.as_deref())
+        .or(Some(meeting.created_at.as_str()));
+    let trust_band = meeting_snapshot_trust_band(meeting.intelligence_quality.as_deref());
+
+    let title = meeting_snapshot_field(
+        "/headline/title",
+        "Title",
+        serde_json::Value::from(meeting.title.clone()),
+        "meeting",
+        Some(source_ref.as_str()),
+        source_asof,
+        trust_band,
+        MeetingCompositionProvenanceKind::SourceField,
+    );
+    let starts_at = meeting_snapshot_field(
+        "/headline/starts_at",
+        "Starts",
+        serde_json::Value::from(meeting.start_time.clone()),
+        "meeting",
+        Some(source_ref.as_str()),
+        source_asof,
+        trust_band,
+        MeetingCompositionProvenanceKind::SourceField,
+    );
+    let ends_at = meeting.end_time.as_deref().map(|end_time| {
+        meeting_snapshot_field(
+            "/headline/ends_at",
+            "Ends",
+            serde_json::Value::from(end_time),
+            "meeting",
+            Some(source_ref.as_str()),
+            source_asof,
+            trust_band,
+            MeetingCompositionProvenanceKind::SourceField,
+        )
+    });
+    let meeting_type = meeting_snapshot_field(
+        "/headline/type",
+        "Type",
+        serde_json::Value::from(meeting.meeting_type.clone()),
+        "meeting",
+        Some(source_ref.as_str()),
+        source_asof,
+        trust_band,
+        MeetingCompositionProvenanceKind::SourceField,
+    );
+    let lifecycle_state = meeting.intelligence_state.as_deref().map(|state| {
+        meeting_snapshot_field(
+            "/headline/lifecycle_state",
+            "Intelligence state",
+            serde_json::Value::from(state),
+            "meeting",
+            Some(source_ref.as_str()),
+            source_asof,
+            trust_band,
+            MeetingCompositionProvenanceKind::SourceField,
+        )
+    });
+
+    let prep = crate::services::meetings::load_meeting_prep_from_sources(
+        std::path::Path::new(""),
+        &meeting,
+    );
+    let agenda_layer =
+        crate::services::meetings::parse_user_agenda_layer(meeting.user_agenda_json.as_deref());
+    let user_agenda = if agenda_layer.items.is_empty() {
+        None
+    } else {
+        Some(agenda_layer.items)
+    };
+    let user_notes = meeting.user_notes.clone();
+    let captures = db.get_captures_for_meeting(&meeting.id).map_err(|error| {
+        MeetingCompositionSnapshotReadError::ReadFailed(format!("capture read failed: {error}"))
+    })?;
+    let actions = db.get_actions_for_meeting(&meeting.id).map_err(|error| {
+        MeetingCompositionSnapshotReadError::ReadFailed(format!(
+            "meeting action read failed: {error}"
+        ))
+    })?;
+    let outcomes = crate::services::meetings::collect_meeting_outcomes_from_db(db, &meeting);
+    let post_intelligence = db
+        .get_meeting_post_intelligence(&meeting.id)
+        .map_err(|error| {
+            MeetingCompositionSnapshotReadError::ReadFailed(format!(
+                "post-meeting read failed: {error}"
+            ))
+        })?;
+    let continuity = read_meeting_continuity_thread_from_db(db, &meeting).map_err(|error| {
+        MeetingCompositionSnapshotReadError::ReadFailed(format!("continuity read failed: {error}"))
+    })?;
+    let scorecard = read_prediction_scorecard_without_feedback(db, &meeting).map_err(|error| {
+        MeetingCompositionSnapshotReadError::ReadFailed(format!(
+            "prediction scorecard read failed: {error}"
+        ))
+    })?;
+    let linked_entities = read_meeting_linked_entities(db, &meeting.id).map_err(|error| {
+        MeetingCompositionSnapshotReadError::ReadFailed(format!(
+            "linked entity read failed: {error}"
+        ))
+    })?;
+    let quality = crate::intelligence::assess_intelligence_quality(db, &meeting.id);
+
+    let mut fields = vec![title.clone(), starts_at.clone(), meeting_type.clone()];
+    if let Some(field) = ends_at.clone() {
+        fields.push(field);
+    }
+    if let Some(field) = lifecycle_state.clone() {
+        fields.push(field);
+    }
+    push_meeting_field(
+        &mut fields,
+        "/headline/current_state",
+        "Current state",
+        Some(serde_json::json!({
+            "is_past": is_past,
+            "is_current": is_current,
+            "has_transcript": meeting.transcript_processed_at.is_some(),
+            "can_edit_user_layer": !is_past && meeting.prep_frozen_at.is_none(),
+        })),
+        "meeting",
+        Some(source_ref.as_str()),
+        source_asof,
+        trust_band,
+        MeetingCompositionProvenanceKind::Derived,
+    );
+    push_meeting_field(
+        &mut fields,
+        "/prep/intelligence_summary",
+        "Prep summary",
+        prep.as_ref()
+            .and_then(|prep| prep.intelligence_summary.as_deref())
+            .map(serde_json::Value::from),
+        "meeting_prep",
+        Some(source_ref.as_str()),
+        source_asof,
+        trust_band,
+        MeetingCompositionProvenanceKind::SourceField,
+    );
+    push_meeting_field(
+        &mut fields,
+        "/prep/user_agenda",
+        "User agenda",
+        user_agenda
+            .as_ref()
+            .filter(|items| !items.is_empty())
+            .map(|items| serde_json::json!(items)),
+        "user",
+        Some(source_ref.as_str()),
+        source_asof,
+        TrustBand::LikelyCurrent,
+        MeetingCompositionProvenanceKind::ManualUser,
+    );
+    push_meeting_field(
+        &mut fields,
+        "/prep/user_notes",
+        "User notes",
+        user_notes.as_deref().map(serde_json::Value::from),
+        "user",
+        Some(source_ref.as_str()),
+        source_asof,
+        TrustBand::LikelyCurrent,
+        MeetingCompositionProvenanceKind::ManualUser,
+    );
+    push_meeting_field(
+        &mut fields,
+        "/prep/talking_points",
+        "Talking points",
+        prep.as_ref()
+            .and_then(|prep| prep.talking_points.as_ref())
+            .filter(|items| !items.is_empty())
+            .map(|items| serde_json::json!(items)),
+        "meeting_prep",
+        Some(source_ref.as_str()),
+        source_asof,
+        trust_band,
+        MeetingCompositionProvenanceKind::SourceField,
+    );
+    push_meeting_field(
+        &mut fields,
+        "/prep/open_items",
+        "Open items",
+        prep.as_ref()
+            .and_then(|prep| prep.open_items.as_ref())
+            .filter(|items| !items.is_empty())
+            .map(|items| {
+                serde_json::Value::from(
+                    items
+                        .iter()
+                        .map(|item| {
+                            serde_json::json!({
+                                "title": item.title.as_str(),
+                                "context": item.context.as_deref(),
+                                "due_date": item.due_date.as_deref(),
+                                "is_overdue": item.is_overdue,
+                            })
+                        })
+                        .collect::<Vec<_>>(),
+                )
+            }),
+        "meeting_prep",
+        Some(source_ref.as_str()),
+        source_asof,
+        trust_band,
+        MeetingCompositionProvenanceKind::SourceField,
+    );
+    push_meeting_field(
+        &mut fields,
+        "/prep/questions",
+        "Questions",
+        prep.as_ref()
+            .and_then(|prep| prep.questions.as_ref())
+            .filter(|items| !items.is_empty())
+            .map(|items| serde_json::json!(items)),
+        "meeting_prep",
+        Some(source_ref.as_str()),
+        source_asof,
+        trust_band,
+        MeetingCompositionProvenanceKind::SourceField,
+    );
+    push_meeting_field(
+        &mut fields,
+        "/prep/entity_risks",
+        "Entity risks",
+        prep.as_ref()
+            .and_then(|prep| prep.entity_risks.as_ref())
+            .filter(|items| !items.is_empty())
+            .map(|items| {
+                serde_json::Value::from(
+                    items
+                        .iter()
+                        .map(|risk| {
+                            serde_json::json!({
+                                "text": risk.text.as_str(),
+                                "urgency": risk.urgency.as_str(),
+                                "headline": risk.headline.as_deref(),
+                                "source": risk.source.as_deref(),
+                            })
+                        })
+                        .collect::<Vec<_>>(),
+                )
+            }),
+        "meeting_prep",
+        Some(source_ref.as_str()),
+        source_asof,
+        trust_band,
+        MeetingCompositionProvenanceKind::SourceField,
+    );
+    push_meeting_field(
+        &mut fields,
+        "/recap/outcomes",
+        "Outcomes",
+        outcomes.as_ref().map(|outcomes| {
+            serde_json::json!({
+                "summary": outcomes.summary.as_deref(),
+                "wins": &outcomes.wins,
+                "risks": &outcomes.risks,
+                "decisions": &outcomes.decisions,
+                "actions": outcomes.actions.iter().map(|action| {
+                    serde_json::json!({
+                        "title": action.title.as_str(),
+                        "status": action.status.as_str(),
+                        "priority": action.priority,
+                        "due_date": action.due_date.as_deref(),
+                    })
+                }).collect::<Vec<_>>(),
+                "processed_at": outcomes.processed_at.as_deref(),
+            })
+        }),
+        "meeting_outcomes",
+        Some(source_ref.as_str()),
+        meeting.transcript_processed_at.as_deref().or(source_asof),
+        trust_band,
+        MeetingCompositionProvenanceKind::SourceField,
+    );
+    push_meeting_field(
+        &mut fields,
+        "/recap/captures",
+        "Captures",
+        (!captures.is_empty()).then(|| {
+            serde_json::Value::from(
+                captures
+                    .iter()
+                    .map(|capture| {
+                        serde_json::json!({
+                            "capture_type": capture.capture_type.as_str(),
+                            "content": capture.content.as_str(),
+                            "captured_at": capture.captured_at.as_str(),
+                        })
+                    })
+                    .collect::<Vec<_>>(),
+            )
+        }),
+        "meeting_captures",
+        Some(source_ref.as_str()),
+        meeting.transcript_processed_at.as_deref().or(source_asof),
+        trust_band,
+        MeetingCompositionProvenanceKind::SourceField,
+    );
+    push_meeting_field(
+        &mut fields,
+        "/recap/actions",
+        "Actions",
+        (!actions.is_empty()).then(|| {
+            serde_json::Value::from(
+                actions
+                    .iter()
+                    .map(|action| {
+                        serde_json::json!({
+                            "title": action.title.as_str(),
+                            "status": action.status.as_str(),
+                            "priority": action.priority,
+                            "due_date": action.due_date.as_deref(),
+                        })
+                    })
+                    .collect::<Vec<_>>(),
+            )
+        }),
+        "meeting_actions",
+        Some(source_ref.as_str()),
+        source_asof,
+        trust_band,
+        MeetingCompositionProvenanceKind::SourceField,
+    );
+    push_meeting_field(
+        &mut fields,
+        "/recap/post_intelligence",
+        "Post-meeting intelligence",
+        meeting_post_intelligence_value(&post_intelligence),
+        "post_meeting_intelligence",
+        Some(source_ref.as_str()),
+        meeting.transcript_processed_at.as_deref().or(source_asof),
+        trust_band,
+        MeetingCompositionProvenanceKind::SourceField,
+    );
+    push_meeting_field(
+        &mut fields,
+        "/continuity/thread",
+        "Continuity",
+        continuity.as_ref().map(|thread| {
+            serde_json::json!({
+                "previous_meeting_date": thread.previous_meeting_date.as_deref(),
+                "previous_meeting_title": thread.previous_meeting_title.as_deref(),
+                "entity_name": thread.entity_name.as_deref(),
+                "actions_completed": &thread.actions_completed,
+                "actions_open": &thread.actions_open,
+                "health_delta": &thread.health_delta,
+                "new_attendees": &thread.new_attendees,
+                "is_first_meeting": thread.is_first_meeting,
+            })
+        }),
+        "meeting_continuity",
+        Some(source_ref.as_str()),
+        source_asof,
+        trust_band,
+        MeetingCompositionProvenanceKind::Derived,
+    );
+    push_meeting_field(
+        &mut fields,
+        "/predictions/scorecard",
+        "Prediction scorecard",
+        scorecard
+            .as_ref()
+            .map(|scorecard| serde_json::json!(scorecard)),
+        "meeting_predictions",
+        Some(source_ref.as_str()),
+        meeting.transcript_processed_at.as_deref().or(source_asof),
+        trust_band,
+        MeetingCompositionProvenanceKind::Derived,
+    );
+    push_meeting_field(
+        &mut fields,
+        "/relationship/linked_entities",
+        "Linked entities",
+        (!linked_entities.is_empty()).then(|| serde_json::Value::from(linked_entities)),
+        "linked_entities",
+        Some(source_ref.as_str()),
+        source_asof,
+        trust_band,
+        MeetingCompositionProvenanceKind::SourceField,
+    );
+    push_meeting_field(
+        &mut fields,
+        "/sources/quality",
+        "Intelligence quality",
+        Some(serde_json::json!(quality)),
+        "meeting_quality",
+        Some(source_ref.as_str()),
+        source_asof,
+        trust_band,
+        MeetingCompositionProvenanceKind::Derived,
+    );
+    if meeting.transcript_processed_at.is_none() {
+        push_meeting_field(
+            &mut fields,
+            "/sources/source_gap",
+            "Source gap",
+            Some(serde_json::json!({
+                "message": "No processed transcript is currently attached to this meeting.",
+                "trust_band": "needs_verification",
+            })),
+            "meeting_transcript",
+            Some(source_ref.as_str()),
+            source_asof,
+            TrustBand::NeedsVerification,
+            MeetingCompositionProvenanceKind::Unavailable,
+        );
+    }
+
+    Ok(MeetingCompositionSnapshot {
+        meeting_token: query.meeting_token,
+        title,
+        starts_at: Some(starts_at),
+        ends_at,
+        meeting_type: Some(meeting_type),
+        lifecycle_state,
+        is_past,
+        is_current,
+        has_transcript: meeting.transcript_processed_at.is_some(),
+        fields,
+    })
+}
+
+fn read_meeting_continuity_thread_from_db(
+    db: &crate::db::ActionDb,
+    meeting: &crate::db::DbMeeting,
+) -> Result<Option<crate::db::types::ContinuityThread>, String> {
+    let entities = db
+        .get_meeting_entities(&meeting.id)
+        .map_err(|error| error.to_string())?;
+    let Some(entity) = entities.first() else {
+        return Ok(None);
+    };
+    let entity_type = match entity.entity_type {
+        crate::entity::EntityType::Account => "account",
+        crate::entity::EntityType::Project => "project",
+        crate::entity::EntityType::Person => "person",
+        crate::entity::EntityType::Other => return Ok(None),
+    };
+    let previous = db
+        .get_previous_meeting_for_entity(&entity.id, entity_type, &meeting.start_time)
+        .map_err(|error| error.to_string())?;
+    match previous {
+        None => Ok(Some(crate::db::types::ContinuityThread {
+            previous_meeting_date: None,
+            previous_meeting_title: None,
+            entity_name: Some(entity.name.clone()),
+            actions_completed: Vec::new(),
+            actions_open: Vec::new(),
+            health_delta: None,
+            new_attendees: Vec::new(),
+            is_first_meeting: true,
+        })),
+        Some(previous_meeting) => {
+            let mut thread = db
+                .get_continuity_thread(
+                    &entity.id,
+                    &meeting.id,
+                    &previous_meeting.id,
+                    &previous_meeting.start_time,
+                    &meeting.start_time,
+                )
+                .map_err(|error| error.to_string())?;
+            thread.previous_meeting_title = Some(previous_meeting.title);
+            thread.entity_name = Some(entity.name.clone());
+            Ok(Some(thread))
+        }
+    }
+}
+
+fn read_prediction_scorecard_without_feedback(
+    db: &crate::db::ActionDb,
+    meeting: &crate::db::DbMeeting,
+) -> Result<Option<crate::intelligence::predictions::PredictionScorecard>, String> {
+    let today_dir = std::path::PathBuf::new();
+    let (prep_risks, prep_wins) = if let Some(prep) =
+        crate::services::meetings::load_meeting_prep_from_sources(&today_dir, meeting)
+    {
+        (
+            crate::intelligence::predictions::extract_prep_risks_from_struct(&prep),
+            crate::intelligence::predictions::extract_prep_wins_from_struct(&prep),
+        )
+    } else if let Some(frozen) = meeting.prep_frozen_json.as_deref() {
+        if frozen.is_empty() {
+            return Ok(None);
+        }
+        (
+            crate::intelligence::predictions::extract_prep_risks(frozen),
+            crate::intelligence::predictions::extract_prep_wins(frozen),
+        )
+    } else {
+        return Ok(None);
+    };
+
+    if prep_risks.is_empty() && prep_wins.is_empty() {
+        return Ok(None);
+    }
+    let captures = db
+        .get_enriched_captures(&meeting.id)
+        .map_err(|error| error.to_string())?;
+    if captures.is_empty() {
+        return Ok(None);
+    }
+    let (outcome_risks, outcome_wins) =
+        crate::intelligence::predictions::extract_outcome_items(&captures);
+    let scorecard = crate::intelligence::predictions::compute_scorecard(
+        &prep_risks,
+        &prep_wins,
+        &outcome_risks,
+        &outcome_wins,
+    );
+    Ok(scorecard.has_data.then_some(scorecard))
+}
+
+fn read_meeting_linked_entities(
+    db: &crate::db::ActionDb,
+    meeting_id: &str,
+) -> Result<Vec<serde_json::Value>, String> {
+    let mut stmt = db
+        .conn_ref()
+        .prepare(
+            "SELECT lr.entity_id, lr.entity_type, lr.role, \
+                    lr.confidence, lr.rule_id, \
+                    COALESCE(acc.name, proj.name, p.name, lr.entity_id) AS name \
+             FROM linked_entities lr \
+             LEFT JOIN accounts acc \
+                  ON lr.entity_type = 'account' AND acc.id = lr.entity_id \
+             LEFT JOIN projects proj \
+                  ON lr.entity_type = 'project' AND proj.id = lr.entity_id \
+             LEFT JOIN people p \
+                  ON lr.entity_type = 'person' AND p.id = lr.entity_id \
+             WHERE lr.owner_type = 'meeting' AND lr.owner_id = ?1 \
+             ORDER BY \
+               CASE lr.role WHEN 'primary' THEN 0 \
+                            WHEN 'related' THEN 1 \
+                            ELSE 2 END",
+        )
+        .map_err(|error| format!("prepare linked_entities read: {error}"))?;
+    let mut rows = stmt
+        .query(rusqlite::params![meeting_id])
+        .map_err(|error| format!("linked_entities query: {error}"))?;
+    let mut out = Vec::new();
+    while let Some(row) = rows
+        .next()
+        .map_err(|error| format!("linked_entities row: {error}"))?
+    {
+        let role: String = row.get(2).unwrap_or_default();
+        let confidence: Option<f64> = row.get(3).ok();
+        let rule_id: Option<String> = row.get(4).ok();
+        out.push(serde_json::json!({
+            "id": row.get::<_, String>(0).unwrap_or_default(),
+            "entity_type": row.get::<_, String>(1).unwrap_or_default(),
+            "role": role.as_str(),
+            "confidence": confidence.unwrap_or(0.95),
+            "applied_rule": rule_id.as_deref(),
+            "name": row.get::<_, String>(5).unwrap_or_default(),
+            "is_primary": role == "primary",
+        }));
+    }
+    Ok(out)
+}
+
+fn meeting_post_intelligence_value(
+    post: &crate::db::types::MeetingPostIntelligence,
+) -> Option<serde_json::Value> {
+    if post.interaction_dynamics.is_none()
+        && post.key_advocate_health.is_none()
+        && post.role_changes.is_empty()
+        && post.enriched_captures.is_empty()
+    {
+        return None;
+    }
+    Some(serde_json::json!({
+        "interaction_dynamics": post.interaction_dynamics.as_ref(),
+        "key_advocate_health": post.key_advocate_health.as_ref().map(|health| {
+            serde_json::json!({
+                "champion_name": health.champion_name.as_deref(),
+                "champion_status": health.champion_status.as_str(),
+                "champion_evidence": health.champion_evidence.as_deref(),
+                "champion_risk": health.champion_risk.as_deref(),
+            })
+        }),
+        "role_changes": post.role_changes.iter().map(|change| {
+            serde_json::json!({
+                "person_name": change.person_name.as_str(),
+                "old_status": change.old_status.as_deref(),
+                "new_status": change.new_status.as_deref(),
+                "evidence_quote": change.evidence_quote.as_deref(),
+            })
+        }).collect::<Vec<_>>(),
+        "enriched_captures": post.enriched_captures.iter().map(|capture| {
+            serde_json::json!({
+                "meeting_title": capture.meeting_title.as_str(),
+                "capture_type": capture.capture_type.as_str(),
+                "content": capture.content.as_str(),
+                "sub_type": capture.sub_type.as_deref(),
+                "urgency": capture.urgency.as_deref(),
+                "impact": capture.impact.as_deref(),
+                "evidence_quote": capture.evidence_quote.as_deref(),
+                "speaker": capture.speaker.as_deref(),
+                "captured_at": capture.captured_at.as_str(),
+            })
+        }).collect::<Vec<_>>(),
+    }))
+}
+
+fn meeting_snapshot_trust_band(value: Option<&str>) -> TrustBand {
+    match value {
+        Some("fresh") | Some("ready") => TrustBand::LikelyCurrent,
+        Some("developing") => TrustBand::UseWithCaution,
+        Some("sparse") => TrustBand::NeedsVerification,
+        _ => TrustBand::UseWithCaution,
+    }
+}
+
+#[allow(clippy::too_many_arguments)]
+fn meeting_snapshot_field(
+    field_path: &str,
+    label: &str,
+    value: serde_json::Value,
+    source_label: &str,
+    source_ref: Option<&str>,
+    source_asof: Option<&str>,
+    trust_band: TrustBand,
+    provenance_kind: MeetingCompositionProvenanceKind,
+) -> MeetingCompositionSnapshotField {
+    AccountCompositionSnapshotField {
+        field_path: field_path.to_string(),
+        label: label.to_string(),
+        value,
+        sensitivity: AccountCompositionSnapshotSensitivity::Internal,
+        source_label: Some(source_label.to_string()),
+        source_ref: source_ref.map(ToString::to_string),
+        source_asof: source_asof.map(ToString::to_string),
+        trust_band,
+        trust_status: trust_status(trust_band).to_string(),
+        provenance_kind,
+    }
+}
+
+#[allow(clippy::too_many_arguments)]
+fn push_meeting_field(
+    fields: &mut Vec<MeetingCompositionSnapshotField>,
+    field_path: &str,
+    label: &str,
+    value: Option<serde_json::Value>,
+    source_label: &str,
+    source_ref: Option<&str>,
+    source_asof: Option<&str>,
+    trust_band: TrustBand,
+    provenance_kind: MeetingCompositionProvenanceKind,
+) {
+    let Some(value) = value else {
+        return;
+    };
+    fields.push(meeting_snapshot_field(
+        field_path,
+        label,
+        value,
+        source_label,
+        source_ref,
+        source_asof,
+        trust_band,
+        provenance_kind,
+    ));
+}
+
 fn action_snapshot_trust_band(value: Option<&str>) -> TrustBand {
     match value {
         Some("likely_current") => TrustBand::LikelyCurrent,
@@ -3010,6 +3742,101 @@ mod tests {
             linear_identifier: None,
             linear_url: None,
         }
+    }
+
+    #[test]
+    fn meeting_composition_snapshot_rejects_token_meeting_id_mismatch() {
+        let db = crate::db::test_utils::test_db();
+        db.conn_ref()
+            .execute(
+                "INSERT INTO meetings (id, title, meeting_type, start_time, end_time, attendees, created_at)
+                 VALUES (?1, 'Token Guard Fixture', 'external', '2026-06-03T17:00:00Z',
+                         '2026-06-03T17:30:00Z', '[]', '2026-06-03T16:00:00Z')",
+                params!["meeting-token-guard-fixture"],
+            )
+            .expect("seed meeting");
+
+        let wrong_token =
+            crate::services::meetings::meeting_composition_token_for_id("different-meeting");
+        let result = read_meeting_composition_snapshot_from_db(
+            &db,
+            MeetingCompositionSnapshotQuery {
+                meeting_id: "meeting-token-guard-fixture".to_string(),
+                meeting_token: wrong_token.clone(),
+                surface: ClaimDismissalSurface::TauriEntityDetail,
+            },
+        );
+
+        assert!(
+            matches!(
+                result,
+                Err(MeetingCompositionSnapshotReadError::MeetingNotFound(token))
+                    if token == wrong_token
+            ),
+            "snapshot reader must fail closed when a raw meeting id does not match the issued token"
+        );
+    }
+
+    #[test]
+    fn meeting_composition_snapshot_uses_row_user_layer_over_stale_prep_blob() {
+        let db = crate::db::test_utils::test_db();
+        db.conn_ref()
+            .execute(
+                "INSERT INTO meetings (id, title, meeting_type, start_time, end_time, attendees, created_at)
+                 VALUES (?1, 'Row Layer Fixture', 'external', '2026-06-03T17:00:00Z',
+                         '2026-06-03T17:30:00Z', '[]', '2026-06-03T16:00:00Z')",
+                params!["meeting-row-layer-fixture"],
+            )
+            .expect("seed meeting");
+        db.update_meeting_prep_context(
+            "meeting-row-layer-fixture",
+            &serde_json::json!({
+                "title": "Row Layer Fixture",
+                "time_range": "2026-06-03T17:00:00Z",
+                "user_agenda": ["stale prep agenda"],
+                "user_notes": "stale prep notes"
+            })
+            .to_string(),
+        )
+        .expect("seed prep");
+        let agenda_json = serde_json::to_string(&crate::services::meetings::UserAgendaLayer {
+            items: vec!["row agenda".to_string()],
+            dismissed_topics: Vec::new(),
+            hidden_attendees: Vec::new(),
+        })
+        .expect("serialize row agenda");
+        db.update_meeting_user_layer(
+            "meeting-row-layer-fixture",
+            Some(&agenda_json),
+            Some("row notes"),
+        )
+        .expect("seed row user layer");
+
+        let token = crate::services::meetings::meeting_composition_token_for_id(
+            "meeting-row-layer-fixture",
+        );
+        let snapshot = read_meeting_composition_snapshot_from_db(
+            &db,
+            MeetingCompositionSnapshotQuery {
+                meeting_id: "meeting-row-layer-fixture".to_string(),
+                meeting_token: token,
+                surface: ClaimDismissalSurface::TauriEntityDetail,
+            },
+        )
+        .expect("read snapshot");
+
+        let agenda = snapshot
+            .fields
+            .iter()
+            .find(|field| field.field_path == "/prep/user_agenda")
+            .expect("row agenda field");
+        assert_eq!(agenda.value, serde_json::json!(["row agenda"]));
+        let notes = snapshot
+            .fields
+            .iter()
+            .find(|field| field.field_path == "/prep/user_notes")
+            .expect("row notes field");
+        assert_eq!(notes.value, serde_json::json!("row notes"));
     }
 
     #[test]

@@ -1,6 +1,6 @@
 export type TrustBand = "likely_current" | "use_with_caution" | "needs_verification" | "unscored";
 
-export type CompositionFeedbackEntityType = "account" | "project" | "person" | "action";
+export type CompositionFeedbackEntityType = "account" | "project" | "person" | "action" | "meeting";
 
 export type SectionLayout = "stacked" | "grid" | "inline";
 

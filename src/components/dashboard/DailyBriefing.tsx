@@ -10,7 +10,7 @@
  * Layout: margin grid (100px label | content), section rules, no cards.
  */
 
-import { useState, useCallback, useMemo } from "react";
+import { useState, useCallback, useEffect, useMemo, useRef } from "react";
 import { Link } from "@tanstack/react-router";
 import { invoke } from "@tauri-apps/api/core";
 import { toast } from "sonner";
@@ -19,6 +19,7 @@ import { useSuggestedActions } from "@/hooks/useSuggestedActions";
 import clsx from "clsx";
 import { useCalendar } from "@/hooks/useCalendar";
 import { useDailyBriefingAbility } from "@/hooks/useDailyBriefingAbility";
+import { useProjectedComposition } from "@/hooks/useProjectedComposition";
 import { useRegisterMagazineShell } from "@/hooks/useMagazineShell";
 import type { ReadinessStat } from "@/components/layout/FolioBar";
 import {
@@ -51,8 +52,10 @@ import type {
 } from "@/types";
 import { HealthBadge } from "@/components/shared/HealthBadge";
 import { TrustBandIndicator } from "@/components/ui/TrustBandIndicator";
+import { ReactBlockRenderer } from "@/components/composition/ReactBlockRenderer";
 import { compareEmailRank } from "@/lib/email-ranking";
 import type { DailyBriefingOutput } from "@/services/daily-briefing/contracts";
+import type { ProjectedComposition, RenderedProvenance } from "@/services/composition/contracts";
 import s from "@/styles/editorial-briefing.module.css";
 import briefingStyles from "./DailyBriefing.module.css";
 
@@ -222,6 +225,62 @@ function DailyBriefingAbilityStrip({
   );
 }
 
+function localDateKey(date: Date): string {
+  const year = date.getFullYear();
+  const month = String(date.getMonth() + 1).padStart(2, "0");
+  const day = String(date.getDate()).padStart(2, "0");
+  return `${year}-${month}-${day}`;
+}
+
+function ProjectedBriefingChapter({
+  projection,
+  renderedProvenance,
+}: {
+  projection: ProjectedComposition | null;
+  renderedProvenance: RenderedProvenance | null;
+}) {
+  if (!projection || projection.sections.length === 0 || projection.blocks.length === 0) {
+    return null;
+  }
+  const blocksById = new Map(projection.blocks.map((block) => [block.block_id, block]));
+  return (
+    <section className={briefingStyles.projectedCompositionSection}>
+      <div className={s.marginGrid}>
+        <div className={s.marginLabel}>Briefing</div>
+        <div className={s.marginContent}>
+          <div className={s.sectionRule} />
+          <div
+            className={briefingStyles.projectedCompositionStack}
+            data-composition-id={projection.composition_id}
+            data-composition-version={projection.composition_version ?? 0}
+          >
+            {projection.sections.map((section) => {
+              const blocks = section.block_ids
+                .map((blockId) => blocksById.get(blockId))
+                .filter((block): block is ProjectedComposition["blocks"][number] => Boolean(block));
+              if (blocks.length === 0) return null;
+              return (
+                <div key={section.section_id} className={briefingStyles.projectedCompositionGroup}>
+                  {section.label && (
+                    <p className={briefingStyles.projectedCompositionLabel}>{section.label}</p>
+                  )}
+                  {blocks.map((block) => (
+                    <ReactBlockRenderer
+                      key={block.block_id}
+                      block={block}
+                      renderedProvenance={renderedProvenance}
+                    />
+                  ))}
+                </div>
+              );
+            })}
+          </div>
+        </div>
+      </div>
+    </section>
+  );
+}
+
 // ─── Capacity Formatting ─────────────────────────────────────────────────────
 
 function formatMinutes(minutes: number): string {
@@ -233,9 +292,33 @@ function formatMinutes(minutes: number): string {
 
 // ─── Component ───────────────────────────────────────────────────────────────
 
-export function DailyBriefing({ data, freshness: _freshness, onRunBriefing, isRunning, workflowStatus, onRefresh }: DailyBriefingProps) {
+export function DailyBriefing({ data, freshness, onRunBriefing, isRunning, workflowStatus, onRefresh }: DailyBriefingProps) {
   const { now, currentMeeting } = useCalendar();
   const dailyBriefingAbility = useDailyBriefingAbility();
+  const projectedBriefing = useProjectedComposition({
+    entityType: "briefing",
+    entityId: `local~${localDateKey(new Date(now))}`,
+  });
+  const hasMountedProjectedBriefingRefreshRef = useRef(false);
+  const freshnessRevision = freshness.freshness === "unknown" ? "unknown" : freshness.generatedAt;
+  const refreshProjectedBriefing = useCallback(() => {
+    void projectedBriefing.refetch({ forceRefresh: true });
+  }, [projectedBriefing.refetch]);
+  useEffect(() => {
+    if (!hasMountedProjectedBriefingRefreshRef.current) {
+      hasMountedProjectedBriefingRefreshRef.current = true;
+      return;
+    }
+    refreshProjectedBriefing();
+  }, [data, freshnessRevision, refreshProjectedBriefing]);
+  const handleRunBriefing = useCallback(() => {
+    onRunBriefing?.();
+    refreshProjectedBriefing();
+  }, [onRunBriefing, refreshProjectedBriefing]);
+  const refreshBriefingSurface = useCallback(() => {
+    onRefresh?.();
+    refreshProjectedBriefing();
+  }, [onRefresh, refreshProjectedBriefing]);
   const [completedIds, setCompletedIds] = useState<Set<string>>(new Set());
   const [pendingLifecycleChangeId, setPendingLifecycleChangeId] = useState<number | null>(null);
   const [correctionTarget, setCorrectionTarget] = useState<DashboardLifecycleUpdate | null>(null);
@@ -336,13 +419,13 @@ export function DailyBriefing({ data, freshness: _freshness, onRunBriefing, isRu
       : null;
     return (
       <FolioRefreshButton
-        onClick={onRunBriefing}
+        onClick={handleRunBriefing}
         loading={!!isRunning}
         loadingLabel={phaseLabel ?? "Running\u2026"}
         title={isRunning ? "Briefing in progress" : "Refresh emails, actions, and context"}
       />
     );
-  }, [onRunBriefing, isRunning, workflowStatus]);
+  }, [handleRunBriefing, onRunBriefing, isRunning, workflowStatus]);
 
   const shellConfig = useMemo(
     () => ({
@@ -369,25 +452,27 @@ export function DailyBriefing({ data, freshness: _freshness, onRunBriefing, isRu
   // Action completion
   const handleComplete = useCallback((id: string) => {
     setCompletedIds((prev) => new Set(prev).add(id));
-    invoke("complete_action", { id }).catch((err) => {
-      console.error("complete_action failed:", err);
-      toast.error("Failed to complete action");
-    });
-  }, []);
+    invoke("complete_action", { id })
+      .then(refreshProjectedBriefing)
+      .catch((err) => {
+        console.error("complete_action failed:", err);
+        toast.error("Failed to complete action");
+      });
+  }, [refreshProjectedBriefing]);
 
   const handleConfirmLifecycle = useCallback(async (update: DashboardLifecycleUpdate) => {
     setPendingLifecycleChangeId(update.changeId);
     try {
       await invoke("confirm_lifecycle_change", { changeId: update.changeId });
       toast.success(`${update.accountName} marked confirmed`);
-      onRefresh?.();
+      refreshBriefingSurface();
     } catch (err) {
       console.error("confirm_lifecycle_change failed:", err);
       toast.error("Failed to confirm lifecycle change");
     } finally {
       setPendingLifecycleChangeId(null);
     }
-  }, [onRefresh]);
+  }, [refreshBriefingSurface]);
 
   const openCorrection = useCallback((update: DashboardLifecycleUpdate) => {
     setCorrectionTarget(update);
@@ -419,14 +504,14 @@ export function DailyBriefing({ data, freshness: _freshness, onRunBriefing, isRu
       setCorrectedLifecycle("");
       setCorrectedStage("");
       setCorrectionNotes("");
-      onRefresh?.();
+      refreshBriefingSurface();
     } catch (err) {
       console.error("correct_lifecycle_change failed:", err);
       toast.error("Failed to correct lifecycle change");
     } finally {
       setPendingLifecycleChangeId(null);
     }
-  }, [correctionNotes, correctedLifecycle, correctedStage, correctionTarget, onRefresh]);
+  }, [correctionNotes, correctedLifecycle, correctedStage, correctionTarget, refreshBriefingSurface]);
 
   // Proposed actions for triage
   const { suggestedActions, acceptAction, rejectAction } = useSuggestedActions();
@@ -491,6 +576,11 @@ export function DailyBriefing({ data, freshness: _freshness, onRunBriefing, isRu
             was confusing. The hero headline already communicates state. */}
       </section>
 
+      <ProjectedBriefingChapter
+        projection={projectedBriefing.data?.projection ?? null}
+        renderedProvenance={projectedBriefing.renderedProvenance}
+      />
+
       {/* ═══ SCHEDULE (with Up Next) ═══ */}
       {hasSchedule && (
         <section className={s.scheduleSection}>
@@ -534,7 +624,7 @@ export function DailyBriefing({ data, freshness: _freshness, onRunBriefing, isRu
                         meetingActions={getActionsForMeeting(meeting.id)}
                         onComplete={handleComplete}
                         completedIds={completedIds}
-                        onEntitiesChanged={onRefresh}
+                        onEntitiesChanged={refreshBriefingSurface}
                         capturedActionCount={getCapturedActionCount(meeting.id)}
                         suggestedActionCount={getSuggestedActionCount(meeting.id)}
                         isUpNext={upNext?.id === meeting.id}

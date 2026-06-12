@@ -1,0 +1,31 @@
+{
+  "capturedAt": "2026-06-03T02:41:58Z",
+  "devServer": "http://localhost:1420/",
+  "fixture": "sanitized synthetic Tauri responses",
+  "screenshots": [
+    ".docs/proofs/v1.5.0/screenshots/w4-daily-briefing-composition-desktop-1440x900.png",
+    ".docs/proofs/v1.5.0/screenshots/w4-meeting-detail-composition-desktop-1440x900.png"
+  ],
+  "briefing": {
+    "compositionId": "dailyos/daily-briefing:briefing:local~2026-06-03",
+    "blockCount": 3,
+    "provenanceLabels": ["from 1 source", "from 1 source", "from 1 source"],
+    "fallbackTextPresent": false,
+    "containsProofCopy": true
+  },
+  "meeting": {
+    "compositionId": "dailyos/meeting-detail:meeting:mtg_0123456789abcdef",
+    "blockCount": 3,
+    "fallbackPolicyVersion": "1",
+    "hasFinis": true,
+    "unavailableTextPresent": false,
+    "containsProofCopy": true
+  },
+  "commandChecks": {
+    "briefingProjectionCalls": 2,
+    "meetingTokenCalls": 2,
+    "meetingProjectionCalls": 1
+  },
+  "actionableConsole": [],
+  "pageErrors": []
+}

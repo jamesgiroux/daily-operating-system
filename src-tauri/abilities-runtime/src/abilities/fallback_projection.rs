@@ -1408,6 +1408,7 @@ const ACCOUNT_OVERVIEW_FIELDS: &[FieldPolicy] = &[
     text_field("/action/status", ClaimSensitivity::Internal),
     text_field("/action/priority", ClaimSensitivity::Internal),
     text_field("/summary", ClaimSensitivity::Internal),
+    text_field("/trust_band", ClaimSensitivity::Internal),
     text_field("/health/band", ClaimSensitivity::Internal),
     number_field("/health/score", ClaimSensitivity::Internal),
     text_field("/risk/title", ClaimSensitivity::Internal),
@@ -1588,6 +1589,7 @@ const RISK_CALLOUT_FIELDS: &[FieldPolicy] = &[
     text_field("/intelligence/enrichedAt", ClaimSensitivity::Internal),
 ];
 const ACTION_LIST_FIELDS: &[FieldPolicy] = &[
+    text_field("/title", ClaimSensitivity::Internal),
     text_field("/items/*/title", ClaimSensitivity::Internal),
     text_field("/items/*/status", ClaimSensitivity::Internal),
     text_field("/items/*/due_at", ClaimSensitivity::Internal),

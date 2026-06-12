@@ -21,8 +21,8 @@ use crate::bridges::{
 };
 use crate::observability::aggregate_metric::{MetricDimensions, MetricValue, Outcome};
 use crate::services::composition_render_orchestrator::{
-    project_composition_for_surface_with_options, resolve_producer_ability_name,
-    ProjectCompositionRenderOptions,
+    hydrate_producer_projection_input, project_composition_for_surface_with_options,
+    resolve_producer_ability_name, ProjectCompositionRenderOptions,
 };
 use crate::state::AppState;
 
@@ -35,6 +35,13 @@ pub struct ProjectedCompositionCommandResponse {
     pub served_from_cache: bool,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub rendered_provenance: Option<RenderedProvenance>,
+}
+
+#[derive(Debug, Clone, serde::Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct MeetingCompositionTokenResponse {
+    pub meeting_token: String,
+    pub composition_id: String,
 }
 
 #[allow(
@@ -164,9 +171,10 @@ pub async fn get_projected_composition(
             force_refresh: force_refresh.unwrap_or(false),
         },
         |producer_input| {
-            let input = producer_input.to_json();
             let app_state = app_state.clone();
             async move {
+                let input =
+                    hydrate_producer_projection_input(app_state.as_ref(), &producer_input).await?;
                 let response = TauriAbilityBridge::new(registry)
                     .invoke_tauri_app(
                         app_state.as_ref(),
@@ -213,6 +221,31 @@ pub async fn get_projected_composition(
         cache_hint_token: render.cache_hint_token,
         served_from_cache: render.served_from_cache,
         rendered_provenance: render.rendered_provenance,
+    })
+}
+
+#[allow(
+    clippy::let_underscore_must_use,
+    reason = "tauri::command macro emits internal Result glue that discards generated metadata"
+)]
+#[tauri::command]
+pub async fn get_meeting_composition_token(
+    state: State<'_, Arc<AppState>>,
+    meeting_id: String,
+) -> Result<MeetingCompositionTokenResponse, String> {
+    if state.lock_state.lock().is_locked {
+        return Err("app locked".to_string());
+    }
+
+    let meeting_token = state
+        .db_read(move |db| {
+            crate::services::meetings::issue_meeting_composition_token(db, &meeting_id)
+        })
+        .await
+        .map_err(String::from)?;
+    Ok(MeetingCompositionTokenResponse {
+        composition_id: format!("dailyos/meeting-detail:meeting:{meeting_token}"),
+        meeting_token,
     })
 }
 

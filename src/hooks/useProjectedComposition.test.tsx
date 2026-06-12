@@ -67,6 +67,8 @@ describe("useProjectedComposition", () => {
     ["project", "project-fixture", "dailyos/project-overview:project:project-fixture"],
     ["person", "person-fixture", "dailyos/person-overview:person:person-fixture"],
     ["action", "action-fixture", "dailyos/action-detail:action:action-fixture"],
+    ["briefing", "local~2026-06-02", "dailyos/daily-briefing:briefing:local~2026-06-02"],
+    ["meeting", "mtg_0123456789abcdef", "dailyos/meeting-detail:meeting:mtg_0123456789abcdef"],
   ] as const)("builds the %s composition id", (entityType, entityId, expected) => {
     expect(compositionIdForSubject({ entityType, entityId })).toBe(expected);
   });
@@ -92,6 +94,8 @@ describe("useProjectedComposition", () => {
     ["project", "project-fixture", "dailyos/project-overview:project:project-fixture"],
     ["person", "person-fixture", "dailyos/person-overview:person:person-fixture"],
     ["action", "action-fixture", "dailyos/action-detail:action:action-fixture"],
+    ["briefing", "local~2026-06-02", "dailyos/daily-briefing:briefing:local~2026-06-02"],
+    ["meeting", "mtg_0123456789abcdef", "dailyos/meeting-detail:meeting:mtg_0123456789abcdef"],
   ] as const)("invokes projected composition for a %s subject", async (entityType, entityId, compositionId) => {
     invokeMock.mockResolvedValueOnce(response({ compositionId }));
 

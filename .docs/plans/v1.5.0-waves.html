@@ -164,6 +164,29 @@
   </table>
 </section>
 
+<!-- CURRENT PROGRESS -->
+<section class="plans-section" aria-labelledby="current-progress">
+  <header class="plans-section-header">
+    <p class="plans-section-eyebrow">Current progress</p>
+    <h2 id="current-progress" class="plans-section-title">Landed through W3; W4 is PR-ready; W5 is planned, not built.</h2>
+    <p class="plans-section-lede">Updated 2026-06-06 after rebasing W4 onto current <code>public/dev</code> (<code>031cd68b</code>). This table records what is actually merged, what is local and PR-ready, and what remains behind a planning gate.</p>
+  </header>
+  <table class="reviewer-matrix">
+    <thead>
+      <tr><th>Lane</th><th>Current state</th><th>Evidence</th><th>Next gate</th></tr>
+    </thead>
+    <tbody>
+      <tr><td>W0</td><td>Landed on <code>public/dev</code></td><td><code>f4caeb05</code> banks inactive surface work</td><td>None for v1.5.0</td></tr>
+      <tr><td>W1</td><td>Main payload landed on <code>public/dev</code></td><td><code>8255e20c</code> ships Account composition surface</td><td>None for W1 payload</td></tr>
+      <tr><td>W2</td><td>Landed on <code>public/dev</code></td><td><code>7e32cc03</code> ships Account layout customization</td><td>None for W2 payload</td></tr>
+      <tr><td>W3</td><td>Main payload landed on <code>public/dev</code></td><td><code>da1df394</code> ships detail composition surfaces; ability inventory content is present in current <code>public/dev</code></td><td>None for W3 payload</td></tr>
+      <tr><td>W4</td><td>Rebased and PR-ready locally</td><td><code>codex/v1.5.0-w4</code> rebased onto <code>public/dev</code> <code>031cd68b</code>; L2 passed; Daily Briefing + Meeting Detail producers/surfaces are in the branch</td><td>Push branch, open PR to <code>dev</code>, then merge</td></tr>
+      <tr><td>W5</td><td>L0 packet only</td><td><code>codex/v1.5.0-w5-l0</code> stacked on W4; Settings/per-type config/editor rebuild is not implemented</td><td>W4 merge, external L0 approval, then L1 implementation</td></tr>
+      <tr><td>List Surfaces</td><td>Partially landed; follow-ups remain</td><td><code>cc0f5bf4</code> landed the first lane; follow-up branches exist for blocker documentation and bulk archive/folder work</td><td>Resolve dirty local follow-up state, then PR remaining list-surface work</td></tr>
+    </tbody>
+  </table>
+</section>
+
 <!-- CROSS-WAVE DECISIONS -->
 <section class="plans-section plans-section-callouts" aria-labelledby="decisions">
   <header class="plans-section-header">

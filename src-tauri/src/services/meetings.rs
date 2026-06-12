@@ -3,6 +3,7 @@
 
 use chrono::{DateTime, TimeZone, Utc};
 use rusqlite::OptionalExtension;
+use sha2::{Digest, Sha256};
 use std::collections::{HashMap, HashSet};
 use std::fmt;
 use std::path::Path;
@@ -2244,6 +2245,84 @@ pub fn parse_user_agenda_layer(value: Option<&str>) -> UserAgendaLayer {
         };
     }
     UserAgendaLayer::default()
+}
+
+const MEETING_COMPOSITION_TOKEN_PREFIX: &str = "mtg_";
+const MEETING_COMPOSITION_TOKEN_HASH_PREFIX_LEN: usize = 32;
+
+pub fn meeting_composition_token_for_id(meeting_id: &str) -> String {
+    let mut hasher = Sha256::new();
+    hasher.update(b"dailyos:meeting-composition-token:v1\n");
+    hasher.update(meeting_id.as_bytes());
+    let digest = hex::encode(hasher.finalize());
+    format!(
+        "{MEETING_COMPOSITION_TOKEN_PREFIX}{}",
+        &digest[..MEETING_COMPOSITION_TOKEN_HASH_PREFIX_LEN]
+    )
+}
+
+pub fn valid_meeting_composition_token(value: &str) -> bool {
+    let Some(hex) = value.strip_prefix(MEETING_COMPOSITION_TOKEN_PREFIX) else {
+        return false;
+    };
+    (16..=32).contains(&hex.len())
+        && hex
+            .bytes()
+            .all(|byte| matches!(byte, b'0'..=b'9' | b'a'..=b'f'))
+}
+
+pub fn issue_meeting_composition_token(
+    db: &ActionDb,
+    requested_meeting_id: &str,
+) -> Result<String, String> {
+    let meeting = resolve_requested_meeting_row(db, requested_meeting_id)?
+        .ok_or_else(|| "Meeting not found".to_string())?;
+    Ok(meeting_composition_token_for_id(&meeting.id))
+}
+
+pub fn resolve_meeting_composition_token(
+    db: &ActionDb,
+    meeting_token: &str,
+) -> Result<Option<String>, String> {
+    if !valid_meeting_composition_token(meeting_token) {
+        return Ok(None);
+    }
+
+    let mut stmt = db
+        .conn_ref()
+        .prepare("SELECT id FROM meetings")
+        .map_err(|error| format!("prepare meeting token resolver: {error}"))?;
+    let rows = stmt
+        .query_map([], |row| row.get::<_, String>(0))
+        .map_err(|error| format!("query meeting token resolver: {error}"))?;
+
+    let mut resolved = None;
+    for row in rows {
+        let meeting_id = row.map_err(|error| format!("read meeting token row: {error}"))?;
+        if meeting_composition_token_for_id(&meeting_id) == meeting_token {
+            if resolved.is_some() {
+                return Err("meeting composition token collision".to_string());
+            }
+            resolved = Some(meeting_id);
+        }
+    }
+    Ok(resolved)
+}
+
+fn resolve_requested_meeting_row(
+    db: &ActionDb,
+    requested_meeting_id: &str,
+) -> Result<Option<crate::db::DbMeeting>, String> {
+    if let Some(meeting) = db
+        .get_meeting_by_id(requested_meeting_id)
+        .map_err(|error| error.to_string())?
+    {
+        return Ok(Some(meeting));
+    }
+
+    let raw_calendar_id = requested_meeting_id.replace("_at_", "@");
+    db.get_meeting_by_calendar_event_id(&raw_calendar_id)
+        .map_err(|error| error.to_string())
 }
 
 /// Check if a meeting's user layer fields are read-only.
@@ -5460,8 +5539,10 @@ mod tests {
     use super::refresh_meeting_briefing_full;
     use super::restore_meeting_entity;
     use super::{
-        compile_trust_shadow_for_briefing_claims, load_prepare_meeting_context_snapshot,
-        subject_ref_json, BriefingTrustShadowSummary, BRIEFING_TRUST_SHADOW_VERSION,
+        compile_trust_shadow_for_briefing_claims, issue_meeting_composition_token,
+        load_prepare_meeting_context_snapshot, meeting_composition_token_for_id,
+        resolve_meeting_composition_token, subject_ref_json, valid_meeting_composition_token,
+        BriefingTrustShadowSummary, BRIEFING_TRUST_SHADOW_VERSION,
     };
     use crate::db::claims::{ClaimSensitivity, TemporalScope};
     use crate::db::test_utils::test_db;
@@ -5720,6 +5801,105 @@ mod tests {
             )
             .expect("count removed prep artifacts");
         assert!(removed_count > 0);
+    }
+
+    #[test]
+    fn meeting_composition_tokens_are_stable_and_do_not_echo_raw_ids() {
+        let token = meeting_composition_token_for_id("calendar_event:user@example.com");
+
+        assert_eq!(
+            token,
+            meeting_composition_token_for_id("calendar_event:user@example.com")
+        );
+        assert_ne!(
+            token,
+            meeting_composition_token_for_id("calendar_event:other@example.com")
+        );
+        assert!(valid_meeting_composition_token(&token));
+        assert!(!token.contains("calendar_event"));
+        assert!(!token.contains("example.com"));
+        assert!(!token.contains('@'));
+        assert!(!token.contains(':'));
+
+        for invalid in [
+            "mtg_0123456789abcde",
+            "mtg_0123456789abcdef0123456789abcdef0",
+            "mtg_0123456789ABCDEF",
+            "calendar_event:user@example.com",
+        ] {
+            assert!(!valid_meeting_composition_token(invalid));
+        }
+    }
+
+    #[test]
+    fn meeting_composition_token_issue_and_resolve_hide_raw_ids() {
+        let db = test_db();
+        db.conn_ref()
+            .execute(
+                "INSERT INTO meetings (id, title, meeting_type, start_time, end_time, attendees, created_at, calendar_event_id)
+                 VALUES (?1, 'Token Fixture', 'external', '2026-06-03T17:00:00Z',
+                         '2026-06-03T17:30:00Z', '[]', '2026-06-03T16:00:00Z', ?2)",
+                rusqlite::params!["meeting-token-fixture", "calendar-token@example.com"],
+            )
+            .expect("seed meeting");
+
+        let token = issue_meeting_composition_token(&db, "meeting-token-fixture")
+            .expect("issue meeting token");
+        assert!(valid_meeting_composition_token(&token));
+        assert!(!token.contains("meeting-token-fixture"));
+        assert!(!token.contains("calendar-token"));
+        assert!(!token.contains("example.com"));
+
+        let resolved =
+            resolve_meeting_composition_token(&db, &token).expect("resolve meeting token");
+        assert_eq!(resolved.as_deref(), Some("meeting-token-fixture"));
+
+        let calendar_route_token =
+            issue_meeting_composition_token(&db, "calendar-token_at_example.com")
+                .expect("issue token from sanitized calendar route id");
+        assert_eq!(calendar_route_token, token);
+    }
+
+    #[test]
+    fn meeting_composition_token_issuer_error_does_not_echo_raw_ids() {
+        let db = test_db();
+
+        let error = issue_meeting_composition_token(&db, "missing-calendar@example.com")
+            .expect_err("missing meeting should fail");
+
+        assert_eq!(error, "Meeting not found");
+        assert!(!error.contains("missing-calendar"));
+        assert!(!error.contains("example.com"));
+        assert!(!error.contains('@'));
+    }
+
+    #[test]
+    fn meeting_composition_token_resolver_fails_closed_for_unknown_or_stale_tokens() {
+        let db = test_db();
+        db.conn_ref()
+            .execute(
+                "INSERT INTO meetings (id, title, meeting_type, start_time, end_time, attendees, created_at)
+                 VALUES (?1, 'Stale Token Fixture', 'external', '2026-06-03T17:00:00Z',
+                         '2026-06-03T17:30:00Z', '[]', '2026-06-03T16:00:00Z')",
+                rusqlite::params!["meeting-stale-token-fixture"],
+            )
+            .expect("seed meeting");
+        let token = issue_meeting_composition_token(&db, "meeting-stale-token-fixture")
+            .expect("issue meeting token");
+
+        let unknown = resolve_meeting_composition_token(&db, "mtg_0123456789abcdef")
+            .expect("unknown token read should not error");
+        assert_eq!(unknown, None);
+
+        db.conn_ref()
+            .execute(
+                "DELETE FROM meetings WHERE id = ?1",
+                rusqlite::params!["meeting-stale-token-fixture"],
+            )
+            .expect("delete meeting");
+        let stale = resolve_meeting_composition_token(&db, &token)
+            .expect("stale token read should not error");
+        assert_eq!(stale, None);
     }
 
     #[test]

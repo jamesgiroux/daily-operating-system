@@ -1023,6 +1023,7 @@ pub fn run() {
             // Abilities
             commands::invoke_ability,
             commands::get_projected_composition,
+            commands::get_meeting_composition_token,
             commands::get_composition_layout_overlay,
             commands::save_composition_layout_overlay,
             commands::reset_composition_layout_overlay,

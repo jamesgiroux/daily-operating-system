@@ -875,6 +875,7 @@ pub struct ServiceContext<'a> {
     project_composition_snapshot_reader: Option<Arc<dyn ProjectCompositionSnapshotReadHandle>>,
     person_composition_snapshot_reader: Option<Arc<dyn PersonCompositionSnapshotReadHandle>>,
     action_composition_snapshot_reader: Option<Arc<dyn ActionCompositionSnapshotReadHandle>>,
+    meeting_composition_snapshot_reader: Option<Arc<dyn MeetingCompositionSnapshotReadHandle>>,
     account_list_reader: Option<Arc<dyn AccountListReadHandle>>,
     person_list_reader: Option<Arc<dyn PersonListReadHandle>>,
     project_list_reader: Option<Arc<dyn ProjectListReadHandle>>,
@@ -1207,6 +1208,65 @@ pub trait ActionCompositionSnapshotReadHandle: Send + Sync {
         action_id: String,
         surface: ClaimDismissalSurface,
     ) -> ActionCompositionSnapshotReadFuture<'a>;
+}
+
+pub type MeetingCompositionSnapshotSensitivity = AccountCompositionSnapshotSensitivity;
+pub type MeetingCompositionProvenanceKind = AccountCompositionProvenanceKind;
+pub type MeetingCompositionSnapshotField = AccountCompositionSnapshotField;
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct MeetingCompositionSnapshotQuery {
+    pub meeting_id: String,
+    pub meeting_token: String,
+    pub surface: ClaimDismissalSurface,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
+pub struct MeetingCompositionSnapshot {
+    pub meeting_token: String,
+    pub title: MeetingCompositionSnapshotField,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub starts_at: Option<MeetingCompositionSnapshotField>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub ends_at: Option<MeetingCompositionSnapshotField>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub meeting_type: Option<MeetingCompositionSnapshotField>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub lifecycle_state: Option<MeetingCompositionSnapshotField>,
+    #[serde(default)]
+    pub is_past: bool,
+    #[serde(default)]
+    pub is_current: bool,
+    #[serde(default)]
+    pub has_transcript: bool,
+    #[serde(default)]
+    pub fields: Vec<MeetingCompositionSnapshotField>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
+pub enum MeetingCompositionSnapshotReadError {
+    #[error("meeting not found: {0}")]
+    MeetingNotFound(String),
+    #[error("meeting composition snapshot read failed: {0}")]
+    ReadFailed(String),
+}
+
+pub type MeetingCompositionSnapshotReadFuture<'a> = Pin<
+    Box<
+        dyn Future<Output = Result<MeetingCompositionSnapshot, MeetingCompositionSnapshotReadError>>
+            + Send
+            + 'a,
+    >,
+>;
+
+/// Service-owned Meeting Detail input bundle. The query carries the raw row id
+/// only inside the Tauri/backend hydration path; the returned snapshot uses
+/// `meeting_token` as the render-visible identifier.
+pub trait MeetingCompositionSnapshotReadHandle: Send + Sync {
+    fn read_meeting_composition_snapshot<'a>(
+        &'a self,
+        query: MeetingCompositionSnapshotQuery,
+    ) -> MeetingCompositionSnapshotReadFuture<'a>;
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -2321,6 +2381,7 @@ impl<'a> ServiceContext<'a> {
             project_composition_snapshot_reader: None,
             person_composition_snapshot_reader: None,
             action_composition_snapshot_reader: None,
+            meeting_composition_snapshot_reader: None,
             account_list_reader: None,
             person_list_reader: None,
             project_list_reader: None,
@@ -2367,6 +2428,7 @@ impl<'a> ServiceContext<'a> {
             project_composition_snapshot_reader: None,
             person_composition_snapshot_reader: None,
             action_composition_snapshot_reader: None,
+            meeting_composition_snapshot_reader: None,
             account_list_reader: None,
             person_list_reader: None,
             project_list_reader: None,
@@ -2424,6 +2486,7 @@ impl<'a> ServiceContext<'a> {
             project_composition_snapshot_reader: None,
             person_composition_snapshot_reader: None,
             action_composition_snapshot_reader: None,
+            meeting_composition_snapshot_reader: None,
             account_list_reader: None,
             person_list_reader: None,
             project_list_reader: None,
@@ -2572,6 +2635,14 @@ impl<'a> ServiceContext<'a> {
         reader: Arc<dyn ActionCompositionSnapshotReadHandle>,
     ) -> Self {
         self.action_composition_snapshot_reader = Some(reader);
+        self
+    }
+
+    pub fn with_meeting_composition_snapshot_reader(
+        mut self,
+        reader: Arc<dyn MeetingCompositionSnapshotReadHandle>,
+    ) -> Self {
+        self.meeting_composition_snapshot_reader = Some(reader);
         self
     }
 
@@ -2786,6 +2857,18 @@ impl<'a> ServiceContext<'a> {
         reader
             .read_action_composition_snapshot(action_id, surface)
             .await
+    }
+
+    pub async fn read_meeting_composition_snapshot(
+        &self,
+        query: MeetingCompositionSnapshotQuery,
+    ) -> Result<MeetingCompositionSnapshot, MeetingCompositionSnapshotReadError> {
+        let Some(reader) = &self.meeting_composition_snapshot_reader else {
+            return Err(MeetingCompositionSnapshotReadError::ReadFailed(
+                self.missing_reader_error("meeting_composition_snapshot_reader"),
+            ));
+        };
+        reader.read_meeting_composition_snapshot(query).await
     }
 
     pub async fn commit_composition(

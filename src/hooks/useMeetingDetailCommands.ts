@@ -25,6 +25,11 @@ export interface MeetingBriefingRefreshResult {
   prepQueued: boolean;
 }
 
+export interface MeetingCompositionTokenResponse {
+  meetingToken: string;
+  compositionId: string;
+}
+
 interface TranscriptAttachResult {
   status: string;
   message?: string;
@@ -54,6 +59,12 @@ export function useMeetingDetailCommands(meetingId: string | null | undefined) {
 
   const getMeetingIntelligence = useCallback(() => {
     return invoke<MeetingIntelligence>("get_meeting_intelligence", {
+      meetingId: requireMeetingId(),
+    });
+  }, [requireMeetingId]);
+
+  const getMeetingCompositionToken = useCallback(() => {
+    return invoke<MeetingCompositionTokenResponse>("get_meeting_composition_token", {
       meetingId: requireMeetingId(),
     });
   }, [requireMeetingId]);
@@ -183,6 +194,7 @@ export function useMeetingDetailCommands(meetingId: string | null | undefined) {
     attachMeetingTranscriptText,
     completeAction,
     getGranolaStatus,
+    getMeetingCompositionToken,
     getMeetingContinuityThread,
     getMeetingIntelligence,
     getMeetingPostIntelligence,
@@ -205,6 +217,7 @@ export function useMeetingDetailCommands(meetingId: string | null | undefined) {
     attachMeetingTranscriptText,
     completeAction,
     getGranolaStatus,
+    getMeetingCompositionToken,
     getMeetingContinuityThread,
     getMeetingIntelligence,
     getMeetingPostIntelligence,

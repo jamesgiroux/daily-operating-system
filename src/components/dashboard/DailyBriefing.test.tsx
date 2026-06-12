@@ -1,6 +1,6 @@
 /** @vitest-environment jsdom */
 
-import { render, screen } from "@testing-library/react";
+import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { DailyBriefing } from "./DailyBriefing";
 import type { DashboardData, DataFreshness, Meeting } from "@/types";
@@ -9,6 +9,9 @@ import type { UseDailyBriefingAbilityResult } from "@/hooks/useDailyBriefingAbil
 // ── Mocks ──────────────────────────────────────────────────────────────────────
 
 const invokeMock = vi.fn();
+const projectedCompositionMock = vi.hoisted(() => ({
+  refetch: vi.fn(),
+}));
 const dailyBriefingAbilityMock = vi.hoisted((): { state: UseDailyBriefingAbilityResult } => ({
   state: {
     response: null,
@@ -44,6 +47,16 @@ vi.mock("@/hooks/useDailyBriefingAbility", () => ({
   useDailyBriefingAbility: () => dailyBriefingAbilityMock.state,
 }));
 
+vi.mock("@/hooks/useProjectedComposition", () => ({
+  useProjectedComposition: () => ({
+    data: null,
+    loading: false,
+    error: null,
+    renderedProvenance: null,
+    refetch: projectedCompositionMock.refetch,
+  }),
+}));
+
 vi.mock("@/hooks/useMagazineShell", () => ({
   useRegisterMagazineShell: vi.fn(),
 }));
@@ -57,8 +70,19 @@ vi.mock("@/hooks/useSuggestedActions", () => ({
 }));
 
 vi.mock("./BriefingMeetingCard", () => ({
-  BriefingMeetingCard: ({ meeting }: { meeting: Meeting }) => (
-    <div data-testid="meeting-card">{meeting.title}</div>
+  BriefingMeetingCard: ({
+    meeting,
+    onComplete,
+  }: {
+    meeting: Meeting;
+    onComplete?: (id: string) => void;
+  }) => (
+    <div data-testid="meeting-card">
+      <span>{meeting.title}</span>
+      <button type="button" onClick={() => onComplete?.("action-1")}>
+        Complete action
+      </button>
+    </div>
   ),
   getTemporalState: () => "future",
 }));
@@ -126,6 +150,7 @@ const freshness: DataFreshness = {
 describe("DailyBriefing", () => {
   beforeEach(() => {
     invokeMock.mockReset();
+    projectedCompositionMock.refetch.mockReset();
     dailyBriefingAbilityMock.state = {
       response: null,
       loading: false,
@@ -193,6 +218,53 @@ describe("DailyBriefing", () => {
     expect(screen.getByText("Schedule")).toBeInTheDocument();
     const meetingCards = screen.getAllByTestId("meeting-card");
     expect(meetingCards.length).toBe(2);
+  });
+
+  it("force-refreshes projected briefing after completing an action", async () => {
+    invokeMock.mockResolvedValueOnce(null);
+
+    render(
+      <DailyBriefing
+        data={makeDashboardData({
+          meetings: [makeMeeting({ id: "m1", title: "Acme QBR", type: "customer" })],
+          actions: [{ id: "action-1", title: "Follow up", status: "unstarted", source: "m1", priority: 3 }],
+        })}
+        freshness={freshness}
+      />,
+    );
+
+    fireEvent.click(screen.getByRole("button", { name: "Complete action" }));
+
+    await waitFor(() => {
+      expect(invokeMock).toHaveBeenCalledWith("complete_action", { id: "action-1" });
+      expect(projectedCompositionMock.refetch).toHaveBeenCalledWith({ forceRefresh: true });
+    });
+  });
+
+  it("force-refreshes projected briefing when dashboard data refreshes", async () => {
+    const initialData = makeDashboardData();
+    const { rerender } = render(
+      <DailyBriefing data={initialData} freshness={freshness} />,
+    );
+
+    expect(projectedCompositionMock.refetch).not.toHaveBeenCalled();
+
+    rerender(
+      <DailyBriefing
+        data={makeDashboardData({
+          overview: {
+            ...initialData.overview,
+            summary: "Fresh briefing data has landed.",
+          },
+        })}
+        freshness={{ freshness: "fresh", generatedAt: "2026-03-31T08:05:00Z" }}
+      />,
+    );
+
+    await waitFor(() => {
+      expect(projectedCompositionMock.refetch).toHaveBeenCalledTimes(1);
+      expect(projectedCompositionMock.refetch).toHaveBeenCalledWith({ forceRefresh: true });
+    });
   });
 
   it("does not render personal/solo meetings in schedule", () => {
