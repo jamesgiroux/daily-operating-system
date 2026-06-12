@@ -258,10 +258,6 @@ export function CommandMenu({ open, onOpenChange }: CommandMenuProps) {
             <LayoutDashboard className="mr-2 size-4" />
             <span>Today</span>
           </CommandItem>
-          <CommandItem onSelect={() => go("/week")}>
-            <CalendarDays className="mr-2 size-4" />
-            <span>This Week</span>
-          </CommandItem>
           <CommandItem onSelect={() => go("/actions")}>
             <CheckSquare className="mr-2 size-4" />
             <span>Actions</span>
