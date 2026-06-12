@@ -1,0 +1,53 @@
+/* AccountHeroBlock — chrome-free editorial hero for the claim-backed
+ * account_overview block. Visual design reuses the curated EntityHeroBase
+ * editorial look (76px serif title, italic serif lede, mono meta row); the
+ * DATA is the v1.5.0 claim payload and edits route to claim feedback, never
+ * to account-field writes. No BlockShell card — the headline chapter is
+ * full-bleed. */
+@import "../../../styles/design-tokens.css";
+
+.hero {
+  composes: hero from "../../entity/EntityHeroBase.module.css";
+}
+
+/* Mono/uppercase meta row: trust band + freshness + account-type chip. */
+.metaRow {
+  composes: heroDate from "../../entity/EntityHeroBase.module.css";
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+
+.name {
+  composes: heroTitle from "../../entity/EntityHeroBase.module.css";
+}
+
+/* Vitals render through the curated VitalsStrip component (dot-separated,
+ * single mono line per vital). The strip owns its own rule/spacing — no
+ * hero-local vital styles, and no per-line provenance on the hero. */
+
+/* Degraded notice when sourced account fields could not load. */
+.degraded {
+  margin-top: var(--space-lg);
+  padding: var(--space-md);
+  border: 1px solid var(--color-rule-light);
+  border-radius: var(--radius-editorial-sm);
+  background: var(--color-paper-linen);
+}
+
+.degradedLabel {
+  font-family: var(--font-mono);
+  font-size: 10px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--color-text-tertiary);
+}
+
+.degradedText {
+  margin: 4px 0 0;
+  font-family: var(--font-sans);
+  font-size: 13px;
+  color: var(--color-text-secondary);
+}

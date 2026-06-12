@@ -1880,7 +1880,10 @@ mod tests {
 
     use super::*;
     use crate::abilities::registry::{AbilityRegistry, ActorKind, McpExposure, ScopeSet};
-    use crate::abilities::NOOP_ABILITY_TRACER;
+    use crate::abilities::{
+        project_composition_for_surface, FallbackProjectionContext, ProjectionError, SurfaceKind,
+        NOOP_ABILITY_TRACER,
+    };
     use crate::intelligence::provider::{
         Completion, FingerprintMetadata, IntelligenceProvider, ModelName, ModelTier, PromptInput,
         ProviderError, ProviderKind,
@@ -2069,6 +2072,7 @@ mod tests {
         services: &'a ServiceContext<'a>,
         provider: &'a StaticProvider,
     ) -> AbilityContext<'a> {
+        crate::abilities::registry::install_full_producer_test_allowlist();
         AbilityContext::new(
             services,
             provider,
@@ -2096,6 +2100,7 @@ mod tests {
         }
     }
 
+    #[allow(clippy::too_many_arguments)]
     fn claim(
         id: &str,
         subject_ref: Value,
@@ -2514,6 +2519,119 @@ mod tests {
                     }
                 }
             }
+        }
+    }
+
+    #[tokio::test]
+    async fn dos852_producer_output_passes_w4d_projection() {
+        let claims = vec![
+            project_claim(
+                "claim-risk",
+                "entity_risk",
+                "/risk/current",
+                "Implementation risk is rising",
+                Some(0.97),
+                Some("2026-05-15T09:00:00Z"),
+                ClaimSensitivity::Internal,
+            ),
+            project_claim(
+                "claim-win",
+                "entity_win",
+                "/wins/latest",
+                "Launch path is clearer",
+                Some(0.92),
+                Some("2026-05-14T09:00:00Z"),
+                ClaimSensitivity::Internal,
+            ),
+            project_claim(
+                "claim-commitment",
+                "commitment",
+                "/commitments/next",
+                "Review the rollout plan",
+                Some(0.86),
+                Some("2026-04-01T09:00:00Z"),
+                ClaimSensitivity::Internal,
+            ),
+        ];
+        let snapshot_reader = Arc::new(SpySnapshotReader::new(Ok(snapshot_fixture(
+            true,
+            vec![
+                snapshot_field(
+                    "/vitals/status",
+                    "Status",
+                    Value::String("active".to_string()),
+                    ProjectCompositionSnapshotSensitivity::Internal,
+                    Some("project"),
+                    Some("2026-05-14T09:00:00Z"),
+                ),
+                snapshot_field(
+                    "/the-horizon/signals",
+                    "Project signals",
+                    json!({"open_action_count": 3, "trend": "improving"}),
+                    ProjectCompositionSnapshotSensitivity::Internal,
+                    Some("project_signals"),
+                    Some("2026-05-14T09:00:00Z"),
+                ),
+                snapshot_field(
+                    "/portfolio/children",
+                    "Sub-projects",
+                    json!([{"id": "child-1", "name": "Child Project"}]),
+                    ProjectCompositionSnapshotSensitivity::Internal,
+                    Some("project"),
+                    Some("2026-05-14T09:00:00Z"),
+                ),
+            ],
+        ))));
+        let (clock, rng, external, reader, committer, provider) = fixture_parts(claims);
+        let services = services(
+            &clock,
+            &rng,
+            &external,
+            reader,
+            committer,
+            snapshot_reader,
+        );
+        let ctx = ability_ctx(&services, &provider);
+
+        let output = project_overview(&ctx, input())
+            .await
+            .expect("project overview succeeds");
+        let composition = output.data();
+        let emitted_block_count = composition.blocks().count();
+
+        let proj_ctx = FallbackProjectionContext::new(
+            Actor::SurfaceClient {
+                instance: crate::abilities::registry::SurfaceClientId::new("sc_project_fixture"),
+                scopes: ScopeSet::new([crate::abilities::registry::SurfaceScope::new(
+                    "read.project_overview",
+                )])
+                .expect("scope set"),
+            },
+            SurfaceKind::SurfaceClient,
+            3,
+        );
+
+        let projection = project_composition_for_surface(composition, &proj_ctx);
+        if let Err(ProjectionError::InvalidProducerOutput { reason }) = &projection {
+            panic!("projection rejected producer output with InvalidProducerOutput: {reason:?}");
+        }
+        let (projected, _audits) =
+            projection.expect("projection must accept producer output (DOS-852 contract)");
+
+        assert_eq!(
+            projected.blocks.len(),
+            emitted_block_count,
+            "every emitted block must project"
+        );
+        for block in composition.blocks() {
+            assert!(
+                projected
+                    .blocks
+                    .iter()
+                    .any(|projected| projected.block_id.as_str() == block.id.as_str()),
+                "emitted block {} must project",
+                block.id.as_str()
+            );
         }
     }
 

@@ -1,5 +1,5 @@
 /*
- * EntityLinkPicker — Lane G
+ * EntityLinkPicker — DOS-258 Lane G
  *
  * "Which account is this about?" picker for the P9 ambiguous case where
  * the link engine found multiple related entities but could not elect a
@@ -8,7 +8,6 @@
  * Design tokens from design-tokens.css only — no new design system.
  * Visual language: saffron accent (needs review), editorial typography.
  */
-
 
 /* ═════════ CONTAINER ═════════ */
 

@@ -750,10 +750,10 @@ pub fn regenerate_mechanical_prep_now_blocking(
     )
 }
 
-/// PTY enrichment timeout for a single meeting (90 seconds).
-/// Raised from 30s to the v1.2.1 floor of 90s to avoid user-visible
-/// Claude-timeout errors on manual refresh paths.
-const ENRICHMENT_TIMEOUT_SECS: u64 = 90;
+/// PTY enrichment timeout for a single meeting (150 seconds).
+/// Raised to 150s for Claude Code 2.x — its agentic CLI startup plus enrichment
+/// prompts run slower than the prior 90s floor, causing user-visible timeouts.
+const ENRICHMENT_TIMEOUT_SECS: u64 = 150;
 
 /// Enrich a single meeting's prep via PTY-spawned Claude (async wrapper).
 ///

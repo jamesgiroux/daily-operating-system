@@ -74,10 +74,16 @@ describe("ReactBlockRenderer", () => {
     );
   });
 
-  it("renders known account overview blocks", () => {
+  it("renders the chrome-free account overview hero (identity + vitals, no lede or per-line provenance)", () => {
     render(
       <ReactBlockRenderer
         block={block({
+          payload: {
+            account: { display_name: "Example Account", type: "customer" },
+            summary: "A grounded account summary.",
+            vitals: [{ label: "Lifecycle", value: "active", display_value: "active" }],
+            context: [],
+          },
           provenance: [{ invocation_id: "invocation-fixture", field_path: "/summary" }],
         })}
         renderedProvenance={{
@@ -92,10 +98,13 @@ describe("ReactBlockRenderer", () => {
     );
 
     expect(screen.getByText("Example Account")).toBeInTheDocument();
-    expect(screen.getByText("A grounded account summary.")).toBeInTheDocument();
-    expect(screen.getByText("Lifecycle")).toBeInTheDocument();
-    expect(screen.getByText("active")).toBeInTheDocument();
-    expect(screen.getByText("from 2 sources")).toBeInTheDocument();
+    // Dot-strip composes "<label> <value>" into one cell.
+    expect(screen.getByText("Lifecycle active")).toBeInTheDocument();
+    // Identity-only hero: no summary lede, and no per-line provenance on the
+    // hero — the ambient freshness dot is the only trust signal; sources live
+    // in the sources chapter (R3 trust-surfacing decision).
+    expect(screen.queryByText("A grounded account summary.")).not.toBeInTheDocument();
+    expect(screen.queryByText("from 2 sources")).not.toBeInTheDocument();
   });
 
   it("renders claim feedback affordances for allowed edit routes", () => {
@@ -169,6 +178,50 @@ describe("ReactBlockRenderer", () => {
     );
   });
 
+  it("renders aggregate chapter blocks with per-item trust fade and per-item feedback", () => {
+    const itemRoute = (index: number) => ({
+      field_path: `/items/${index}/text`,
+      role: "feedback_target" as const,
+      claim_refs: [{ claim_id: `claim-${index}`, claim_version: 1, field_path: `/items/${index}/text` }],
+      feedback_allowed: true,
+      refusal_reason: null,
+    });
+    render(
+      <ReactBlockRenderer
+        accountId="acct-aggregate"
+        block={block({
+          selected_known_type_id: "claim_summary",
+          payload: {
+            intent: "working",
+            items: [
+              { claim_id: "claim-0", text: "Adoption is expanding", provenance_kind: "sourced" },
+              { claim_id: "claim-1", text: "Champion may be hesitant", provenance_kind: "inferred" },
+            ],
+          },
+          claim_refs: [
+            { claim_id: "claim-0", claim_version: 1, field_path: "/items/0/text" },
+            { claim_id: "claim-1", claim_version: 1, field_path: "/items/1/text" },
+          ],
+          edit_routes: [itemRoute(0), itemRoute(1)],
+        })}
+      />,
+    );
+
+    // Both claims render inside one chapter-shaped block with the group label.
+    expect(screen.getByText("Working")).toBeInTheDocument();
+    expect(screen.getByText("Adoption is expanding")).toBeInTheDocument();
+    expect(screen.getByText("Champion may be hesitant")).toBeInTheDocument();
+    // Per-item trust-as-opacity: the inferred row fades, the sourced row does not.
+    expect(
+      screen.getByText("Champion may be hesitant").closest('[data-provenance-kind="inferred"]'),
+    ).not.toBeNull();
+    expect(
+      screen.getByText("Adoption is expanding").closest('[data-provenance-kind="inferred"]'),
+    ).toBeNull();
+    // Per-item confirm/contest: one prompt per claim, no block-level prompt on top.
+    expect(screen.getAllByText("Is this accurate?")).toHaveLength(2);
+  });
+
   it("surfaces account snapshot degradation without exposing the internal reason", () => {
     render(
       <ReactBlockRenderer
@@ -189,10 +242,21 @@ describe("ReactBlockRenderer", () => {
     expect(screen.queryByText("account_snapshot_unavailable")).not.toBeInTheDocument();
   });
 
-  it("resolves provenance through covered field paths", () => {
+  // Provenance resolution + masking live in BlockShell, which the chrome-free
+  // hero no longer uses. Exercise that invariant through a BlockShell-rendering
+  // block (claim_summary) so the coverage survives the hero redesign.
+  function shellBlock(overrides: Partial<ProjectedBlock> = {}): ProjectedBlock {
+    return block({
+      selected_known_type_id: "claim_summary",
+      payload: { title: "Current signal", text: "Body", trust_band: "likely_current" },
+      ...overrides,
+    });
+  }
+
+  it("keeps resolved provenance quiet (trust is opacity, not a source-count chip)", () => {
     render(
       <ReactBlockRenderer
-        block={block({
+        block={shellBlock({
           provenance: [{ invocation_id: "invocation-fixture", field_path: "/sections/8/blocks/0" }],
         })}
         renderedProvenance={{
@@ -207,14 +271,18 @@ describe("ReactBlockRenderer", () => {
       />,
     );
 
-    expect(screen.getByText("from 1 source")).toBeInTheDocument();
+    // Resolved provenance no longer surfaces a routine "from N sources" chip on
+    // the block face (sources live in the sources chapter) — but it must NOT be
+    // mis-flagged as pending. The content renders.
+    expect(screen.queryByText("from 1 source")).not.toBeInTheDocument();
     expect(screen.queryByText("Source pending")).not.toBeInTheDocument();
+    expect(screen.getByText("Body")).toBeInTheDocument();
   });
 
   it("does not mark valid blocks pending when provenance attributions are truncated", () => {
     render(
       <ReactBlockRenderer
-        block={block({
+        block={shellBlock({
           provenance: [{ invocation_id: "invocation-fixture", field_path: "/sections/18/blocks/0" }],
         })}
         renderedProvenance={{
@@ -227,23 +295,25 @@ describe("ReactBlockRenderer", () => {
       />,
     );
 
-    expect(screen.getByText("from 7 sources")).toBeInTheDocument();
+    // Truncated-but-valid provenance stays quiet and is not mis-flagged pending.
+    expect(screen.queryByText("from 7 sources")).not.toBeInTheDocument();
     expect(screen.queryByText("Source pending")).not.toBeInTheDocument();
+    expect(screen.getByText("Body")).toBeInTheDocument();
   });
 
   it("renders missing and masked provenance states without diagnostics", () => {
     render(
       <>
         <ReactBlockRenderer
-          block={block({
+          block={shellBlock({
             block_id: "missing-provenance",
-            provenance: [{ invocation_id: "invocation-fixture", field_path: "/summary" }],
+            provenance: [{ invocation_id: "invocation-fixture", field_path: "/sections/8/blocks/0" }],
           })}
         />
         <ReactBlockRenderer
-          block={block({
+          block={shellBlock({
             block_id: "masked-provenance",
-            provenance: [{ invocation_id: "invocation-fixture", field_path: "/summary" }],
+            provenance: [{ invocation_id: "invocation-fixture", field_path: "/sections/8/blocks/0" }],
           })}
           renderedProvenance={{
             surface: "tauri_app",
@@ -255,7 +325,8 @@ describe("ReactBlockRenderer", () => {
 
     expect(screen.getByText("Provenance unavailable")).toBeInTheDocument();
     expect(screen.getByText("Provenance masked")).toBeInTheDocument();
-    expect(screen.queryByText("/summary")).not.toBeInTheDocument();
+    // Raw internal field pointers must never leak to the surface.
+    expect(screen.queryByText("/sections/8/blocks/0")).not.toBeInTheDocument();
   });
 
   it("renders fallback banner without exposing diagnostics", () => {
@@ -310,5 +381,45 @@ describe("ReactBlockRenderer", () => {
     expect(screen.getByText("Fallback")).toBeInTheDocument();
     expect(screen.getByText("Safe generic fallback body")).toBeInTheDocument();
     expect(screen.queryByText("Unavailable block")).not.toBeInTheDocument();
+  });
+
+  it("holds the unknown-block fallback privacy boundary in edit mode (ADR-0136 §3.1)", () => {
+    render(
+      <ReactBlockRenderer
+        editMode
+        accountId="acct-edit"
+        block={block({
+          original_type_id: "dailyos/private-custom",
+          selected_known_type_id: "claim_summary",
+          banner: "Rendered as nearest known type — payload may be incomplete.",
+          payload: {
+            title: "Fallback title",
+            body: "Safe fallback body",
+            trust_band: "needs_verification",
+          },
+          diagnostics: [
+            {
+              diagnostic_kind: "payload_dropped",
+              reason: "sensitive_pointer_removed",
+              dropped_pointer_count: 2,
+              block_id: "block-fixture",
+              original_type_id: "dailyos/private-custom",
+              selected_known_type_id: "claim_summary",
+            },
+          ],
+        })}
+      />,
+    );
+
+    // Edit mode must not relax the §3.1 fallback privacy boundary: the banner
+    // shows, but the internal diagnostic reason, the original (private) block
+    // type, and identifying data-* attributes never leak — same guarantee as
+    // read mode, now asserted with editMode engaged.
+    expect(screen.getByText("Fallback")).toBeInTheDocument();
+    expect(screen.getByText("Fallback title")).toBeInTheDocument();
+    expect(screen.queryByText("sensitive_pointer_removed")).not.toBeInTheDocument();
+    expect(screen.queryByText("dailyos/private-custom")).not.toBeInTheDocument();
+    expect(screen.getByRole("article")).not.toHaveAttribute("data-original-block-type");
+    expect(screen.getByRole("article")).not.toHaveAttribute("data-block-id");
   });
 });

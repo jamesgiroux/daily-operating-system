@@ -144,6 +144,8 @@ Architectural decisions for DailyOS, recorded as lightweight ADRs.
 | [0125](0125-claim-anatomy-temporal-sensitivity-typeregistry.md) | Claim anatomy v2 — temporal scope, sensitivity, claim type registry | Accepted |
 | [0126](0126-memory-substrate-invariants.md) | Memory substrate invariants | Proposed |
 | [0127](0127-presets-as-intelligence-contracts.md) | Presets as intelligence contracts | Accepted |
+| [0138](0138-unified-claim-feedback-writer.md) | Unified claim feedback — single feedback writer | Proposed |
+| [0139](0139-v2-rebuild-shell-and-read-path-on-existing-substrate.md) | v2.0 rebuilds the shell and the read path on the existing substrate | Accepted |
 
 ---
 

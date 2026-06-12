@@ -360,7 +360,7 @@
   color: var(--color-text-tertiary);
 }
 
-/* ── Margin Label Layout  ── */
+/* ── Margin Label Layout (I550) ── */
 
 .entity-detail_marginLabelSection {
   display: grid;

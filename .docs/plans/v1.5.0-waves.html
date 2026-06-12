@@ -28,6 +28,7 @@
     <a href="engineering-ladder.html">Engineering Ladder</a>
     <a href="v1.5.0-waves.html" data-active="true">v1.5.0 Waves</a>
     <a href="abilities-intelligence-loop.html">Abilities Explainer</a>
+    <a href="intelligence-loop-architecture.html">Architecture Map</a>
     <a href="claim-lifecycle-freshness-editability.html">Claims: Lifecycle</a>
     <a href="AUTHORING.md">Authoring Ruleset</a>
   </div>
@@ -43,7 +44,7 @@
   </p>
   <div class="plans-meta">
     <span>Target: 2026 (DRAFT)</span>
-    <span>Waves: W0–W5 + List-Surfaces lane</span>
+    <span>Waves: W0–W5 + WR (revision) + List-Surfaces lane</span>
     <span>Scope tier: Wave</span>
     <span>Decisions locked w/ James 2026-05-31</span>
   </div>
@@ -142,20 +143,22 @@
 <section class="plans-section" aria-labelledby="wave-overview">
   <header class="plans-section-header">
     <p class="plans-section-eyebrow">Wave shape</p>
-    <h2 id="wave-overview" class="plans-section-title">W0 → W1 (Account reference) → (W2 ∥ W3 ∥ W4) → W5.</h2>
-    <p class="plans-section-lede">W0 banks WP. <strong>W1 proves the whole vertical on one surface — Account Detail — against the new design</strong> (producer + renderer + transport + the redesign), because that's where we figure it out. Then we work forward: W2 (edit mode) and the remaining surfaces (W3 detail, W4 briefing/meeting) fan out, each a producer + its new design — we do not build the renderer into the old templates we're replacing. W5 closes. List-Surfaces runs in parallel. Wave gate L3; L5 drift fold applies; user-facing surfaces → L4.</p>
+    <h2 id="wave-overview" class="plans-section-title">W0 → W1 (Account reference) → (W2 ∥ W3) → WR → WC (runtime consolidation) → W4 → W5.</h2>
+    <p class="plans-section-lede"><strong>Reshaped 2026-06-10</strong> after the v1.4.x reconciliation audit (<code>.docs/plans/v1.4.x-abilities-reconciliation-audit.md</code>). W0–W3 are shipped or closing; WR (revision) is at R3 and mostly done. <strong>WC — runtime consolidation — inserts before the deferred W4/W5</strong>: the audit found most loop stages have 2–3 competing implementations (16 context builders, 12 feedback systems, dual producers per capability), and every surface wave so far has tripped on that substrate (WR exists because W1/W3 did). WC collapses each stage to one substrate so W4 — the biggest surface wave and the release blocker — lands on solid ground instead of becoming the next WR. The honest cost: briefing/meeting stay on legacy PTY until W4 ships them; the kill date for that legacy path is W4 itself, named in W4's AC. Wave gate L3; L5 drift fold applies; user-facing surfaces → L4.</p>
   </header>
   <table class="reviewer-matrix">
     <thead>
       <tr><th>Wave</th><th>Theme</th><th>In plain terms</th><th>Carries</th></tr>
     </thead>
     <tbody>
-      <tr><td>W0</td><td>Bank WP + substrate audit</td><td>Park the WP work safely; confirm the engine is surface-generic</td><td>cleanup, preserve</td></tr>
-      <tr><td>W1</td><td>Account Detail — end-to-end reference</td><td>Prove producer → renderer → new design on ONE surface; figure it out here</td><td>the reference vertical</td></tr>
-      <tr><td>W2</td><td>In-context edit & customize</td><td>On-page edit mode: toggle / reorder / variant / inline-edit, per type</td><td>HEADLINE</td></tr>
-      <tr><td>W3</td><td>Forward surfaces — detail</td><td>Project / Person / Actions: each a producer + its new variant-D design</td><td>HEADLINE</td></tr>
-      <tr><td>W4</td><td>Forward surfaces — briefing + meeting</td><td>Briefing + meeting before/after: producers + new designs (the biggest)</td><td>HEADLINE · seam</td></tr>
-      <tr><td>W5</td><td>Settings · per-type config · variants</td><td>One place to set a type's lifecycle + default layout</td><td>HEADLINE</td></tr>
+      <tr><td>W0</td><td>Bank WP + substrate audit</td><td>Park the WP work safely; confirm the engine is surface-generic</td><td>cleanup, preserve · <strong>DONE</strong></td></tr>
+      <tr><td>W1</td><td>Account Detail — end-to-end reference</td><td>Prove producer → renderer → new design on ONE surface; figure it out here</td><td>the reference vertical · <strong>DONE</strong> (design quality → WR)</td></tr>
+      <tr><td>W2</td><td>In-context edit & customize</td><td>On-page edit mode: toggle / reorder / variant / inline-edit, per type</td><td>HEADLINE · <strong>DONE</strong></td></tr>
+      <tr><td>W3</td><td>Forward surfaces — detail</td><td>Project / Person / Actions: each a producer + its new variant-D design</td><td>HEADLINE · <strong>closing</strong></td></tr>
+      <tr><td>WR</td><td>Detail-surface reconciliation (revision)</td><td>Make Account actually look like the design; fix the substrate gaps that block it (provenance, formatting, a producer-contract gate)</td><td>catch-up · Account-first · <strong>R3, mostly done</strong></td></tr>
+      <tr><td><strong>WC</strong></td><td><strong>Runtime consolidation — one substrate per loop stage</strong></td><td>Collapse the duplicate paths the audit found (enrichment split, feedback unification, one context builder, signal hygiene) so W4 doesn't fight them</td><td><strong>NEW 2026-06-10</strong> · gate for W4/W5 · DOS-856/860/861/862 · L0 packet: <code>v1.5.0-wc-l0-packet.md</code></td></tr>
+      <tr><td>W4</td><td>Forward surfaces — briefing + meeting</td><td>Briefing + meeting before/after: producers + new designs (the biggest)</td><td>HEADLINE · seam · <strong>DEFERRED behind WC</strong></td></tr>
+      <tr><td>W5</td><td>Settings · per-type config · variants</td><td>One place to set a type's lifecycle + default layout</td><td>HEADLINE · <strong>DEFERRED behind WC</strong></td></tr>
       <tr><td>—</td><td>List Surfaces (parallel)</td><td>The 5 dogfooding fixes (select, bulk-archive, folders, reparent, lifecycle)</td><td>parallel lane</td></tr>
     </tbody>
   </table>
@@ -195,6 +198,10 @@
     <article class="callout">
       <h3 class="callout-title">dnd-kit; own the format</h3>
       <p class="callout-prose">Pin <code>@dnd-kit/core@6.3.1</code> + <code>@dnd-kit/sortable@10.0.0</code> (the React-18 line — stable, not stale) for reorder in edit mode only. Layout config is ours. DOS-829 reparent shares the dep.</p>
+    </article>
+    <article class="callout">
+      <h3 class="callout-title">The runtime is the engine — one substrate per loop stage</h3>
+      <p class="callout-prose">Decided with James 2026-06-10. The intelligence loop is five stages: <strong>signal in → claim created/corroborated/conflicted → producer enriches claims into content → surface displays → user feedback as new signal</strong>. The abilities runtime owns stage 3 (claims → content), exclusively — legacy "enrichment" fused stages 2+3 in one PTY call and must split: signal→claim extraction stays substrate machinery; claims→content synthesis happens only through producers, and legacy <code>entity_intelligence</code> snapshot writes retire. <strong>The WC wave executes this consolidation</strong> (DOS-855/856/860/861/862) and gates W4/W5. Two standing consequences for every wave: (1) <strong>trigger-side wiring is in scope</strong> — a wave that ships a Composition producer also rewires its scheduled trigger through <code>WorkerAbilityBridge</code> and deletes the capability's legacy PTY path (see W4 AC); (2) new work must name which loop stage it lives in at L0 — work that can't is probably duplicating a stage. Findings inventory: <code>.docs/plans/v1.4.x-abilities-reconciliation-audit.md</code>.</p>
     </article>
     <article class="callout">
       <h3 class="callout-title">Migration slots — SQL namespace</h3>
@@ -281,18 +288,43 @@
   <p class="plans-footnote"><strong>In plain terms —</strong> repeat the Account pattern for Projects, People, and Actions — each gets its new look, built as blocks, not bolted onto the old page.</p>
   <p><strong>Proof —</strong> each surface renders its new design from blocks; L4 visual review against the design per surface.</p>
 
-  <h3 class="plans-subhead">W4 — Forward surfaces: briefing + meeting recap · HEADLINE · the seam</h3>
-  <p>The biggest forward surfaces, kept as their own wave. Same vertical slice — briefing + meeting-prep/recap producers + their new designs — and the clearest produce→consume pairing (the recap's analytical blocks are ability outputs).</p>
+  <h3 class="plans-subhead">WR — Detail-surface reconciliation · revision · Account-first</h3>
+  <p>W1 and W3 passed L0 and shipped the composition <em>substrate</em> — producer, <code>ReactBlockRenderer</code>, transport, edit mode, four producers — but two things were never delivered: the W1 proof bar (<em>"matches the variant-D design, not the old page"</em> — the blocks render raw), and substrate gaps that block honest claim-backed rendering, surfaced during the Account UI pass. WR redoes that work properly, under L0/L1 discipline, so it can't silently regress. <strong>Account-first:</strong> substrate fixes are written wave-wide where code is shared; variant-D design quality lands on Account only (the reference), with the forward surfaces' design quality a follow wave. Full packet: <code>.docs/plans/v1.5.0-wr-l0-packet.md</code>.</p>
+  <ul>
+    <li><strong>R0 — Producer-contract parity gate.</strong> A trivial payload↔binding desync passed <code>cargo test</code> and only failed at runtime as <code>producer_unavailable</code> (<code>InvalidProducerOutput { BindingTargetsUnknownField }</code>). Add the CI parity test that was missing, per producer, over realistic output. <em>Lands first; everything else builds behind it.</em></li>
+    <li><strong>R1 — Field provenance at the file-sync.</strong> <code>upsert_account</code> persists <code>arr/lifecycle/contract_end/nps</code> from <code>dashboard.json</code> but discards the source, so the producer (correctly) drops every vital. Record the source the sync already knows — without bumping <code>updated_at</code> (no sync churn) — and backfill existing entities.</li>
+    <li><strong>R2 — Producer-side formatting.</strong> Emit typed <code>value</code> + formatted <code>display_value</code> + <code>kind</code> (logic/display separation; identical across Tauri/WP/MCP; agents keep the typed value). Time-relative rendering stays surface-side (the composition is cached).</li>
+    <li><strong>R3 — Variant-D Account rendering.</strong> Render the block library to design quality reusing the curated CSS (<code>EntityHeroBase</code> et al.), chrome-free masthead, edits → <code>edit_routes</code>; inside the existing W2 overlay, chapter-by-chapter, hero-first. <em>(Design is James-collaborative — reference-translation as the floor.)</em></li>
+    <li><strong>R4 — Editable type/lifecycle claim chip.</strong> Emit the identity chip with a <code>FeedbackTarget</code> binding so it routes to claim feedback (backing field decided at L0).</li>
+  </ul>
+  <p class="plans-footnote"><strong>In plain terms —</strong> the engine and the page already work, but the page doesn't look like the design and a few data plumbing gaps make it look broken (empty stats, raw numbers). WR makes Account actually look right and fixes the plumbing — and adds a guardrail so a small producer change can't blank the page again.</p>
+  <p><strong>Proof —</strong> Account Detail renders at variant-D quality end-to-end with provenance-backed, producer-formatted vitals and an editable claim chip; the producer-contract gate fails a desync at build time, not at runtime.</p>
+
+  <h3 class="plans-subhead">WC — Runtime consolidation · one substrate per loop stage · NEW 2026-06-10 · gates W4/W5</h3>
+  <p>The v1.4.x reconciliation audit (<code>.docs/plans/v1.4.x-abilities-reconciliation-audit.md</code>) found the intelligence loop — <em>signal in → claim → producer → surface → feedback</em> — is sound, but most stages carry 2–3 competing implementations: 16 context builders, 12 feedback-adjacent systems, dual producers per capability, and a worker bridge with zero callers. Every surface wave so far has tripped on this substrate (WR exists because W1/W3 did — provenance gaps, contract desyncs, raw-render fallbacks are all symptoms of the same dual-path drift). WC pays that down <em>once, proactively</em>, so W4 — the biggest surface wave and the release gate — doesn't become the next WR. Linear: <strong>DOS-855, DOS-856, DOS-860, DOS-861, DOS-862</strong> in the v1.5.0 project.</p>
+  <ul>
+    <li><strong>C0 — Enrichment split (DOS-860).</strong> Legacy enrichment fuses loop stages 2+3 in one PTY call: it extracts claims AND writes user-facing <code>entity_intelligence</code> snapshots. Split it: signal→claim extraction stays intel-queue substrate; claims→content synthesis happens only through producers; snapshot writes retire as surfaces move to Compositions. <em>This is the load-bearing simplification — producers read claims, nothing else.</em></li>
+    <li><strong>C1 — DISSOLVED at WC L0 (2026-06-10).</strong> Verification showed detail-surface compositions are on-demand by design (orchestrator + cache; <code>commit_composition</code> persistence) — there is no scheduled refresh to rewire and building one would be machinery for its own sake. <code>WorkerAbilityBridge</code> first wiring ships in W4 with the briefing/prep producers (DOS-855 moved to W4). Risk-briefing recast is reports-track, way future — not WC, not W4.</li>
+    <li><strong>C2 — Feedback unification (DOS-856).</strong> UI corrections write canonical typed <code>claim_feedback</code> (today: zero UI writers; thumbs write legacy <code>entity_feedback_events</code> that trust never reads); implement or amend the <code>applied_at</code> consumption contract. The W2 <code>edit_routes</code> path and WR R4 chip already point here — this closes the rest.</li>
+    <li><strong>C3 — One context builder per concept (DOS-861).</strong> Collapse the duplicated account-context fetches into shared gather helpers; close the prep blind spots (email signals, stakeholders); document or align the 30/90-day windows. W4's briefing/meeting producers consume the consolidated builder — not a 17th one.</li>
+    <li><strong>C4 — Signal-bus hygiene (DOS-862).</strong> Orphaned signals (<code>ClaimTrustChanged</code>, <code>meeting_prep_status_changed</code>) get consumers or die; <code>google.rs</code> stops bypassing the bus; envelope binding validated by one shared service function on both surfaces.</li>
+  </ul>
+  <p class="plans-footnote"><strong>In plain terms —</strong> before building the two biggest pages, fix the plumbing so there's one way to do each thing: one place corrections go, one way pages get their data. We kept getting tripped by "which of the three paths is live?" — after WC there's one answer. Briefing and meetings keep using the old pipeline until W4 replaces them; that's deliberate and W4 deletes it.</p>
+  <p><strong>Proof —</strong> a UI correction lands in <code>claim_feedback</code> and moves trust; enrichment writes claims only (reader-gated snapshot retirement); prep/intelligence read the same context helpers; no signal emits without a consumer or audit-only classification; ADR-0123 amended to verified event-sourced semantics. Deferred-but-tracked (post-WC, not W4 blockers): DOS-857 source reliability, DOS-858 recommendations feedback, DOS-859 dismissal consolidation.</p>
+
+  <h3 class="plans-subhead">W4 — Forward surfaces: briefing + meeting recap · HEADLINE · the seam · DEFERRED behind WC</h3>
+  <p>The biggest forward surfaces, kept as their own wave. Same vertical slice — briefing + meeting-prep/recap producers + their new designs — and the clearest produce→consume pairing (the recap's analytical blocks are ability outputs). <strong>Starts after WC completes</strong>: its producers consume the consolidated context builders (C3), its corrections flow through unified feedback (C2), and its trigger cutover (AC below) is the <em>first</em> production wiring of <code>WorkerAbilityBridge</code> (DOS-855) — W4 is the last wave that has to delete a legacy PTY path, not the next wave that fights three of them.</p>
   <ul>
     <li><strong>NEW — briefing + meeting-prep Composition producers</strong> (the abilities emit <code>Composition</code> instead of legacy intelligence JSON). <em>(create tickets)</em></li>
     <li><strong>Compose existing patterns</strong> already shipped (<code>PostMeetingIntelligence</code>, <code>FindingsTriad</code>, <code>SignalGrid</code>, <code>TalkBalanceBar</code>, <code>CommitmentRow</code>) as block types. <em>(create ticket)</em></li>
     <li><strong>NET-NEW blocks:</strong> plan-adherence, predictions-vs-reality, role-changes, coaching — pattern-first, and <strong>name the source ability per block before L1</strong>; any requiring net-new analytical reasoning (not just wrapping existing output) move to v1.5.1. <em>(create tickets)</em></li>
     <li><strong>5-question check HARD per analytical block</strong> — claim-consuming: provenance + trust band + freshness (existing <code>FreshnessIndicator</code> primitive + claim freshness) + feedback. New producers trigger a <strong>runtime-wide trust-recompute audit</strong>, not a per-producer scoring branch.</li>
+    <li><strong>AC — trigger-side wiring (added 2026-06-10, James)</strong> — the runtime is the engine: the <em>scheduled</em> triggers for briefing and meeting prep (Today pipeline / <code>executor.rs</code>, <code>meeting_prep_queue</code>) invoke these abilities through <code>WorkerAbilityBridge</code> (<code>bridges/worker.rs</code> — currently zero non-test callers), and the legacy PTY path for each capability (<code>workflow::deliver::enrich_briefing</code>, <code>enrich_prep_via_pty</code>) is <strong>deleted in the same wave</strong> once persistence parity holds. Producers that emit <code>Composition</code> but are still triggered beside a live legacy PTY path do not pass this wave — that half-wired pattern is the root cause catalogued in <code>.docs/plans/v1.4.x-abilities-reconciliation-audit.md</code> (RC-1).</li>
   </ul>
-  <p class="plans-footnote"><strong>In plain terms —</strong> the meeting prep + recap pages. Teach those analysts to output blocks, then draw them — each with "where this came from" and a trust indicator.</p>
-  <p><strong>Proof —</strong> an ability emits a Composition for a meeting and the renderer draws it with provenance + trust band — produce→render end-to-end on real meeting data.</p>
+  <p class="plans-footnote"><strong>In plain terms —</strong> the meeting prep + recap pages. Teach those analysts to output blocks, then draw them — each with "where this came from" and a trust indicator. And the background jobs that prepare these pages overnight must call the <em>new</em> analysts and the old ones must be removed — not both kept running side by side.</p>
+  <p><strong>Proof —</strong> an ability emits a Composition for a meeting and the renderer draws it with provenance + trust band — produce→render end-to-end on real meeting data; the scheduled refresh path invokes the ability via the worker bridge and the legacy PTY enrichment for briefing/prep is gone from the codebase.</p>
 
-  <h3 class="plans-subhead">W5 — Settings · per-type config · variants · HEADLINE</h3>
+  <h3 class="plans-subhead">W5 — Settings · per-type config · variants · HEADLINE · DEFERRED behind WC</h3>
   <ul>
     <li><strong>Settings redesign</strong> — identity + connectors, briefing &amp; AI control surface, system diagnostics, on the canonical Settings pattern. <em>(create ticket)</em></li>
     <li><strong>Per-entity-type config surface</strong> unifying <strong>lifecycle stages (DOS-827)</strong> + default block layout. <em>(create ticket)</em></li>
@@ -360,14 +392,13 @@
 <section class="plans-section" aria-labelledby="deps">
   <header class="plans-section-header">
     <p class="plans-section-eyebrow">Dependencies</p>
-    <h2 id="deps" class="plans-section-title">Critical path: W0 → W1 (Account) → (W2 ∥ W3 ∥ W4) → W5.</h2>
+    <h2 id="deps" class="plans-section-title">Critical path: W0 → W1 (Account) → (W2 ∥ W3) → WR → WC → W4 → W5.</h2>
   </header>
-  <pre class="plans-flow">W0 (bank WP + audit) ──> W1 (Account: producer + renderer + transport + new design) ──┬──> W2 (edit/customize) ──────┐
-                                                                                      ├──> W3 (Project/Person/Actions) ┼──> W5 (settings · per-type)
-                                                                                      └──> W4 (briefing + meeting) ─────┘
+  <pre class="plans-flow">W0 ──> W1 (Account reference) ──┬──> W2 (edit/customize) ──┐
+                                └──> W3 (Proj/Person/Actions) ┴──> WR (revision · R0–R4) ──> WC (runtime consolidation) ──> W4 (briefing + meeting) ──> W5 (settings · per-type)
 
-List Surfaces ───────────────────────────────────────────────────────────────────────────  parallel (shares dnd-kit dep)</pre>
-  <p class="plans-footnote">W1 is the fan-out gate — it proves the full vertical (producer → renderer → new design) on Account, so W2/W3/W4 fan out against a working pattern rather than a renderer built on throwaway templates. W4 carries its own producers (briefing/meeting). List Surfaces is independent.</p>
+List Surfaces ─────────────────────────────────────────────────  parallel (shares dnd-kit dep)</pre>
+  <p class="plans-footnote">Reshaped 2026-06-10. W1 proved the vertical; W2/W3 fanned out; <strong>WR</strong> reconciled what W1/W3 shipped below the design bar (at R3, mostly done). <strong>WC now gates W4/W5</strong>: the reconciliation audit showed every surface wave trips on duplicate substrate paths — WR was the reactive version of that payment for Account; WC is the proactive version for briefing/meeting. W4 carries its own producers <em>plus</em> the trigger-side cutover that deletes the legacy briefing/prep PTY paths (its AC); W5 closes. List Surfaces is independent.</p>
 </section>
 
 <!-- DECIDED + REMAINING -->
@@ -435,7 +466,7 @@ List Surfaces ──────────────────────
 
 <!-- FINIS -->
 <div class="finis">
-  <div class="finis-mark">W0 · W1 · W2 · W3 · W4 · W5</div>
+  <div class="finis-mark">W0 · W1 · W2 · W3 · WR · WC · W4 · W5</div>
   <div class="finis-date">v1.5.0 Wave Plan · 2026-05-31 · DRAFT (decisions locked; L0 hardened)</div>
   <div class="finis-caption">The engine already makes blocks. v1.5.0 teaches the app to draw them — and lets you arrange them.</div>
 </div>

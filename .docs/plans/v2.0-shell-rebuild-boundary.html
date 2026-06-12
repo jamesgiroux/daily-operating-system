@@ -1,0 +1,354 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>v2.0 Shell Rebuild — Boundary Document · DailyOS Planning</title>
+  <link rel="stylesheet" href="../design/reference/_shared/fonts.css">
+  <link rel="stylesheet" href="../design/reference/_shared/styles/design-tokens.css">
+  <link rel="stylesheet" href="../design/reference/_shared/styles/AtmosphereLayer.module.css">
+  <link rel="stylesheet" href="../design/reference/_shared/styles/MagazinePageLayout.module.css">
+  <link rel="stylesheet" href="../design/reference/_shared/chrome.css">
+  <link rel="stylesheet" href="plans.css">
+</head>
+<body
+  data-tint="eucalyptus"
+  data-active-page="planning">
+<div class="MagazinePageLayout_magazinePage">
+<main class="MagazinePageLayout_pageContainer">
+<div class="plans-shell">
+
+<!-- ============================================================
+     TOP NAV — see _patterns/topnav.html
+     ============================================================ -->
+<nav class="plans-topnav" aria-label="Planning surface">
+  <a class="plans-mark" href="index.html">
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 433 407" width="16" height="16" aria-hidden="true">
+      <path d="M159 407 161 292 57 355 0 259 102 204 0 148 57 52 161 115 159 0H273L271 115L375 52L433 148L331 204L433 259L375 355L271 292L273 407Z" fill="currentColor"/>
+    </svg>
+    DailyOS · Planning
+  </a>
+  <div class="plans-topnav-links">
+    <a href="engineering-ladder.html">Engineering Ladder</a>
+    <a href="v2.0-shell-rebuild-boundary.html" data-active="true">v2.0 Boundary</a>
+    <a href="AUTHORING.md">Authoring Ruleset</a>
+  </div>
+</nav>
+
+<!-- ============================================================
+     COVER — see _patterns/cover-section.html
+     ============================================================ -->
+<section class="plans-cover">
+  <p class="plans-eyebrow">DailyOS · v2.0 Planning</p>
+  <h1 class="plans-title">v2.0 Shell Rebuild — Boundary Document</h1>
+  <p class="plans-kicker">The shell is rebuilt from a clean slate. The substrate crosses intact. This doc names what crosses, what dies, and what is born at the boundary.</p>
+  <p class="plans-lede">
+    Decision (James, 2026-06-11): DailyOS v2.0 rebuilds the <strong>shell</strong> — pages, layouts, chrome, display components — from a clean slate on the <strong>existing v1.x substrate</strong>. All current projects are abandoned in favor of v2.0. With ~4–5 users, migration cost is near zero; the expensive thing is not the move, it's continuing to retrofit blocks onto a shell that predates them. This is a boundary document, not a wave plan: every subsystem gets a disposition and a citation, then the design session takes it from there.
+  </p>
+  <div class="plans-meta">
+    <span>SUPERSEDED 2026-06-11 — see v2.0-case.html (this draft's matrices fold into its §5)</span>
+    <span>Decided 2026-06-11</span>
+    <span>~4–5 users · migration cost near zero</span>
+    <span>All current projects → v2.0</span>
+    <span>Substrate: existing v1.x, not rewritten</span>
+  </div>
+</section>
+
+<!-- ============================================================
+     THE DECISION — context
+     ============================================================ -->
+<section class="plans-section" aria-labelledby="decision">
+  <header class="plans-section-header">
+    <p class="plans-section-eyebrow">The decision</p>
+    <h2 id="decision" class="plans-section-title">Rebuild the shell. Keep the substrate.</h2>
+    <p class="plans-section-lede">
+      v1.x grew its shell page-by-page before the blocks model, the claim substrate, and the trust-rendering work existed. The substrate is now ahead of the shell that displays it. Rather than a fourth retrofit, v2.0 starts the shell over with the blocks model as the architecture from day one.
+    </p>
+  </header>
+
+  <div class="callout-grid">
+    <article class="callout">
+      <h3 class="callout-title">Clean-slate shell</h3>
+      <p class="callout-prose">Pages, layouts, and display chrome are authored fresh against the blocks model. Nothing in the v1.x page tree is owed continuity.</p>
+    </article>
+    <article class="callout">
+      <h3 class="callout-title">Existing substrate</h3>
+      <p class="callout-prose">Claims, abilities runtime, composition model, DB hardening, design system — all proven v1.x machinery crosses unchanged. The boundary is shell/substrate, not new/old.</p>
+    </article>
+    <article class="callout">
+      <h3 class="callout-title">Migration cost near zero</h3>
+      <p class="callout-prose">~4–5 users, one of whom is customer-zero. No external migration program, no compatibility shims, no deprecation period beyond what the rebuild itself needs.</p>
+    </article>
+  </div>
+</section>
+
+<!-- ============================================================
+     BOUNDARY MATRIX — KEEP
+     ============================================================ -->
+<section class="plans-section" aria-labelledby="boundary-keep">
+  <header class="plans-section-header">
+    <p class="plans-section-eyebrow">Boundary matrix · 1 of 2</p>
+    <h2 id="boundary-keep" class="plans-section-title">Crosses the boundary.</h2>
+    <p class="plans-section-lede">
+      These subsystems carry forward into v2.0 as-is. Each row names why it crosses and where the decision or learning lives.
+    </p>
+    <div class="ladder-rung-pass-rule">
+      <span class="pass-rule-label">Disposition</span>
+      <span class="pass-rule-badge pass-rule-unanimous">Keep</span>
+    </div>
+  </header>
+
+  <table class="reviewer-matrix">
+    <thead>
+      <tr>
+        <th>Subsystem</th>
+        <th>Why it crosses</th>
+        <th>Citation</th>
+      </tr>
+    </thead>
+    <tbody>
+      <tr>
+        <td><strong>abilities-runtime crate</strong></td>
+        <td>Already a separate crate with a clean boundary; producers, projection, and trust machinery are proven in daily use. The shell consumes it — it never depended on the shell.</td>
+        <td><code>ADR-0102</code>, <code>ADR-0111</code></td>
+      </tr>
+      <tr>
+        <td><strong>Claims schema + <code>services/</code> layer</strong></td>
+        <td>The memory+judgment moat: provenance, lifecycle, corrections. All mutations already flow through <code>services/</code>; v2.0 pages are new consumers, not new writers.</td>
+        <td><code>ADR-0125</code>, <code>ADR-0123</code></td>
+      </tr>
+      <tr>
+        <td><strong>Composition substrate</strong></td>
+        <td>Model, registry, projection policies, per-item claim bindings. This is the architecture the v2.0 shell is built on, so it crosses by definition.</td>
+        <td><code>ADR-0130</code></td>
+      </tr>
+      <tr>
+        <td><strong>Trust-as-opacity rendering model</strong></td>
+        <td>L4-approved 2026-06-10. Keyed off per-claim <code>provenance_kind</code>; it is how trust bands render in block layouts and is shell-independent.</td>
+        <td><code>DOS-852</code></td>
+      </tr>
+      <tr>
+        <td><strong>Design system</strong></td>
+        <td>Tokens, primitives, patterns, surfaces — with <code>.docs/design/reference/</code> as the copy-paste canon. v2.0 display blocks are compositions of these patterns, not replacements for them.</td>
+        <td><code>ADR-0073</code>, <code>ADR-0077</code></td>
+      </tr>
+      <tr>
+        <td><strong>ADR corpus + <code>docs/solutions/</code> learnings</strong></td>
+        <td>The K-channel. Every v2.0 L0 packet greps this corpus before authoring; abandoning projects does not abandon what they taught.</td>
+        <td><code>.docs/plans/engineering-ladder.md</code></td>
+      </tr>
+      <tr>
+        <td><strong>DB hardening (writer queue + reader pool)</strong></td>
+        <td>Includes the in-flight DOS-866 fixes — rank-then-cap, phased persist, W1-A. Earned this week against real starvation incidents; lands at the substrate layer regardless of shell.</td>
+        <td><code>ADR-0133</code>, <code>ADR-0134</code>, <code>DOS-866</code></td>
+      </tr>
+      <tr>
+        <td><strong>PII gates + engineering ladder process</strong></td>
+        <td>Pre-commit blocklist gate, L0–L6 gates, K-in/K-out. Process is version-independent; v2.0 work runs the same ladder.</td>
+        <td><code>.githooks/pre-commit</code>, <code>.docs/plans/engineering-ladder.md</code></td>
+      </tr>
+    </tbody>
+  </table>
+</section>
+
+<!-- ============================================================
+     BOUNDARY MATRIX — KILL
+     ============================================================ -->
+<section class="plans-section" aria-labelledby="boundary-kill">
+  <header class="plans-section-header">
+    <p class="plans-section-eyebrow">Boundary matrix · 2 of 2</p>
+    <h2 id="boundary-kill" class="plans-section-title">Dies at the boundary.</h2>
+    <p class="plans-section-lede">
+      These do not cross. Every row names its successor — nothing is killed without the replacement being named.
+    </p>
+    <div class="ladder-rung-pass-rule">
+      <span class="pass-rule-label">Disposition</span>
+      <span class="pass-rule-badge pass-rule-escalate">Kill</span>
+    </div>
+  </header>
+
+  <table class="reviewer-matrix">
+    <thead>
+      <tr>
+        <th>What dies</th>
+        <th>Named successor</th>
+        <th>Citation</th>
+      </tr>
+    </thead>
+    <tbody>
+      <tr>
+        <td><strong><code>AccountDetailEditorial</code> + all deprecated entity pages</strong></td>
+        <td>Blocks-native pages — composed from registered blocks, not hand-built page components.</td>
+        <td><code>DOS-852</code>, <code>DOS-853</code></td>
+      </tr>
+      <tr>
+        <td><strong>Intelligence-JSON as display source</strong></td>
+        <td>Producer-shaped block payloads: producers read <code>entity_assessment</code> and ship component-prop-shaped payloads, per the DOS-852 pattern. The frontend stops reinterpreting raw intelligence JSON.</td>
+        <td><code>DOS-852</code></td>
+      </tr>
+      <tr>
+        <td><strong>Legacy entity-feedback path — <code>submit_intelligence_correction</code> as a writer</strong></td>
+        <td>Unified claim feedback writer. One feedback path into claim state, not a parallel legacy writer.</td>
+        <td><code>ADR-0138</code>, <code>DOS-854</code></td>
+      </tr>
+      <tr>
+        <td><strong>Tab views inside surfaces</strong></td>
+        <td>Pages-per-view + strip chrome, per the DayStrip future-direction note: strip sides navigate sibling pages, center names the current page.</td>
+        <td><code>.docs/design/patterns/DayStrip.md</code> (future-direction note, 2026-06-10)</td>
+      </tr>
+      <tr>
+        <td><strong>v1.5.0 WR account-detail chapter spine (working-branch experiment)</strong></td>
+        <td>Customizer-composed block layouts. The spine-D restyle was a working-branch experiment on the v1.5.0 WR track; composition replaces hard-coded spine variants.</td>
+        <td><code>DOS-852</code></td>
+      </tr>
+      <tr>
+        <td><strong>Dual same-purpose components</strong></td>
+        <td>Reuse-first: one component per purpose. The Pill-vs-heroBadge class drift is the named instance; the rule now lives in CLAUDE.md and applies shell-wide.</td>
+        <td><code>CLAUDE.md</code> (reuse-before-create)</td>
+      </tr>
+    </tbody>
+  </table>
+
+  <p class="plans-footnote">
+    "Dies at the boundary" means not ported, not deprecated-with-shims. v1.x keeps running these until the v2.0 successor surface replaces them (open question 3 below); they are never carried into the v2.0 tree.
+  </p>
+</section>
+
+<!-- ============================================================
+     NEW IN v2.0 — born at the boundary
+     ============================================================ -->
+<section class="plans-section" aria-labelledby="born">
+  <header class="plans-section-header">
+    <p class="plans-section-eyebrow">New in v2.0</p>
+    <h2 id="born" class="plans-section-title">Born at the boundary.</h2>
+    <p class="plans-section-lede">
+      Net-new shell architecture that exists on the v2.0 side only. Three pieces, all consuming the substrate that crosses above.
+    </p>
+  </header>
+
+  <div class="callout-grid">
+    <article class="callout">
+      <h3 class="callout-title">Blocks model as the shell architecture</h3>
+      <p class="callout-prose">Producers shape content. Display-only blocks render it — design-system patterns like EntityHero, DayStrip, VitalsStrip. The customizer composes layouts. No page-specific data plumbing.</p>
+    </article>
+    <article class="callout">
+      <h3 class="callout-title">Daily briefing D-spine surface</h3>
+      <p class="callout-prose">A briefing surface on the D-spine with a ±7-day window — yesterday's residue and the week ahead on one navigable strip.</p>
+    </article>
+    <article class="callout">
+      <h3 class="callout-title">One EntityHero</h3>
+      <p class="callout-prose">A single EntityHero across account, person, and project pages. Entity-type differences are data, not component forks.</p>
+    </article>
+  </div>
+</section>
+
+<!-- ============================================================
+     EVIDENCE — this week's lessons
+     ============================================================ -->
+<section class="plans-section" aria-labelledby="evidence">
+  <header class="plans-section-header">
+    <p class="plans-section-eyebrow">Evidence</p>
+    <h2 id="evidence" class="plans-section-title">Why this week, not later.</h2>
+    <p class="plans-section-lede">
+      The decision is grounded in three observations from the past two weeks, not in appetite for novelty.
+    </p>
+  </header>
+
+  <div class="callout-grid">
+    <article class="callout">
+      <h3 class="callout-title">Three retrofit failures on DOS-852</h3>
+      <p class="callout-prose">Three attempts to retrofit blocks onto the existing detail-page shell failed before content-fidelity landed. The retrofit cost exceeded the rebuild cost; the fourth attempt should not be a retrofit.</p>
+    </article>
+    <article class="callout">
+      <h3 class="callout-title">DOS-866 starvation incidents</h3>
+      <p class="callout-prose">Writer-queue starvation was diagnosed and fixed entirely at the substrate layer — rank-then-cap, phased persist — without touching the shell. The boundary this doc draws already exists in practice.</p>
+    </article>
+    <article class="callout">
+      <h3 class="callout-title">Clean-sheet examination, 2026-05-28</h3>
+      <p class="callout-prose">The DB-loss forcing-function examination concluded: decouple cheap-certain from contested. A shell rebuild on proven substrate is the cheap-certain move; a substrate rewrite is the contested one this doc declines.</p>
+    </article>
+  </div>
+
+  <p class="plans-footnote">
+    Examination doc: <code>.docs/plans/dailyos-rearchitecture-examination-2026-05-29.md</code>. DOS-852 retrofit history and the starvation incident trail live on the Linear tickets (<code>DOS-852</code>, <code>DOS-866</code>).
+  </p>
+</section>
+
+<!-- ============================================================
+     NON-GOAL
+     ============================================================ -->
+<section class="plans-section" aria-labelledby="non-goal">
+  <header class="plans-section-header">
+    <p class="plans-section-eyebrow">Non-goal</p>
+    <h2 id="non-goal" class="plans-section-title">This is not a substrate rewrite.</h2>
+    <p class="plans-section-lede">
+      The second-system tuition is already paid. The claims schema, abilities runtime, composition model, and DB hardening were each earned through production incidents and review cycles; rewriting them would re-buy lessons we already own.
+    </p>
+  </header>
+  <p>
+    v2.0 changes what renders, not what knows. If a v2.0 work item proposes touching claim semantics, the writer queue, the abilities contract, or the composition model beyond consuming them, it is out of scope for the shell rebuild and goes through its own L0 as substrate work. The 2026-05-28 examination treated storage-model and surface-model rewrites as contested hypotheses to validate cheaply before betting the moat — that posture stands.
+  </p>
+</section>
+
+<!-- ============================================================
+     OPEN QUESTIONS — for the design session
+     ============================================================ -->
+<section class="plans-section" aria-labelledby="open-questions">
+  <header class="plans-section-header">
+    <p class="plans-section-eyebrow">Open questions</p>
+    <h2 id="open-questions" class="plans-section-title">For the design session.</h2>
+    <p class="plans-section-lede">
+      The boundary is decided; these are not. Each resolves at the James + Claude design session before wave planning starts.
+    </p>
+  </header>
+
+  <div class="callout-grid">
+    <article class="callout">
+      <h3 class="callout-title">1 · Page inventory</h3>
+      <p class="callout-prose">Which pages exist in the v2.0 shell on day one? The kill list removes tab views and the deprecated entity pages; the pages-per-view model needs an explicit inventory before layouts are composed.</p>
+    </article>
+    <article class="callout">
+      <h3 class="callout-title">2 · Migration order</h3>
+      <p class="callout-prose">Which surface converts first, and in what sequence? Daily briefing, entity detail, and list surfaces have different substrate readiness; order determines what the customizer must support earliest.</p>
+    </article>
+    <article class="callout">
+      <h3 class="callout-title">3 · What v1.x keeps running</h3>
+      <p class="callout-prose">Which v1.x surfaces stay live during the rebuild for the ~4–5 current users, and what is the cutover trigger per surface? Near-zero migration cost still isn't zero downtime tolerance for customer-zero.</p>
+    </article>
+  </div>
+</section>
+
+<!-- ============================================================
+     RELATED DOCS
+     ============================================================ -->
+<section class="plans-section plans-section-footer">
+  <header class="plans-section-header">
+    <p class="plans-section-eyebrow">Related</p>
+    <h2 class="plans-section-title">How this doc relates to others.</h2>
+  </header>
+  <ul class="plans-related">
+    <li><strong>.docs/plans/engineering-ladder.html</strong> — the process v2.0 work runs on; crosses the boundary unchanged.</li>
+    <li><strong>.docs/plans/v1.5.0-waves.html</strong> — the program this decision supersedes; its substrate output (composition, trust-as-opacity, DOS-852 producer pattern) crosses, its surface plans do not.</li>
+    <li><strong>.docs/plans/dailyos-rearchitecture-examination-2026-05-29.md</strong> — the clean-sheet examination whose "decouple cheap-certain from contested" conclusion this doc executes the cheap-certain half of.</li>
+    <li><strong>.docs/decisions/0130-surface-independent-composition-contract.md</strong> — the composition contract the v2.0 shell is built on.</li>
+    <li><strong>.docs/decisions/0138-unified-claim-feedback-writer.md</strong> — successor to the legacy entity-feedback writer killed above.</li>
+    <li><strong>.docs/design/patterns/DayStrip.md</strong> — carries the future-direction note (tabs become pages) that the kill list operationalizes.</li>
+    <li><strong>.docs/design/reference/</strong> — copy-paste canon for all v2.0 display blocks.</li>
+    <li><strong>.docs/plans/AUTHORING.md</strong> — Tier 1 ruleset this doc is authored under.</li>
+  </ul>
+</section>
+
+<!-- ============================================================
+     FINIS — see _patterns/finis.html
+     ============================================================ -->
+<div class="finis">
+  <div class="finis-mark">SHELL · BOUNDARY · SUBSTRATE</div>
+  <div class="finis-date">v2.0 Shell Rebuild Boundary · 2026-06-11</div>
+  <div class="finis-caption">v2.0 changes what renders, not what knows.</div>
+</div>
+
+</div><!-- /.plans-shell -->
+</main>
+</div><!-- /.MagazinePageLayout_magazinePage -->
+</body>
+</html>

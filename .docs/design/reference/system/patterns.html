@@ -13,6 +13,7 @@
 <link rel="stylesheet" href="../_shared/styles/MagazinePageLayout.module.css">
 <link rel="stylesheet" href="../_shared/styles/EntityHeroBase.module.css">
 <link rel="stylesheet" href="../_shared/styles/AccountHero.module.css">
+<link rel="stylesheet" href="../_shared/styles/PersonHero.module.css">
 <link rel="stylesheet" href="../_shared/styles/HealthBadge.module.css">
 <link rel="stylesheet" href="../_shared/styles/IntelligenceQualityBadge.module.css">
 <link rel="stylesheet" href="../_shared/styles/editable-inline.module.css">
@@ -834,18 +835,71 @@
         </div>
       </article>
 
+      <article id="EntityHero" class="ds-card" data-status="proposed">
+        <div class="ds-card-header">
+          <div class="ds-name-wrap"><span class="ds-tier">pattern</span><h3 class="ds-card-title">EntityHero</h3></div>
+          <a class="ds-spec-link" href="../../patterns/EntityHero.md">Spec</a>
+        </div>
+        <p class="ds-composition"><strong>Composes:</strong> meta row, optional initials avatar, serif name, sub-meta line (variant chip + facts + related entity), two-line vitals strip. One hero block for every entity.</p>
+        <div class="ds-variants"><span>person</span><span>account</span><span>project</span></div>
+        <div class="ds-demo" data-ds-name="EntityHero" data-ds-tier="pattern" data-ds-spec="patterns/EntityHero.md">
+          <!-- person variant -->
+          <div class="EntityHeroBase_hero">
+            <div class="EntityHeroBase_heroIdentity">
+              <span class="EntityHeroBase_heroAvatar" aria-hidden="true">MO<span class="EntityHeroBase_heroAvatarRing"></span></span>
+              <div>
+                <h1 class="EntityHeroBase_heroTitle" style="font-size:40px;">Martin Okafor</h1>
+                <div class="EntityHeroBase_heroSubMeta">
+                  <span class="EntityHeroBase_heroBadge PersonHero_relationshipExternal">Champion</span>
+                  <span>VP Digital Merchandising · <span class="EntityChip_chip EntityChip_chip-account">Meridian Harbor</span></span>
+                  <span class="EntityHeroBase_heroSubMetaSep" aria-hidden="true"></span>
+                  <span>New York · GMT−5</span>
+                </div>
+              </div>
+            </div>
+          </div>
+          <!-- account variant (no avatar) -->
+          <div class="EntityHeroBase_hero" style="margin-top:32px;">
+            <div class="EntityHeroBase_heroIdentity">
+              <div>
+                <h1 class="EntityHeroBase_heroTitle" style="font-size:40px;">Meridian Harbor</h1>
+                <div class="EntityHeroBase_heroSubMeta">
+                  <span class="EntityHeroBase_heroBadge AccountHero_customerBadge">Customer</span>
+                  <span>Enterprise · <span class="EntityChip_chip EntityChip_chip-account">Meridian Group</span></span>
+                  <span class="EntityHeroBase_heroSubMetaSep" aria-hidden="true"></span>
+                  <span>Tracked since Feb 2024</span>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </article>
+
       <article id="DayStrip" class="ds-card" data-status="proposed">
         <div class="ds-card-header">
           <div class="ds-name-wrap"><span class="ds-tier">pattern</span><h3 class="ds-card-title">DayStrip</h3></div>
           <a class="ds-spec-link" href="../../patterns/DayStrip.md">Spec</a>
         </div>
         <p class="ds-composition"><strong>Composes:</strong> previous day, current date, next day, and short adjacent-day previews under FolioBar.</p>
-        <div class="ds-variants"><span>previous/current/next</span><span>mobile compact</span></div>
+        <div class="ds-variants"><span>today</span><span>non-today</span><span>window-edge</span><span>mobile compact</span></div>
         <div class="ds-demo" data-ds-name="DayStrip" data-ds-tier="pattern" data-ds-spec="patterns/DayStrip.md">
           <nav class="DayStrip_strip" aria-label="Briefing days" style="position:relative; top:auto; left:auto; right:auto; z-index:1; margin:0; padding:0 16px;">
-            <a class="DayStrip_side" href="../surfaces/briefing.html"><span class="DayStrip_direction" aria-hidden="true">&larr;</span><span class="DayStrip_label">Yesterday</span><span class="DayStrip_preview">Acme call captured</span></a>
+            <a class="DayStrip_side" href="../surfaces/briefing.html"><span class="DayStrip_direction" aria-hidden="true">&larr;</span><span class="DayStrip_label">Yesterday</span></a>
             <div class="DayStrip_current" aria-label="Today, Thursday April 23"><span class="DayStrip_mark" aria-hidden="true"></span>Today</div>
-            <a class="DayStrip_side DayStrip_sideRight" href="../surfaces/briefing.html"><span class="DayStrip_preview">Northwind follow-up</span><span class="DayStrip_label">Tomorrow</span><span class="DayStrip_direction" aria-hidden="true">&rarr;</span></a>
+            <a class="DayStrip_side DayStrip_sideRight" href="../surfaces/briefing.html"><span class="DayStrip_label">Tomorrow</span><span class="DayStrip_direction" aria-hidden="true">&rarr;</span></a>
+          </nav>
+          <!-- Non-today: walking the ±7-day window. Date center, NO live mark;
+               sides relabel to short dates unless adjacent to today. -->
+          <nav class="DayStrip_strip" aria-label="Briefing days" style="position:relative; top:auto; left:auto; right:auto; z-index:1; margin:12px 0 0; padding:0 16px;">
+            <a class="DayStrip_side" href="../surfaces/briefing.html"><span class="DayStrip_direction" aria-hidden="true">&larr;</span><span class="DayStrip_label">Tue, Apr 21</span></a>
+            <div class="DayStrip_current" aria-label="Wednesday, April 22">Wednesday, April 22</div>
+            <a class="DayStrip_side DayStrip_sideRight" href="../surfaces/briefing.html"><span class="DayStrip_label">Yesterday</span><span class="DayStrip_direction" aria-hidden="true">&rarr;</span></a>
+          </nav>
+          <!-- Window edge (-7): outbound side is inert; grid holds. -->
+          <nav class="DayStrip_strip" aria-label="Briefing days" style="position:relative; top:auto; left:auto; right:auto; z-index:1; margin:12px 0 0; padding:0 16px;">
+            <span class="DayStrip_side DayStrip_sideDisabled" aria-disabled="true"><span class="DayStrip_direction" aria-hidden="true">&larr;</span><span class="DayStrip_label">End of window</span></span>
+            <div class="DayStrip_current" aria-label="Thursday, April 16">Thursday, April 16</div>
+            <a class="DayStrip_side DayStrip_sideRight" href="../surfaces/briefing.html"><span class="DayStrip_label">Fri, Apr 17</span><span class="DayStrip_direction" aria-hidden="true">&rarr;</span></a>
           </nav>
         </div>
       </article>

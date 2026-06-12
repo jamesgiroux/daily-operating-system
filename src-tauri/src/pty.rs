@@ -97,6 +97,11 @@ const BACKGROUND_AI_TOKEN_WINDOW_HOURS: i64 = 4;
 const BACKGROUND_AI_PAUSE_MINUTES: i64 = 30;
 const BACKGROUND_AI_TIMEOUT_SAMPLE: usize = 20;
 const BACKGROUND_AI_TIMEOUT_RATE_THRESHOLD: f64 = 0.25;
+/// Minimum number of background calls before the timeout-*rate* check can pause.
+/// Without this, a single early timeout in a tiny window (e.g. 1 of 4 calls)
+/// reads as a 25% rate and halts the whole queue. Sustained failure is still
+/// caught by the consecutive-timeout guard below regardless of sample size.
+const BACKGROUND_AI_TIMEOUT_MIN_SAMPLE: usize = 8;
 const BACKGROUND_AI_CONSECUTIVE_TIMEOUTS: usize = 3;
 
 // =============================================================================
@@ -428,7 +433,11 @@ fn build_background_pause_status(
         .iter()
         .filter(|call| call.status == "timeout")
         .count();
-    let timeout_rate_last_20 = if last_background_calls.is_empty() {
+    // Only treat the timeout *rate* as meaningful once we have a large enough
+    // sample. Below the minimum, report 0.0 so a single early timeout can't trip
+    // the rate-based pause; sustained failure is still caught by the
+    // consecutive-timeout guard.
+    let timeout_rate_last_20 = if last_background_calls.len() < BACKGROUND_AI_TIMEOUT_MIN_SAMPLE {
         0.0
     } else {
         timeout_count as f64 / last_background_calls.len() as f64

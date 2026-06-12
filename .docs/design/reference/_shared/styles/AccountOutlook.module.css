@@ -214,7 +214,7 @@
   color: var(--color-spice-turmeric);
 }
 
-/* ── Hover-reveal item actions  ── */
+/* ── Hover-reveal item actions (I550) ── */
 
 .AccountOutlook_itemActions {
   display: inline-flex;

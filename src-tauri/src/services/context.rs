@@ -1389,6 +1389,7 @@ fn read_account_composition_snapshot_from_db(
         None,
     );
 
+    let mut technical_footprint_value: Option<serde_json::Value> = None;
     if let Some(footprint) = db
         .get_account_technical_footprint(account_id)
         .map_err(|error| {
@@ -1397,6 +1398,7 @@ fn read_account_composition_snapshot_from_db(
             ))
         })?
     {
+        technical_footprint_value = serde_json::to_value(&footprint).ok();
         push_sourced_account_field(
             &mut fields,
             "/technical/usage_tier",
@@ -1474,6 +1476,88 @@ fn read_account_composition_snapshot_from_db(
         provenance_kind: AccountCompositionProvenanceKind::SystemConfig,
     });
 
+    // The enriched intelligence payload is the production page's content
+    // contract (currentState, risks, valueDelivered, agreementOutlook, …) —
+    // camelCase via IntelligenceJson serde, identical to what the frontend
+    // EntityIntelligence type consumes. Best-effort: an unenriched account
+    // simply omits it and chapters fall back to claims/empty copy.
+    let intelligence = db
+        .get_entity_intelligence(account_id)
+        .ok()
+        .flatten()
+        .and_then(|payload| serde_json::to_value(payload).ok());
+
+    // Production-parity domain reads — the same queries get_account_detail
+    // makes, shipped raw so producers can shape per-block payloads.
+    let glean_signals = db
+        .conn_ref()
+        .query_row(
+            "SELECT health_outlook_signals_json FROM entity_assessment WHERE entity_id = ?1",
+            rusqlite::params![account_id],
+            |row| row.get::<_, Option<String>>(0),
+        )
+        .ok()
+        .flatten()
+        .and_then(|json| serde_json::from_str::<serde_json::Value>(&json).ok());
+
+    let sentiment_note = db
+        .get_latest_sentiment_note(account_id)
+        .ok()
+        .flatten()
+        .map(|(note, _)| note);
+    let sentiment = account.user_health_sentiment.as_deref().map(|current| {
+        let history = db
+            .get_sentiment_history(account_id, 90)
+            .ok()
+            .and_then(|rows| serde_json::to_value(rows).ok())
+            .unwrap_or(serde_json::Value::Array(Vec::new()));
+        let sparkline = db
+            .get_health_score_sparkline(account_id, 90)
+            .ok()
+            .and_then(|rows| serde_json::to_value(rows).ok())
+            .unwrap_or(serde_json::Value::Array(Vec::new()));
+        serde_json::json!({
+            "current": current,
+            "setAt": account.sentiment_set_at,
+            "note": sentiment_note,
+            "history": history,
+            "sparkline": sparkline,
+            "healthBand": account.health,
+        })
+    });
+
+    let commercial = Some(serde_json::json!({
+        "arr": account.arr,
+        "renewalDate": account.contract_end,
+    }));
+    let fabric = Some(serde_json::json!({
+        "nps": account.nps,
+        "strategicPrograms": account.strategic_programs_parsed(),
+    }));
+    let record = db
+        .get_account_lifecycle_changes(account_id, 12)
+        .ok()
+        .filter(|rows| !rows.is_empty())
+        .and_then(|rows| serde_json::to_value(rows).ok())
+        .map(|lifecycle_changes| {
+            serde_json::json!({
+                "lifecycleChanges": lifecycle_changes,
+                "recentMeetings": [],
+            })
+        });
+
+    let stakeholders = db
+        .get_account_stakeholders_full(account_id)
+        .ok()
+        .filter(|rows| !rows.is_empty())
+        .and_then(|rows| serde_json::to_value(rows).ok())
+        .map(|stakeholders_full| {
+            serde_json::json!({
+                "stakeholdersFull": stakeholders_full,
+                "accountName": account.name,
+            })
+        });
+
     Ok(AccountCompositionSnapshot {
         account_id: account.id.clone(),
         display_name: account_identity_field(
@@ -1487,6 +1571,14 @@ fn read_account_composition_snapshot_from_db(
             serde_json::Value::from(account.account_type.as_db_str()),
         )),
         fields,
+        intelligence,
+        glean_signals,
+        sentiment,
+        stakeholders,
+        technical_footprint: technical_footprint_value,
+        commercial,
+        fabric,
+        record,
     })
 }
 
@@ -2601,6 +2693,13 @@ fn push_account_vital_field(
         return;
     };
     let Some(source) = provenance.get(provenance_key) else {
+        // Observable, not silent (WR-R1): a vital with a value but no provenance
+        // is dropped here by design (the trust model requires a source), but the
+        // drop must be visible so a provenance-write gap is diagnosable rather
+        // than presenting as an inexplicably empty vitals strip.
+        log::warn!(
+            "account vital '{provenance_key}' has a value but no provenance source; dropping from composition"
+        );
         return;
     };
     fields.push(AccountCompositionSnapshotField {

@@ -1,0 +1,225 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>v2.0 Wave Plan · DailyOS Planning</title>
+  <link rel="stylesheet" href="../design/reference/_shared/fonts.css">
+  <link rel="stylesheet" href="../design/reference/_shared/styles/design-tokens.css">
+  <link rel="stylesheet" href="../design/reference/_shared/styles/AtmosphereLayer.module.css">
+  <link rel="stylesheet" href="../design/reference/_shared/styles/MagazinePageLayout.module.css">
+  <link rel="stylesheet" href="../design/reference/_shared/chrome.css">
+  <link rel="stylesheet" href="plans.css">
+</head>
+<body
+  data-tint="eucalyptus"
+  data-active-page="planning">
+<div class="MagazinePageLayout_magazinePage">
+<main class="MagazinePageLayout_pageContainer">
+<div class="plans-shell">
+
+<!-- ============================================================
+     TOP NAV — see _patterns/topnav.html
+     ============================================================ -->
+<nav class="plans-topnav" aria-label="Planning surface">
+  <a class="plans-mark" href="index.html">
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 433 407" width="16" height="16" aria-hidden="true">
+      <path d="M159 407 161 292 57 355 0 259 102 204 0 148 57 52 161 115 159 0H273L271 115L375 52L433 148L331 204L433 259L375 355L271 292L273 407Z" fill="currentColor"/>
+    </svg>
+    DailyOS · Planning
+  </a>
+  <div class="plans-topnav-links">
+    <a href="engineering-ladder.html">Engineering Ladder</a>
+    <a href="v2.0-case.html">v2.0 Case</a>
+    <a href="v2.0-waves.html" data-active="true">v2.0 Waves</a>
+  </div>
+</nav>
+
+<!-- ============================================================
+     COVER
+     ============================================================ -->
+<section class="plans-cover">
+  <p class="plans-eyebrow">DailyOS · v2.0 · Wave Plan</p>
+  <h1 class="plans-title">v2.0 Waves</h1>
+  <p class="plans-kicker">The app is a library of living documents over the claim graph — one standing document per day, everything else composed on prompt or click. Five surfaces, not twenty-five. Two gates before the build waves.</p>
+  <p class="plans-lede">
+    Authority: <strong>ADR-0139</strong> (Accepted, red-team-amended) + the gated sequencing decision + <strong><code>.docs/plans/v2.0-surface-vision.md</code></strong> — the primitives-first rethink (2026-06-12, research-grounded) that replaced the earlier convert-25-surfaces framing. The waves below build six primitives (Claim · Document · Library · Day · Prompt · Correction) and <em>delete</em> the legacy taxonomy rather than converting it. Page inventory at the end: <strong>the Day, the Library, the Document view, the Queue, settings/onboarding.</strong> Wave L0s are written after Gate 2 exists to cite; deletion of predecessors is an acceptance criterion throughout.
+  </p>
+  <div class="plans-meta">
+    <span>Rebuilt 2026-06-12 overnight · whole-plan L0 PANEL RUN + FOLDED · pending James review</span>
+    <span>Gate 1: latency checkpoint (&lt;500 ms p95)</span>
+    <span>Gate 2: instrumentation readout</span>
+    <span>Vision: documents are saved queries + dated run records</span>
+  </div>
+</section>
+
+<!-- ============================================================
+     PRE-GATE TRACKS (firm, running now)
+     ============================================================ -->
+<section class="plans-section" aria-labelledby="tracks">
+  <header class="plans-section-header">
+    <p class="plans-section-eyebrow">Pre-gate tracks · firm</p>
+    <h2 id="tracks" class="plans-section-title">W0 · WI · WD — three tracks, two gates.</h2>
+    <p class="plans-section-lede">
+      W0 and WD run concurrently starting now. WI starts when W0's fixes land (so latency doesn't contaminate the readout) and ends at Gate 2.
+    </p>
+  </header>
+
+  <table class="reviewer-matrix">
+    <thead>
+      <tr>
+        <th>Track</th>
+        <th>Contents</th>
+        <th>Exit gate</th>
+      </tr>
+    </thead>
+    <tbody>
+      <tr>
+        <td><strong>W0 — Substrate prerequisites</strong><br><em>running now</em></td>
+        <td><strong>DOS-866</strong> phased persist + caps (implemented, gates green — L2 then merge after the WR branch) · <strong>DOS-868</strong> checkpoint fixes (bound recompute, limit producer reads, commit off the read path) · <strong>DOS-837</strong> accept ADR-0130/0122 · <strong>DOS-835</strong> bank WP + CI-gate sweep · <strong>DOS-856</strong> feedback unification (one writer — load-bearing for the Correction primitive) · <strong>NEW per the L0 panel: the document-persistence L0</strong> (DocumentRecipe/DocumentRun catalog above the existing composition substrate — snapshot vs claim-version-pin decided there; separately priced; gates W2/W3) and <strong>the search-substrate L0</strong> (extend FTS5 vs tantivy vs ADR-0074 hybrid — gates W3).</td>
+        <td><strong>Gate 1 — latency checkpoint:</strong> entity click re-measured on the live composition path. <strong>&lt;500 ms p95 kills the performance argument for read models</strong>; the read-model L0 then opens on product grounds only. Readout posted to the Linear project.</td>
+      </tr>
+      <tr>
+        <td><strong>WI — Moat instrumentation</strong><br><em>after W0 fixes land</em></td>
+        <td><strong>DOS-869</strong>: the careful L0 (predeclared pass/fail thresholds, judgment-vs-recency A/B, behavioral signals, token-cost axis from <code>ai_usage</code>) → build → <strong>2-week window on the daily-driven app</strong> → readout doc.</td>
+        <td><strong>Gate 2 — the readout:</strong> does the judgment layer change behavior, and what does it cost per token? Gates all build waves; W1+ designs must cite it. If the moat isn't felt, the roadmap question reopens before W1 — that is the point of the gate.</td>
+      </tr>
+      <tr>
+        <td><strong>WD — Design phase</strong><br><em>parallel, James + Claude</em></td>
+        <td>Design the six primitives. <strong>Five decisions the design-lens L0 requires closed before W1A</strong>: (1) the navigation model that replaces the 26-route shell (and Queue: surface vs Day-section); (2) the Prompt's physical home (persistent vs invoked chrome, first-run discoverability); (3) the chat-hatch boundary (what happens when no producer matches — closed-world error vs open-world fallback; decides whether the Library is claim-backed-only); (4) the document-type visual grammar (differentiation between briefing/SWOT/risk documents — or an explicit uniform-chrome decision; the Library browse view is the highest AI-slop risk); (5) the correction-on-refresh state machine (what the user sees when a corrected document re-runs). <strong>Gated later</strong>: Day temporal asymmetry (before W1B), streaming states incl. mid-stream failure/empty-claim-set/a11y live-regions (before W2), meeting-document pre/during/post state model (before W4). Section-type families design as document sections. Patterns land in <code>.docs/design/reference/</code> first.</td>
+        <td>The five W1A-gating decisions approved by James; grammar + Day patterns in the reference canon. WD must not outlive Gate 2 by more than one working session before W1A's L0 starts.</td>
+      </tr>
+    </tbody>
+  </table>
+
+  <p class="plans-footnote">
+    Also in W0's window, independent of the gates: merge the open PRs (WR branch, DOS-851), validate + L2 DOS-866, DOS-820 replica startup flag. Technology spikes that de-risk W2/W3 (≤1 day each, disposable, reframed per the feasibility L0): <strong>the streamed-producer contract</strong> (partial composition emission — a substrate change — vs Tauri-event channel + commit-at-end; no LLM-backed producer exists today, this is a new ability category), <strong>Claude-runtime transport</strong> (Agent SDK via Node sidecar — <code>externalBin</code> precedent exists — vs CLI <code>--output-format stream-json</code>; "in-process" is not buildable in a Rust backend; packaging + metering deltas are exit criteria), and the search-substrate comparison feeding its L0.
+  </p>
+</section>
+
+<!-- ============================================================
+     BUILD WAVES (named, not promised)
+     ============================================================ -->
+<section class="plans-section" aria-labelledby="waves">
+  <header class="plans-section-header">
+    <p class="plans-section-eyebrow">Build waves · post-Gate-2 · coarse by design</p>
+    <h2 id="waves" class="plans-section-title">W1A–W5 — build the primitives, delete the taxonomy.</h2>
+    <p class="plans-section-lede">
+      Not conversions: each wave ships a primitive end-to-end, then deletes every legacy surface that primitive answers — and per the codex L0 fold, <strong>no operational page dies before the Queue owns its operations</strong> (Library is retrieval; Queue is operations). Ordering per the panel: grammar on existing producers first, the Day from the existing bounded producer second, the new prompt/streaming machinery third. Old routes stay addressable until the new surface survives daily use; an old/new output-equivalence check rides each deletion.
+    </p>
+  </header>
+
+  <table class="reviewer-matrix">
+    <thead>
+      <tr>
+        <th>Wave</th>
+        <th>Ships</th>
+        <th>Deletes</th>
+        <th>Gates / riders</th>
+      </tr>
+    </thead>
+    <tbody>
+      <tr>
+        <td><strong>W1A — Document grammar &amp; chrome</strong></td>
+        <td>The document chrome on the existing read-only atomic producer path — citations, per-section freshness dating, <strong>Refresh</strong>, and the <strong>tier-1 claim-level diff</strong> ("what changed for Acme since Tuesday" — derivable today from <code>version_events</code> + <code>composition_versions.generated_at</code>; needs an index, no schema). The four composition surfaces adopt the chrome in place. No streaming, no new producers.</td>
+        <td>Nothing — W1A proves the grammar.</td>
+        <td><strong>Entrance criterion:</strong> render is read-only on cache miss (DOS-868's commit-off-read-path landed). WD's document grammar + correction-on-refresh state machine specified first. James L4 on the chrome.</td>
+      </tr>
+      <tr>
+        <td><strong>W1B — Day MVP</strong></td>
+        <td>The standing daily document on the D-spine, built from the <em>existing bounded</em> daily-briefing producer (read-only, already shipped) + push before wake. <strong>Hard regeneration ACs</strong> (codex fold): event/invalidation-driven refresh, max one scheduled full synthesis per day, token preflight against the existing <code>pty.rs</code> budget, visible degraded mode on budget exhaustion, coalesced concurrent refreshes, no read-path writes, DOS-866-shaped persistence for any run/push-state writes.</td>
+        <td><code>DailyBriefing</code> + the dual data path (read replacement only — <code>EmailsPage</code>/<code>InboxPage</code> survive until W4's Queue owns their operations).</td>
+        <td>James L4 before predecessor deletion. <strong>DOS-855</strong> trigger cutover + <strong>DOS-861</strong> context assembly ride here. <strong>DOS-278</strong> resolved structurally (one canonical candidate set is the AC). Cadence sized against the WI token readout.</td>
+      </tr>
+      <tr>
+        <td><strong>W2 — The Prompt &amp; streamed documents</strong></td>
+        <td>"Give me a briefing on Acme" end-to-end: generic producer routing (the orchestrator is currently hard-coded to 4 detail producers), the <strong>first LLM-backed document producer</strong>, streaming insertion (per the W0 spike's transport verdict), named/dated runs landing in a minimal document catalog, <strong>tier-2 document-level diff</strong> on the catalog.</td>
+        <td>Nothing yet — new capability, not replacement.</td>
+        <td><strong>Gated on the W0 document-persistence L0</strong> (DocumentRecipe/DocumentRun catalog) and the streamed-producer-contract + SDK-transport spikes. WD's Prompt placement + chat-hatch boundary decided first.</td>
+      </tr>
+      <tr>
+        <td><strong>W3 — The Library</strong></td>
+        <td>The persistent home over the catalog: browse/query-across-library; <strong>search per the W0 search-substrate L0</strong> (extend FTS5 vs tantivy vs hybrid with ADR-0074 — one winner, never dual); <strong>transcripts as two-layer documents</strong> (render-time quote-matching with designed no-match fallback, or span-provenance substrate L0); workspace files visible as projections; Cowork-grantable folder; <strong>index privacy/lifecycle design</strong> (ADR-0125 sensitivity partitioning, purge, reindex triggers) before implementation.</td>
+        <td>The 7 bespoke report pages (~3,100 LOC) — reports become Library documents · <code>HistoryPage</code> (Library search is its replacement — also the Day's ±7 overflow path).</td>
+        <td>Anti-junk-drawer mechanics are ACs (subject/freshness/trust summary per entry). Paraphrase-miss case tested. Hundred-claims adversarial fixture (ex-DOS-446) returns as an AC.</td>
+      </tr>
+      <tr>
+        <td><strong>W4 — The Queue &amp; entity spines (operations move, then pages die)</strong></td>
+        <td><strong>The Queue as the first-class operational surface</strong> (codex fold: Library is retrieval, Queue owns operations): batch selection, bulk archive + folder reconciliation (DOS-828), create flows, duplicate hygiene, team/stakeholder management, action accept/reject, email dismissal/promotion, triage snooze — plus the needs-your-decision review budget (ex-DOS-443 lineage). Entity spine (thin hero + vitals) + entity documents replace standing detail pages. DOS-870 umbrella splits here.</td>
+        <td>Only after Queue equivalence is proven: <code>AccountsPage</code>/<code>PeoplePage</code>/<code>ProjectsPage</code>/<code>ActionsPage</code> · <code>EmailsPage</code>/<code>InboxPage</code> · <code>MeetingDetailPage</code> collapses into Day-linked meeting documents · legacy detail hooks.</td>
+        <td>James L4 on the meeting document AND the Queue before any operational page deletion (richest write flows). WD's meeting-document state model (pre/during/post) decided first.</td>
+      </tr>
+      <tr>
+        <td><strong>W5 — Deletion &amp; consolidation sweep</strong></td>
+        <td>The five-surface shell stands alone: Day, Library, Document view, Queue, settings/onboarding (carried, not rebuilt). Audit §3 re-run as exit proof: zero dual systems, zero orphans, one rendering grammar, one feedback path, one search primitive.</td>
+        <td>Parity layer (per-surface, after each conversion it policed) · sidebar shell · <code>MAGAZINE_ROUTE_IDS</code> · 27 orphans · legacy display grammar + mapper · remaining legacy routes.</td>
+        <td><strong>Conditional read-model wave</strong> slots here ONLY if Gate 1 failed: owned Rust projections L0 (framework must beat it).</td>
+      </tr>
+    </tbody>
+  </table>
+
+  <p class="plans-footnote">
+    <strong>Migration slots</strong> (standing rule): claimed per-wave at L0 in this file; W0 ships none.
+    <strong>MCP riders:</strong> DOS-777/479/173 attach to the wave shipping their producer (briefing → W1/W2, library/search → W3, portfolio → W4) — one producer contract serves app and MCP; the tool is a thin head.
+    <strong>Platform leans</strong> (researched): Agent SDK in-process for the prompt pipeline and background synthesis (consumes our local MCP natively; watch the June-15 credit metering); Cowork for user-delegated long-form artifacts via the grantable workspace folder (remote-MCP-only — it works on our files, not our tools); MCP Apps <code>ui://</code> deferred to late 2026 (spec final, Claude clients buggy).
+  </p>
+</section>
+
+<!-- ============================================================
+     OPERATING RULES
+     ============================================================ -->
+<section class="plans-section" aria-labelledby="rules">
+  <header class="plans-section-header">
+    <p class="plans-section-eyebrow">Operating rules</p>
+    <h2 id="rules" class="plans-section-title">The whole control surface, restated once.</h2>
+  </header>
+
+  <div class="callout-grid">
+    <article class="callout">
+      <h3 class="callout-title">Two gates, no covenants</h3>
+      <p class="callout-prose">Gate 1 (latency checkpoint) and Gate 2 (instrumentation readout) are the only program-level gates. Everything else is the normal ladder: per-ticket L0, L2 before merge, L4 on user-facing waves.</p>
+    </article>
+    <article class="callout">
+      <h3 class="callout-title">Deletion is the acceptance criterion</h3>
+      <p class="callout-prose">A wave is done when the surfaces it answers are deleted. The measured precedent (two generations left in-tree, 27 orphans) is the named failure mode. Old routes stay addressable until the new surface survives daily use.</p>
+    </article>
+    <article class="callout">
+      <h3 class="callout-title">Substrate changes run their own L0s</h3>
+      <p class="callout-prose">Any wave item touching claim semantics, the writer queue, the abilities contract, or the composition model beyond consuming them exits the wave and runs as substrate work (ADR-0139 sequencing rule). Documents-as-saved-queries consumes producers; it does not re-architect them.</p>
+    </article>
+  </div>
+</section>
+
+<!-- ============================================================
+     RELATED
+     ============================================================ -->
+<section class="plans-section plans-section-footer">
+  <header class="plans-section-header">
+    <p class="plans-section-eyebrow">Related</p>
+    <h2 class="plans-section-title">Authority chain.</h2>
+  </header>
+  <ul class="plans-related">
+    <li><strong>.docs/plans/v2.0-surface-vision.md</strong> — the primitives-first rethink these waves build; research synthesis + L0 corrections inside.</li>
+    <li><strong>Whole-plan L0 record (2026-06-12, overnight):</strong> codex challenge REVISE (5 findings) · design-lens REVISE (5 W1A-gating WD decisions) · feasibility REVISE (1 BLOCKING: document persistence; verified the substrate is already saved-query) · K-in BLOCKED→cleared (search-substrate citation + comparison added). All findings folded same night into this file and the vision doc; the named substrate L0s (document persistence, search substrate) and the W1A/W1B/W2 re-ordering are the panel's work. Reviewer reports in the session transcript; verdicts summarized in the morning report.</li>
+    <li><strong>.docs/decisions/0139-v2-rebuild-shell-and-read-path-on-existing-substrate.md</strong> — the decision, checkpoint and sequencing included.</li>
+    <li><strong>.docs/plans/v2.0-case.html</strong> — the argument; <strong>v2.0-case-redteam-2026-06-11.md</strong> — why the gates exist.</li>
+    <li><strong>.docs/plans/v2.0-shell-audit.md</strong> — the measured baseline W5's exit proof re-runs.</li>
+    <li><strong>.docs/plans/v2.0-linear-sweep-proposal.md</strong> — executed sweep record; ticket dispositions.</li>
+    <li><strong>Linear: v2.0 — Rebuild (Shell + Read Path)</strong> — canonical execution record.</li>
+  </ul>
+</section>
+
+<!-- ============================================================
+     FINIS
+     ============================================================ -->
+<div class="finis">
+  <div class="finis-mark">CLAIM · DOCUMENT · LIBRARY · DAY · PROMPT · CORRECTION</div>
+  <div class="finis-date">v2.0 Wave Plan · 2026-06-12</div>
+  <div class="finis-caption">Documents are saved queries. Five surfaces. Delete the rest.</div>
+</div>
+
+</div><!-- /.plans-shell -->
+</main>
+</div><!-- /.MagazinePageLayout_magazinePage -->
+</body>
+</html>

@@ -6,7 +6,7 @@
 **Last updated:** 2026-05-06
 **`data-ds-name`:** `DayStrip`
 **`data-ds-spec`:** `patterns/DayStrip.md`
-**Variants:** previous/current/next; compact mobile previews
+**Variants:** today (mark + "Today"); non-today (date center, relabeled sides); window-edge (disabled side); compact mobile previews
 **Design system version introduced:** 0.1.0
 
 ## Job
@@ -14,6 +14,22 @@
 Provide day-to-day briefing navigation directly below `FolioBar`: previous day,
 current day, next day. In the D-spine direction, this is the proposed replacement
 for a separate Weekly Forecast surface.
+
+The briefing surface renders a **±7-day window** (up to 7 days past, 7 ahead),
+not just "today" (James, 2026-06-10). The strip is the chrome that answers
+"what day am I looking at?" while walking that window:
+
+- **Center label**: "Today" with the pulsing turmeric mark when the rendered
+  day IS today; otherwise the full date ("Thursday, April 23") with NO mark —
+  the mark means "live day," never decoration.
+- **Side links** walk one day at a time and carry the label ONLY — no
+  preview text (James, 2026-06-10): "Yesterday"/"Tomorrow" when that side IS
+  yesterday/tomorrow, otherwise the short date ("Wed, Apr 22").
+- **Window bounds**: at +7/−7 the outbound side renders disabled (no href,
+  `--color-text-quaternary`), preserving the 1fr/auto/1fr grid so the center
+  never shifts.
+- **Substrate**: none required — the strip is pure chrome (dates + routing),
+  no producer payload, no claims.
 
 ## When to use it
 
@@ -29,13 +45,29 @@ for a separate Weekly Forecast surface.
 ## Composition
 
 - Fixed strip under `FolioBar`
-- Previous-day link with short preview
+- Previous-day link (label only)
 - Center current-day label with turmeric mark. Use "Today" visibly when the
   date is already present in `FolioBar`; keep the exact date in the accessible
   label if needed.
-- Next-day link with short preview
+- Next-day link (label only)
 - All visible strip text uses `--font-mono` because DayStrip is chrome, not
   editorial body copy.
+
+## Future direction — tabs become pages (James, 2026-06-10)
+
+The strip chrome generalizes beyond dates: it can replace tabs. Instead of
+tabbed views inside one surface (e.g. account detail's Health / Context /
+Work), each view becomes its OWN routable page surface (own TSX, own URL),
+and a strip of this shape answers "which page of this entity am I on" —
+sides navigate sibling pages, center names the current page. Future-proofs
+any entity that grows to multiple pages.
+
+Constraints when generalizing: one strip = one navigation axis (never dates
+AND siblings in the same strip); the pulsing turmeric mark stays exclusive
+to "live day" and does not generalize to "current page"; sides stay
+label-only. Whether this ships as a DayStrip variant or a sibling pattern
+(audit chrome overlap first per DS convention) is decided when account
+detail's page split is designed — not minted pre-emptively.
 
 ## Source
 

@@ -6,7 +6,7 @@ mod harness;
 use chrono::{TimeZone, Utc};
 use dailyos_lib::abilities::prepare_meeting::{prepare_meeting, PrepareMeetingInput};
 use dailyos_lib::abilities::provenance::{
-    validate_subject_ownership, DataSource, EntityId, FieldAttribution, FieldPath, OwnershipError,
+    validate_subject_ownership, DataSource, EntityId, FieldAttribution, FieldPath,
     OwnershipPolicy, OwnershipRenderPolicy, ProvenanceBuilder, ProvenanceBuilderConfig,
     SourceAttribution, SourceIdentifier, SubjectAttribution, SubjectRef,
 };
@@ -101,18 +101,21 @@ fn bundle1_adjacent_account_content_needs_verification_before_confident_render()
         "Blake Branch owns cluster-1.example.com migration risk for Adjacent Example.",
     );
 
-    let err = validate_subject_ownership(
+    let report = validate_subject_ownership(
         &output,
         &[FieldPath::new("/summary").unwrap()],
         bundle1_policy(),
     )
-    .unwrap_err();
+    .expect("adjacent-account bleed must degrade to NeedsVerification, not hard-error the render");
 
-    assert!(matches!(
-        err,
-        OwnershipError::ConfidentRenderLowCrossEntityCoherence { hit_count, .. }
-            if hit_count >= 1
-    ));
+    // Bleed is still detected (recorded as cross-entity coherence hits) but it
+    // degrades the render to NeedsVerification rather than blanking the whole
+    // composition with a hard error.
+    assert_eq!(report.render_policy, OwnershipRenderPolicy::NeedsVerification);
+    assert!(
+        !report.cross_entity_coherence_hits.is_empty(),
+        "adjacent-account bleed must still be detected as cross-entity coherence hits"
+    );
 }
 
 #[test]

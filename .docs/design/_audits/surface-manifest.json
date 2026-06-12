@@ -13,9 +13,11 @@
       "module": "src/pages/AccountDetailPage.module.css",
       "module_prefix": "AccountDetailPage",
       "component": "AccountDetailPage",
-      "route_paths": ["/accounts/$accountId"],
-      "surface_model": "composition-first variant-D composed scroll",
-      "notes": "v1.5.0 W1 target reference. Source migrates from the old Health/Context/Work template during W1 L1."
+      "route_paths": [
+        "/accounts/$accountId"
+      ],
+      "surface_model": "production mirror: 3 JTBD views (Health & Outlook / Context / The Work) + fixed bottom view switcher",
+      "notes": "Mirrors PRODUCTION (public/main). The v1.5.0 composition design target lives at reference/experiments/account-composition-v150.html."
     },
     {
       "html": ".docs/design/reference/surfaces/accounts.html",
@@ -35,7 +37,9 @@
       "module": "src/pages/ActionDetailPage.module.css",
       "module_prefix": "ActionDetailPage",
       "component": "ActionDetailPage",
-      "route_paths": ["/actions/$actionId"]
+      "route_paths": [
+        "/actions/$actionId"
+      ]
     },
     {
       "html": ".docs/design/reference/surfaces/inbox.html",
@@ -49,7 +53,9 @@
       "module": "src/pages/EmailsPage.module.css",
       "module_prefix": "EmailsPage",
       "component": "EmailsPage",
-      "route_paths": ["/emails"]
+      "route_paths": [
+        "/emails"
+      ]
     },
     {
       "html": ".docs/design/reference/surfaces/me.html",
@@ -105,7 +111,9 @@
       "module": "src/pages/HistoryPage.module.css",
       "module_prefix": "HistoryPage",
       "component": "HistoryPage",
-      "route_paths": ["/history"]
+      "route_paths": [
+        "/history"
+      ]
     },
     {
       "html": ".docs/design/reference/surfaces/onboarding/welcome.html",

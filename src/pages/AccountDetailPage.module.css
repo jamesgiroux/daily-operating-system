@@ -367,6 +367,14 @@
   border-top: 1px solid var(--color-rule-light);
 }
 
+/* Chrome-free shell for intelligence-backed chapters: the production
+ * components draw their own rules and headings, so the block contributes
+ * no border or padding of its own. */
+.compositionQuietBlock {
+  display: grid;
+  gap: var(--space-md);
+}
+
 .compositionFeaturedBlock {
   display: grid;
   gap: var(--space-lg);
@@ -374,6 +382,20 @@
   border: 1px solid var(--color-rule-light);
   border-radius: var(--radius-editorial-sm);
   background: var(--color-surface-primary);
+}
+
+/* Trust as opacity: enrichment-inferred content (no hard source) reads at
+ * reduced presence; hover/focus restores it. The tooltip + confirm/contest
+ * carry the "why" — no loud trust chip. Hard-sourced content is full presence
+ * (no class). Keyed off the producer's provenance_kind. */
+.compositionInferred {
+  opacity: 0.62;
+  transition: opacity 120ms ease;
+}
+
+.compositionInferred:hover,
+.compositionInferred:focus-within {
+  opacity: 1;
 }
 
 .compositionBlockHeader {

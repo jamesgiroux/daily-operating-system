@@ -1,5 +1,3 @@
-@import './design-tokens.css';
-
 .VitalsStrip_strip {
   margin-top: var(--space-lg);
   margin-bottom: var(--space-lg);

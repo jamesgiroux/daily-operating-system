@@ -1,0 +1,2849 @@
+diff --git a/src-tauri/abilities-runtime/src/abilities/entity_intake/producer.rs b/src-tauri/abilities-runtime/src/abilities/entity_intake/producer.rs
+index 644993bc..be51e930 100644
+--- a/src-tauri/abilities-runtime/src/abilities/entity_intake/producer.rs
++++ b/src-tauri/abilities-runtime/src/abilities/entity_intake/producer.rs
+@@ -1,8 +1,8 @@
++use crate::abilities::provenance::trust::claim_trust_band_from_score;
+ use crate::abilities::provenance::{
+     AbilityExecutionMode, AbilityVersion, FieldAttribution, FieldPath, ProvenanceBuilder,
+     ProvenanceBuilderConfig, SchemaVersion, SubjectAttribution, SubjectRef,
+ };
+-use crate::abilities::provenance::trust::claim_trust_band_from_score;
+ use crate::abilities::{
+     AbilityCategory, AbilityContext, AbilityError, AbilityErrorKind, AbilityResult, Actor,
+ };
+@@ -22,7 +22,12 @@ pub async fn entity_intake(
+     let receipt = ctx
+         .services()
+         .workspace_intake()
+-        .ok_or_else(|| hard_error("WorkspaceIntakeUnavailable", "workspace intake service unavailable"))?
++        .ok_or_else(|| {
++            hard_error(
++                "WorkspaceIntakeUnavailable",
++                "workspace intake service unavailable",
++            )
++        })?
+         .ingest(
+             ctx,
+             WorkspaceIntakeRequest {
+@@ -101,7 +106,10 @@ async fn read_claims_for_block_render(
+         .collect())
+ }
+ 
+-fn project_claim(claim: IntelligenceClaim, render_actor: &RenderActor) -> Option<EntityIntakeClaim> {
++fn project_claim(
++    claim: IntelligenceClaim,
++    render_actor: &RenderActor,
++) -> Option<EntityIntakeClaim> {
+     let rendered = renderable_claim_text_with_value(
+         &claim,
+         &claim.text,
+@@ -149,7 +157,9 @@ fn workspace_intake_error(error: WorkspaceIntakeError) -> AbilityError {
+         WorkspaceIntakeError::InvalidEntityTypeSlug(value) => {
+             hard_error("InvalidEntityType", value)
+         }
+-        WorkspaceIntakeError::InvalidEntityId => hard_error("InvalidEntityId", "entity_id is invalid"),
++        WorkspaceIntakeError::InvalidEntityId => {
++            hard_error("InvalidEntityId", "entity_id is invalid")
++        }
+         WorkspaceIntakeError::EntityNotFound => hard_error("EntityNotFound", "entity not found"),
+         WorkspaceIntakeError::InvalidCategorySlug(value) => {
+             hard_error("InvalidCategorySlug", value)
+diff --git a/src-tauri/src/commands/workspace.rs b/src-tauri/src/commands/workspace.rs
+index 045586fa..63b9a85d 100644
+--- a/src-tauri/src/commands/workspace.rs
++++ b/src-tauri/src/commands/workspace.rs
+@@ -11,7 +11,7 @@ use std::io::{Read, Seek, SeekFrom};
+ 
+ use crate::entity::EntityType;
+ use crate::services::context::{ExternalClients, ServiceContext, SystemClock, SystemRng};
+-use crate::services::workspace_ingestion::contracts::RejectionReason;
++use crate::services::workspace_ingestion::contracts::{RejectionReason, SignalEmitContext};
+ use crate::services::workspace_ingestion::lifecycle::{LifecycleRepo, LifecycleState};
+ use crate::services::workspace_ingestion::link::{LinkAttributionSource, LinkError, LinkRepo};
+ use crate::services::workspace_ingestion::pipeline::{
+@@ -20,7 +20,9 @@ use crate::services::workspace_ingestion::pipeline::{
+ };
+ use crate::services::workspace_ingestion::registry::WorkspaceSourceRegistry;
+ use crate::services::workspace_ingestion::runs::IngestionMode;
++use crate::services::workspace_ingestion::signals::emit_pre_pipeline_rejection;
+ use crate::services::workspace_ingestion::wiring;
++use crate::signals::propagation::PropagationEngine;
+ 
+ #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+ #[serde(rename_all = "camelCase")]
+@@ -273,11 +275,11 @@ pub async fn process_inbox_file(
+         .canonicalize()
+         .map_err(|e| format!("workspace_root: {e}"))?;
+ 
+-    // Validate filename before processing (path traversal guard)
+-    crate::util::validate_inbox_path(&workspace_root, &filename)?;
+-
++    let signal_engine = Arc::clone(&state.signals.engine);
+     state
+-        .db_write(move |db| process_inbox_file_in_db(db, &workspace_root, &filename))
++        .db_write(move |db| {
++            process_inbox_file_in_db(db, &workspace_root, &filename, signal_engine.as_ref())
++        })
+         .await
+         .map_err(String::from)
+ }
+@@ -289,16 +291,32 @@ pub fn process_inbox_file_for_tests(
+     workspace_root: &std::path::Path,
+     filename: &str,
+ ) -> Result<serde_json::Value, String> {
+-    serde_json::to_value(process_inbox_file_in_db(db, workspace_root, filename)?)
+-        .map_err(|e| e.to_string())
++    let signal_engine = crate::signals::propagation::default_engine();
++    serde_json::to_value(process_inbox_file_in_db(
++        db,
++        workspace_root,
++        filename,
++        &signal_engine,
++    )?)
++    .map_err(|e| e.to_string())
+ }
+ 
+ fn process_inbox_file_in_db(
+     db: &crate::db::ActionDb,
+     workspace_root: &std::path::Path,
+     filename: &str,
++    signal_engine: &PropagationEngine,
+ ) -> Result<crate::processor::ProcessingResult, String> {
+-    let inbox_path = crate::util::validate_inbox_path(workspace_root, filename)?;
++    let inbox_path = match crate::util::validate_inbox_path(workspace_root, filename) {
++        Ok(path) => path,
++        Err(error) => {
++            emit_workspace_command_pre_pipeline_rejection(
++                db,
++                RejectionReason::PathTraversalAttempt,
++            )?;
++            return Err(error);
++        }
++    };
+     let existing_file_id = lifecycle_file_id_for_path(db.conn_ref(), &inbox_path)?;
+     if let Some(file_id) = existing_file_id.as_deref() {
+         if let Some(row) =
+@@ -310,7 +328,7 @@ fn process_inbox_file_in_db(
+         }
+     }
+ 
+-    match run_staged_inbox_ingestion(db, workspace_root, &inbox_path) {
++    match run_staged_inbox_ingestion(db, workspace_root, &inbox_path, signal_engine) {
+         Ok(receipt) => Ok(processing_result_for_receipt(&receipt, filename)),
+         Err(IngestError::AlreadyProcessed { .. }) => {
+             let file_id = existing_file_id
+@@ -331,6 +349,19 @@ fn process_inbox_file_in_db(
+     }
+ }
+ 
++fn emit_workspace_command_pre_pipeline_rejection(
++    db: &crate::db::ActionDb,
++    reason: RejectionReason,
++) -> Result<(), String> {
++    let clock = SystemClock;
++    let rng = SystemRng;
++    let external = ExternalClients::default();
++    let ctx =
++        ServiceContext::new_live(&clock, &rng, &external).with_actor("system:workspace_command");
++    let signal_ctx = SignalEmitContext::new(&ctx, db, None);
++    emit_pre_pipeline_rejection(&signal_ctx, reason).map_err(|e| e.to_string())
++}
++
+ fn lifecycle_file_id_for_path(
+     conn: &rusqlite::Connection,
+     path: &std::path::Path,
+@@ -353,26 +384,41 @@ fn run_staged_inbox_ingestion(
+     db: &crate::db::ActionDb,
+     workspace_root: &std::path::Path,
+     inbox_path: &std::path::Path,
++    signal_engine: &PropagationEngine,
+ ) -> Result<IngestReceipt, IngestError> {
+-    let (file, identity) = WorkspaceSourceRegistry::open_validated(workspace_root, inbox_path)
+-        .map_err(|e| IngestError::DbError(format!("open_validated: {e:?}")))?;
++    let clock = SystemClock;
++    let rng = SystemRng;
++    let external = ExternalClients::default();
++    let ctx =
++        ServiceContext::new_live(&clock, &rng, &external).with_actor("system:workspace_command");
++    let (file, identity) = match WorkspaceSourceRegistry::open_validated(workspace_root, inbox_path)
++    {
++        Ok(opened) => opened,
++        Err(reason) => {
++            let signal_ctx = SignalEmitContext::new(&ctx, db, None);
++            emit_pre_pipeline_rejection(&signal_ctx, reason.clone())?;
++            return Err(IngestError::Rejected(reason));
++        }
++    };
+     let source_asof: DateTime<Utc> = identity
+         .canonical_path
+         .metadata()
+         .and_then(|metadata| metadata.modified())
+         .map_err(IngestError::Io)?
+         .into();
+-    let file_id = file_id_from_identity(&identity, workspace_root)
+-        .map_err(|e| IngestError::DbError(format!("file_id: {e:?}")))?;
++    let file_id = match file_id_from_identity(&identity, workspace_root) {
++        Ok(file_id) => file_id,
++        Err(_error) => {
++            let signal_ctx = SignalEmitContext::new(&ctx, db, None);
++            emit_pre_pipeline_rejection(&signal_ctx, RejectionReason::OutsideWorkspace)?;
++            return Err(IngestError::Rejected(RejectionReason::OutsideWorkspace));
++        }
++    };
+     let pipeline = wiring::build_pipeline(workspace_root.to_path_buf());
+-    let clock = SystemClock;
+-    let rng = SystemRng;
+-    let external = ExternalClients::default();
+-    let ctx =
+-        ServiceContext::new_live(&clock, &rng, &external).with_actor("system:workspace_command");
+-    pipeline.run(
++    pipeline.run_with_signal_engine(
+         &ctx,
+         db,
++        signal_engine,
+         IngestRequest {
+             file,
+             identity,
+@@ -634,7 +680,16 @@ pub fn copy_to_inbox(
+         home.join("Downloads"),
+     ];
+ 
+-    state.with_db(|db| copy_to_inbox_in_db(db, &workspace_root, paths, &allowed_source_dirs))
++    let signal_engine = Arc::clone(&state.signals.engine);
++    state.with_db(|db| {
++        copy_to_inbox_in_db(
++            db,
++            &workspace_root,
++            paths,
++            &allowed_source_dirs,
++            signal_engine.as_ref(),
++        )
++    })
+ }
+ 
+ #[cfg(any(test, debug_assertions, feature = "test-harness"))]
+@@ -645,7 +700,14 @@ pub fn copy_to_inbox_for_tests(
+     paths: Vec<String>,
+     allowed_source_dirs: &[std::path::PathBuf],
+ ) -> Result<CopyToInboxReport, String> {
+-    copy_to_inbox_in_db(db, workspace_root, paths, allowed_source_dirs)
++    let signal_engine = crate::signals::propagation::default_engine();
++    copy_to_inbox_in_db(
++        db,
++        workspace_root,
++        paths,
++        allowed_source_dirs,
++        &signal_engine,
++    )
+ }
+ 
+ fn copy_to_inbox_in_db(
+@@ -653,6 +715,7 @@ fn copy_to_inbox_in_db(
+     workspace_root: &std::path::Path,
+     paths: Vec<String>,
+     allowed_source_dirs: &[std::path::PathBuf],
++    signal_engine: &PropagationEngine,
+ ) -> Result<CopyToInboxReport, String> {
+     let inbox_dir = workspace_root.join("_inbox");
+ 
+@@ -726,7 +789,7 @@ fn copy_to_inbox_in_db(
+         match std::fs::copy(source, &dest) {
+             Ok(_) => {
+                 log::info!("Copied '{}' to inbox", filename.to_string_lossy());
+-                stage_copied_inbox_file(db, workspace_root, &dest)?;
++                stage_copied_inbox_file(db, workspace_root, &dest, signal_engine)?;
+                 copied_filenames.push(
+                     dest.file_name()
+                         .and_then(|name| name.to_str())
+@@ -750,8 +813,9 @@ fn stage_copied_inbox_file(
+     db: &crate::db::ActionDb,
+     workspace_root: &std::path::Path,
+     dest: &std::path::Path,
++    signal_engine: &PropagationEngine,
+ ) -> Result<(), String> {
+-    match run_staged_inbox_ingestion(db, workspace_root, dest) {
++    match run_staged_inbox_ingestion(db, workspace_root, dest, signal_engine) {
+         Ok(_) | Err(IngestError::AlreadyProcessed { .. }) | Err(IngestError::Rejected(_)) => Ok(()),
+         Err(error) => Err(format!("pipeline: {error}")),
+     }
+@@ -767,6 +831,14 @@ pub struct AssignInboxEntityReceipt {
+     pub resolved_path: Option<String>,
+ }
+ 
++struct AssignInboxEntityInput {
++    file_id: String,
++    entity_type_slug: String,
++    entity_id: String,
++    entity_name: String,
++    source_type_slug: String,
++}
++
+ #[allow(
+     clippy::let_underscore_must_use,
+     reason = "tauri::command macro emits internal Result glue that discards generated metadata"
+@@ -789,16 +861,20 @@ pub async fn assign_inbox_entity(
+         .canonicalize()
+         .map_err(|e| format!("workspace_root: {e}"))?;
+ 
++    let signal_engine = Arc::clone(&state.signals.engine);
+     state
+         .db_write(move |db| {
+             assign_inbox_entity_in_db(
+                 db,
+                 &workspace_root,
+-                file_id,
+-                entity_type_slug,
+-                entity_id,
+-                entity_name,
+-                source_type_slug,
++                AssignInboxEntityInput {
++                    file_id,
++                    entity_type_slug,
++                    entity_id,
++                    entity_name,
++                    source_type_slug,
++                },
++                signal_engine.as_ref(),
+             )
+         })
+         .await
+@@ -816,26 +892,34 @@ pub fn assign_inbox_entity_for_tests(
+     entity_name: String,
+     source_type_slug: String,
+ ) -> Result<AssignInboxEntityReceipt, String> {
++    let signal_engine = crate::signals::propagation::default_engine();
+     assign_inbox_entity_in_db(
+         db,
+         workspace_root,
+-        file_id,
+-        entity_type_slug,
+-        entity_id,
+-        entity_name,
+-        source_type_slug,
++        AssignInboxEntityInput {
++            file_id,
++            entity_type_slug,
++            entity_id,
++            entity_name,
++            source_type_slug,
++        },
++        &signal_engine,
+     )
+ }
+ 
+ fn assign_inbox_entity_in_db(
+     db: &crate::db::ActionDb,
+     workspace_root: &std::path::Path,
+-    file_id: String,
+-    entity_type_slug: String,
+-    entity_id: String,
+-    entity_name: String,
+-    source_type_slug: String,
++    input: AssignInboxEntityInput,
++    signal_engine: &PropagationEngine,
+ ) -> Result<AssignInboxEntityReceipt, String> {
++    let AssignInboxEntityInput {
++        file_id,
++        entity_type_slug,
++        entity_id,
++        entity_name,
++        source_type_slug,
++    } = input;
+     let entity_type = EntityType::from_str_lossy(&entity_type_slug);
+     if matches!(entity_type, EntityType::Other) {
+         return Err("invalid_entity_type".to_string());
+@@ -942,7 +1026,7 @@ fn assign_inbox_entity_in_db(
+     let ctx =
+         ServiceContext::new_live(&clock, &rng, &external).with_actor("system:workspace_command");
+     let receipt = pipeline
+-        .run(&ctx, db, request)
++        .run_with_signal_engine(&ctx, db, signal_engine, request)
+         .map_err(|e| format!("pipeline: {e}"))?;
+ 
+     Ok(AssignInboxEntityReceipt {
+diff --git a/src-tauri/src/services/context.rs b/src-tauri/src/services/context.rs
+index 5e125cbe..741c1ecc 100644
+--- a/src-tauri/src/services/context.rs
++++ b/src-tauri/src/services/context.rs
+@@ -63,6 +63,13 @@ pub struct LiveMeetingPrepStatusReader;
+ pub struct LiveClaimReceiptReader;
+ 
+ pub fn attach_live_workspace_readers(ctx: ServiceContext<'_>) -> ServiceContext<'_> {
++    attach_live_workspace_readers_with_signal_engine(ctx, None)
++}
++
++pub fn attach_live_workspace_readers_with_signal_engine(
++    ctx: ServiceContext<'_>,
++    signal_engine: Option<Arc<crate::signals::propagation::PropagationEngine>>,
++) -> ServiceContext<'_> {
+     ctx.with_entity_context_reader(Arc::new(LiveEntityContextReader))
+         .with_list_open_loops_reader(Arc::new(LiveListOpenLoopsReader))
+         .with_account_list_reader(Arc::new(LiveAccountListReader))
+@@ -79,7 +86,7 @@ pub fn attach_live_workspace_readers(ctx: ServiceContext<'_>) -> ServiceContext<
+         .with_meeting_prep_status_reader(Arc::new(LiveMeetingPrepStatusReader))
+         .with_claim_receipt_reader(Arc::new(LiveClaimReceiptReader))
+         .with_workspace_intake(Arc::new(
+-            crate::services::workspace_ingestion::workspace_intake_impl::IngestPipelineWorkspaceIntake::from_config_or_empty(),
++            crate::services::workspace_ingestion::workspace_intake_impl::IngestPipelineWorkspaceIntake::from_config_or_empty_with_signal_engine(signal_engine),
+         ))
+ }
+ 
+diff --git a/src-tauri/src/services/workspace_ingestion/contracts.rs b/src-tauri/src/services/workspace_ingestion/contracts.rs
+index c6e437f1..f8e67e69 100644
+--- a/src-tauri/src/services/workspace_ingestion/contracts.rs
++++ b/src-tauri/src/services/workspace_ingestion/contracts.rs
+@@ -37,7 +37,10 @@ pub use abilities_runtime::types::ClaimSensitivity;
+ use chrono::{DateTime, Utc};
+ use serde::{Deserialize, Serialize};
+ 
++use crate::db::ActionDb;
+ use crate::entity::EntityType;
++use crate::services::context::ServiceContext;
++use crate::signals::propagation::PropagationEngine;
+ 
+ use super::lifecycle;
+ 
+@@ -323,24 +326,117 @@ pub trait Extractor: Send + Sync {
+     ) -> Result<ExtractionReport, ExtractionError>;
+ }
+ 
++/// Context required for workspace signal emission. The caller supplies the live
++/// service/DB/propagation handles so emitters use the service signal facade
++/// instead of opening their own handles or reaching into `signals::bus`.
++pub struct SignalEmitContext<'a, 'svc> {
++    pub services: &'a ServiceContext<'svc>,
++    pub db: &'a ActionDb,
++    pub propagation: Option<&'a PropagationEngine>,
++}
++
++impl<'a, 'svc> SignalEmitContext<'a, 'svc> {
++    pub fn new(
++        services: &'a ServiceContext<'svc>,
++        db: &'a ActionDb,
++        propagation: Option<&'a PropagationEngine>,
++    ) -> Self {
++        Self {
++            services,
++            db,
++            propagation,
++        }
++    }
++}
++
++#[derive(Debug)]
++pub enum SignalEmitError {
++    MissingEntityTarget(&'static str),
++    MissingPropagationEngine(&'static str),
++    Serialize {
++        signal_type: &'static str,
++        message: String,
++    },
++    Emit {
++        signal_type: &'static str,
++        message: String,
++    },
++}
++
++impl std::fmt::Display for SignalEmitError {
++    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
++        match self {
++            Self::MissingEntityTarget(signal_type) => {
++                write!(f, "workspace signal {signal_type} missing entity target")
++            }
++            Self::MissingPropagationEngine(signal_type) => {
++                write!(
++                    f,
++                    "workspace signal {signal_type} missing propagation engine"
++                )
++            }
++            Self::Serialize {
++                signal_type,
++                message,
++            } => write!(
++                f,
++                "workspace signal {signal_type} payload serialization failed: {message}"
++            ),
++            Self::Emit {
++                signal_type,
++                message,
++            } => write!(
++                f,
++                "workspace signal {signal_type} emission failed: {message}"
++            ),
++        }
++    }
++}
++
++impl std::error::Error for SignalEmitError {}
++
+ /// Signal-emission trait. Each method maps 1:1 to a
+-/// `SignalType::WorkspaceFile*` variant in W3-B's `signals/policy_registry.rs`
+-/// (5 methods → 5 variants). W3-B's `WorkspaceSignalEmitter` implements this;
+-/// W2-A constructs the pipeline with `NullSignalEmitter` by default and
+-/// `wiring.rs` swaps in `WorkspaceSignalEmitter` after W3-B merges. W1-C's
+-/// `link::override_link` consumes `&dyn SignalEmitter` for `emit_link_changed`.
++/// `SignalType::WorkspaceFile*` variant in `signals/policy_registry.rs`.
++/// Implementations are fallible so required invalidating signals cannot be
++/// silently dropped.
+ pub trait SignalEmitter: Send + Sync {
+     fn emit_file_ingested(
+         &self,
++        ctx: &SignalEmitContext<'_, '_>,
+         file_id: &str,
+-        file_hash: &str,
+         ingestion_run_id: &str,
++        entity_type: &str,
++        entity_id: &str,
++    ) -> Result<(), SignalEmitError>;
++    fn emit_file_rejected(
++        &self,
++        ctx: &SignalEmitContext<'_, '_>,
++        file_id: Option<&str>,
++        reason: RejectionReason,
++    ) -> Result<(), SignalEmitError>;
++    fn emit_file_pending_entity_assignment(
++        &self,
++        ctx: &SignalEmitContext<'_, '_>,
++        file_id: &str,
++        ingestion_run_id: &str,
++    ) -> Result<(), SignalEmitError>;
++    fn emit_file_quarantined(
++        &self,
++        ctx: &SignalEmitContext<'_, '_>,
++        file_id: &str,
++        reason: &str,
++        actor: &str,
++        entity_type: Option<&str>,
+         entity_id: Option<&str>,
+-    );
+-    fn emit_file_rejected(&self, file_id: Option<&str>, reason: RejectionReason);
+-    fn emit_file_pending_entity_assignment(&self, file_id: &str, ingestion_run_id: &str);
+-    fn emit_file_quarantined(&self, file_id: &str, reason: &str, actor: &str);
+-    fn emit_link_changed(&self, file_id: &str, entity_id: &str, actor: &str);
++    ) -> Result<(), SignalEmitError>;
++    fn emit_link_changed(
++        &self,
++        ctx: &SignalEmitContext<'_, '_>,
++        file_id: &str,
++        entity_type: &str,
++        entity_id: &str,
++        actor: &str,
++    ) -> Result<(), SignalEmitError>;
+ }
+ 
+ /// No-op extractor. Lets W1 + W2 compile against the `Extractor` trait before
+@@ -364,18 +460,53 @@ pub struct NullSignalEmitter;
+ impl SignalEmitter for NullSignalEmitter {
+     fn emit_file_ingested(
+         &self,
++        _ctx: &SignalEmitContext<'_, '_>,
+         _file_id: &str,
+-        _file_hash: &str,
+         _ingestion_run_id: &str,
+-        _entity_id: Option<&str>,
+-    ) {
++        _entity_type: &str,
++        _entity_id: &str,
++    ) -> Result<(), SignalEmitError> {
++        Ok(())
+     }
+ 
+-    fn emit_file_rejected(&self, _file_id: Option<&str>, _reason: RejectionReason) {}
++    fn emit_file_rejected(
++        &self,
++        _ctx: &SignalEmitContext<'_, '_>,
++        _file_id: Option<&str>,
++        _reason: RejectionReason,
++    ) -> Result<(), SignalEmitError> {
++        Ok(())
++    }
+ 
+-    fn emit_file_pending_entity_assignment(&self, _file_id: &str, _ingestion_run_id: &str) {}
++    fn emit_file_pending_entity_assignment(
++        &self,
++        _ctx: &SignalEmitContext<'_, '_>,
++        _file_id: &str,
++        _ingestion_run_id: &str,
++    ) -> Result<(), SignalEmitError> {
++        Ok(())
++    }
+ 
+-    fn emit_file_quarantined(&self, _file_id: &str, _reason: &str, _actor: &str) {}
++    fn emit_file_quarantined(
++        &self,
++        _ctx: &SignalEmitContext<'_, '_>,
++        _file_id: &str,
++        _reason: &str,
++        _actor: &str,
++        _entity_type: Option<&str>,
++        _entity_id: Option<&str>,
++    ) -> Result<(), SignalEmitError> {
++        Ok(())
++    }
+ 
+-    fn emit_link_changed(&self, _file_id: &str, _entity_id: &str, _actor: &str) {}
++    fn emit_link_changed(
++        &self,
++        _ctx: &SignalEmitContext<'_, '_>,
++        _file_id: &str,
++        _entity_type: &str,
++        _entity_id: &str,
++        _actor: &str,
++    ) -> Result<(), SignalEmitError> {
++        Ok(())
++    }
+ }
+diff --git a/src-tauri/src/services/workspace_ingestion/lifecycle.rs b/src-tauri/src/services/workspace_ingestion/lifecycle.rs
+index b53bd549..389ab07e 100644
+--- a/src-tauri/src/services/workspace_ingestion/lifecycle.rs
++++ b/src-tauri/src/services/workspace_ingestion/lifecycle.rs
+@@ -30,10 +30,9 @@ use super::pipeline::EntityRef;
+ /// - `Pending` → `PendingEntityAssignment`: W2-A emits
+ ///   `emit_file_pending_entity_assignment` when intake cannot resolve entity
+ ///   (maps to `WorkspaceFilePendingEntityAssignment`).
+-/// - Any state → `Quarantined`: W2-A's `quarantine_source(file_id, reason,
+-///   actor)` emits `emit_file_quarantined` (maps to
+-///   `WorkspaceFileQuarantined`; triggers claim retraction for the file's
+-///   prior claims).
++/// - Any state → `Quarantined`: W2-A's `quarantine_source(..., file_id,
++///   reason, actor)` emits `emit_file_quarantined` (maps to
++///   `WorkspaceFileQuarantined`; triggers invalidation for derived state).
+ /// - `Ingested` → `Superseded`: W2-A on successful re-ingestion of a file at
+ ///   the same `(file_id, content_sha256)` key; no signal directly, but the
+ ///   subsequent `Ingested` row emits its own `emit_file_ingested`.
+diff --git a/src-tauri/src/services/workspace_ingestion/link.rs b/src-tauri/src/services/workspace_ingestion/link.rs
+index 1f339919..94e813e6 100644
+--- a/src-tauri/src/services/workspace_ingestion/link.rs
++++ b/src-tauri/src/services/workspace_ingestion/link.rs
+@@ -31,8 +31,9 @@ use chrono::{DateTime, Utc};
+ use rusqlite::{params, Connection, OptionalExtension};
+ use serde::{Deserialize, Serialize};
+ 
+-use super::contracts::SignalEmitter;
++use super::contracts::{SignalEmitContext, SignalEmitter};
+ use super::lifecycle::UserOverride;
++use crate::db::ActionDb;
+ use crate::entity::EntityType;
+ 
+ /// Opaque UUID4 identifier for a document/entity link row.
+@@ -367,27 +368,50 @@ impl LinkRepo {
+     /// `add_link(... UserRelink)` (V1.3 fold #2).
+     pub fn override_link(
+         conn: &Connection,
++        signal_ctx: &SignalEmitContext<'_, '_>,
+         emitter: &dyn SignalEmitter,
+         file_id: &str,
+         entity_type: EntityType,
+         entity_id: &str,
+         actor: &str,
+     ) -> Result<(), LinkError> {
+-        let rows = conn
+-            .execute(
+-                "UPDATE document_entity_links SET \
+-                 user_override_actor = ?1, \
+-                 user_override_at = strftime('%Y-%m-%dT%H:%M:%fZ','now'), \
+-                 updated_at = strftime('%Y-%m-%dT%H:%M:%fZ','now') \
+-                 WHERE file_id = ?2 AND entity_type = ?3 AND entity_id = ?4 AND rejected = 0",
+-                params![actor, file_id, entity_type_slug(entity_type), entity_id],
+-            )
+-            .map_err(|e| LinkError::DbError(e.to_string()))?;
+-        if rows == 0 {
+-            return Err(LinkError::NotFound);
+-        }
+-        emitter.emit_link_changed(file_id, entity_id, actor);
+-        Ok(())
++        let db = ActionDb::from_conn(conn);
++        db.with_transaction(|tx_db| {
++            let rows = tx_db
++                .conn_ref()
++                .execute(
++                    "UPDATE document_entity_links SET \
++                     user_override_actor = ?1, \
++                     user_override_at = strftime('%Y-%m-%dT%H:%M:%fZ','now'), \
++                     updated_at = strftime('%Y-%m-%dT%H:%M:%fZ','now') \
++                     WHERE file_id = ?2 AND entity_type = ?3 AND entity_id = ?4 AND rejected = 0",
++                    params![actor, file_id, entity_type_slug(entity_type), entity_id],
++                )
++                .map_err(|e| e.to_string())?;
++            if rows == 0 {
++                return Err("workspace link override target not found".to_string());
++            }
++
++            let tx_signal_ctx =
++                SignalEmitContext::new(signal_ctx.services, tx_db, signal_ctx.propagation);
++            emitter
++                .emit_link_changed(
++                    &tx_signal_ctx,
++                    file_id,
++                    entity_type_slug(entity_type),
++                    entity_id,
++                    actor,
++                )
++                .map_err(|e| e.to_string())?;
++            Ok(())
++        })
++        .map_err(|message| {
++            if message == "workspace link override target not found" {
++                LinkError::NotFound
++            } else {
++                LinkError::DbError(message)
++            }
++        })
+     }
+ 
+     /// Reject-existing API. Flips `rejected = 1` and populates
+@@ -423,6 +447,8 @@ impl LinkRepo {
+ #[cfg(test)]
+ mod tests {
+     use super::*;
++    use crate::db::test_utils::test_db;
++    use crate::services::context::{ExternalClients, ServiceContext, SystemClock, SystemRng};
+     use crate::services::workspace_ingestion::contracts::NullSignalEmitter;
+ 
+     fn fresh_conn() -> Connection {
+@@ -480,6 +506,19 @@ mod tests {
+         .expect("insert link");
+     }
+ 
++    fn with_null_signal_context<T>(
++        f: impl FnOnce(&SignalEmitContext<'_, '_>, &NullSignalEmitter) -> T,
++    ) -> T {
++        let db = test_db();
++        let clock = SystemClock;
++        let rng = SystemRng;
++        let external = ExternalClients::default();
++        let services = ServiceContext::new_live(&clock, &rng, &external);
++        let signal_ctx = SignalEmitContext::new(&services, &db, None);
++        let emitter = NullSignalEmitter;
++        f(&signal_ctx, &emitter)
++    }
++
+     #[test]
+     fn list_links_for_file_filters_rejected_when_include_false() {
+         let conn = fresh_conn();
+@@ -528,15 +567,17 @@ mod tests {
+             LinkAttributionSource::Classifier,
+             false,
+         );
+-        let emitter = NullSignalEmitter;
+-        LinkRepo::override_link(
+-            &conn,
+-            &emitter,
+-            "wf-1",
+-            EntityType::Account,
+-            "acme",
+-            "user-1",
+-        )
++        with_null_signal_context(|signal_ctx, emitter| {
++            LinkRepo::override_link(
++                &conn,
++                signal_ctx,
++                emitter,
++                "wf-1",
++                EntityType::Account,
++                "acme",
++                "user-1",
++            )
++        })
+         .expect("Ok");
+ 
+         let links = LinkRepo::list_links_for_file(&conn, "wf-1", false).expect("Ok");
+@@ -548,15 +589,17 @@ mod tests {
+     #[test]
+     fn override_link_returns_notfound_for_missing_triple() {
+         let conn = fresh_conn();
+-        let emitter = NullSignalEmitter;
+-        let err = LinkRepo::override_link(
+-            &conn,
+-            &emitter,
+-            "wf-1",
+-            EntityType::Account,
+-            "nobody",
+-            "user-1",
+-        )
++        let err = with_null_signal_context(|signal_ctx, emitter| {
++            LinkRepo::override_link(
++                &conn,
++                signal_ctx,
++                emitter,
++                "wf-1",
++                EntityType::Account,
++                "nobody",
++                "user-1",
++            )
++        })
+         .expect_err("missing");
+         assert!(matches!(err, LinkError::NotFound));
+     }
+@@ -573,16 +616,18 @@ mod tests {
+             LinkAttributionSource::Classifier,
+             true, // rejected
+         );
+-        let emitter = NullSignalEmitter;
+         // override_link only touches active rows; rejected link → NotFound.
+-        let err = LinkRepo::override_link(
+-            &conn,
+-            &emitter,
+-            "wf-1",
+-            EntityType::Account,
+-            "acme",
+-            "user-1",
+-        )
++        let err = with_null_signal_context(|signal_ctx, emitter| {
++            LinkRepo::override_link(
++                &conn,
++                signal_ctx,
++                emitter,
++                "wf-1",
++                EntityType::Account,
++                "acme",
++                "user-1",
++            )
++        })
+         .expect_err("rejected link should NotFound");
+         assert!(matches!(err, LinkError::NotFound));
+     }
+diff --git a/src-tauri/src/services/workspace_ingestion/pipeline.rs b/src-tauri/src/services/workspace_ingestion/pipeline.rs
+index 025d4953..30ad32a6 100644
+--- a/src-tauri/src/services/workspace_ingestion/pipeline.rs
++++ b/src-tauri/src/services/workspace_ingestion/pipeline.rs
+@@ -17,11 +17,12 @@ use crate::db::ActionDb;
+ use crate::entity::EntityType;
+ use crate::services::claims::{commit_claim, ClaimProposal};
+ use crate::services::context::ServiceContext;
++use crate::signals::propagation::PropagationEngine;
+ 
+ use super::contracts::{
+     DroppedFact, DroppedFactSource, ExtractionContext, ExtractionReport, Extractor, FileIdentity,
+-    RejectionReason, ResolvedLinkedSubject, SignalEmitter, WorkspaceCategory,
+-    WorkspaceClaimProposal,
++    RejectionReason, ResolvedLinkedSubject, SignalEmitContext, SignalEmitError, SignalEmitter,
++    WorkspaceCategory, WorkspaceClaimProposal,
+ };
+ use super::lifecycle::{workspace_file_kind_slug, LifecycleError, LifecycleRepo, LifecycleState};
+ use super::link::{LinkAttributionSource, LinkError, LinkRepo};
+@@ -133,11 +134,32 @@ impl IngestPipeline {
+         &self,
+         ctx: &ServiceContext<'_>,
+         db: &ActionDb,
++        request: IngestRequest,
++    ) -> Result<IngestReceipt, IngestError> {
++        self.run_inner(ctx, db, None, request)
++    }
++
++    pub fn run_with_signal_engine(
++        &self,
++        ctx: &ServiceContext<'_>,
++        db: &ActionDb,
++        propagation: &PropagationEngine,
++        request: IngestRequest,
++    ) -> Result<IngestReceipt, IngestError> {
++        self.run_inner(ctx, db, Some(propagation), request)
++    }
++
++    fn run_inner(
++        &self,
++        ctx: &ServiceContext<'_>,
++        db: &ActionDb,
++        propagation: Option<&PropagationEngine>,
+         mut request: IngestRequest,
+     ) -> Result<IngestReceipt, IngestError> {
+         ctx.check_mutation_allowed()
+             .map_err(|e| IngestError::DbError(format!("workspace ingestion blocked: {e}")))?;
+         let conn = db.conn_ref();
++        let signal_ctx = SignalEmitContext::new(ctx, db, propagation);
+         let expected = file_id_from_identity(&request.identity, &self.workspace_root)
+             .map_err(|e| IngestError::DbError(format!("file id derivation failed: {e:?}")))?;
+         if expected != request.file_id {
+@@ -162,7 +184,7 @@ impl IngestPipeline {
+             let file_size = request.file.metadata().map_err(IngestError::Io)?.len();
+             if file_size > self.max_file_bytes {
+                 self.reject_before_run(
+-                    conn,
++                    &signal_ctx,
+                     &request.file_id,
+                     RejectionReason::FileTooLarge,
+                     LifecycleState::Pending,
+@@ -175,13 +197,23 @@ impl IngestPipeline {
+                 .file
+                 .read_to_end(&mut bytes)
+                 .map_err(IngestError::Io)?;
+-            String::from_utf8(bytes)
+-                .map_err(|_| IngestError::Rejected(RejectionReason::UnsupportedFormat))?
++            match String::from_utf8(bytes) {
++                Ok(content) => content,
++                Err(_) => {
++                    self.reject_before_run(
++                        &signal_ctx,
++                        &request.file_id,
++                        RejectionReason::UnsupportedFormat,
++                        LifecycleState::Pending,
++                    )?;
++                    return Err(IngestError::Rejected(RejectionReason::UnsupportedFormat));
++                }
++            }
+         };
+         let file_size = content.len() as u64;
+         if file_size > self.max_file_bytes {
+             self.reject_before_run(
+-                conn,
++                &signal_ctx,
+                 &request.file_id,
+                 RejectionReason::FileTooLarge,
+                 LifecycleState::Pending,
+@@ -190,7 +222,7 @@ impl IngestPipeline {
+         }
+         if content.as_bytes().contains(&0) {
+             self.reject_before_run(
+-                conn,
++                &signal_ctx,
+                 &request.file_id,
+                 RejectionReason::UnsupportedFormat,
+                 LifecycleState::Pending,
+@@ -331,84 +363,100 @@ impl IngestPipeline {
+             }
+         }
+ 
+-        let mut committed_count = 0_u64;
+-        for proposal in commit_ready {
+-            let claim_type = proposal.claim_type.clone();
+-            if let Err(error) = commit_claim(ctx, db, proposal) {
+-                let commit_errors = vec![CommitErrorReport {
+-                    claim_type,
+-                    reason: error.to_string(),
+-                }];
+-                let error_log = run_error_log(
+-                    &extraction_report,
+-                    committed_count,
+-                    &commit_errors,
+-                    committed_count > 0,
+-                );
+-                RunsRepo::complete_run(
+-                    conn,
+-                    &run_id,
+-                    IngestionRunStatus::Failed,
+-                    committed_count,
+-                    Some(error_log),
+-                )?;
+-                LifecycleRepo::transition(
+-                    conn,
+-                    &request.file_id,
+-                    LifecycleState::Ingesting,
+-                    LifecycleState::Rejected,
+-                )?;
+-                return Err(IngestError::DbError(format!(
+-                    "claim commit failed: {error}"
+-                )));
+-            }
+-            committed_count += 1;
+-        }
+-
+-        let error_log = if extraction_report.dropped_facts.is_empty()
+-            && extraction_report.warnings.is_empty()
+-        {
+-            None
+-        } else {
+-            Some(run_error_log(
+-                &extraction_report,
+-                committed_count,
+-                &[],
+-                false,
+-            ))
+-        };
+-        RunsRepo::complete_run(
+-            conn,
+-            &run_id,
+-            IngestionRunStatus::Success,
+-            committed_count,
+-            error_log,
+-        )?;
+-
+         let lifecycle_state_after = if linked_subject.is_some() {
+             LifecycleState::Ingested
+         } else {
+             LifecycleState::PendingEntityAssignment
+         };
+-        LifecycleRepo::transition(
+-            conn,
+-            &request.file_id,
+-            LifecycleState::Ingesting,
+-            lifecycle_state_after,
+-        )?;
+ 
+-        let entity_id_for_signal = linked_subject.as_ref().map(|e| e.entity_id.as_str());
+-        match lifecycle_state_after {
+-            LifecycleState::Ingested => self.signal_emitter.emit_file_ingested(
++        let finalization_result = db.with_transaction(|tx_db| {
++            let tx_conn = tx_db.conn_ref();
++            let mut committed_count = 0_u64;
++            for proposal in commit_ready {
++                let claim_type = proposal.claim_type.clone();
++                if let Err(error) = commit_claim(ctx, tx_db, proposal) {
++                    return Err(format!("claim commit failed for {claim_type}: {error}"));
++                }
++                committed_count += 1;
++            }
++
++            let error_log = if extraction_report.dropped_facts.is_empty()
++                && extraction_report.warnings.is_empty()
++            {
++                None
++            } else {
++                Some(run_error_log(
++                    &extraction_report,
++                    committed_count,
++                    &[],
++                    false,
++                ))
++            };
++
++            RunsRepo::complete_run(
++                tx_conn,
++                &run_id,
++                IngestionRunStatus::Success,
++                committed_count,
++                error_log,
++            )
++            .map_err(|e| e.to_string())?;
++
++            LifecycleRepo::transition(
++                tx_conn,
+                 &request.file_id,
+-                &content_sha256,
+-                &run_id.0,
+-                entity_id_for_signal,
+-            ),
+-            LifecycleState::PendingEntityAssignment => self
+-                .signal_emitter
+-                .emit_file_pending_entity_assignment(&request.file_id, &run_id.0),
+-            _ => {}
++                LifecycleState::Ingesting,
++                lifecycle_state_after,
++            )
++            .map_err(|e| e.to_string())?;
++
++            let tx_signal_ctx = SignalEmitContext::new(ctx, tx_db, propagation);
++            let entity_type_for_signal = linked_subject.as_ref().map(|e| e.subject_kind_slug());
++            let entity_id_for_signal = linked_subject.as_ref().map(|e| e.entity_id.as_str());
++            match lifecycle_state_after {
++                LifecycleState::Ingested => self
++                    .signal_emitter
++                    .emit_file_ingested(
++                        &tx_signal_ctx,
++                        &request.file_id,
++                        &run_id.0,
++                        entity_type_for_signal
++                            .ok_or(SignalEmitError::MissingEntityTarget(
++                                "workspace_file_ingested",
++                            ))
++                            .map_err(|e| e.to_string())?,
++                        entity_id_for_signal
++                            .ok_or(SignalEmitError::MissingEntityTarget(
++                                "workspace_file_ingested",
++                            ))
++                            .map_err(|e| e.to_string())?,
++                    )
++                    .map_err(|e| e.to_string())?,
++                LifecycleState::PendingEntityAssignment => self
++                    .signal_emitter
++                    .emit_file_pending_entity_assignment(
++                        &tx_signal_ctx,
++                        &request.file_id,
++                        &run_id.0,
++                    )
++                    .map_err(|e| e.to_string())?,
++                _ => {}
++            }
++            Ok(committed_count)
++        });
++        if let Err(message) = finalization_result {
++            if let Err(cleanup) = fail_in_progress_run_after_finalization_error(
++                conn,
++                &run_id,
++                &request.file_id,
++                &message,
++            ) {
++                log::warn!(
++                    "workspace ingestion signal finalization cleanup failed for {}: {cleanup}",
++                    request.file_id
++                );
++            }
++            return Err(IngestError::DbError(message));
+         }
+ 
+         let resolved_path =
+@@ -484,7 +532,7 @@ impl IngestPipeline {
+ 
+     fn reject_before_run(
+         &self,
+-        conn: &Connection,
++        signal_ctx: &SignalEmitContext<'_, '_>,
+         file_id: &str,
+         reason: RejectionReason,
+         from: LifecycleState,
+@@ -494,10 +542,24 @@ impl IngestPipeline {
+             found_bytes: None,
+             detected_format: None,
+         };
+-        LifecycleRepo::transition(conn, file_id, from, LifecycleState::Rejected)?;
+-        self.signal_emitter
+-            .emit_file_rejected(Some(file_id), reason.clone());
+-        Ok(())
++        signal_ctx
++            .db
++            .with_transaction(|tx_db| {
++                LifecycleRepo::transition(
++                    tx_db.conn_ref(),
++                    file_id,
++                    from,
++                    LifecycleState::Rejected,
++                )
++                .map_err(|e| e.to_string())?;
++                let tx_signal_ctx =
++                    SignalEmitContext::new(signal_ctx.services, tx_db, signal_ctx.propagation);
++                self.signal_emitter
++                    .emit_file_rejected(&tx_signal_ctx, Some(file_id), reason.clone())
++                    .map_err(|e| e.to_string())?;
++                Ok(())
++            })
++            .map_err(IngestError::DbError)
+     }
+ }
+ 
+@@ -871,6 +933,30 @@ fn is_valid_doc_type(value: &str) -> bool {
+     }
+ }
+ 
++fn fail_in_progress_run_after_finalization_error(
++    conn: &Connection,
++    run_id: &IngestionRunId,
++    file_id: &str,
++    message: &str,
++) -> Result<(), IngestError> {
++    let error_log = serde_json::json!({
++        "error": "workspace_ingestion_finalization_failed",
++        "message": message,
++    });
++    RunsRepo::complete_run(conn, run_id, IngestionRunStatus::Failed, 0, Some(error_log))?;
++    if let Some(row) = LifecycleRepo::get(conn, file_id)? {
++        if row.lifecycle_state == LifecycleState::Ingesting {
++            LifecycleRepo::transition(
++                conn,
++                file_id,
++                LifecycleState::Ingesting,
++                LifecycleState::Rejected,
++            )?;
++        }
++    }
++    Ok(())
++}
++
+ pub fn file_id_from_identity(
+     identity: &FileIdentity,
+     workspace_root: &Path,
+@@ -886,16 +972,51 @@ pub fn file_id_from_identity(
+ }
+ 
+ pub fn quarantine_source(
+-    conn: &Connection,
++    signal_ctx: &SignalEmitContext<'_, '_>,
++    emitter: &dyn SignalEmitter,
+     file_id: &str,
+     reason: &str,
+     actor: QuarantineActor,
+ ) -> Result<(), IngestError> {
+-    let actor_id = match actor {
++    let actor_id = actor_id_for_quarantine(actor);
++    signal_ctx
++        .db
++        .with_transaction(|tx_db| {
++            let tx_signal_ctx =
++                SignalEmitContext::new(signal_ctx.services, tx_db, signal_ctx.propagation);
++            let lifecycle = transition_source_to_quarantined(tx_db.conn_ref(), file_id, &actor_id)
++                .map_err(|e| e.to_string())?;
++            let (entity_type, entity_id) =
++                quarantine_signal_target(tx_db.conn_ref(), &lifecycle, file_id)
++                    .map_err(|e| e.to_string())?;
++            emitter
++                .emit_file_quarantined(
++                    &tx_signal_ctx,
++                    file_id,
++                    reason,
++                    &actor_id,
++                    entity_type.as_deref(),
++                    entity_id.as_deref(),
++                )
++                .map_err(|e| e.to_string())?;
++            Ok(())
++        })
++        .map_err(IngestError::DbError)
++}
++
++fn actor_id_for_quarantine(actor: QuarantineActor) -> String {
++    match actor {
+         QuarantineActor::User { user_id } => user_id,
+-    };
+-    LifecycleRepo::record_user_override(conn, file_id, &actor_id)?;
+-    let lifecycle = LifecycleRepo::get(conn, file_id)?.ok_or(LifecycleError::FileNotFound)?;
++    }
++}
++
++fn transition_source_to_quarantined(
++    conn: &Connection,
++    file_id: &str,
++    actor_id: &str,
++) -> Result<super::lifecycle::WorkspaceFileLifecycle, IngestError> {
++    LifecycleRepo::record_user_override(conn, file_id, actor_id)?;
++    let mut lifecycle = LifecycleRepo::get(conn, file_id)?.ok_or(LifecycleError::FileNotFound)?;
+     if lifecycle.lifecycle_state != LifecycleState::Quarantined {
+         LifecycleRepo::transition(
+             conn,
+@@ -903,9 +1024,34 @@ pub fn quarantine_source(
+             lifecycle.lifecycle_state,
+             LifecycleState::Quarantined,
+         )?;
++        lifecycle = LifecycleRepo::get(conn, file_id)?.ok_or(LifecycleError::FileNotFound)?;
+     }
+-    let _redacted_reason = reason;
+-    Ok(())
++    Ok(lifecycle)
++}
++
++fn quarantine_signal_target(
++    conn: &Connection,
++    lifecycle: &super::lifecycle::WorkspaceFileLifecycle,
++    file_id: &str,
++) -> Result<(Option<String>, Option<String>), IngestError> {
++    if let (Some(entity_type), Some(entity_id)) =
++        (lifecycle.entity_type.as_ref(), lifecycle.entity_id.as_ref())
++    {
++        return Ok((Some(entity_type.clone()), Some(entity_id.clone())));
++    }
++
++    let active_links =
++        LinkRepo::list_links_for_file(conn, file_id, false).map_err(link_error_to_ingest)?;
++    let [link] = active_links.as_slice() else {
++        return Ok((None, None));
++    };
++    if link.entity_type == EntityType::Other {
++        return Ok((None, None));
++    }
++    Ok((
++        Some(link.entity_type.as_str().to_string()),
++        Some(link.entity_id.clone()),
++    ))
+ }
+ 
+ impl From<LifecycleError> for IngestError {
+@@ -934,6 +1080,12 @@ impl From<ResolvePathError> for IngestError {
+     }
+ }
+ 
++impl From<SignalEmitError> for IngestError {
++    fn from(value: SignalEmitError) -> Self {
++        IngestError::DbError(value.to_string())
++    }
++}
++
+ impl std::fmt::Display for IngestError {
+     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+         match self {
+diff --git a/src-tauri/src/services/workspace_ingestion/signals.rs b/src-tauri/src/services/workspace_ingestion/signals.rs
+index 8caf7c08..065dbdcc 100644
+--- a/src-tauri/src/services/workspace_ingestion/signals.rs
++++ b/src-tauri/src/services/workspace_ingestion/signals.rs
+@@ -1,7 +1,418 @@
+-//! Workspace signal emission — W3-B fills this with the
+-//! `WorkspaceSignalEmitter` impl of `contracts::SignalEmitter`. Each of the
+-//! five trait methods maps 1:1 to a `SignalType::WorkspaceFile*` variant added
+-//! to `signals/policy_registry.rs` by the same lane.
++//! Workspace signal emission.
+ //!
+-//! W1-A pre-creates this placeholder so no later lane needs to create a new
+-//! file or edit `mod.rs`.
++//! This layer is deliberately thin: workspace ingestion owns the privacy-safe
++//! payload shape, while actual signal persistence and propagation go through
++//! `services::signals`.
++
++use serde::{Deserialize, Serialize};
++
++use crate::services;
++
++use super::contracts::{RejectionReason, SignalEmitContext, SignalEmitError, SignalEmitter};
++
++pub const WORKSPACE_FILE_INGESTED: &str = "workspace_file_ingested";
++pub const WORKSPACE_FILE_REJECTED: &str = "workspace_file_rejected";
++pub const WORKSPACE_FILE_PENDING_ENTITY_ASSIGNMENT: &str =
++    "workspace_file_pending_entity_assignment";
++pub const WORKSPACE_FILE_QUARANTINED: &str = "workspace_file_quarantined";
++pub const WORKSPACE_FILE_ENTITY_LINK_CHANGED: &str = "workspace_file_entity_link_changed";
++
++const WORKSPACE_SIGNAL_SOURCE: &str = "workspace_ingestion";
++const WORKSPACE_FILE_ENTITY_TYPE: &str = "workspace_file";
++const WORKSPACE_SYSTEM_ENTITY_TYPE: &str = "workspace_ingestion";
++const WORKSPACE_SYSTEM_ENTITY_ID: &str = "workspace_ingestion";
++const WORKSPACE_SIGNAL_CONFIDENCE: f64 = 1.0;
++
++#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
++pub struct WorkspaceFileIngestedSignal {
++    pub file_id: String,
++    pub ingestion_run_id: String,
++    pub entity_type: String,
++    pub entity_id: String,
++}
++
++#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
++pub struct WorkspaceFileRejectedSignal {
++    #[serde(skip_serializing_if = "Option::is_none")]
++    pub file_id: Option<String>,
++    pub reason_code: String,
++}
++
++#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
++pub struct WorkspaceFilePendingEntityAssignmentSignal {
++    pub file_id: String,
++    pub ingestion_run_id: String,
++}
++
++#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
++pub struct WorkspaceFileQuarantinedSignal {
++    pub file_id: String,
++    pub reason_code: String,
++    pub actor_kind: String,
++    #[serde(skip_serializing_if = "Option::is_none")]
++    pub entity_type: Option<String>,
++    #[serde(skip_serializing_if = "Option::is_none")]
++    pub entity_id: Option<String>,
++}
++
++#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
++pub struct WorkspaceFileEntityLinkChangedSignal {
++    pub file_id: String,
++    pub entity_type: String,
++    pub entity_id: String,
++    pub actor_kind: String,
++}
++
++#[derive(Debug, Default)]
++pub struct WorkspaceSignalEmitter;
++
++impl SignalEmitter for WorkspaceSignalEmitter {
++    fn emit_file_ingested(
++        &self,
++        ctx: &SignalEmitContext<'_, '_>,
++        file_id: &str,
++        ingestion_run_id: &str,
++        entity_type: &str,
++        entity_id: &str,
++    ) -> Result<(), SignalEmitError> {
++        let payload = WorkspaceFileIngestedSignal {
++            file_id: file_id.to_string(),
++            ingestion_run_id: ingestion_run_id.to_string(),
++            entity_type: entity_type.to_string(),
++            entity_id: entity_id.to_string(),
++        };
++        emit_invalidating(
++            ctx,
++            WORKSPACE_FILE_INGESTED,
++            entity_type,
++            entity_id,
++            &payload,
++        )
++    }
++
++    fn emit_file_rejected(
++        &self,
++        ctx: &SignalEmitContext<'_, '_>,
++        file_id: Option<&str>,
++        reason: RejectionReason,
++    ) -> Result<(), SignalEmitError> {
++        let payload = WorkspaceFileRejectedSignal {
++            file_id: file_id.map(str::to_string),
++            reason_code: rejection_reason_code(&reason).to_string(),
++        };
++        let entity_type = file_id
++            .map(|_| WORKSPACE_FILE_ENTITY_TYPE)
++            .unwrap_or(WORKSPACE_SYSTEM_ENTITY_TYPE);
++        let entity_id = file_id.unwrap_or(WORKSPACE_SYSTEM_ENTITY_ID);
++        emit_local(
++            ctx,
++            WORKSPACE_FILE_REJECTED,
++            entity_type,
++            entity_id,
++            &payload,
++        )
++    }
++
++    fn emit_file_pending_entity_assignment(
++        &self,
++        ctx: &SignalEmitContext<'_, '_>,
++        file_id: &str,
++        ingestion_run_id: &str,
++    ) -> Result<(), SignalEmitError> {
++        let payload = WorkspaceFilePendingEntityAssignmentSignal {
++            file_id: file_id.to_string(),
++            ingestion_run_id: ingestion_run_id.to_string(),
++        };
++        emit_local(
++            ctx,
++            WORKSPACE_FILE_PENDING_ENTITY_ASSIGNMENT,
++            WORKSPACE_FILE_ENTITY_TYPE,
++            file_id,
++            &payload,
++        )
++    }
++
++    fn emit_file_quarantined(
++        &self,
++        ctx: &SignalEmitContext<'_, '_>,
++        file_id: &str,
++        reason: &str,
++        actor: &str,
++        entity_type: Option<&str>,
++        entity_id: Option<&str>,
++    ) -> Result<(), SignalEmitError> {
++        let payload = WorkspaceFileQuarantinedSignal {
++            file_id: file_id.to_string(),
++            reason_code: quarantine_reason_code(reason).to_string(),
++            actor_kind: actor_kind(actor).to_string(),
++            entity_type: entity_type.map(str::to_string),
++            entity_id: entity_id.map(str::to_string),
++        };
++        match (entity_type, entity_id) {
++            (Some(entity_type), Some(entity_id)) => emit_invalidating(
++                ctx,
++                WORKSPACE_FILE_QUARANTINED,
++                entity_type,
++                entity_id,
++                &payload,
++            ),
++            _ => emit_local(
++                ctx,
++                WORKSPACE_FILE_QUARANTINED,
++                WORKSPACE_FILE_ENTITY_TYPE,
++                file_id,
++                &payload,
++            ),
++        }
++    }
++
++    fn emit_link_changed(
++        &self,
++        ctx: &SignalEmitContext<'_, '_>,
++        file_id: &str,
++        entity_type: &str,
++        entity_id: &str,
++        actor: &str,
++    ) -> Result<(), SignalEmitError> {
++        let payload = WorkspaceFileEntityLinkChangedSignal {
++            file_id: file_id.to_string(),
++            entity_type: entity_type.to_string(),
++            entity_id: entity_id.to_string(),
++            actor_kind: actor_kind(actor).to_string(),
++        };
++        emit_invalidating(
++            ctx,
++            WORKSPACE_FILE_ENTITY_LINK_CHANGED,
++            entity_type,
++            entity_id,
++            &payload,
++        )
++    }
++}
++
++pub fn emit_pre_pipeline_rejection(
++    ctx: &SignalEmitContext<'_, '_>,
++    reason: RejectionReason,
++) -> Result<(), SignalEmitError> {
++    WorkspaceSignalEmitter.emit_file_rejected(ctx, None, reason)
++}
++
++fn emit_local<T: Serialize>(
++    ctx: &SignalEmitContext<'_, '_>,
++    signal_type: &'static str,
++    entity_type: &str,
++    entity_id: &str,
++    payload: &T,
++) -> Result<(), SignalEmitError> {
++    let value = serialize_payload(signal_type, payload)?;
++    services::signals::emit(
++        ctx.services,
++        ctx.db,
++        entity_type,
++        entity_id,
++        signal_type,
++        WORKSPACE_SIGNAL_SOURCE,
++        Some(value.as_str()),
++        WORKSPACE_SIGNAL_CONFIDENCE,
++    )
++    .map(|_| ())
++    .map_err(|message| SignalEmitError::Emit {
++        signal_type,
++        message,
++    })
++}
++
++fn emit_invalidating<T: Serialize>(
++    ctx: &SignalEmitContext<'_, '_>,
++    signal_type: &'static str,
++    entity_type: &str,
++    entity_id: &str,
++    payload: &T,
++) -> Result<(), SignalEmitError> {
++    if entity_type.trim().is_empty() || entity_id.trim().is_empty() {
++        return Err(SignalEmitError::MissingEntityTarget(signal_type));
++    }
++    let engine = ctx
++        .propagation
++        .ok_or(SignalEmitError::MissingPropagationEngine(signal_type))?;
++    let value = serialize_payload(signal_type, payload)?;
++    services::signals::emit_and_propagate(
++        ctx.services,
++        ctx.db,
++        engine,
++        entity_type,
++        entity_id,
++        signal_type,
++        WORKSPACE_SIGNAL_SOURCE,
++        Some(value.as_str()),
++        WORKSPACE_SIGNAL_CONFIDENCE,
++    )
++    .map(|_| ())
++    .map_err(|message| SignalEmitError::Emit {
++        signal_type,
++        message,
++    })
++}
++
++fn serialize_payload<T: Serialize>(
++    signal_type: &'static str,
++    payload: &T,
++) -> Result<String, SignalEmitError> {
++    serde_json::to_string(payload).map_err(|error| SignalEmitError::Serialize {
++        signal_type,
++        message: error.to_string(),
++    })
++}
++
++pub fn rejection_reason_code(reason: &RejectionReason) -> &'static str {
++    match reason {
++        RejectionReason::PathTraversalAttempt => "path_traversal_attempt",
++        RejectionReason::SymlinkRefused => "symlink_refused",
++        RejectionReason::SymlinkRaced => "symlink_raced",
++        RejectionReason::OutsideWorkspace => "outside_workspace",
++        RejectionReason::FileTooLarge => "file_too_large",
++        RejectionReason::UnsupportedFormat => "unsupported_format",
++    }
++}
++
++pub fn quarantine_reason_code(reason: &str) -> &'static str {
++    match reason.trim() {
++        "" => "unspecified",
++        "user" | "user_requested" | "user_quarantined" => "user_requested",
++        "policy" | "policy_violation" => "policy_violation",
++        "malware" | "unsafe_content" => "unsafe_content",
++        "source_revoked" | "source_withdrawn" => "source_withdrawn",
++        _ => "manual_quarantine",
++    }
++}
++
++pub fn actor_kind(actor: &str) -> &'static str {
++    match actor.split(':').next().unwrap_or(actor).trim() {
++        "system" => "system",
++        "agent" => "agent",
++        "admin" => "admin",
++        "surface_client" => "surface_client",
++        "mcp_client" => "mcp_client",
++        _ => "user",
++    }
++}
++
++#[cfg(test)]
++mod tests {
++    use super::*;
++    use crate::db::test_utils::test_db;
++    use crate::services::context::{ExternalClients, ServiceContext, SystemClock, SystemRng};
++
++    fn with_signal_context<T>(
++        propagation: Option<&crate::signals::propagation::PropagationEngine>,
++        f: impl FnOnce(&SignalEmitContext<'_, '_>) -> T,
++    ) -> T {
++        let db = test_db();
++        let clock = SystemClock;
++        let rng = SystemRng;
++        let external = ExternalClients::default();
++        let services = ServiceContext::new_live(&clock, &rng, &external);
++        let signal_ctx = SignalEmitContext::new(&services, &db, propagation);
++        f(&signal_ctx)
++    }
++
++    #[test]
++    fn payload_serialization_excludes_freeform_quarantine_reason_and_actor() {
++        let payload = WorkspaceFileQuarantinedSignal {
++            file_id: "wf-1".to_string(),
++            reason_code: quarantine_reason_code("contains/private/path.txt").to_string(),
++            actor_kind: actor_kind("user-12345").to_string(),
++            entity_type: Some("account".to_string()),
++            entity_id: Some("a1".to_string()),
++        };
++
++        let value = serialize_payload(WORKSPACE_FILE_QUARANTINED, &payload).expect("serialize");
++        assert!(value.contains("\"reason_code\":\"manual_quarantine\""));
++        assert!(value.contains("\"actor_kind\":\"user\""));
++        assert!(!value.contains("private/path"));
++        assert!(!value.contains("user-12345"));
++    }
++
++    #[test]
++    fn rejection_reasons_are_controlled_codes() {
++        assert_eq!(
++            rejection_reason_code(&RejectionReason::PathTraversalAttempt),
++            "path_traversal_attempt"
++        );
++        assert_eq!(
++            rejection_reason_code(&RejectionReason::UnsupportedFormat),
++            "unsupported_format"
++        );
++    }
++
++    #[test]
++    fn invalidating_workspace_signals_require_propagation_engine() {
++        with_signal_context(None, |ctx| {
++            let emitter = WorkspaceSignalEmitter;
++            let err = emitter
++                .emit_file_ingested(ctx, "wf-1", "run-1", "account", "a1")
++                .expect_err("invalidating signal requires propagation engine");
++            assert!(matches!(
++                err,
++                SignalEmitError::MissingPropagationEngine("workspace_file_ingested")
++            ));
++        });
++    }
++
++    #[test]
++    fn rejected_signal_persists_privacy_safe_audit_payload() {
++        let db = test_db();
++        let clock = SystemClock;
++        let rng = SystemRng;
++        let external = ExternalClients::default();
++        let services = ServiceContext::new_live(&clock, &rng, &external);
++        let signal_ctx = SignalEmitContext::new(&services, &db, None);
++        let emitter = WorkspaceSignalEmitter;
++
++        emitter
++            .emit_file_rejected(
++                &signal_ctx,
++                Some("wf-1"),
++                RejectionReason::PathTraversalAttempt,
++            )
++            .expect("emit rejected");
++
++        let events = services::signals::get_by_type(
++            &db,
++            WORKSPACE_FILE_ENTITY_TYPE,
++            "wf-1",
++            WORKSPACE_FILE_REJECTED,
++        )
++        .expect("load emitted signal");
++        assert_eq!(events.len(), 1);
++        let value = events[0].value.as_deref().expect("payload");
++        assert!(value.contains("\"file_id\":\"wf-1\""));
++        assert!(value.contains("\"reason_code\":\"path_traversal_attempt\""));
++        assert!(!value.contains('/'));
++    }
++
++    #[test]
++    fn pre_pipeline_rejection_signal_uses_system_scope_without_file_id() {
++        let db = test_db();
++        let clock = SystemClock;
++        let rng = SystemRng;
++        let external = ExternalClients::default();
++        let services = ServiceContext::new_live(&clock, &rng, &external);
++        let signal_ctx = SignalEmitContext::new(&services, &db, None);
++
++        emit_pre_pipeline_rejection(&signal_ctx, RejectionReason::SymlinkRaced)
++            .expect("emit pre-pipeline rejected");
++
++        let events = services::signals::get_by_type(
++            &db,
++            WORKSPACE_SYSTEM_ENTITY_TYPE,
++            WORKSPACE_SYSTEM_ENTITY_ID,
++            WORKSPACE_FILE_REJECTED,
++        )
++        .expect("load emitted signal");
++        assert_eq!(events.len(), 1);
++        let value = events[0].value.as_deref().expect("payload");
++        assert!(value.contains("\"reason_code\":\"symlink_raced\""));
++        assert!(!value.contains("\"file_id\""));
++    }
++}
+diff --git a/src-tauri/src/services/workspace_ingestion/wiring.rs b/src-tauri/src/services/workspace_ingestion/wiring.rs
+index 6aa488a0..480cf09a 100644
+--- a/src-tauri/src/services/workspace_ingestion/wiring.rs
++++ b/src-tauri/src/services/workspace_ingestion/wiring.rs
+@@ -2,14 +2,14 @@
+ 
+ use std::path::PathBuf;
+ 
+-use super::contracts::NullSignalEmitter;
+ use super::extract::WorkspaceExtractor;
+ use super::pipeline::IngestPipeline;
++use super::signals::WorkspaceSignalEmitter;
+ 
+ pub fn build_pipeline(workspace_root: PathBuf) -> IngestPipeline {
+     IngestPipeline::new(
+         Box::new(WorkspaceExtractor),
+-        Box::new(NullSignalEmitter),
++        Box::new(WorkspaceSignalEmitter),
+         super::pipeline::DEFAULT_MAX_FILE_BYTES,
+         "workspace-extractor-v1",
+         workspace_root,
+diff --git a/src-tauri/src/services/workspace_ingestion/workspace_intake_impl.rs b/src-tauri/src/services/workspace_ingestion/workspace_intake_impl.rs
+index 39c703d8..d6a85b82 100644
+--- a/src-tauri/src/services/workspace_ingestion/workspace_intake_impl.rs
++++ b/src-tauri/src/services/workspace_ingestion/workspace_intake_impl.rs
+@@ -13,27 +13,51 @@ use crate::db::{ActionDb, LocalKeychain};
+ use crate::entity::EntityType;
+ use crate::services::context::{ExternalClients, ServiceContext, SystemClock, SystemRng};
+ 
+-use super::contracts::{RejectionReason, WorkspaceCategory, WorkspaceFileKind};
++use super::contracts::{RejectionReason, SignalEmitContext, WorkspaceCategory, WorkspaceFileKind};
+ use super::lifecycle::{lifecycle_state_slug, workspace_file_kind_from_slug};
+ use super::pipeline::{file_id_from_identity, EntityRef, FileIdError, IngestError, IngestRequest};
+ use super::registry::WorkspaceCategoryRegistry;
++use super::signals::emit_pre_pipeline_rejection;
+ use super::wiring::build_pipeline;
+ use super::{registry::WorkspaceSourceRegistry, runs::IngestionMode};
+ 
+ pub struct IngestPipelineWorkspaceIntake {
+     workspace_root: PathBuf,
++    signal_engine: Option<Arc<crate::signals::propagation::PropagationEngine>>,
+ }
+ 
+ impl IngestPipelineWorkspaceIntake {
+     pub fn new(workspace_root: PathBuf) -> Self {
+-        Self { workspace_root }
++        Self {
++            workspace_root,
++            signal_engine: None,
++        }
++    }
++
++    pub fn with_signal_engine(
++        workspace_root: PathBuf,
++        signal_engine: Arc<crate::signals::propagation::PropagationEngine>,
++    ) -> Self {
++        Self {
++            workspace_root,
++            signal_engine: Some(signal_engine),
++        }
+     }
+ 
+     pub fn from_config_or_empty() -> Self {
++        Self::from_config_or_empty_with_signal_engine(None)
++    }
++
++    pub fn from_config_or_empty_with_signal_engine(
++        signal_engine: Option<Arc<crate::signals::propagation::PropagationEngine>>,
++    ) -> Self {
+         let workspace_root = crate::state::load_config()
+             .map(|config| PathBuf::from(config.workspace_path))
+             .unwrap_or_default();
+-        Self::new(workspace_root)
++        Self {
++            workspace_root,
++            signal_engine,
++        }
+     }
+ }
+ 
+@@ -48,6 +72,7 @@ impl WorkspaceIntakeService for IngestPipelineWorkspaceIntake {
+             .check_mutation_allowed()
+             .map_err(|e| WorkspaceIntakeError::DbError(e.to_string()))?;
+         let workspace_root = self.workspace_root.clone();
++        let signal_engine = self.signal_engine.clone();
+         let original_actor = ability_actor_label(&ctx.actor).to_string();
+         let ability_id = ctx.services().ability_id.map(str::to_string);
+         tokio::task::spawn_blocking(move || {
+@@ -59,7 +84,13 @@ impl WorkspaceIntakeService for IngestPipelineWorkspaceIntake {
+             if let Some(ability_id) = ability_id.as_deref() {
+                 service_ctx = service_ctx.with_ability_id(ability_id);
+             }
+-            ingest_sync(&service_ctx, workspace_root, req, original_actor)
++            ingest_sync(
++                &service_ctx,
++                workspace_root,
++                signal_engine,
++                req,
++                original_actor,
++            )
+         })
+         .await
+         .map_err(|e| WorkspaceIntakeError::Io(format!("workspace intake task failed: {e}")))?
+@@ -69,6 +100,7 @@ impl WorkspaceIntakeService for IngestPipelineWorkspaceIntake {
+ fn ingest_sync(
+     ctx: &ServiceContext<'_>,
+     workspace_root: PathBuf,
++    signal_engine: Option<Arc<crate::signals::propagation::PropagationEngine>>,
+     req: WorkspaceIntakeRequest,
+     original_actor: String,
+ ) -> Result<WorkspaceIntakeReceipt, WorkspaceIntakeError> {
+@@ -96,15 +128,29 @@ fn ingest_sync(
+     }
+ 
+     let (file, identity) =
+-        WorkspaceSourceRegistry::open_validated(&workspace_root, Path::new(&req.file_ref))
+-            .map_err(intake_error_from_rejection)?;
++        match WorkspaceSourceRegistry::open_validated(&workspace_root, Path::new(&req.file_ref)) {
++            Ok(opened) => opened,
++            Err(reason) => {
++                let signal_ctx = SignalEmitContext::new(ctx, &db, None);
++                emit_pre_pipeline_rejection(&signal_ctx, reason.clone())
++                    .map_err(|e| WorkspaceIntakeError::DbError(e.to_string()))?;
++                return Err(intake_error_from_rejection(reason));
++            }
++        };
+     let source_asof = file
+         .metadata()
+         .and_then(|m| m.modified())
+         .map(chrono::DateTime::<chrono::Utc>::from)
+         .map_err(|e| WorkspaceIntakeError::Io(io_error_redacted(e)))?;
+-    let file_id =
+-        file_id_from_identity(&identity, &workspace_root).map_err(intake_file_id_error)?;
++    let file_id = match file_id_from_identity(&identity, &workspace_root) {
++        Ok(file_id) => file_id,
++        Err(error) => {
++            let signal_ctx = SignalEmitContext::new(ctx, &db, None);
++            emit_pre_pipeline_rejection(&signal_ctx, RejectionReason::OutsideWorkspace)
++                .map_err(|e| WorkspaceIntakeError::DbError(e.to_string()))?;
++            return Err(intake_file_id_error(error));
++        }
++    };
+ 
+     let request = IngestRequest {
+         file,
+@@ -119,8 +165,13 @@ fn ingest_sync(
+         validated_content: None,
+     };
+     let pipeline = build_pipeline(workspace_root);
++    let propagation = signal_engine.as_deref().ok_or_else(|| {
++        WorkspaceIntakeError::DbError(
++            "workspace intake requires a live signal propagation engine".to_string(),
++        )
++    })?;
+     let receipt = pipeline
+-        .run(ctx, &db, request)
++        .run_with_signal_engine(ctx, &db, propagation, request)
+         .map_err(intake_error_from_ingest)?;
+     Ok(WorkspaceIntakeReceipt {
+         run_id: receipt.ingestion_run_id.0,
+diff --git a/src-tauri/src/signals/invalidation.rs b/src-tauri/src/signals/invalidation.rs
+index 23da0a58..ecb08f74 100644
+--- a/src-tauri/src/signals/invalidation.rs
++++ b/src-tauri/src/signals/invalidation.rs
+@@ -44,6 +44,9 @@ pub fn check_and_invalidate_preps(
+         "relationship_reclassified",
+         "transcript_outcomes", // manually attached transcript — invalidate linked future meeting preps
+         "field_updated", // DOS-110: account field changes (including sentiment) invalidate prep
++        "workspace_file_ingested",
++        "workspace_file_quarantined",
++        "workspace_file_entity_link_changed",
+     ];
+ 
+     if !invalidating_types.contains(&signal.signal_type.as_str()) {
+@@ -161,6 +164,26 @@ mod tests {
+         assert!(q.is_empty(), "entity_resolution should not invalidate prep");
+     }
+ 
++    #[test]
++    fn workspace_audit_only_signals_are_not_invalidating() {
++        for signal_type in [
++            "workspace_file_rejected",
++            "workspace_file_pending_entity_assignment",
++        ] {
++            let db = test_db();
++            let queue = Mutex::new(Vec::<String>::new());
++            let signal = make_signal(signal_type, 0.95);
++
++            check_and_invalidate_preps(&db, &signal, &queue);
++
++            let q = queue.lock();
++            assert!(
++                q.is_empty(),
++                "{signal_type} should not invalidate prep without entity content change"
++            );
++        }
++    }
++
+     #[test]
+     fn test_invalidation_with_upcoming_meeting() {
+         let db = test_db();
+@@ -195,14 +218,21 @@ mod tests {
+         )
+         .unwrap();
+ 
+-        let queue = Mutex::new(Vec::<String>::new());
+-        let signal = make_signal("stakeholder_change", 0.85);
++        for signal_type in [
++            "stakeholder_change",
++            "workspace_file_ingested",
++            "workspace_file_quarantined",
++            "workspace_file_entity_link_changed",
++        ] {
++            let queue = Mutex::new(Vec::<String>::new());
++            let signal = make_signal(signal_type, 0.85);
+ 
+-        check_and_invalidate_preps(&db, &signal, &queue);
++            check_and_invalidate_preps(&db, &signal, &queue);
+ 
+-        let q = queue.lock();
+-        assert_eq!(q.len(), 1);
+-        assert_eq!(q[0], "m1");
++            let q = queue.lock();
++            assert_eq!(q.len(), 1, "{signal_type} should invalidate prep");
++            assert_eq!(q[0], "m1");
++        }
+     }
+ 
+     #[test]
+diff --git a/src-tauri/src/signals/policy_registry.rs b/src-tauri/src/signals/policy_registry.rs
+index d47e9aa0..b9d253e9 100644
+--- a/src-tauri/src/signals/policy_registry.rs
++++ b/src-tauri/src/signals/policy_registry.rs
+@@ -130,6 +130,11 @@ pub enum SignalType {
+     TranscriptSentiment,
+     UserCorrection,
+     UserCorrectionSubmitted,
++    WorkspaceFileEntityLinkChanged,
++    WorkspaceFileIngested,
++    WorkspaceFilePendingEntityAssignment,
++    WorkspaceFileQuarantined,
++    WorkspaceFileRejected,
+     Legacy {
+         name: String,
+     },
+@@ -251,6 +256,13 @@ impl SignalType {
+             "transcript_sentiment" => Self::TranscriptSentiment,
+             "user_correction" => Self::UserCorrection,
+             "user_correction_submitted" => Self::UserCorrectionSubmitted,
++            "workspace_file_entity_link_changed" => Self::WorkspaceFileEntityLinkChanged,
++            "workspace_file_ingested" => Self::WorkspaceFileIngested,
++            "workspace_file_pending_entity_assignment" => {
++                Self::WorkspaceFilePendingEntityAssignment
++            }
++            "workspace_file_quarantined" => Self::WorkspaceFileQuarantined,
++            "workspace_file_rejected" => Self::WorkspaceFileRejected,
+             other => Self::Legacy {
+                 name: other.to_string(),
+             },
+@@ -369,6 +381,13 @@ impl SignalType {
+             Self::TranscriptSentiment => "transcript_sentiment",
+             Self::UserCorrection => "user_correction",
+             Self::UserCorrectionSubmitted => "user_correction_submitted",
++            Self::WorkspaceFileEntityLinkChanged => "workspace_file_entity_link_changed",
++            Self::WorkspaceFileIngested => "workspace_file_ingested",
++            Self::WorkspaceFilePendingEntityAssignment => {
++                "workspace_file_pending_entity_assignment"
++            }
++            Self::WorkspaceFileQuarantined => "workspace_file_quarantined",
++            Self::WorkspaceFileRejected => "workspace_file_rejected",
+             Self::Legacy { name } => name.as_str(),
+         }
+     }
+@@ -393,6 +412,9 @@ impl SignalType {
+                 // transition and races against the ClaimVerificationStateChanged
+                 // fan-out (services/claims.rs:8713 + :8738) became reorder-prone.
+                 | Self::MeetingPrepStatusChanged
++                | Self::WorkspaceFileEntityLinkChanged
++                | Self::WorkspaceFileIngested
++                | Self::WorkspaceFileQuarantined
+         )
+     }
+ }
+@@ -509,6 +531,11 @@ pub fn known_signal_type_names() -> &'static [&'static str] {
+         "transcript_sentiment",
+         "user_correction",
+         "user_correction_submitted",
++        "workspace_file_entity_link_changed",
++        "workspace_file_ingested",
++        "workspace_file_pending_entity_assignment",
++        "workspace_file_quarantined",
++        "workspace_file_rejected",
+     ]
+ }
+ 
+@@ -668,6 +695,10 @@ pub fn policy_for(signal: &SignalType) -> SignalPolicy {
+         ReadModelMaterialized | PrepInvalidated | IntelligenceRefreshed | EnrichmentComplete => {
+             read_model_materialized_policy()
+         }
++        WorkspaceFileRejected | WorkspaceFilePendingEntityAssignment => local_observation_policy(),
++        WorkspaceFileEntityLinkChanged | WorkspaceFileIngested | WorkspaceFileQuarantined => {
++            coalesced_invalidation_policy()
++        }
+         MeetingPrepStatusChanged => meeting_prep_status_changed_policy(),
+         AccountCreated
+         | AccountDomainsUpdated
+@@ -996,4 +1027,38 @@ mod tests {
+             ));
+         }
+     }
++
++    #[test]
++    fn workspace_signals_have_explicit_policy_coverage() {
++        for name in [
++            "workspace_file_ingested",
++            "workspace_file_quarantined",
++            "workspace_file_entity_link_changed",
++        ] {
++            let signal = SignalType::from_name(name);
++            assert_eq!(signal.canonical_name(), name);
++            assert!(signal.uses_emit_path_coalescing());
++            let policy = policy_for(&signal);
++            assert_eq!(policy.role, SignalRole::Invalidation);
++            assert_eq!(policy.payload_privacy, PayloadPrivacy::NonPiiMetadata);
++            assert!(matches!(
++                policy.propagation,
++                PropagationPolicy::PropagateAsync {
++                    coalesce: Some(CoalescingPolicy::EntitySignal { window })
++                } if window == Duration::from_millis(500)
++            ));
++        }
++
++        for name in [
++            "workspace_file_rejected",
++            "workspace_file_pending_entity_assignment",
++        ] {
++            let signal = SignalType::from_name(name);
++            assert_eq!(signal.canonical_name(), name);
++            assert!(!signal.uses_emit_path_coalescing());
++            let policy = policy_for(&signal);
++            assert_eq!(policy.role, SignalRole::Observation);
++            assert_eq!(policy.propagation, PropagationPolicy::Local);
++        }
++    }
+ }
+diff --git a/src-tauri/src/state.rs b/src-tauri/src/state.rs
+index 3976371c..6e0d1bec 100644
+--- a/src-tauri/src/state.rs
++++ b/src-tauri/src/state.rs
+@@ -1205,12 +1205,13 @@ impl AppState {
+     /// caller must keep the `state` reference alive for the call's
+     /// duration — which is the natural pattern for command handlers.
+     pub fn live_service_context(&self) -> crate::services::context::ServiceContext<'_> {
+-        crate::services::context::attach_live_workspace_readers(
++        crate::services::context::attach_live_workspace_readers_with_signal_engine(
+             crate::services::context::ServiceContext::new_live(
+                 &self.clock,
+                 &self.rng,
+                 &self.external,
+             ),
++            Some(Arc::clone(&self.signals.engine)),
+         )
+     }
+ 
+diff --git a/src-tauri/src/watcher.rs b/src-tauri/src/watcher.rs
+index 5d6fb42e..4836c861 100644
+--- a/src-tauri/src/watcher.rs
++++ b/src-tauri/src/watcher.rs
+@@ -20,13 +20,15 @@ use crate::parser::count_inbox;
+ use crate::people;
+ use crate::projects;
+ use crate::services::context::{ExternalClients, ServiceContext, SystemClock, SystemRng};
+-use crate::services::workspace_ingestion::contracts::RejectionReason;
++use crate::services::workspace_ingestion::contracts::{RejectionReason, SignalEmitContext};
+ use crate::services::workspace_ingestion::pipeline::{
+     file_id_from_identity, EntityRef, IngestError, IngestPipeline, IngestRequest,
+ };
+ use crate::services::workspace_ingestion::registry::WorkspaceSourceRegistry;
+ use crate::services::workspace_ingestion::runs::IngestionMode;
++use crate::services::workspace_ingestion::signals::emit_pre_pipeline_rejection;
+ use crate::services::workspace_ingestion::wiring;
++use crate::signals::propagation::PropagationEngine;
+ use crate::state::AppState;
+ 
+ /// Debounce window for file system events
+@@ -663,9 +665,21 @@ fn ingest_after_upsert(
+     path: &Path,
+     source_type: WorkspaceFileKind,
+     entity: Option<EntityRef>,
++    signal_engine: &PropagationEngine,
+ ) -> Result<(), IngestError> {
+-    let (file, identity) = WorkspaceSourceRegistry::open_validated(workspace_root, path)
+-        .map_err(IngestError::Rejected)?;
++    let clock = SystemClock;
++    let rng = SystemRng;
++    let external = ExternalClients::default();
++    let ctx =
++        ServiceContext::new_live(&clock, &rng, &external).with_actor("system:workspace_watcher");
++    let (file, identity) = match WorkspaceSourceRegistry::open_validated(workspace_root, path) {
++        Ok(opened) => opened,
++        Err(reason) => {
++            let signal_ctx = SignalEmitContext::new(&ctx, db, None);
++            emit_pre_pipeline_rejection(&signal_ctx, reason.clone())?;
++            return Err(IngestError::Rejected(reason));
++        }
++    };
+ 
+     let source_asof: DateTime<Utc> = identity
+         .canonical_path
+@@ -674,8 +688,14 @@ fn ingest_after_upsert(
+         .map_err(IngestError::Io)?
+         .into();
+ 
+-    let file_id = file_id_from_identity(&identity, workspace_root)
+-        .map_err(|_| IngestError::Rejected(RejectionReason::OutsideWorkspace))?;
++    let file_id = match file_id_from_identity(&identity, workspace_root) {
++        Ok(file_id) => file_id,
++        Err(_) => {
++            let signal_ctx = SignalEmitContext::new(&ctx, db, None);
++            emit_pre_pipeline_rejection(&signal_ctx, RejectionReason::OutsideWorkspace)?;
++            return Err(IngestError::Rejected(RejectionReason::OutsideWorkspace));
++        }
++    };
+ 
+     let request = IngestRequest {
+         file,
+@@ -690,12 +710,9 @@ fn ingest_after_upsert(
+         validated_content: None,
+     };
+ 
+-    let clock = SystemClock;
+-    let rng = SystemRng;
+-    let external = ExternalClients::default();
+-    let ctx =
+-        ServiceContext::new_live(&clock, &rng, &external).with_actor("system:workspace_watcher");
+-    pipeline.run(&ctx, db, request).map(|_| ())
++    pipeline
++        .run_with_signal_engine(&ctx, db, signal_engine, request)
++        .map(|_| ())
+ }
+ 
+ fn log_ingest_failure(path: &Path, err: IngestError) {
+@@ -766,6 +783,7 @@ fn handle_people_changes(paths: &[PathBuf], state: &AppState, workspace: &Path)
+                                 person.id.clone(),
+                                 Some(person.name.clone()),
+                             )),
++                            state.signals.engine.as_ref(),
+                         ) {
+                             log_ingest_failure(path, err);
+                         }
+@@ -786,7 +804,7 @@ fn handle_people_changes(paths: &[PathBuf], state: &AppState, workspace: &Path)
+ /// Handle detected changes to Accounts/*/dashboard.json files.
+ ///
+ /// Reads the changed JSON files, syncs to SQLite, regenerates dashboard.md.
+-fn handle_account_changes(paths: &[PathBuf], _state: &AppState, workspace: &Path) {
++fn handle_account_changes(paths: &[PathBuf], state: &AppState, workspace: &Path) {
+     // Skip watcher sync when dev DB mode is active. The watcher watches
+     // the live workspace, but the DB is pointing at the dev DB — syncing would
+     // leak live account data into the dev sandbox.
+@@ -836,6 +854,7 @@ fn handle_account_changes(paths: &[PathBuf], _state: &AppState, workspace: &Path
+                             account.id.clone(),
+                             Some(account.name.clone()),
+                         )),
++                        state.signals.engine.as_ref(),
+                     ) {
+                         log_ingest_failure(path, err);
+                     }
+@@ -852,7 +871,7 @@ fn handle_account_changes(paths: &[PathBuf], _state: &AppState, workspace: &Path
+ /// Handle detected changes to Projects/*/dashboard.json files.
+ ///
+ /// Reads the changed JSON files, syncs to SQLite, regenerates dashboard.md.
+-fn handle_project_changes(paths: &[PathBuf], _state: &AppState, workspace: &Path) {
++fn handle_project_changes(paths: &[PathBuf], state: &AppState, workspace: &Path) {
+     // Skip watcher sync in dev DB mode (same rationale as accounts above)
+     if crate::db::is_dev_db_mode() {
+         log::debug!("Watcher: skipping project sync — dev DB mode active");
+@@ -894,6 +913,7 @@ fn handle_project_changes(paths: &[PathBuf], _state: &AppState, workspace: &Path
+                             project.id.clone(),
+                             Some(project.name.clone()),
+                         )),
++                        state.signals.engine.as_ref(),
+                     ) {
+                         log_ingest_failure(path, err);
+                     }
+@@ -913,7 +933,7 @@ fn handle_project_changes(paths: &[PathBuf], _state: &AppState, workspace: &Path
+ /// and returns a payload for the frontend event.
+ fn handle_account_content_changes(
+     paths: &[PathBuf],
+-    _state: &AppState,
++    state: &AppState,
+     workspace: &Path,
+ ) -> Option<ContentChangePayload> {
+     // Skip in dev DB mode
+@@ -985,6 +1005,7 @@ fn handle_account_content_changes(
+                         account.id.clone(),
+                         Some(account.name.clone()),
+                     )),
++                    state.signals.engine.as_ref(),
+                 ) {
+                     log_ingest_failure(path, err);
+                 }
+@@ -1008,7 +1029,7 @@ fn handle_account_content_changes(
+ /// syncs their content index, and returns a payload for the frontend event.
+ fn handle_project_content_changes(
+     paths: &[PathBuf],
+-    _state: &AppState,
++    state: &AppState,
+     workspace: &Path,
+ ) -> Option<ContentChangePayload> {
+     // Skip in dev DB mode
+@@ -1080,6 +1101,7 @@ fn handle_project_content_changes(
+                         project.id.clone(),
+                         Some(project.name.clone()),
+                     )),
++                    state.signals.engine.as_ref(),
+                 ) {
+                     log_ingest_failure(path, err);
+                 }
+diff --git a/src-tauri/tests/abilities_runtime_w2c_entity_intake_calls_workspace_intake.rs b/src-tauri/tests/abilities_runtime_w2c_entity_intake_calls_workspace_intake.rs
+index 5a853375..d62bc1b1 100644
+--- a/src-tauri/tests/abilities_runtime_w2c_entity_intake_calls_workspace_intake.rs
++++ b/src-tauri/tests/abilities_runtime_w2c_entity_intake_calls_workspace_intake.rs
+@@ -145,11 +145,17 @@ async fn calls_workspace_intake_with_entity_seeded_dto() {
+     assert_eq!(request.mode_slug, "entity_seeded");
+     assert_eq!(request.category_slug.as_deref(), Some("briefs"));
+     assert_eq!(
+-        request.entity.as_ref().map(|entity| entity.entity_type_slug.as_str()),
++        request
++            .entity
++            .as_ref()
++            .map(|entity| entity.entity_type_slug.as_str()),
+         Some("account")
+     );
+     assert_eq!(
+-        request.entity.as_ref().map(|entity| entity.entity_id.as_str()),
++        request
++            .entity
++            .as_ref()
++            .map(|entity| entity.entity_id.as_str()),
+         Some("acct_acme")
+     );
+ }
+diff --git a/src-tauri/tests/abilities_runtime_w2c_entity_intake_claim_display_text.rs b/src-tauri/tests/abilities_runtime_w2c_entity_intake_claim_display_text.rs
+index b787de81..85e8081f 100644
+--- a/src-tauri/tests/abilities_runtime_w2c_entity_intake_claim_display_text.rs
++++ b/src-tauri/tests/abilities_runtime_w2c_entity_intake_claim_display_text.rs
+@@ -57,7 +57,10 @@ impl EntityContextClaimReadHandle for FixtureClaimReader {
+         Box::pin(async move {
+             assert_eq!(entity_type, "account");
+             assert_eq!(entity_id, "acct_acme");
+-            Ok(vec![claim("claim-1", "Acme budget owner approved the workspace plan")])
++            Ok(vec![claim(
++                "claim-1",
++                "Acme budget owner approved the workspace plan",
++            )])
+         })
+     }
+ }
+diff --git a/src-tauri/tests/abilities_runtime_w2c_entity_intake_input_validation.rs b/src-tauri/tests/abilities_runtime_w2c_entity_intake_input_validation.rs
+index 0f335bbf..a5a2e326 100644
+--- a/src-tauri/tests/abilities_runtime_w2c_entity_intake_input_validation.rs
++++ b/src-tauri/tests/abilities_runtime_w2c_entity_intake_input_validation.rs
+@@ -105,5 +105,8 @@ async fn invalid_entity_type_slug_maps_to_typed_error() {
+     .await
+     .expect_err("invalid slug should fail");
+ 
+-    assert_eq!(err.kind, AbilityErrorKind::HardError("InvalidEntityType".to_string()));
++    assert_eq!(
++        err.kind,
++        AbilityErrorKind::HardError("InvalidEntityType".to_string())
++    );
+ }
+diff --git a/src-tauri/tests/abilities_runtime_w2c_self_crate_imports.rs b/src-tauri/tests/abilities_runtime_w2c_self_crate_imports.rs
+index ce652faf..5c1aa8ff 100644
+--- a/src-tauri/tests/abilities_runtime_w2c_self_crate_imports.rs
++++ b/src-tauri/tests/abilities_runtime_w2c_self_crate_imports.rs
+@@ -13,7 +13,8 @@ fn entity_intake_uses_self_crate_imports_inside_abilities_runtime() {
+     .expect("read contracts");
+ 
+     assert!(
+-        producer.contains("use crate::") && contracts.contains("use crate::abilities::trust::types::TrustBand;"),
++        producer.contains("use crate::")
++            && contracts.contains("use crate::abilities::trust::types::TrustBand;"),
+         "entity_intake must use self-crate imports"
+     );
+     assert!(
+diff --git a/src-tauri/tests/watcher_fixture_duplicate_event_idempotency.rs b/src-tauri/tests/watcher_fixture_duplicate_event_idempotency.rs
+index dd8b05ec..bc05a1a3 100644
+--- a/src-tauri/tests/watcher_fixture_duplicate_event_idempotency.rs
++++ b/src-tauri/tests/watcher_fixture_duplicate_event_idempotency.rs
+@@ -93,7 +93,10 @@ fn run_pipeline(
+     let rng = SystemRng;
+     let external = ExternalClients::default();
+     let ctx = ServiceContext::new_live(&clock, &rng, &external).with_actor("system:test");
+-    pipeline.run(&ctx, db, request).map(|_| ())
++    let signal_engine = dailyos_lib::signals::propagation::default_engine();
++    pipeline
++        .run_with_signal_engine(&ctx, db, &signal_engine, request)
++        .map(|_| ())
+ }
+ 
+ fn entity_ref(entity_type: EntityType, id: &str, name: Option<&str>) -> EntityRef {
+diff --git a/src-tauri/tests/watcher_fixture_pipeline_rejection_after_db_upsert.rs b/src-tauri/tests/watcher_fixture_pipeline_rejection_after_db_upsert.rs
+index d5b9d00d..5adbe4e6 100644
+--- a/src-tauri/tests/watcher_fixture_pipeline_rejection_after_db_upsert.rs
++++ b/src-tauri/tests/watcher_fixture_pipeline_rejection_after_db_upsert.rs
+@@ -106,7 +106,10 @@ fn run_pipeline(
+     let rng = SystemRng;
+     let external = ExternalClients::default();
+     let ctx = ServiceContext::new_live(&clock, &rng, &external).with_actor("system:test");
+-    pipeline.run(&ctx, db, request).map(|_| ())
++    let signal_engine = dailyos_lib::signals::propagation::default_engine();
++    pipeline
++        .run_with_signal_engine(&ctx, db, &signal_engine, request)
++        .map(|_| ())
+ }
+ 
+ fn entity_ref(entity_type: EntityType, id: &str, name: Option<&str>) -> EntityRef {
+diff --git a/src-tauri/tests/watcher_fixture_real_workspace_edit.rs b/src-tauri/tests/watcher_fixture_real_workspace_edit.rs
+index d00523d3..28c5da4d 100644
+--- a/src-tauri/tests/watcher_fixture_real_workspace_edit.rs
++++ b/src-tauri/tests/watcher_fixture_real_workspace_edit.rs
+@@ -106,7 +106,10 @@ fn run_pipeline(
+     let rng = SystemRng;
+     let external = ExternalClients::default();
+     let ctx = ServiceContext::new_live(&clock, &rng, &external).with_actor("system:test");
+-    pipeline.run(&ctx, db, request).map(|_| file_id)
++    let signal_engine = dailyos_lib::signals::propagation::default_engine();
++    pipeline
++        .run_with_signal_engine(&ctx, db, &signal_engine, request)
++        .map(|_| file_id)
+ }
+ 
+ fn entity_ref(entity_type: EntityType, id: &str, name: Option<&str>) -> EntityRef {
+diff --git a/src-tauri/tests/workspace_ingestion_unit.rs b/src-tauri/tests/workspace_ingestion_unit.rs
+index 37d067cd..91e9923e 100644
+--- a/src-tauri/tests/workspace_ingestion_unit.rs
++++ b/src-tauri/tests/workspace_ingestion_unit.rs
+@@ -8,9 +8,11 @@ use abilities_runtime::abilities::provenance::source::{
+ };
+ use abilities_runtime::abilities::provenance::DocumentId;
+ use chrono::Utc;
++use dailyos_lib::db::ActionDb;
++use dailyos_lib::services::context::{ExternalClients, ServiceContext, SystemClock, SystemRng};
+ use dailyos_lib::services::workspace_ingestion::contracts::{
+     ExtractionContext, Extractor, FileIdentity, NullExtractor, NullSignalEmitter, RejectionReason,
+-    SignalEmitter, WorkspaceCategory, WorkspaceFileKind,
++    SignalEmitContext, SignalEmitter, WorkspaceCategory, WorkspaceFileKind,
+ };
+ use dailyos_lib::services::workspace_ingestion::lifecycle::LifecycleState;
+ 
+@@ -163,13 +165,43 @@ fn null_extractor_is_send_sync_and_returns_empty() {
+ #[test]
+ fn null_signal_emitter_methods_are_noops_callable_through_dyn() {
+     let boxed: Box<dyn SignalEmitter> = Box::new(NullSignalEmitter);
+-    boxed.emit_file_ingested("f1", "deadbeef", "run1", Some("entity1"));
+-    boxed.emit_file_ingested("f1", "deadbeef", "run1", None);
+-    boxed.emit_file_rejected(Some("f2"), RejectionReason::PathTraversalAttempt);
+-    boxed.emit_file_rejected(None, RejectionReason::FileTooLarge);
+-    boxed.emit_file_pending_entity_assignment("f3", "run3");
+-    boxed.emit_file_quarantined("f4", "user requested", "user-1");
+-    boxed.emit_link_changed("f5", "entity-2", "user-1");
++    let conn = rusqlite::Connection::open_in_memory().expect("in-memory sqlite");
++    let db = ActionDb::from_conn(&conn);
++    let clock = SystemClock;
++    let rng = SystemRng;
++    let external = ExternalClients::default();
++    let services = ServiceContext::new_live(&clock, &rng, &external);
++    let signal_ctx = SignalEmitContext::new(&services, db, None);
++
++    boxed
++        .emit_file_ingested(&signal_ctx, "f1", "run1", "account", "entity1")
++        .expect("noop ingested");
++    boxed
++        .emit_file_rejected(
++            &signal_ctx,
++            Some("f2"),
++            RejectionReason::PathTraversalAttempt,
++        )
++        .expect("noop rejected");
++    boxed
++        .emit_file_rejected(&signal_ctx, None, RejectionReason::FileTooLarge)
++        .expect("noop rejected without file");
++    boxed
++        .emit_file_pending_entity_assignment(&signal_ctx, "f3", "run3")
++        .expect("noop pending entity");
++    boxed
++        .emit_file_quarantined(
++            &signal_ctx,
++            "f4",
++            "user requested",
++            "user-1",
++            Some("account"),
++            Some("entity1"),
++        )
++        .expect("noop quarantined");
++    boxed
++        .emit_link_changed(&signal_ctx, "f5", "account", "entity-2", "user-1")
++        .expect("noop link changed");
+     // If we reach here without panicking the dyn dispatch worked.
+ }
+ 
+diff --git a/src-tauri/tests/workspace_ingestion_w2a_intake_impl_category_validate.rs b/src-tauri/tests/workspace_ingestion_w2a_intake_impl_category_validate.rs
+index 451db94b..b27a709a 100644
+--- a/src-tauri/tests/workspace_ingestion_w2a_intake_impl_category_validate.rs
++++ b/src-tauri/tests/workspace_ingestion_w2a_intake_impl_category_validate.rs
+@@ -11,7 +11,7 @@ fn intake_impl_validates_category_before_pipeline_invocation() {
+         .find("WorkspaceCategoryRegistry::validate")
+         .expect("validate call");
+     let run = source
+-        .find(".run(ctx, &db, request)")
++        .find(".run_with_signal_engine(ctx, &db, propagation, request)")
+         .expect("pipeline run");
+     assert!(
+         validate < run,
+diff --git a/src-tauri/tests/workspace_ingestion_w2a_quarantine_actor.rs b/src-tauri/tests/workspace_ingestion_w2a_quarantine_actor.rs
+index cf02d2cc..da234ef2 100644
+--- a/src-tauri/tests/workspace_ingestion_w2a_quarantine_actor.rs
++++ b/src-tauri/tests/workspace_ingestion_w2a_quarantine_actor.rs
+@@ -1,9 +1,80 @@
+ use abilities_runtime::abilities::provenance::source::WorkspaceFileKind;
+ use chrono::Utc;
+-use dailyos_lib::services::workspace_ingestion::contracts::FileIdentity;
++use dailyos_lib::db::ActionDb;
++use dailyos_lib::entity::EntityType;
++use dailyos_lib::services::context::{ExternalClients, ServiceContext, SystemClock, SystemRng};
++use dailyos_lib::services::workspace_ingestion::contracts::{
++    FileIdentity, NullSignalEmitter, RejectionReason, SignalEmitContext, SignalEmitError,
++    SignalEmitter,
++};
+ use dailyos_lib::services::workspace_ingestion::lifecycle::{LifecycleRepo, LifecycleState};
++use dailyos_lib::services::workspace_ingestion::link::{LinkAttributionSource, LinkRepo};
+ use dailyos_lib::services::workspace_ingestion::pipeline::{quarantine_source, QuarantineActor};
+ use rusqlite::Connection;
++use std::sync::Mutex;
++
++#[derive(Default)]
++struct RecordingSignalEmitter {
++    quarantined_target: Mutex<Option<(Option<String>, Option<String>)>>,
++}
++
++impl SignalEmitter for RecordingSignalEmitter {
++    fn emit_file_ingested(
++        &self,
++        _ctx: &SignalEmitContext<'_, '_>,
++        _file_id: &str,
++        _ingestion_run_id: &str,
++        _entity_type: &str,
++        _entity_id: &str,
++    ) -> Result<(), SignalEmitError> {
++        Ok(())
++    }
++
++    fn emit_file_rejected(
++        &self,
++        _ctx: &SignalEmitContext<'_, '_>,
++        _file_id: Option<&str>,
++        _reason: RejectionReason,
++    ) -> Result<(), SignalEmitError> {
++        Ok(())
++    }
++
++    fn emit_file_pending_entity_assignment(
++        &self,
++        _ctx: &SignalEmitContext<'_, '_>,
++        _file_id: &str,
++        _ingestion_run_id: &str,
++    ) -> Result<(), SignalEmitError> {
++        Ok(())
++    }
++
++    fn emit_file_quarantined(
++        &self,
++        _ctx: &SignalEmitContext<'_, '_>,
++        _file_id: &str,
++        _reason: &str,
++        _actor: &str,
++        entity_type: Option<&str>,
++        entity_id: Option<&str>,
++    ) -> Result<(), SignalEmitError> {
++        *self.quarantined_target.lock().expect("record target") = Some((
++            entity_type.map(str::to_string),
++            entity_id.map(str::to_string),
++        ));
++        Ok(())
++    }
++
++    fn emit_link_changed(
++        &self,
++        _ctx: &SignalEmitContext<'_, '_>,
++        _file_id: &str,
++        _entity_type: &str,
++        _entity_id: &str,
++        _actor: &str,
++    ) -> Result<(), SignalEmitError> {
++        Ok(())
++    }
++}
+ 
+ #[test]
+ fn quarantine_source_records_typed_actor_and_is_idempotent() {
+@@ -16,6 +87,10 @@ fn quarantine_source_records_typed_actor_and_is_idempotent() {
+         "../src/migrations/251_workspace_file_lifecycle_category.sql"
+     ))
+     .expect("v251");
++    conn.execute_batch(include_str!(
++        "../src/migrations/254_document_entity_links.sql"
++    ))
++    .expect("v254");
+     let identity = FileIdentity {
+         canonical_path: "/tmp/workspace/file.md".into(),
+         device: 1,
+@@ -33,11 +108,90 @@ fn quarantine_source_records_typed_actor_and_is_idempotent() {
+     let actor = QuarantineActor::User {
+         user_id: "user-1".into(),
+     };
+-    quarantine_source(&conn, "wf-1", "bad file", actor.clone()).expect("quarantine");
+-    quarantine_source(&conn, "wf-1", "bad file", actor).expect("idempotent");
++    let db = ActionDb::from_conn(&conn);
++    let clock = SystemClock;
++    let rng = SystemRng;
++    let external = ExternalClients::default();
++    let services = ServiceContext::new_live(&clock, &rng, &external);
++    let signal_ctx = SignalEmitContext::new(&services, db, None);
++    let emitter = NullSignalEmitter;
++    quarantine_source(&signal_ctx, &emitter, "wf-1", "bad file", actor.clone())
++        .expect("quarantine");
++    quarantine_source(&signal_ctx, &emitter, "wf-1", "bad file", actor).expect("idempotent");
+     let row = LifecycleRepo::get(&conn, "wf-1")
+         .expect("get")
+         .expect("row");
+     assert_eq!(row.lifecycle_state, LifecycleState::Quarantined);
+     assert_eq!(row.user_override.expect("override").actor_id, "user-1");
+ }
++
++#[test]
++fn quarantine_source_targets_single_active_link_when_lifecycle_entity_is_empty() {
++    let conn = Connection::open_in_memory().expect("in-memory sqlite");
++    conn.execute_batch(include_str!(
++        "../src/migrations/250_workspace_file_lifecycle.sql"
++    ))
++    .expect("v250");
++    conn.execute_batch(include_str!(
++        "../src/migrations/251_workspace_file_lifecycle_category.sql"
++    ))
++    .expect("v251");
++    conn.execute_batch(include_str!(
++        "../src/migrations/254_document_entity_links.sql"
++    ))
++    .expect("v254");
++    let identity = FileIdentity {
++        canonical_path: "/tmp/workspace/file.md".into(),
++        device: 1,
++        inode: 2,
++    };
++    LifecycleRepo::insert_pending(
++        &conn,
++        "wf-1",
++        &identity,
++        &WorkspaceFileKind::Inbox,
++        Utc::now(),
++        None,
++    )
++    .expect("insert");
++    LinkRepo::add_link(
++        &conn,
++        "wf-1",
++        EntityType::Account,
++        "acc-1",
++        LinkAttributionSource::Classifier,
++        0.9,
++        Some("fixture"),
++        "system:test",
++    )
++    .expect("active link");
++
++    let db = ActionDb::from_conn(&conn);
++    let clock = SystemClock;
++    let rng = SystemRng;
++    let external = ExternalClients::default();
++    let services = ServiceContext::new_live(&clock, &rng, &external);
++    let signal_ctx = SignalEmitContext::new(&services, db, None);
++    let emitter = RecordingSignalEmitter::default();
++    quarantine_source(
++        &signal_ctx,
++        &emitter,
++        "wf-1",
++        "bad file",
++        QuarantineActor::User {
++            user_id: "user-1".into(),
++        },
++    )
++    .expect("quarantine");
++
++    let target = emitter
++        .quarantined_target
++        .lock()
++        .expect("record target")
++        .clone()
++        .expect("quarantine signal target");
++    assert_eq!(
++        target,
++        (Some("account".to_string()), Some("acc-1".to_string()))
++    );
++}
+diff --git a/src-tauri/tests/workspace_ingestion_w2a_service_context_registration.rs b/src-tauri/tests/workspace_ingestion_w2a_service_context_registration.rs
+index 8ea8201c..fb765ec8 100644
+--- a/src-tauri/tests/workspace_ingestion_w2a_service_context_registration.rs
++++ b/src-tauri/tests/workspace_ingestion_w2a_service_context_registration.rs
+@@ -12,6 +12,9 @@ fn service_context_exposes_optional_workspace_intake_and_live_registration() {
+ 
+     let app_context = std::fs::read_to_string(root.join("src/services/context.rs"))
+         .expect("read app service context");
+-    assert!(app_context.contains("IngestPipelineWorkspaceIntake::from_config_or_empty()"));
++    assert!(app_context.contains("attach_live_workspace_readers_with_signal_engine"));
++    assert!(app_context.contains(
++        "IngestPipelineWorkspaceIntake::from_config_or_empty_with_signal_engine(signal_engine)"
++    ));
+     assert!(app_context.contains(".with_workspace_intake("));
+ }
+diff --git a/src-tauri/tests/workspace_ingestion_w2a_workspace_intake_impl.rs b/src-tauri/tests/workspace_ingestion_w2a_workspace_intake_impl.rs
+index 7de9d573..44d0371a 100644
+--- a/src-tauri/tests/workspace_ingestion_w2a_workspace_intake_impl.rs
++++ b/src-tauri/tests/workspace_ingestion_w2a_workspace_intake_impl.rs
+@@ -11,6 +11,9 @@ fn workspace_intake_impl_bridges_raw_slugs_through_spawn_blocking() {
+     assert!(source.contains("WorkspaceSourceRegistry::open_validated"));
+     assert!(source.contains("file_id_from_identity"));
+     assert!(source.contains("build_pipeline(workspace_root)"));
+-    assert!(source.contains(".run(conn, request)"));
++    assert!(source.contains("run_with_signal_engine"));
++    assert!(source.contains("emit_pre_pipeline_rejection"));
++    assert!(source.contains("workspace intake requires a live signal propagation engine"));
++    assert!(!source.contains("fallback_propagation"));
+     assert!(source.contains("resolved_path: receipt.resolved_path"));
+ }
+diff --git a/src-tauri/tests/workspace_ingestion_w2b_no_new_direct_writes.rs b/src-tauri/tests/workspace_ingestion_w2b_no_new_direct_writes.rs
+index 23d8b47b..9d0cb120 100644
+--- a/src-tauri/tests/workspace_ingestion_w2b_no_new_direct_writes.rs
++++ b/src-tauri/tests/workspace_ingestion_w2b_no_new_direct_writes.rs
+@@ -168,6 +168,8 @@ fn ingest_request_compile_shape_uses_canonical_w2a_fields_and_test_pipeline() {
+     let watcher = read("src/watcher.rs");
+     let helper = function_body(&watcher, "fn ingest_after_upsert");
+     assert!(helper.contains("WorkspaceSourceRegistry::open_validated"));
++    assert!(helper.contains("emit_pre_pipeline_rejection"));
++    assert!(helper.contains("SignalEmitContext::new"));
+     assert_order(
+         helper,
+         "WorkspaceSourceRegistry::open_validated",
+@@ -187,7 +189,7 @@ fn ingest_request_compile_shape_uses_canonical_w2a_fields_and_test_pipeline() {
+     ] {
+         assert!(helper.contains(field), "missing canonical field {field}");
+     }
+-    assert!(helper.contains("pipeline.run(&ctx, db, request)"));
++    assert!(helper.contains("run_with_signal_engine"));
+     assert!(!helper.contains("source_path"));
+     assert!(!helper.contains("data_source"));
+ }
+diff --git a/src-tauri/tests/workspace_ingestion_w2d_inbox_commands.rs b/src-tauri/tests/workspace_ingestion_w2d_inbox_commands.rs
+index 6abe70e2..e9c36ef9 100644
+--- a/src-tauri/tests/workspace_ingestion_w2d_inbox_commands.rs
++++ b/src-tauri/tests/workspace_ingestion_w2d_inbox_commands.rs
+@@ -42,6 +42,35 @@ fn process_inbox_file_without_entity_id_creates_lifecycle_row_and_run() {
+     assert_eq!(run_count, 1);
+ }
+ 
++#[test]
++fn invalid_inbox_filename_emits_workspace_rejection_signal() {
++    let conn = migrated_conn();
++    let db = ActionDb::from_conn(&conn);
++    let workspace = tempfile::tempdir().expect("workspace");
++    let workspace_root = workspace.path().canonicalize().expect("workspace root");
++
++    let error = dailyos_lib::command_test_api::process_inbox_file_for_tests(
++        db,
++        &workspace_root,
++        "../outside.txt",
++    )
++    .expect_err("invalid filename rejected");
++
++    assert!(error.contains("path traversal"));
++    let value: String = conn
++        .query_row(
++            "SELECT value FROM signal_events
++             WHERE entity_type = 'workspace_ingestion'
++               AND entity_id = 'workspace_ingestion'
++               AND signal_type = 'workspace_file_rejected'",
++            [],
++            |row| row.get(0),
++        )
++        .expect("workspace rejection signal");
++    assert!(value.contains("\"reason_code\":\"path_traversal_attempt\""));
++    assert!(!value.contains("\"file_id\""));
++}
++
+ #[test]
+ fn get_inbox_files_returns_lifecycle_rows_not_filesystem_listing() {
+     let conn = migrated_conn();
+diff --git a/src-tauri/tests/workspace_ingestion_w3a_claim_proposals.rs b/src-tauri/tests/workspace_ingestion_w3a_claim_proposals.rs
+index 9bd78551..183c5bd0 100644
+--- a/src-tauri/tests/workspace_ingestion_w3a_claim_proposals.rs
++++ b/src-tauri/tests/workspace_ingestion_w3a_claim_proposals.rs
+@@ -5,11 +5,15 @@ use chrono::{DateTime, Utc};
+ use dailyos_lib::db::{ActionDb, DbAccount};
+ use dailyos_lib::entity::EntityType;
+ use dailyos_lib::services::context::{ExternalClients, ServiceContext, SystemClock, SystemRng};
+-use dailyos_lib::services::workspace_ingestion::contracts::RejectionReason;
+-use dailyos_lib::services::workspace_ingestion::lifecycle::LifecycleRepo;
++use dailyos_lib::services::workspace_ingestion::contracts::{
++    RejectionReason, SignalEmitContext, SignalEmitError, SignalEmitter,
++};
++use dailyos_lib::services::workspace_ingestion::extract::WorkspaceExtractor;
++use dailyos_lib::services::workspace_ingestion::lifecycle::{LifecycleRepo, LifecycleState};
+ use dailyos_lib::services::workspace_ingestion::link::{LinkAttributionSource, LinkRepo};
+ use dailyos_lib::services::workspace_ingestion::pipeline::{
+     file_id_from_identity, EntityRef, IngestError, IngestPipeline, IngestReceipt, IngestRequest,
++    DEFAULT_MAX_FILE_BYTES,
+ };
+ use dailyos_lib::services::workspace_ingestion::registry::WorkspaceSourceRegistry;
+ use dailyos_lib::services::workspace_ingestion::runs::IngestionMode;
+@@ -185,6 +189,139 @@ fn rejected_existing_link_fails_closed_without_resurrection() {
+     assert!(error_log.to_string().contains("rejected_link"));
+ }
+ 
++#[test]
++fn ingested_signal_failure_rolls_back_claim_commit() {
++    let fixture = Fixture::new();
++    fixture.seed_account("acme", "Acme");
++    let note = fixture.write_account_file("Acme", "notes.md", "Important local context.");
++    let (file, identity) = WorkspaceSourceRegistry::open_validated(&fixture.workspace_root, &note)
++        .map_err(IngestError::Rejected)
++        .expect("open validated");
++    let source_asof: DateTime<Utc> = identity
++        .canonical_path
++        .metadata()
++        .and_then(|metadata| metadata.modified())
++        .map_err(IngestError::Io)
++        .expect("source asof")
++        .into();
++    let file_id = file_id_from_identity(&identity, &fixture.workspace_root).expect("file id");
++    let request = IngestRequest {
++        file,
++        identity,
++        file_id: file_id.clone(),
++        source_asof,
++        source_type: WorkspaceFileKind::EntityDoc,
++        entity: Some(entity_ref(EntityType::Account, "acme", Some("Acme"))),
++        mode: IngestionMode::Realtime,
++        category_hint: None,
++        invocation_actor: "user".to_string(),
++        validated_content: None,
++    };
++    let pipeline = IngestPipeline::new(
++        Box::new(WorkspaceExtractor),
++        Box::new(FailingIngestedSignalEmitter),
++        DEFAULT_MAX_FILE_BYTES,
++        "workspace-extractor-v1",
++        fixture.workspace_root.clone(),
++    );
++
++    let error = run_pipeline(&ActionDb::from_conn(&fixture.conn), &pipeline, request)
++        .expect_err("required ingested signal failure fails ingestion");
++
++    match error {
++        IngestError::DbError(message) => {
++            assert!(message.contains("workspace_file_ingested"));
++        }
++        other => panic!("expected DB finalization error, got {other:?}"),
++    }
++    assert_claim_count(&fixture.conn, 0);
++
++    let (status, claim_count, error_log): (String, i64, String) = fixture
++        .conn
++        .query_row(
++            "SELECT status, claim_count_produced, error_log \
++             FROM document_ingestion_runs WHERE file_id = ?1",
++            [&file_id],
++            |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?)),
++        )
++        .expect("failed run");
++    assert_eq!(status, "failed");
++    assert_eq!(claim_count, 0);
++    let error_log: serde_json::Value = serde_json::from_str(&error_log).expect("error log json");
++    assert_eq!(
++        error_log["error"],
++        "workspace_ingestion_finalization_failed"
++    );
++    assert!(error_log["message"]
++        .as_str()
++        .expect("error message")
++        .contains("workspace_file_ingested"));
++
++    let lifecycle = LifecycleRepo::get(&fixture.conn, &file_id)
++        .expect("lifecycle lookup")
++        .expect("lifecycle row");
++    assert_eq!(lifecycle.lifecycle_state, LifecycleState::Rejected);
++}
++
++struct FailingIngestedSignalEmitter;
++
++impl SignalEmitter for FailingIngestedSignalEmitter {
++    fn emit_file_ingested(
++        &self,
++        _ctx: &SignalEmitContext<'_, '_>,
++        _file_id: &str,
++        _ingestion_run_id: &str,
++        _entity_type: &str,
++        _entity_id: &str,
++    ) -> Result<(), SignalEmitError> {
++        Err(SignalEmitError::Emit {
++            signal_type: "workspace_file_ingested",
++            message: "test failure".to_string(),
++        })
++    }
++
++    fn emit_file_rejected(
++        &self,
++        _ctx: &SignalEmitContext<'_, '_>,
++        _file_id: Option<&str>,
++        _reason: RejectionReason,
++    ) -> Result<(), SignalEmitError> {
++        Ok(())
++    }
++
++    fn emit_file_pending_entity_assignment(
++        &self,
++        _ctx: &SignalEmitContext<'_, '_>,
++        _file_id: &str,
++        _ingestion_run_id: &str,
++    ) -> Result<(), SignalEmitError> {
++        Ok(())
++    }
++
++    fn emit_file_quarantined(
++        &self,
++        _ctx: &SignalEmitContext<'_, '_>,
++        _file_id: &str,
++        _reason: &str,
++        _actor: &str,
++        _entity_type: Option<&str>,
++        _entity_id: Option<&str>,
++    ) -> Result<(), SignalEmitError> {
++        Ok(())
++    }
++
++    fn emit_link_changed(
++        &self,
++        _ctx: &SignalEmitContext<'_, '_>,
++        _file_id: &str,
++        _entity_type: &str,
++        _entity_id: &str,
++        _actor: &str,
++    ) -> Result<(), SignalEmitError> {
++        Ok(())
++    }
++}
++
+ struct Fixture {
+     conn: Connection,
+     _workspace: tempfile::TempDir,
+@@ -271,7 +408,8 @@ fn run_pipeline(
+     let rng = SystemRng;
+     let external = ExternalClients::default();
+     let ctx = ServiceContext::new_live(&clock, &rng, &external).with_actor("system:test");
+-    pipeline.run(&ctx, db, request)
++    let signal_engine = dailyos_lib::signals::propagation::default_engine();
++    pipeline.run_with_signal_engine(&ctx, db, &signal_engine, request)
+ }
+ 
+ fn seed_rejected_link(

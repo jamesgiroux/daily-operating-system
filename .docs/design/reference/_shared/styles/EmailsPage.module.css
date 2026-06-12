@@ -90,7 +90,7 @@
   cursor: not-allowed;
 }
 
-/* per-email failure details list ("View details" expansion). */
+/* DOS-29: per-email failure details list ("View details" expansion). */
 .EmailsPage_failureDetailsList {
   list-style: none;
   margin: var(--space-sm) 0 0 0;
@@ -260,7 +260,7 @@
   margin-bottom: var(--space-md);
 }
 
-/* -- Reply Debt  ------------------------------------------------- */
+/* -- Reply Debt (I577/I578) ------------------------------------------------- */
 
 .EmailsPage_replyDebtItem {
   margin-bottom: var(--space-md);
@@ -370,7 +370,7 @@
   border-color: var(--color-garden-sage);
 }
 
-/* -- Triage Action Bar ------------------------------------------------ */
+/* -- I579: Triage Action Bar ------------------------------------------------ */
 
 .EmailsPage_emailIntelItemHoverable {
   position: relative;
@@ -418,7 +418,7 @@
   border-color: var(--color-spice-turmeric);
 }
 
-/* -- Inline Commitments ----------------------------------------------- */
+/* -- I580: Inline Commitments ----------------------------------------------- */
 
 .EmailsPage_inlineCommitments {
   margin-top: 8px;
@@ -597,7 +597,7 @@
   border-color: var(--color-text-tertiary);
 }
 
-/* -- Gone Quiet Section  ---------------------------------------------- */
+/* -- Gone Quiet Section (I581) ---------------------------------------------- */
 
 .EmailsPage_marginLabelQuiet {
   color: var(--color-text-tertiary);
@@ -660,7 +660,7 @@
   color: var(--color-text-tertiary);
 }
 
-/* -- Meeting Linkage Badge  ------------------------------------------- */
+/* -- Meeting Linkage Badge (I582) ------------------------------------------- */
 
 .EmailsPage_meetingLinkBadge {
   display: inline-flex;

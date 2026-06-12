@@ -9,12 +9,44 @@
 //!   External edit to JSON → detected by startup scan → syncs to SQLite
 //!   External edit to markdown → no auto-reconcile (markdown is generated)
 
+#[cfg(test)]
+use std::cell::Cell;
 use std::path::{Path, PathBuf};
 
 use serde::{Deserialize, Serialize};
 
-use crate::db::{ActionDb, DbAccount};
+use crate::db::{AccountVitalsFileMask, ActionDb, DbAccount};
 use crate::util::slugify;
+
+#[cfg(test)]
+thread_local! {
+    static SYNC_UPSERT_ACCOUNT_COUNT: Cell<usize> = const { Cell::new(0) };
+    static WRITE_ACCOUNT_JSON_COUNT: Cell<usize> = const { Cell::new(0) };
+}
+
+#[cfg(test)]
+fn reset_sync_write_counts() {
+    SYNC_UPSERT_ACCOUNT_COUNT.with(|count| count.set(0));
+    WRITE_ACCOUNT_JSON_COUNT.with(|count| count.set(0));
+}
+
+#[cfg(test)]
+fn sync_write_counts() -> (usize, usize) {
+    (
+        SYNC_UPSERT_ACCOUNT_COUNT.with(Cell::get),
+        WRITE_ACCOUNT_JSON_COUNT.with(Cell::get),
+    )
+}
+
+#[cfg(test)]
+fn record_sync_upsert_account() {
+    SYNC_UPSERT_ACCOUNT_COUNT.with(|count| count.set(count.get() + 1));
+}
+
+#[cfg(test)]
+fn record_write_account_json() {
+    WRITE_ACCOUNT_JSON_COUNT.with(|count| count.set(count.get() + 1));
+}
 
 // =============================================================================
 // JSON Schema
@@ -106,6 +138,35 @@ pub struct StrategicProgram {
 }
 
 // =============================================================================
+/// Compute which account vitals a file-sync pass changed, gating the
+/// workspace-file provenance stamp (WR-R1). For a new-from-file account
+/// (`db` is `None`) every present vital is file-origin; for an update, only
+/// fields whose value differs from the DB row changed this pass — an
+/// unchanged value (e.g. a UI edit round-tripped back to the file) is left
+/// untouched so its `user_edit`/`lifecycle` provenance is preserved.
+fn account_vitals_file_mask(file: &DbAccount, db: Option<&DbAccount>) -> AccountVitalsFileMask {
+    match db {
+        Some(db) => AccountVitalsFileMask {
+            arr: file.arr != db.arr,
+            lifecycle: file.lifecycle != db.lifecycle,
+            contract_end: file.contract_end != db.contract_end,
+            nps: file.nps != db.nps,
+        },
+        None => AccountVitalsFileMask {
+            arr: file.arr.is_some(),
+            lifecycle: file.lifecycle.is_some(),
+            contract_end: file.contract_end.is_some(),
+            nps: file.nps.is_some(),
+        },
+    }
+}
+
+fn upsert_account_from_sync(db: &ActionDb, account: &DbAccount) -> Result<(), crate::db::DbError> {
+    #[cfg(test)]
+    record_sync_upsert_account();
+    db.upsert_account(account)
+}
+
 // Typed JSON accessors for DbAccount blob fields
 //
 // DbAccount stores company_overview/strategic_programs/keywords/metadata as
@@ -210,6 +271,9 @@ pub fn write_account_json(
     existing_json: Option<&AccountJson>,
     _db: &ActionDb,
 ) -> Result<(), String> {
+    #[cfg(test)]
+    record_write_account_json();
+
     let dir = resolve_account_dir(workspace, account);
 
     let account_team = _db
@@ -625,6 +689,18 @@ pub fn read_account_json(path: &Path) -> Result<ReadAccountResult, String> {
 ///
 /// Returns the number of accounts synced.
 pub fn sync_accounts_from_workspace(workspace: &Path, db: &ActionDb) -> Result<usize, String> {
+    // WR-R1: one-time idempotent backfill of provenance for pre-existing vitals
+    // that have a value but no source (so the composition producer renders them
+    // rather than dropping them). The `*_source IS NULL` predicate makes this a
+    // no-op after the first run, so it is safe to call on every sync.
+    match db.backfill_missing_account_vitals_provenance() {
+        Ok(n) if n > 0 => {
+            log::info!("WR-R1: backfilled provenance for {n} pre-existing account vitals")
+        }
+        Ok(_) => {}
+        Err(e) => log::warn!("WR-R1: account vitals provenance backfill failed: {e}"),
+    }
+
     let accounts_dir = workspace.join("Accounts");
     let mut synced = 0;
 
@@ -687,7 +763,7 @@ pub fn sync_accounts_from_workspace(workspace: &Path, db: &ActionDb) -> Result<u
                     updated_at: now,
                     ..Default::default()
                 };
-                if db.upsert_account(&new_account).is_ok() {
+                if upsert_account_from_sync(db, &new_account).is_ok() {
                     #[allow(
                         clippy::let_underscore_must_use,
                         reason = "intentional best-effort discard; preserves existing non-blocking behavior"
@@ -735,7 +811,7 @@ pub fn sync_accounts_from_workspace(workspace: &Path, db: &ActionDb) -> Result<u
                                 clippy::let_underscore_must_use,
                                 reason = "intentional best-effort discard; preserves existing non-blocking behavior"
                             )]
-                            let _ = db.upsert_account(&renamed);
+                            let _ = upsert_account_from_sync(db, &renamed);
                             #[allow(
                                 clippy::let_underscore_must_use,
                                 reason = "intentional best-effort discard; preserves existing non-blocking behavior"
@@ -764,7 +840,16 @@ pub fn sync_accounts_from_workspace(workspace: &Path, db: &ActionDb) -> Result<u
                                 clippy::let_underscore_must_use,
                                 reason = "intentional best-effort discard; preserves existing non-blocking behavior"
                             )]
-                            let _ = db.upsert_account(&merged);
+                            let _ = upsert_account_from_sync(db, &merged);
+                            #[allow(
+                                clippy::let_underscore_must_use,
+                                reason = "intentional best-effort discard; preserves existing non-blocking behavior"
+                            )]
+                            let _ = db.set_account_vitals_file_provenance(
+                                merged.id.as_str(),
+                                merged.updated_at.as_str(),
+                                account_vitals_file_mask(&merged, Some(&db_account)),
+                            );
                             #[allow(
                                 clippy::let_underscore_must_use,
                                 reason = "intentional best-effort discard; preserves existing non-blocking behavior"
@@ -792,7 +877,16 @@ pub fn sync_accounts_from_workspace(workspace: &Path, db: &ActionDb) -> Result<u
                             clippy::let_underscore_must_use,
                             reason = "intentional best-effort discard; preserves existing non-blocking behavior"
                         )]
-                        let _ = db.upsert_account(&file_account);
+                        let _ = upsert_account_from_sync(db, &file_account);
+                        #[allow(
+                            clippy::let_underscore_must_use,
+                            reason = "intentional best-effort discard; preserves existing non-blocking behavior"
+                        )]
+                        let _ = db.set_account_vitals_file_provenance(
+                            file_account.id.as_str(),
+                            file_account.updated_at.as_str(),
+                            account_vitals_file_mask(&file_account, None),
+                        );
                         #[allow(
                             clippy::let_underscore_must_use,
                             reason = "intentional best-effort discard; preserves existing non-blocking behavior"
@@ -922,7 +1016,16 @@ fn scan_child_accounts_inner(
                                 clippy::let_underscore_must_use,
                                 reason = "intentional best-effort discard; preserves existing non-blocking behavior"
                             )]
-                            let _ = db.upsert_account(&merged);
+                            let _ = upsert_account_from_sync(db, &merged);
+                            #[allow(
+                                clippy::let_underscore_must_use,
+                                reason = "intentional best-effort discard; preserves existing non-blocking behavior"
+                            )]
+                            let _ = db.set_account_vitals_file_provenance(
+                                merged.id.as_str(),
+                                merged.updated_at.as_str(),
+                                account_vitals_file_mask(&merged, Some(&db_account)),
+                            );
                             #[allow(
                                 clippy::let_underscore_must_use,
                                 reason = "intentional best-effort discard; preserves existing non-blocking behavior"
@@ -948,7 +1051,16 @@ fn scan_child_accounts_inner(
                             clippy::let_underscore_must_use,
                             reason = "intentional best-effort discard; preserves existing non-blocking behavior"
                         )]
-                        let _ = db.upsert_account(&file_account);
+                        let _ = upsert_account_from_sync(db, &file_account);
+                        #[allow(
+                            clippy::let_underscore_must_use,
+                            reason = "intentional best-effort discard; preserves existing non-blocking behavior"
+                        )]
+                        let _ = db.set_account_vitals_file_provenance(
+                            file_account.id.as_str(),
+                            file_account.updated_at.as_str(),
+                            account_vitals_file_mask(&file_account, None),
+                        );
                         #[allow(
                             clippy::let_underscore_must_use,
                             reason = "intentional best-effort discard; preserves existing non-blocking behavior"
@@ -1064,6 +1176,7 @@ mod tests {
     use super::*;
     use crate::db::test_utils::test_db;
     use chrono::Utc;
+    use std::time::{Duration, SystemTime};
 
     fn sample_account(name: &str) -> DbAccount {
         let now = Utc::now().to_rfc3339();
@@ -1086,6 +1199,24 @@ mod tests {
             metadata: None,
             ..Default::default()
         }
+    }
+
+    fn account_text_col(db: &ActionDb, id: &str, column: &str) -> Option<String> {
+        db.conn_ref()
+            .query_row(
+                &format!("SELECT {column} FROM accounts WHERE id = ?1"),
+                rusqlite::params![id],
+                |r| r.get::<_, Option<String>>(0),
+            )
+            .expect("query account column")
+    }
+
+    fn set_dashboard_mtime(path: &Path, offset: Duration) {
+        filetime::set_file_mtime(
+            path,
+            filetime::FileTime::from_system_time(SystemTime::now() + offset),
+        )
+        .expect("set dashboard mtime");
     }
 
     #[test]
@@ -1293,6 +1424,120 @@ mod tests {
         assert_eq!(
             delta_count, 1,
             "bootstrap must not create duplicates on re-sync"
+        );
+    }
+
+    #[test]
+    fn test_sync_dashboard_backed_account_second_pass_noops_writes() {
+        let dir = tempfile::tempdir().expect("tempdir");
+        let workspace = dir.path();
+        let db = test_db();
+
+        let acct_dir = workspace.join("Accounts/Dashboard Backed");
+        std::fs::create_dir_all(&acct_dir).unwrap();
+        let json_content = serde_json::json!({
+            "version": 1,
+            "entityType": "account",
+            "structured": {
+                "arr": 125000.0,
+                "health": "green",
+                "lifecycle": "steady-state",
+                "renewalDate": "2027-03-15",
+                "nps": 42
+            }
+        });
+        std::fs::write(
+            acct_dir.join("dashboard.json"),
+            serde_json::to_string_pretty(&json_content).unwrap(),
+        )
+        .unwrap();
+
+        let synced1 = sync_accounts_from_workspace(workspace, &db).unwrap();
+        assert_eq!(synced1, 1, "dashboard JSON should create the account");
+        let updated_at_after_first = db
+            .get_account("dashboard-backed")
+            .unwrap()
+            .expect("dashboard-backed account")
+            .updated_at;
+
+        reset_sync_write_counts();
+        let synced2 = sync_accounts_from_workspace(workspace, &db).unwrap();
+        let updated_at_after_second = db
+            .get_account("dashboard-backed")
+            .unwrap()
+            .expect("dashboard-backed account")
+            .updated_at;
+
+        assert_eq!(synced2, 0, "unchanged dashboard JSON must not resync");
+        assert_eq!(
+            updated_at_after_second, updated_at_after_first,
+            "second sync must leave accounts.updated_at byte-identical"
+        );
+        assert_eq!(
+            sync_write_counts(),
+            (0, 0),
+            "second sync must not upsert_account or write_account_json"
+        );
+    }
+
+    #[test]
+    fn test_sync_user_edit_roundtrip_preserves_user_edit_source() {
+        let dir = tempfile::tempdir().expect("tempdir");
+        let workspace = dir.path();
+        let db = test_db();
+
+        let acct_dir = workspace.join("Accounts/User Edited Co");
+        std::fs::create_dir_all(&acct_dir).unwrap();
+        let json_content = serde_json::json!({
+            "version": 1,
+            "entityType": "account",
+            "structured": {
+                "arr": 50000.0,
+                "health": "yellow",
+                "lifecycle": "ramping",
+                "renewalDate": "2026-09-30",
+                "nps": 12
+            }
+        });
+        let json_path = acct_dir.join("dashboard.json");
+        std::fs::write(
+            &json_path,
+            serde_json::to_string_pretty(&json_content).unwrap(),
+        )
+        .unwrap();
+
+        let synced1 = sync_accounts_from_workspace(workspace, &db).unwrap();
+        assert_eq!(synced1, 1, "dashboard JSON should create the account");
+        assert_eq!(
+            account_text_col(&db, "user-edited-co", "arr_source").as_deref(),
+            Some("workspace_file:entity_doc")
+        );
+
+        db.update_account_field("user-edited-co", "arr", "75000")
+            .expect("user arr edit");
+        db.set_account_field_provenance("user-edited-co", "arr", "user_edit", None)
+            .expect("user edit provenance");
+        let edited = db
+            .get_account("user-edited-co")
+            .unwrap()
+            .expect("edited account");
+        write_account_json(workspace, &edited, None, &db).unwrap();
+        set_dashboard_mtime(&json_path, Duration::from_secs(60));
+
+        let synced2 = sync_accounts_from_workspace(workspace, &db).unwrap();
+        assert_eq!(
+            synced2, 1,
+            "future-dated dashboard JSON should exercise the file-newer sync path"
+        );
+        let account = db
+            .get_account("user-edited-co")
+            .unwrap()
+            .expect("resynced account");
+        assert_eq!(account.arr, Some(75_000.0));
+        assert_eq!(
+            account_text_col(&db, "user-edited-co", "arr_source").as_deref(),
+            Some("user_edit"),
+            "workspace resync must not downgrade user-edited field provenance"
         );
     }
 

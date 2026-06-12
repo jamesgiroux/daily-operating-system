@@ -1,0 +1,464 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>Example Account - DailyOS Reference</title>
+
+  <link rel="stylesheet" href="../_shared/fonts.css">
+  <link rel="stylesheet" href="../_shared/styles/design-tokens.css">
+
+  <link rel="stylesheet" href="../_shared/styles/AtmosphereLayer.module.css">
+  <link rel="stylesheet" href="../_shared/styles/FolioBar.module.css">
+  <link rel="stylesheet" href="../_shared/styles/FloatingNavIsland.module.css">
+  <link rel="stylesheet" href="../_shared/styles/MagazinePageLayout.module.css">
+
+  <link rel="stylesheet" href="./account-composition-v150.styles.css">
+  <link rel="stylesheet" href="../_shared/styles/EntityHeroBase.module.css">
+  <link rel="stylesheet" href="../_shared/styles/AccountHero.module.css">
+  <link rel="stylesheet" href="../_shared/styles/ChapterHeading.module.css">
+  <link rel="stylesheet" href="../_shared/styles/Pill.module.css">
+  <link rel="stylesheet" href="../_shared/styles/StatusDot.module.css">
+  <link rel="stylesheet" href="../_shared/styles/HealthBadge.module.css">
+  <link rel="stylesheet" href="../_shared/styles/FreshnessIndicator.module.css">
+  <link rel="stylesheet" href="../_shared/styles/TrustBandBadge.module.css">
+  <link rel="stylesheet" href="../_shared/styles/EntityChip.module.css">
+  <link rel="stylesheet" href="../_shared/styles/ProvenanceTag.module.css">
+  <link rel="stylesheet" href="../_shared/styles/FinisMarker.module.css">
+
+  <link rel="stylesheet" href="../_shared/chrome.css">
+  <link rel="stylesheet" href="../_shared/inspector.css">
+</head>
+<body
+  class="AccountDetailPage_referenceBody"
+  data-folio-label="Account"
+  data-tint="turmeric"
+  data-active-page="accounts"
+  data-folio-crumbs="Reference > Surfaces > Account"
+  data-nav-base="."
+  data-folio-date="MONDAY, JUNE 1, 2026"
+  data-folio-actions="refresh,reports,tools"
+  data-folio-refresh-title="Refresh account"
+  data-chapters="headline:alignleft:The Headline|outlook:compass:Outlook|state-of-play:activity:State of Play|the-room:users:The Room|whats-next:arrowright:What's Next|watch-list:eye:Watch List|value-commitments:star:Value & Commitments|strategic-landscape:compass:Strategic Landscape|the-record:activity:The Record|the-work:checksquare:The Work|reports:filetext:Reports">
+
+<div class="MagazinePageLayout_magazinePage">
+<main class="MagazinePageLayout_pageContainer">
+
+<div
+  class="AccountDetailPage_view AccountDetailPage_compositionSurface"
+  data-ds-name="AccountDetailPage"
+  data-ds-tier="surface"
+  data-ds-spec="surfaces/AccountDetailPage.md"
+  data-composition-id="dailyos/account-overview:account:example-account">
+
+  <section id="headline" class="AccountDetailPage_compositionMasthead" data-section-id="headline">
+    <div class="AccountDetailPage_compositionMastheadGrid">
+      <div>
+        <div class="AccountDetailPage_compositionMetaRow">
+          <span class="AccountHero_badge EntityHeroBase_heroBadge AccountHero_customerBadge" data-ds-tier="primitive" data-ds-name="TypeBadge" data-ds-spec="primitives/TypeBadge.md">Customer</span>
+          <span class="Pill_pill Pill_compact TrustBandBadge_badge TrustBandBadge_compact TrustBandBadge_likelyCurrent" data-ds-tier="primitive" data-ds-name="TrustBandBadge" data-ds-spec="primitives/TrustBandBadge.md">Likely current</span>
+          <span class="FreshnessIndicator_root FreshnessIndicator_inline" data-ds-tier="primitive" data-ds-name="FreshnessIndicator" data-ds-spec="primitives/FreshnessIndicator.md" data-staleness="fresh">
+            <span class="FreshnessIndicator_part"><span class="FreshnessIndicator_text">Updated today</span></span>
+          </span>
+        </div>
+        <h1 class="AccountDetailPage_compositionTitle">Example Account</h1>
+        <p class="AccountDetailPage_compositionSubhead">Renewal motion is healthy, but legal timing and launch ownership are the two signals to watch this week.</p>
+      </div>
+
+      <div class="AccountDetailPage_compositionVitalRail" aria-label="Account vitals">
+        <div class="AccountDetailPage_compositionVitalRow">
+          <span class="AccountDetailPage_compositionVitalLabel">Health</span>
+          <span class="AccountDetailPage_compositionVitalValue">
+            <span class="HealthBadge_badge" data-ds-tier="primitive" data-ds-name="HealthBadge" data-ds-spec="primitives/HealthBadge.md">
+              <span class="HealthBadge_dot HealthBadge_dotStandard HealthBadge_dotGreen"></span>
+              <span class="HealthBadge_score HealthBadge_scoreStandard">Green</span>
+            </span>
+          </span>
+        </div>
+        <div class="AccountDetailPage_compositionVitalRow">
+          <span class="AccountDetailPage_compositionVitalLabel">Lifecycle</span>
+          <span class="AccountDetailPage_compositionVitalValue">Steady-state</span>
+        </div>
+        <div class="AccountDetailPage_compositionVitalRow">
+          <span class="AccountDetailPage_compositionVitalLabel">Renewal</span>
+          <span class="AccountDetailPage_compositionVitalValue">143 days</span>
+        </div>
+        <div class="AccountDetailPage_compositionVitalRow">
+          <span class="AccountDetailPage_compositionVitalLabel">Primary source</span>
+          <span class="AccountDetailPage_compositionVitalValue">CRM snapshot</span>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <section id="outlook" class="AccountDetailPage_compositionSection" data-section-id="outlook">
+    <div class="AccountDetailPage_compositionSectionLabel">Outlook</div>
+    <div class="AccountDetailPage_compositionSectionBody">
+      <header class="AccountDetailPage_compositionSectionHeader">
+        <div>
+          <h2 class="AccountDetailPage_compositionSectionTitle">Outlook</h2>
+          <p class="AccountDetailPage_compositionSectionDeck">The Account producer leads with health, confidence, trend, and top risks before the dossier expands into evidence.</p>
+        </div>
+        <div class="AccountDetailPage_compositionSectionMeta">
+          <span class="Pill_pill Pill_compact Pill_sage"><span class="Pill_dot"></span>Critical</span>
+          <span class="Pill_pill Pill_compact TrustBandBadge_badge TrustBandBadge_compact TrustBandBadge_likelyCurrent" data-ds-tier="primitive" data-ds-name="TrustBandBadge" data-ds-spec="primitives/TrustBandBadge.md">Likely current</span>
+        </div>
+      </header>
+
+      <div class="AccountDetailPage_compositionBlockStack">
+        <article class="AccountDetailPage_compositionFeaturedBlock" data-block-type="HealthSnapshot">
+          <div class="AccountDetailPage_compositionBlockHeader">
+            <h3 class="AccountDetailPage_compositionBlockTitle">Renewal confidence</h3>
+            <div class="AccountDetailPage_compositionBlockMeta">
+              <span class="FreshnessIndicator_root FreshnessIndicator_inline" data-ds-tier="primitive" data-ds-name="FreshnessIndicator" data-ds-spec="primitives/FreshnessIndicator.md" data-staleness="fresh">Fresh today</span>
+              <span class="ProvenanceTag_tag" data-ds-tier="primitive" data-ds-name="ProvenanceTag" data-ds-spec="primitives/ProvenanceTag.md">from account claims</span>
+            </div>
+          </div>
+          <p class="AccountDetailPage_compositionNarrative">High confidence if legal review starts before the executive readout and the admin pilot owner stays engaged.</p>
+          <div class="AccountDetailPage_compositionMetricGrid">
+            <div class="AccountDetailPage_compositionMetric">
+              <span class="AccountDetailPage_compositionMetricValue">82</span>
+              <span class="AccountDetailPage_compositionMetricLabel">Confidence score</span>
+            </div>
+            <div class="AccountDetailPage_compositionMetric">
+              <span class="AccountDetailPage_compositionMetricValue">+14</span>
+              <span class="AccountDetailPage_compositionMetricLabel">Trend over 30d</span>
+            </div>
+            <div class="AccountDetailPage_compositionMetric">
+              <span class="AccountDetailPage_compositionMetricValue">2</span>
+              <span class="AccountDetailPage_compositionMetricLabel">Open risks</span>
+            </div>
+          </div>
+        </article>
+      </div>
+    </div>
+  </section>
+
+  <section id="state-of-play" class="AccountDetailPage_compositionSection" data-section-id="state-of-play">
+    <div class="AccountDetailPage_compositionSectionLabel">State of Play</div>
+    <div class="AccountDetailPage_compositionSectionBody">
+      <header class="AccountDetailPage_compositionSectionHeader">
+        <div>
+          <h2 class="AccountDetailPage_compositionSectionTitle">State of Play</h2>
+          <p class="AccountDetailPage_compositionSectionDeck">Claim summaries and evidence rows stay together so the surface can show what changed and why it is trusted.</p>
+        </div>
+        <div class="AccountDetailPage_compositionSectionMeta">
+          <span class="Pill_pill Pill_compact Pill_turmeric">Important</span>
+        </div>
+      </header>
+
+      <div class="AccountDetailPage_compositionBlockStack">
+        <article class="AccountDetailPage_compositionBlock" data-block-type="ClaimSummary">
+          <div class="AccountDetailPage_compositionBlockHeader">
+            <h3 class="AccountDetailPage_compositionBlockTitle">Current read</h3>
+            <div class="AccountDetailPage_compositionBlockMeta">
+              <span class="Pill_pill Pill_compact TrustBandBadge_badge TrustBandBadge_compact TrustBandBadge_likelyCurrent" data-ds-tier="primitive" data-ds-name="TrustBandBadge" data-ds-spec="primitives/TrustBandBadge.md">Likely current</span>
+            </div>
+          </div>
+          <ul class="AccountDetailPage_compositionEvidenceList">
+            <li class="AccountDetailPage_compositionEvidenceRow">
+              <div class="AccountDetailPage_compositionEvidenceMain">
+                <p class="AccountDetailPage_compositionEvidenceTitle">Launch sponsor is active and removing blockers.</p>
+                <div class="AccountDetailPage_compositionEvidenceMeta">
+                  <span class="ProvenanceTag_tag" data-ds-tier="primitive" data-ds-name="ProvenanceTag" data-ds-spec="primitives/ProvenanceTag.md">from meeting notes</span>
+                  <span class="FreshnessIndicator_root FreshnessIndicator_inline" data-ds-tier="primitive" data-ds-name="FreshnessIndicator" data-ds-spec="primitives/FreshnessIndicator.md">2d old</span>
+                </div>
+              </div>
+              <button type="button" class="AccountDetailPage_compositionButton">Correct</button>
+            </li>
+            <li class="AccountDetailPage_compositionEvidenceRow">
+              <div class="AccountDetailPage_compositionEvidenceMain">
+                <p class="AccountDetailPage_compositionEvidenceTitle">Legal owner is not yet confirmed.</p>
+                <div class="AccountDetailPage_compositionEvidenceMeta">
+                  <span class="ProvenanceTag_tag ProvenanceTag_discrepancy" data-ds-tier="primitive" data-ds-name="ProvenanceTag" data-ds-spec="primitives/ProvenanceTag.md">source conflict</span>
+                  <span class="Pill_pill Pill_compact TrustBandBadge_badge TrustBandBadge_compact TrustBandBadge_useWithCaution" data-ds-tier="primitive" data-ds-name="TrustBandBadge" data-ds-spec="primitives/TrustBandBadge.md">Use with caution</span>
+                </div>
+              </div>
+              <button type="button" class="AccountDetailPage_compositionButton">Review</button>
+            </li>
+          </ul>
+        </article>
+
+        <article class="AccountDetailPage_compositionFallbackState" data-block-type="custom/unknown" aria-label="Unsupported block fallback">
+          <span class="AccountDetailPage_compositionStateLabel">Unsupported block</span>
+          <p class="AccountDetailPage_compositionStateText">DailyOS can show the safe summary for this block, but hidden fields are withheld on this surface.</p>
+          <span class="Pill_pill Pill_compact TrustBandBadge_badge TrustBandBadge_compact TrustBandBadge_needsVerification" data-ds-tier="primitive" data-ds-name="TrustBandBadge" data-ds-spec="primitives/TrustBandBadge.md">Needs verification</span>
+        </article>
+      </div>
+    </div>
+  </section>
+
+  <section id="the-room" class="AccountDetailPage_compositionSection" data-section-id="the-room">
+    <div class="AccountDetailPage_compositionSectionLabel">The Room</div>
+    <div class="AccountDetailPage_compositionSectionBody">
+      <header class="AccountDetailPage_compositionSectionHeader">
+        <div>
+          <h2 class="AccountDetailPage_compositionSectionTitle">The Room</h2>
+          <p class="AccountDetailPage_compositionSectionDeck">Relationship blocks render people, roles, confidence, and review gaps without leaking sensitive stakeholder data.</p>
+        </div>
+      </header>
+
+      <div class="AccountDetailPage_compositionBlockStack">
+        <article class="AccountDetailPage_compositionBlock" data-block-type="RelationshipMap">
+          <div class="AccountDetailPage_compositionRelationshipGrid">
+            <div class="AccountDetailPage_compositionPersonNode">
+              <span class="AccountDetailPage_compositionAvatar" data-ds-tier="primitive" data-ds-name="Avatar" data-ds-spec="primitives/Avatar.md">AO</span>
+              <span class="AccountDetailPage_compositionEvidenceTitle">Account owner</span>
+              <span class="Pill_pill Pill_compact Pill_sage"><span class="Pill_dot"></span>Champion</span>
+              <span class="ProvenanceTag_tag" data-ds-tier="primitive" data-ds-name="ProvenanceTag" data-ds-spec="primitives/ProvenanceTag.md">manual user</span>
+            </div>
+            <div class="AccountDetailPage_compositionPersonNode">
+              <span class="AccountDetailPage_compositionAvatar" data-ds-tier="primitive" data-ds-name="Avatar" data-ds-spec="primitives/Avatar.md">LS</span>
+              <span class="AccountDetailPage_compositionEvidenceTitle">Launch sponsor</span>
+              <span class="Pill_pill Pill_compact Pill_turmeric"><span class="Pill_dot"></span>Active</span>
+              <span class="ProvenanceTag_tag" data-ds-tier="primitive" data-ds-name="ProvenanceTag" data-ds-spec="primitives/ProvenanceTag.md">from calendar</span>
+            </div>
+            <div class="AccountDetailPage_compositionPersonNode">
+              <span class="AccountDetailPage_compositionAvatar" data-ds-tier="primitive" data-ds-name="Avatar" data-ds-spec="primitives/Avatar.md">?</span>
+              <span class="AccountDetailPage_compositionEvidenceTitle">Legal owner</span>
+              <span class="Pill_pill Pill_compact TrustBandBadge_badge TrustBandBadge_compact TrustBandBadge_needsVerification" data-ds-tier="primitive" data-ds-name="TrustBandBadge" data-ds-spec="primitives/TrustBandBadge.md">Needs verification</span>
+              <span class="ProvenanceTag_tag" data-ds-tier="primitive" data-ds-name="ProvenanceTag" data-ds-spec="primitives/ProvenanceTag.md">masked field</span>
+            </div>
+          </div>
+        </article>
+      </div>
+    </div>
+  </section>
+
+  <section id="whats-next" class="AccountDetailPage_compositionSection" data-section-id="whats-next">
+    <div class="AccountDetailPage_compositionSectionLabel">What's Next</div>
+    <div class="AccountDetailPage_compositionSectionBody">
+      <header class="AccountDetailPage_compositionSectionHeader">
+        <div>
+          <h2 class="AccountDetailPage_compositionSectionTitle">What's Next</h2>
+          <p class="AccountDetailPage_compositionSectionDeck">Action blocks are explicit about source labels and remain service-owned for any mutation.</p>
+        </div>
+      </header>
+
+      <div class="AccountDetailPage_compositionBlockStack">
+        <article class="AccountDetailPage_compositionBlock" data-block-type="ActionList">
+          <div class="AccountDetailPage_compositionActionRow">
+            <span class="AccountDetailPage_compositionActionIndex">01</span>
+            <div>
+              <p class="AccountDetailPage_compositionEvidenceTitle">Confirm the legal review owner before the renewal readout.</p>
+              <div class="AccountDetailPage_compositionEvidenceMeta">
+                <span class="StatusDot_wrapper" data-ds-tier="primitive" data-ds-name="StatusDot" data-ds-spec="primitives/StatusDot.md"><span class="StatusDot_dot StatusDot_sm StatusDot_loading"></span><span class="StatusDot_label">Waiting</span></span>
+                <span class="ProvenanceTag_tag" data-ds-tier="primitive" data-ds-name="ProvenanceTag" data-ds-spec="primitives/ProvenanceTag.md">from open loop claim</span>
+              </div>
+            </div>
+            <button type="button" class="AccountDetailPage_compositionButton">Open</button>
+          </div>
+          <div class="AccountDetailPage_compositionActionRow">
+            <span class="AccountDetailPage_compositionActionIndex">02</span>
+            <div>
+              <p class="AccountDetailPage_compositionEvidenceTitle">Send pilot adoption summary to the launch sponsor.</p>
+              <div class="AccountDetailPage_compositionEvidenceMeta">
+                <span class="StatusDot_wrapper" data-ds-tier="primitive" data-ds-name="StatusDot" data-ds-spec="primitives/StatusDot.md"><span class="StatusDot_dot StatusDot_sm StatusDot_connected"></span><span class="StatusDot_label">Ready</span></span>
+                <span class="ProvenanceTag_tag" data-ds-tier="primitive" data-ds-name="ProvenanceTag" data-ds-spec="primitives/ProvenanceTag.md">from work summary</span>
+              </div>
+            </div>
+            <button type="button" class="AccountDetailPage_compositionButton">Track</button>
+          </div>
+        </article>
+      </div>
+    </div>
+  </section>
+
+  <section id="watch-list" class="AccountDetailPage_compositionSection" data-section-id="watch-list">
+    <div class="AccountDetailPage_compositionSectionLabel">Watch List</div>
+    <div class="AccountDetailPage_compositionSectionBody">
+      <header class="AccountDetailPage_compositionSectionHeader">
+        <div>
+          <h2 class="AccountDetailPage_compositionSectionTitle">Watch List</h2>
+          <p class="AccountDetailPage_compositionSectionDeck">Background salience can remain expanded when it is short, or collapse semantically when dense.</p>
+        </div>
+        <div class="AccountDetailPage_compositionSectionMeta">
+          <span class="Pill_pill Pill_compact Pill_neutral">Background</span>
+        </div>
+      </header>
+
+      <div class="AccountDetailPage_compositionBlockStack">
+        <article class="AccountDetailPage_compositionDegradedState" data-block-type="RiskCallout">
+          <span class="AccountDetailPage_compositionStateLabel">Use with caution</span>
+          <p class="AccountDetailPage_compositionStateText">Procurement timing is inferred from stale source activity. Keep it visible, but do not promote it as current without confirmation.</p>
+          <span class="ProvenanceTag_tag ProvenanceTag_discrepancy" data-ds-tier="primitive" data-ds-name="ProvenanceTag" data-ds-spec="primitives/ProvenanceTag.md">source older than 30d</span>
+        </article>
+      </div>
+    </div>
+  </section>
+
+  <section id="value-commitments" class="AccountDetailPage_compositionSection" data-section-id="value-commitments">
+    <div class="AccountDetailPage_compositionSectionLabel">Value & Commitments</div>
+    <div class="AccountDetailPage_compositionSectionBody">
+      <header class="AccountDetailPage_compositionSectionHeader">
+        <div>
+          <h2 class="AccountDetailPage_compositionSectionTitle">Value & Commitments</h2>
+          <p class="AccountDetailPage_compositionSectionDeck">Value claims and open commitments remain correction-ready rather than becoming static narrative.</p>
+        </div>
+      </header>
+
+      <div class="AccountDetailPage_compositionBlockStack">
+        <article class="AccountDetailPage_compositionBlock" data-block-type="EvidenceList">
+          <ul class="AccountDetailPage_compositionEvidenceList">
+            <li class="AccountDetailPage_compositionEvidenceRow">
+              <div class="AccountDetailPage_compositionEvidenceMain">
+                <p class="AccountDetailPage_compositionEvidenceTitle">Admin pilot reduced support triage time for the first group.</p>
+                <div class="AccountDetailPage_compositionEvidenceMeta">
+                  <span class="Pill_pill Pill_compact Pill_sage">Value delivered</span>
+                  <span class="ProvenanceTag_tag" data-ds-tier="primitive" data-ds-name="ProvenanceTag" data-ds-spec="primitives/ProvenanceTag.md">from source ref</span>
+                </div>
+              </div>
+              <button type="button" class="AccountDetailPage_compositionButton">Correct</button>
+            </li>
+            <li class="AccountDetailPage_compositionEvidenceRow">
+              <div class="AccountDetailPage_compositionEvidenceMain">
+                <p class="AccountDetailPage_compositionEvidenceTitle">Executive readout is owed before renewal planning begins.</p>
+                <div class="AccountDetailPage_compositionEvidenceMeta">
+                  <span class="Pill_pill Pill_compact Pill_turmeric">Commitment</span>
+                  <span class="FreshnessIndicator_root FreshnessIndicator_inline" data-ds-tier="primitive" data-ds-name="FreshnessIndicator" data-ds-spec="primitives/FreshnessIndicator.md">5d old</span>
+                </div>
+              </div>
+              <button type="button" class="AccountDetailPage_compositionButton">Review</button>
+            </li>
+          </ul>
+        </article>
+      </div>
+    </div>
+  </section>
+
+  <section id="strategic-landscape" class="AccountDetailPage_compositionSection" data-section-id="strategic-landscape">
+    <div class="AccountDetailPage_compositionSectionLabel">Strategic Landscape</div>
+    <div class="AccountDetailPage_compositionSectionBody">
+      <header class="AccountDetailPage_compositionSectionHeader">
+        <div>
+          <h2 class="AccountDetailPage_compositionSectionTitle">Strategic Landscape</h2>
+          <p class="AccountDetailPage_compositionSectionDeck">Markdown document blocks stay plain-text safe and source-tagged.</p>
+        </div>
+      </header>
+
+      <div class="AccountDetailPage_compositionBlockStack">
+        <article class="AccountDetailPage_compositionBlock" data-block-type="MarkdownDocument">
+          <p class="AccountDetailPage_compositionBodyText">The renewal conversation is anchored on expanding the admin pilot into front-line support. The competing reporting layer is still present, but the sponsor's stated priority is workflow reliability.</p>
+          <ul class="AccountDetailPage_compositionInlineList">
+            <li><span class="Pill_pill Pill_compact EntityChip_chip EntityChip_chip-account" data-ds-tier="primitive" data-ds-name="EntityChip" data-ds-spec="primitives/EntityChip.md">subsidiary.com</span></li>
+            <li><span class="Pill_pill Pill_compact Pill_olive">Reporting layer</span></li>
+            <li><span class="Pill_pill Pill_compact Pill_larkspur">Workflow reliability</span></li>
+          </ul>
+        </article>
+      </div>
+    </div>
+  </section>
+
+  <section id="the-record" class="AccountDetailPage_compositionSection" data-section-id="the-record">
+    <div class="AccountDetailPage_compositionSectionLabel">The Record</div>
+    <div class="AccountDetailPage_compositionSectionBody">
+      <header class="AccountDetailPage_compositionSectionHeader">
+        <div>
+          <h2 class="AccountDetailPage_compositionSectionTitle">The Record</h2>
+          <p class="AccountDetailPage_compositionSectionDeck">Timeline evidence is source-labeled, manual entries are marked user-authored, and raw excerpts stay out of the reference.</p>
+        </div>
+      </header>
+
+      <div class="AccountDetailPage_compositionBlockStack">
+        <article class="AccountDetailPage_compositionBlock" data-block-type="EvidenceList">
+          <ul class="AccountDetailPage_compositionEvidenceList">
+            <li class="AccountDetailPage_compositionEvidenceRow">
+              <div class="AccountDetailPage_compositionEvidenceMain">
+                <p class="AccountDetailPage_compositionEvidenceTitle">Pilot status review captured launch owner and blocker list.</p>
+                <div class="AccountDetailPage_compositionEvidenceMeta">
+                  <span class="ProvenanceTag_tag" data-ds-tier="primitive" data-ds-name="ProvenanceTag" data-ds-spec="primitives/ProvenanceTag.md">meeting source</span>
+                  <span class="FreshnessIndicator_root FreshnessIndicator_inline" data-ds-tier="primitive" data-ds-name="FreshnessIndicator" data-ds-spec="primitives/FreshnessIndicator.md">May 29</span>
+                </div>
+              </div>
+              <span class="Pill_pill Pill_compact Pill_neutral">Note</span>
+            </li>
+            <li class="AccountDetailPage_compositionEvidenceRow">
+              <div class="AccountDetailPage_compositionEvidenceMain">
+                <p class="AccountDetailPage_compositionEvidenceTitle">Manual account note added to track procurement nuance.</p>
+                <div class="AccountDetailPage_compositionEvidenceMeta">
+                  <span class="ProvenanceTag_tag" data-ds-tier="primitive" data-ds-name="ProvenanceTag" data-ds-spec="primitives/ProvenanceTag.md">manual user</span>
+                </div>
+              </div>
+              <span class="Pill_pill Pill_compact Pill_neutral">Manual</span>
+            </li>
+          </ul>
+        </article>
+      </div>
+    </div>
+  </section>
+
+  <section id="the-work" class="AccountDetailPage_compositionSection" data-section-id="the-work">
+    <div class="AccountDetailPage_compositionSectionLabel">The Work</div>
+    <div class="AccountDetailPage_compositionSectionBody">
+      <header class="AccountDetailPage_compositionSectionHeader">
+        <div>
+          <h2 class="AccountDetailPage_compositionSectionTitle">The Work</h2>
+          <p class="AccountDetailPage_compositionSectionDeck">Work rows are projected blocks, not a separate frontend query fanout.</p>
+        </div>
+      </header>
+
+      <div class="AccountDetailPage_compositionBlockStack">
+        <article class="AccountDetailPage_compositionBlock" data-block-type="ActionList">
+          <div class="AccountDetailPage_compositionTwoColumn">
+            <div class="AccountDetailPage_compositionEmptyState">
+              <span class="AccountDetailPage_compositionStateLabel">No active work items</span>
+              <p class="AccountDetailPage_compositionStateText">The producer emits this empty block when no current work survives filtering.</p>
+            </div>
+            <div class="AccountDetailPage_compositionDegradedState">
+              <span class="AccountDetailPage_compositionStateLabel">Degraded</span>
+              <p class="AccountDetailPage_compositionStateText">Recently landed work is unavailable because one source field was masked by render policy.</p>
+            </div>
+          </div>
+        </article>
+      </div>
+    </div>
+  </section>
+
+  <section id="reports" class="AccountDetailPage_compositionSection" data-section-id="reports">
+    <div class="AccountDetailPage_compositionSectionLabel">Reports</div>
+    <div class="AccountDetailPage_compositionSectionBody">
+      <header class="AccountDetailPage_compositionSectionHeader">
+        <div>
+          <h2 class="AccountDetailPage_compositionSectionTitle">Reports</h2>
+          <p class="AccountDetailPage_compositionSectionDeck">Reports show available and unavailable states without fabricating provenance.</p>
+        </div>
+      </header>
+
+      <div class="AccountDetailPage_compositionBlockStack">
+        <article class="AccountDetailPage_compositionReportGrid" data-block-type="ActionList">
+          <div class="AccountDetailPage_compositionReport">
+            <span class="Pill_pill Pill_compact Pill_sage">Available</span>
+            <h3 class="AccountDetailPage_compositionBlockTitle">Account health</h3>
+            <p class="AccountDetailPage_compositionBodyText">Current evidence supports a refreshed account health report.</p>
+            <button type="button" class="AccountDetailPage_compositionButton">Open</button>
+          </div>
+          <div class="AccountDetailPage_compositionReport">
+            <span class="Pill_pill Pill_compact Pill_turmeric">Ready soon</span>
+            <h3 class="AccountDetailPage_compositionBlockTitle">Executive readout</h3>
+            <p class="AccountDetailPage_compositionBodyText">Needs legal-owner confirmation before generation.</p>
+            <button type="button" class="AccountDetailPage_compositionButton">Prepare</button>
+          </div>
+          <div class="AccountDetailPage_compositionReport AccountDetailPage_compositionReportUnavailable">
+            <span class="Pill_pill Pill_compact Pill_neutral">Unavailable</span>
+            <h3 class="AccountDetailPage_compositionBlockTitle">Risk briefing</h3>
+            <p class="AccountDetailPage_compositionBodyText">No current high-risk pattern is grounded enough to brief.</p>
+            <button type="button" class="AccountDetailPage_compositionButton">Review</button>
+          </div>
+        </article>
+      </div>
+    </div>
+  </section>
+
+  <div class="FinisMarker_root" data-ds-tier="pattern" data-ds-name="FinisMarker" data-ds-spec="patterns/FinisMarker.md">
+    <div class="FinisMarker_marks" aria-hidden="true"><span>*</span><span>*</span><span>*</span></div>
+    <div class="FinisMarker_timestamp">End of account dossier &middot; refreshed June 1, 2026</div>
+  </div>
+</div>
+
+</main>
+</div>
+
+<script src="../_shared/chrome.js"></script>
+<script src="../_shared/inspector.js"></script>
+</body>
+</html>

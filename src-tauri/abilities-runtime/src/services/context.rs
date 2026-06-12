@@ -1017,6 +1017,37 @@ pub struct AccountCompositionSnapshot {
     pub account_type: Option<AccountCompositionSnapshotField>,
     #[serde(default)]
     pub fields: Vec<AccountCompositionSnapshotField>,
+    /// The entity's enriched intelligence payload (camelCase, the same shape
+    /// the production account-detail surface renders: currentState, risks,
+    /// valueDelivered, agreementOutlook, recommendedActions, …). The producer
+    /// reshapes chapter-relevant subsets into block payloads so composition
+    /// surfaces carry the SAME content as the production page, not just
+    /// atomic claims. None when the account has never been enriched.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub intelligence: Option<serde_json::Value>,
+    /// Glean leading-signal bundle (HealthOutlookSignals, camelCase) — same
+    /// read the production detail page makes. None when enrichment never ran.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub glean_signals: Option<serde_json::Value>,
+    /// User health sentiment: { current, setAt, note } from account columns.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub sentiment: Option<serde_json::Value>,
+    /// Stakeholder records: { stakeholdersFull, accountName } — the
+    /// production StakeholderGrid contract.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub stakeholders: Option<serde_json::Value>,
+    /// Technical footprint row (camelCase), production component contract.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub technical_footprint: Option<serde_json::Value>,
+    /// Commercial shape fields: { arr, renewalDate }.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub commercial: Option<serde_json::Value>,
+    /// Relationship fabric fields: { nps, strategicPrograms }.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub fabric: Option<serde_json::Value>,
+    /// Record/timeline bundle: { lifecycleChanges, recentMeetings }.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub record: Option<serde_json::Value>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]

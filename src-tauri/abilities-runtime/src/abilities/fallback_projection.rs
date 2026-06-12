@@ -262,6 +262,7 @@ enum ValueKind {
     Number,
     Bool,
     Array,
+    Object,
 }
 
 #[derive(Debug, Clone)]
@@ -936,6 +937,7 @@ fn value_for_kind(value: &Value, kind: ValueKind) -> Option<Value> {
         (ValueKind::Number, Value::Number(_)) => Some(value.clone()),
         (ValueKind::Bool, Value::Bool(_)) => Some(value.clone()),
         (ValueKind::Array, Value::Array(_)) => Some(value.clone()),
+        (ValueKind::Object, Value::Object(_)) => Some(value.clone()),
         _ => None,
     }
 }
@@ -1380,6 +1382,15 @@ const fn array_field(pointer: &'static str, sensitivity: ClaimSensitivity) -> Fi
     }
 }
 
+const fn object_field(pointer: &'static str, sensitivity: ClaimSensitivity) -> FieldPolicy {
+    FieldPolicy {
+        pointer,
+        sensitivity,
+        allowed_surfaces: ALL_SURFACES,
+        value_kind: ValueKind::Object,
+    }
+}
+
 const ACCOUNT_OVERVIEW_FIELDS: &[FieldPolicy] = &[
     text_field("/account/id", ClaimSensitivity::Internal),
     text_field("/account/display_name", ClaimSensitivity::Internal),
@@ -1424,6 +1435,8 @@ const ACCOUNT_OVERVIEW_FIELDS: &[FieldPolicy] = &[
     text_field("/account_id", ClaimSensitivity::Internal),
     text_field("/vitals/*/label", ClaimSensitivity::Internal),
     text_field("/vitals/*/value", ClaimSensitivity::Internal),
+    text_field("/vitals/*/display_value", ClaimSensitivity::Internal),
+    text_field("/vitals/*/kind", ClaimSensitivity::Internal),
     text_field("/vitals/*/source_label", ClaimSensitivity::Internal),
     text_field("/vitals/*/source_asof", ClaimSensitivity::Internal),
     text_field("/vitals/*/trust_band", ClaimSensitivity::Internal),
@@ -1441,9 +1454,36 @@ const CLAIM_SUMMARY_FIELDS: &[FieldPolicy] = &[
     text_field("/claim_id", ClaimSensitivity::Internal),
     text_field("/claim_type", ClaimSensitivity::Internal),
     text_field("/intent", ClaimSensitivity::Internal),
+    text_field("/provenance_kind", ClaimSensitivity::Internal),
     bool_field("/empty_state", ClaimSensitivity::Internal),
+    text_field("/block", ClaimSensitivity::Internal),
+    object_field("/technicalFootprint", ClaimSensitivity::Internal),
+    object_field("/commercial", ClaimSensitivity::Internal),
+    object_field("/fabric", ClaimSensitivity::Internal),
+    number_field("/intelligence/sourceFileCount", ClaimSensitivity::Internal),
+    array_field("/intelligence/sourceManifest", ClaimSensitivity::Internal),
+    object_field("/intelligence/currentState", ClaimSensitivity::Internal),
+    text_field("/intelligence/executiveAssessment", ClaimSensitivity::Internal),
+    text_field("/intelligence/pullQuote", ClaimSensitivity::Internal),
+    array_field("/intelligence/valueDelivered", ClaimSensitivity::Internal),
+    array_field("/intelligence/successMetrics", ClaimSensitivity::Internal),
+    array_field("/intelligence/openCommitments", ClaimSensitivity::Internal),
+    array_field("/intelligence/strategicPriorities", ClaimSensitivity::Internal),
+    array_field("/intelligence/competitiveContext", ClaimSensitivity::Internal),
+    array_field("/intelligence/marketContext", ClaimSensitivity::Internal),
+    array_field("/intelligence/regulatoryContext", ClaimSensitivity::Internal),
+    text_field("/intelligence/enrichedAt", ClaimSensitivity::Internal),
+    text_field("/items/*/text", ClaimSensitivity::Internal),
+    text_field("/items/*/claim_id", ClaimSensitivity::Internal),
+    text_field("/items/*/claim_type", ClaimSensitivity::Internal),
+    text_field("/items/*/trust_band", ClaimSensitivity::Internal),
+    text_field("/items/*/source_asof", ClaimSensitivity::Internal),
+    text_field("/items/*/provenance_kind", ClaimSensitivity::Internal),
 ];
 const EVIDENCE_LIST_FIELDS: &[FieldPolicy] = &[
+    text_field("/block", ClaimSensitivity::Internal),
+    array_field("/quotes", ClaimSensitivity::Internal),
+    object_field("/record", ClaimSensitivity::Internal),
     text_field("/title", ClaimSensitivity::Internal),
     text_field("/items/*/label", ClaimSensitivity::Internal),
     text_field("/items/*/claim_id", ClaimSensitivity::Internal),
@@ -1476,6 +1516,24 @@ const HEALTH_SNAPSHOT_FIELDS: &[FieldPolicy] = &[
     text_field("/claim_id", ClaimSensitivity::Internal),
     text_field("/claim_type", ClaimSensitivity::Internal),
     text_field("/source_asof", ClaimSensitivity::Internal),
+    text_field("/provenance_kind", ClaimSensitivity::Internal),
+    text_field("/items/*/text", ClaimSensitivity::Internal),
+    text_field("/items/*/claim_id", ClaimSensitivity::Internal),
+    text_field("/items/*/claim_type", ClaimSensitivity::Internal),
+    text_field("/items/*/trust_band", ClaimSensitivity::Internal),
+    text_field("/items/*/source_asof", ClaimSensitivity::Internal),
+    text_field("/items/*/provenance_kind", ClaimSensitivity::Internal),
+    text_field("/block", ClaimSensitivity::Internal),
+    object_field("/gleanSignals", ClaimSensitivity::Internal),
+    object_field("/sentiment", ClaimSensitivity::Internal),
+    number_field("/intelligence/sourceFileCount", ClaimSensitivity::Internal),
+    array_field("/intelligence/sourceManifest", ClaimSensitivity::Internal),
+    object_field("/intelligence/agreementOutlook", ClaimSensitivity::Internal),
+    object_field("/intelligence/contractContext", ClaimSensitivity::Internal),
+    array_field("/intelligence/expansionSignals", ClaimSensitivity::Internal),
+    object_field("/intelligence/health", ClaimSensitivity::Internal),
+    array_field("/intelligence/consistencyFindings", ClaimSensitivity::Internal),
+    text_field("/intelligence/enrichedAt", ClaimSensitivity::Internal),
 ];
 const RELATIONSHIP_MAP_FIELDS: &[FieldPolicy] = &[
     text_field("/nodes/*/label", ClaimSensitivity::Internal),
@@ -1485,31 +1543,67 @@ const RELATIONSHIP_MAP_FIELDS: &[FieldPolicy] = &[
     text_field("/nodes/*/trust_band", ClaimSensitivity::Internal),
     text_field("/nodes/*/claim_id", ClaimSensitivity::Internal),
     text_field("/nodes/*/source_asof", ClaimSensitivity::Internal),
+    text_field("/nodes/*/provenance_kind", ClaimSensitivity::Internal),
+    text_field("/nodes/*/claim_type", ClaimSensitivity::Internal),
     text_field("/claim_type", ClaimSensitivity::Internal),
+    text_field("/trust_band", ClaimSensitivity::Internal),
+    text_field("/source_asof", ClaimSensitivity::Internal),
+    text_field("/block", ClaimSensitivity::Internal),
+    object_field("/stakeholders", ClaimSensitivity::Internal),
+    array_field("/intelligence/stakeholderInsights", ClaimSensitivity::Internal),
+    text_field("/intelligence/enrichedAt", ClaimSensitivity::Internal),
 ];
 const RISK_CALLOUT_FIELDS: &[FieldPolicy] = &[
     text_field("/title", ClaimSensitivity::Internal),
     text_field("/body", ClaimSensitivity::Internal),
     text_field("/severity", ClaimSensitivity::Internal),
     text_field("/recommended_action", ClaimSensitivity::Internal),
+    text_field("/provenance_kind", ClaimSensitivity::Internal),
     text_field("/text", ClaimSensitivity::Internal),
     text_field("/trust_band", ClaimSensitivity::Internal),
     text_field("/claim_id", ClaimSensitivity::Internal),
     text_field("/claim_type", ClaimSensitivity::Internal),
     text_field("/source_asof", ClaimSensitivity::Internal),
+    text_field("/intent", ClaimSensitivity::Internal),
+    text_field("/items/*/text", ClaimSensitivity::Internal),
+    text_field("/items/*/claim_id", ClaimSensitivity::Internal),
+    text_field("/items/*/claim_type", ClaimSensitivity::Internal),
+    text_field("/items/*/trust_band", ClaimSensitivity::Internal),
+    text_field("/items/*/source_asof", ClaimSensitivity::Internal),
+    text_field("/items/*/provenance_kind", ClaimSensitivity::Internal),
+    text_field("/block", ClaimSensitivity::Internal),
+    object_field("/gleanSignals", ClaimSensitivity::Internal),
+    object_field("/sentiment", ClaimSensitivity::Internal),
+    array_field("/findings", ClaimSensitivity::Internal),
+    array_field("/intelligence/blockers", ClaimSensitivity::Internal),
+    array_field("/intelligence/risks", ClaimSensitivity::Internal),
+    array_field("/intelligence/recentWins", ClaimSensitivity::Internal),
+    text_field("/block", ClaimSensitivity::Internal),
+    object_field("/technicalFootprint", ClaimSensitivity::Internal),
+    object_field("/commercial", ClaimSensitivity::Internal),
+    object_field("/fabric", ClaimSensitivity::Internal),
+    number_field("/intelligence/sourceFileCount", ClaimSensitivity::Internal),
+    array_field("/intelligence/sourceManifest", ClaimSensitivity::Internal),
+    object_field("/intelligence/currentState", ClaimSensitivity::Internal),
+    text_field("/intelligence/enrichedAt", ClaimSensitivity::Internal),
 ];
 const ACTION_LIST_FIELDS: &[FieldPolicy] = &[
     text_field("/items/*/title", ClaimSensitivity::Internal),
     text_field("/items/*/status", ClaimSensitivity::Internal),
     text_field("/items/*/due_at", ClaimSensitivity::Internal),
     text_field("/items/*/owner_label", ClaimSensitivity::Internal),
+    text_field("/items/*/provenance_kind", ClaimSensitivity::Internal),
     text_field("/items/*/text", ClaimSensitivity::Internal),
     text_field("/items/*/trust_band", ClaimSensitivity::Internal),
     text_field("/items/*/claim_id", ClaimSensitivity::Internal),
     text_field("/items/*/source_asof", ClaimSensitivity::Internal),
+    text_field("/items/*/claim_type", ClaimSensitivity::Internal),
     text_field("/claim_type", ClaimSensitivity::Internal),
     text_field("/trust_band", ClaimSensitivity::Internal),
     text_field("/source_asof", ClaimSensitivity::Internal),
+    text_field("/block", ClaimSensitivity::Internal),
+    array_field("/intelligence/recommendedActions", ClaimSensitivity::Internal),
+    text_field("/intelligence/enrichedAt", ClaimSensitivity::Internal),
 ];
 const MARKDOWN_DOCUMENT_FIELDS: &[FieldPolicy] = &[
     text_field("/title", ClaimSensitivity::Internal),
@@ -1792,5 +1886,69 @@ fn score_band_rule() -> BlockProjectionRule {
         render_annotations: &["score-band"],
         fields: SCORE_BAND_FIELDS,
         default_trust_band: TrustBand::UseWithCaution,
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use chrono::TimeZone;
+
+    use super::*;
+    use crate::abilities::composition::{
+        AbilityRef, CompositionKind, CompositionMetadata, Section,
+    };
+    use crate::abilities::provenance::{InvocationId, SchemaVersion};
+
+    #[test]
+    fn binding_to_absent_payload_field_rejects_as_invalid_producer_output() {
+        let invocation_id = InvocationId::new(uuid::Uuid::from_u128(
+            0x1234_5678_90ab_cdef_1122_3344_5566_7788,
+        ));
+        let generated_at = chrono::Utc
+            .with_ymd_and_hms(2026, 5, 15, 12, 0, 0)
+            .unwrap();
+        let mut block = Block::new(
+            BlockId::new("claim-summary-1"),
+            BlockType::ClaimSummary,
+            json!({"text": "Known payload text"}),
+            Vec::new(),
+            ProvenanceRef::new(
+                invocation_id,
+                FieldPath::new("/sections/0/blocks/0").unwrap(),
+            ),
+            None,
+        )
+        .expect("block builds");
+        block.field_bindings.push(FieldBinding {
+            field_path: FieldPath::new("/missing_payload_field").unwrap(),
+            role: BindingRole::DisplayOnly,
+            claim_refs: Vec::new(),
+        });
+        let composition = Composition::new(
+            CompositionDocId::new("composition-fixture"),
+            CompositionKind::EntityPage,
+            None,
+            vec![Section::new(SectionId::new("summary"), vec![block])],
+            Salience::default(),
+            generated_at,
+            AbilityRef::new("test.ability"),
+            CompositionMetadata {
+                schema_version: SchemaVersion(1),
+                generated_at,
+                composition_version: CompositionVersion::new(1),
+                generated_by: "test.ability".to_string(),
+            },
+        );
+        let ctx = FallbackProjectionContext::new(Actor::System, SurfaceKind::Eval, 3);
+
+        let err = project_composition_for_surface(&composition, &ctx)
+            .expect_err("binding to absent payload field rejects");
+
+        assert_eq!(
+            err,
+            ProjectionError::InvalidProducerOutput {
+                reason: ProducerOutputInvalidReason::BindingTargetsUnknownField
+            }
+        );
     }
 }
