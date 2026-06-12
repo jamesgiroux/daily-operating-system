@@ -42,9 +42,8 @@ import { useActivePreset } from "@/hooks/useActivePreset";
 import { useNavigate } from "@tanstack/react-router";
 import { buildSentimentView } from "@/hooks/useAccountDetail";
 import { useSentimentBlock } from "@/hooks/useSentimentBlock";
-import type { AccountDetail, ConsistencyFinding, HealthOutlookSignals, QuoteWallEntry, SentimentValue } from "@/types";
+import type { AccountDetail, HealthOutlookSignals, SentimentValue , EntityIntelligence } from "@/types";
 import { useIntelligenceFieldUpdate } from "@/hooks/useIntelligenceFieldUpdate";
-import type { EntityIntelligence } from "@/types";
 
 type Payload = Record<string, unknown>;
 
@@ -67,7 +66,7 @@ function chapterIntelligence(payload: Payload): EntityIntelligence | null {
  *  is the legacy affordance the trust model retired; typed claim feedback
  *  arrives with the unified-writer track. */
 function useChapterIntelligenceWiring(accountId?: string) {
-  const { updateField } = useIntelligenceFieldUpdate("account", accountId, async () => {});
+  const { updateField } = useIntelligenceFieldUpdate("account", accountId, () => {});
   return {
     onUpdateField: accountId ? updateField : undefined,
   };
@@ -158,7 +157,7 @@ function ProductionBlockBody({ payload, accountId }: { payload: Payload; account
     case "divergence":
       return (
         <DivergenceSection
-          findings={(Array.isArray(payload.findings) ? payload.findings : []) as unknown as ConsistencyFinding[]}
+          findings={Array.isArray(payload.findings) ? payload.findings : []}
           gleanSignals={glean}
           accountId={accountId}
         />
@@ -204,7 +203,7 @@ function ProductionBlockBody({ payload, accountId }: { payload: Payload; account
       return (
         <>
           <ChapterHeading title="Their voice" />
-          <QuoteWall quotes={(Array.isArray(payload.quotes) ? payload.quotes : null) as unknown as QuoteWallEntry[] | null} />
+          <QuoteWall quotes={Array.isArray(payload.quotes) ? payload.quotes : null} />
         </>
       );
     case "commercial_shape": {
@@ -224,7 +223,7 @@ function ProductionBlockBody({ payload, accountId }: { payload: Payload; account
     case "record": {
       const record = object(payload.record);
       return record ? (
-        <UnifiedTimeline data={{ recentMeetings: [], ...record } as never} />
+        <UnifiedTimeline data={{ recentMeetings: [], ...record }} />
       ) : null;
     }
     case "outputs":
@@ -305,7 +304,8 @@ function pointerValue(payload: Payload, pointer: string): unknown {
  * Provenance class for trust rendering. "inferred" (enrichment, no source_ref)
  * renders faded with a tooltip + confirm/contest; "sourced" (hard fact) reads
  * at full presence. Trust surfaces as opacity, not chips — keyed off the
- * producer's provenance_kind, not the cold-start trust score (DOS-853).
+ * producer's provenance_kind so render presence follows source attribution,
+ * not cold-start trust score calibration.
  */
 function provenanceKind(payload: Payload): "sourced" | "inferred" | null {
   // Single-claim blocks carry provenance_kind at the top level and fade as a

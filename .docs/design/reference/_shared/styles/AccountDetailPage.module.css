@@ -20,3 +20,777 @@
   justify-content: center;
   margin-top: var(--space-lg);
 }
+
+.AccountDetailPage_compositionSurface {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3xl);
+  padding-bottom: var(--space-4xl);
+}
+
+.AccountDetailPage_compositionCustomizeButton {
+  appearance: none;
+  display: inline-flex;
+  min-height: 30px;
+  align-items: center;
+  gap: 6px;
+  border: 1px solid var(--color-rule-light);
+  border-radius: var(--radius-editorial-sm);
+  background: var(--color-surface-primary);
+  color: var(--color-text-secondary);
+  cursor: pointer;
+  font-family: var(--font-mono);
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  padding: 0 10px;
+  text-transform: uppercase;
+}
+
+.AccountDetailPage_compositionCustomizeButton:hover,
+.AccountDetailPage_compositionCustomizeButton:focus-visible,
+.AccountDetailPage_compositionCustomizeButton[aria-pressed="true"] {
+  border-color: var(--color-account);
+  color: var(--color-text-primary);
+  outline: none;
+}
+
+.AccountDetailPage_compositionEditStatus {
+  position: sticky;
+  top: 72px;
+  z-index: 3;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-md);
+  padding: var(--space-sm) 0;
+  border-top: 1px solid var(--color-rule-heavy);
+  border-bottom: 1px solid var(--color-rule-light);
+  background: var(--color-surface-primary);
+  color: var(--color-text-secondary);
+  font-family: var(--font-mono);
+  font-size: 11px;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+
+.AccountDetailPage_compositionResetButton,
+.AccountDetailPage_compositionInserterButton {
+  appearance: none;
+  display: inline-flex;
+  min-height: 28px;
+  align-items: center;
+  gap: 6px;
+  border: 1px solid var(--color-rule-light);
+  border-radius: var(--radius-editorial-sm);
+  background: transparent;
+  color: var(--color-text-secondary);
+  cursor: pointer;
+  font-family: var(--font-mono);
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  padding: 0 9px;
+  text-transform: uppercase;
+}
+
+.AccountDetailPage_compositionResetButton:hover,
+.AccountDetailPage_compositionResetButton:focus-visible,
+.AccountDetailPage_compositionInserterButton:hover,
+.AccountDetailPage_compositionInserterButton:focus-visible {
+  border-color: var(--color-account);
+  color: var(--color-text-primary);
+  outline: none;
+}
+
+.AccountDetailPage_compositionEmptyLayoutNotice {
+  display: grid;
+  gap: var(--space-sm);
+  padding: var(--space-md) 0;
+  border-top: 1px solid var(--color-rule-light);
+  border-bottom: 1px solid var(--color-rule-light);
+}
+
+.AccountDetailPage_referenceBody {
+  overflow-x: hidden;
+}
+
+.AccountDetailPage_compositionMasthead {
+  padding: var(--space-4xl) 0 var(--space-2xl);
+  border-bottom: 1px solid var(--color-rule-heavy);
+}
+
+.AccountDetailPage_compositionMetaRow {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-sm);
+  margin-bottom: var(--space-lg);
+}
+
+.AccountDetailPage_compositionTitle {
+  margin: 0;
+  max-width: 860px;
+  color: var(--color-text-primary);
+  font-family: var(--font-serif);
+  font-size: 76px;
+  font-weight: 300;
+  line-height: 0.92;
+  letter-spacing: 0;
+}
+
+.AccountDetailPage_compositionSubhead {
+  max-width: 760px;
+  margin: var(--space-lg) 0 0;
+  color: var(--color-text-secondary);
+  font-family: var(--font-serif);
+  font-size: 22px;
+  font-weight: 300;
+  line-height: 1.35;
+  letter-spacing: 0;
+}
+
+.AccountDetailPage_compositionMastheadGrid {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(260px, 340px);
+  gap: var(--space-2xl);
+  align-items: end;
+}
+
+.AccountDetailPage_compositionVitalRail {
+  display: grid;
+  gap: var(--space-md);
+  padding-top: var(--space-lg);
+}
+
+.AccountDetailPage_compositionVitalRow {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: var(--space-md);
+  align-items: baseline;
+  padding-bottom: var(--space-sm);
+  border-bottom: 1px solid var(--color-rule-light);
+}
+
+.AccountDetailPage_compositionVitalLabel {
+  color: var(--color-text-tertiary);
+  font-family: var(--font-mono);
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+
+.AccountDetailPage_compositionVitalValue {
+  color: var(--color-text-primary);
+  font-family: var(--font-sans);
+  font-size: 14px;
+  font-weight: 600;
+  letter-spacing: 0;
+  text-align: right;
+}
+
+.AccountDetailPage_compositionSection {
+  display: grid;
+  grid-template-columns: minmax(120px, 180px) minmax(0, 1fr);
+  gap: var(--space-2xl);
+  scroll-margin-top: 96px;
+}
+
+.AccountDetailPage_compositionSectionLabel {
+  position: sticky;
+  top: 96px;
+  align-self: start;
+  color: var(--color-text-tertiary);
+  font-family: var(--font-mono);
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: 0.08em;
+  line-height: 1.4;
+  text-transform: uppercase;
+}
+
+.AccountDetailPage_compositionSectionBody {
+  min-width: 0;
+}
+
+.AccountDetailPage_compositionSectionHeader {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: var(--space-lg);
+  padding-bottom: var(--space-md);
+  border-bottom: 1px solid var(--color-rule-heavy);
+}
+
+.AccountDetailPage_compositionSectionTitle {
+  margin: 0;
+  color: var(--color-text-primary);
+  font-family: var(--font-serif);
+  font-size: 34px;
+  font-weight: 300;
+  line-height: 1;
+  letter-spacing: 0;
+}
+
+.AccountDetailPage_compositionSectionDeck {
+  max-width: 620px;
+  margin: var(--space-xs) 0 0;
+  color: var(--color-text-secondary);
+  font-family: var(--font-sans);
+  font-size: 14px;
+  line-height: 1.55;
+  letter-spacing: 0;
+}
+
+.AccountDetailPage_compositionSectionMeta {
+  display: inline-flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: var(--space-xs);
+  min-width: 150px;
+}
+
+.AccountDetailPage_compositionBlockStack {
+  display: grid;
+  gap: var(--space-lg);
+  margin-top: var(--space-lg);
+}
+
+.AccountDetailPage_compositionEditableBlock {
+  display: grid;
+  gap: var(--space-sm);
+  min-width: 0;
+}
+
+.AccountDetailPage_compositionEditableBlock[data-edit-mode="true"] {
+  scroll-margin-top: 120px;
+}
+
+.AccountDetailPage_compositionEditableBlock[data-dragging="true"] {
+  opacity: 0.76;
+}
+
+.AccountDetailPage_compositionEditableBlock[data-layout-variant="compact"] .AccountDetailPage_compositionBlock {
+  gap: var(--space-sm);
+  padding-top: var(--space-sm);
+}
+
+.AccountDetailPage_compositionEditableBlock[data-layout-variant="compact"] .AccountDetailPage_compositionNarrative,
+.AccountDetailPage_compositionEditableBlock[data-layout-variant="compact"] .AccountDetailPage_compositionBodyText {
+  font-size: 13px;
+  line-height: 1.45;
+}
+
+.AccountDetailPage_compositionEditableBlock[data-layout-variant="spotlight"] .AccountDetailPage_compositionBlock {
+  padding: var(--space-lg);
+  border: 1px solid var(--color-rule-light);
+  border-radius: var(--radius-editorial-sm);
+  background: var(--color-surface-primary);
+}
+
+.AccountDetailPage_compositionBlockToolbar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-sm);
+  padding: var(--space-xs) 0;
+  border-top: 1px dashed var(--color-rule-light);
+  border-bottom: 1px dashed var(--color-rule-light);
+}
+
+.AccountDetailPage_compositionReorderHandle {
+  appearance: none;
+  display: inline-flex;
+  width: 30px;
+  height: 30px;
+  align-items: center;
+  justify-content: center;
+  border: 1px solid var(--color-rule-light);
+  border-radius: var(--radius-editorial-sm);
+  background: transparent;
+  color: var(--color-text-tertiary);
+  cursor: grab;
+}
+
+.AccountDetailPage_compositionReorderHandle:disabled {
+  cursor: default;
+  opacity: 0.72;
+}
+
+.AccountDetailPage_compositionReorderHandle:hover,
+.AccountDetailPage_compositionReorderHandle:focus-visible {
+  border-color: var(--color-account);
+  color: var(--color-text-primary);
+  outline: none;
+}
+
+.AccountDetailPage_compositionAssistiveText {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip: rect(0 0 0 0);
+  white-space: nowrap;
+}
+
+.AccountDetailPage_compositionLockedReason {
+  color: var(--color-text-tertiary);
+  font-family: var(--font-sans);
+  font-size: 12px;
+  line-height: 1.3;
+}
+
+.AccountDetailPage_compositionToolbarControl,
+.AccountDetailPage_compositionSectionVisibility {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-xs);
+  color: var(--color-text-tertiary);
+  font-family: var(--font-mono);
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+
+.AccountDetailPage_compositionSectionVisibility {
+  margin-top: var(--space-sm);
+}
+
+.AccountDetailPage_compositionBlock {
+  display: grid;
+  gap: var(--space-md);
+  padding: var(--space-lg) 0 0;
+  border-top: 1px solid var(--color-rule-light);
+}
+
+/* Chrome-free shell for intelligence-backed chapters: the production
+ * components draw their own rules and headings, so the block contributes
+ * no border or padding of its own. */
+.AccountDetailPage_compositionQuietBlock {
+  display: grid;
+  gap: var(--space-md);
+}
+
+.AccountDetailPage_compositionFeaturedBlock {
+  display: grid;
+  gap: var(--space-lg);
+  padding: var(--space-lg);
+  border: 1px solid var(--color-rule-light);
+  border-radius: var(--radius-editorial-sm);
+  background: var(--color-surface-primary);
+}
+
+/* Trust as opacity: enrichment-inferred content (no hard source) reads at
+ * reduced presence; hover/focus restores it. The tooltip + confirm/contest
+ * carry the "why" — no loud trust chip. Hard-sourced content is full presence
+ * (no class). Keyed off the producer's provenance_kind. */
+.AccountDetailPage_compositionInferred {
+  opacity: 0.62;
+  transition: opacity 120ms ease;
+}
+
+.AccountDetailPage_compositionInferred:hover,
+.AccountDetailPage_compositionInferred:focus-within {
+  opacity: 1;
+}
+
+.AccountDetailPage_compositionBlockHeader {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-sm);
+}
+
+.AccountDetailPage_compositionBlockTitle {
+  margin: 0;
+  color: var(--color-text-primary);
+  font-family: var(--font-sans);
+  font-size: 15px;
+  font-weight: 700;
+  letter-spacing: 0;
+}
+
+.AccountDetailPage_compositionBlockMeta {
+  display: inline-flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: var(--space-xs);
+}
+
+.AccountDetailPage_compositionProvenanceStatus {
+  display: inline-flex;
+  align-items: center;
+  min-height: 20px;
+  padding: 0 8px;
+  border: 1px solid var(--color-border-subtle);
+  border-radius: 999px;
+  color: var(--color-text-secondary);
+  font-family: var(--font-sans);
+  font-size: 11px;
+  font-weight: 600;
+  line-height: 1;
+  letter-spacing: 0;
+}
+
+.AccountDetailPage_compositionProvenanceStatus[data-provenance-state="missing"],
+.AccountDetailPage_compositionProvenanceStatus[data-provenance-state="unresolved"] {
+  border-color: var(--color-trust-use-with-caution);
+  color: var(--color-trust-use-with-caution);
+}
+
+.AccountDetailPage_compositionProvenanceStatus[data-provenance-state="masked"] {
+  border-color: var(--color-trust-needs-verification);
+  color: var(--color-trust-needs-verification);
+}
+
+.AccountDetailPage_compositionFeedbackRow {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-xs);
+  padding-top: var(--space-sm);
+  border-top: 1px solid var(--color-rule-light);
+}
+
+.AccountDetailPage_compositionNarrative {
+  margin: 0;
+  color: var(--color-text-primary);
+  font-family: var(--font-serif);
+  font-size: 22px;
+  font-weight: 300;
+  line-height: 1.4;
+  letter-spacing: 0;
+}
+
+.AccountDetailPage_compositionBodyText {
+  margin: 0;
+  color: var(--color-text-secondary);
+  font-family: var(--font-sans);
+  font-size: 14px;
+  line-height: 1.55;
+  letter-spacing: 0;
+}
+
+.AccountDetailPage_compositionMetricGrid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: var(--space-md);
+}
+
+.AccountDetailPage_compositionMetric {
+  display: grid;
+  gap: var(--space-xs);
+  padding-top: var(--space-md);
+  border-top: 1px solid var(--color-rule-light);
+}
+
+.AccountDetailPage_compositionMetricValue {
+  color: var(--color-text-primary);
+  font-family: var(--font-serif);
+  font-size: 28px;
+  font-weight: 300;
+  line-height: 1;
+  letter-spacing: 0;
+}
+
+.AccountDetailPage_compositionMetricLabel {
+  color: var(--color-text-tertiary);
+  font-family: var(--font-mono);
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+
+.AccountDetailPage_compositionEvidenceList {
+  display: grid;
+  gap: var(--space-sm);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.AccountDetailPage_compositionEvidenceRow {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: var(--space-md);
+  align-items: start;
+  padding: var(--space-md) 0;
+  border-top: 1px solid var(--color-rule-light);
+}
+
+.AccountDetailPage_compositionEvidenceMain {
+  min-width: 0;
+}
+
+.AccountDetailPage_compositionEvidenceTitle {
+  margin: 0;
+  color: var(--color-text-primary);
+  font-family: var(--font-sans);
+  font-size: 14px;
+  font-weight: 600;
+  line-height: 1.35;
+  letter-spacing: 0;
+}
+
+.AccountDetailPage_compositionEvidenceMeta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-xs);
+  margin-top: var(--space-xs);
+}
+
+.AccountDetailPage_compositionInlineList {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-xs);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.AccountDetailPage_compositionTwoColumn {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: var(--space-lg);
+}
+
+.AccountDetailPage_compositionEmptyState,
+.AccountDetailPage_compositionDegradedState,
+.AccountDetailPage_compositionFallbackState {
+  display: grid;
+  gap: var(--space-xs);
+  padding: var(--space-md);
+  border-left: 3px solid var(--color-rule-heavy);
+  background: var(--color-desk-charcoal-4);
+}
+
+.AccountDetailPage_compositionDegradedState {
+  border-left-color: var(--color-trust-use-with-caution);
+  background: var(--color-trust-use-with-caution-8);
+}
+
+.AccountDetailPage_compositionFallbackState {
+  border-left-color: var(--color-trust-needs-verification);
+  background: var(--color-trust-needs-verification-8);
+}
+
+.AccountDetailPage_compositionStateLabel {
+  color: var(--color-text-tertiary);
+  font-family: var(--font-mono);
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.AccountDetailPage_compositionStateText {
+  margin: 0;
+  color: var(--color-text-secondary);
+  font-family: var(--font-sans);
+  font-size: 13px;
+  line-height: 1.45;
+  letter-spacing: 0;
+}
+
+.AccountDetailPage_compositionRelationshipGrid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: var(--space-sm);
+}
+
+.AccountDetailPage_compositionPersonNode {
+  display: grid;
+  gap: var(--space-xs);
+  padding: var(--space-md);
+  border: 1px solid var(--color-rule-light);
+  border-radius: var(--radius-editorial-sm);
+  background: var(--color-surface-primary);
+}
+
+.AccountDetailPage_compositionAvatar {
+  display: inline-flex;
+  width: 34px;
+  height: 34px;
+  align-items: center;
+  justify-content: center;
+  border-radius: 999px;
+  background: var(--color-person-12);
+  color: var(--color-garden-larkspur);
+  font-family: var(--font-mono);
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.02em;
+}
+
+.AccountDetailPage_compositionActionRow {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  gap: var(--space-md);
+  align-items: start;
+  padding: var(--space-md) 0;
+  border-top: 1px solid var(--color-rule-light);
+}
+
+.AccountDetailPage_compositionActionIndex {
+  color: var(--color-account);
+  font-family: var(--font-mono);
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+}
+
+.AccountDetailPage_compositionReportGrid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: var(--space-md);
+}
+
+.AccountDetailPage_compositionReport {
+  display: grid;
+  gap: var(--space-sm);
+  min-height: 148px;
+  padding: var(--space-md);
+  border: 1px solid var(--color-rule-light);
+  border-radius: var(--radius-editorial-sm);
+  background: var(--color-surface-primary);
+}
+
+.AccountDetailPage_compositionReportUnavailable {
+  background: transparent;
+  opacity: 0.72;
+}
+
+.AccountDetailPage_compositionButton {
+  appearance: none;
+  width: fit-content;
+  border: 1px solid var(--color-rule-heavy);
+  border-radius: var(--radius-editorial-sm);
+  background: transparent;
+  color: var(--color-text-primary);
+  cursor: pointer;
+  font-family: var(--font-mono);
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  padding: 8px 10px;
+  text-transform: uppercase;
+}
+
+.AccountDetailPage_compositionButton:hover,
+.AccountDetailPage_compositionButton:focus-visible {
+  border-color: var(--color-account);
+  outline: none;
+}
+
+.AccountDetailPage_compositionInserter {
+  display: grid;
+  gap: var(--space-sm);
+  padding-top: var(--space-lg);
+  border-top: 1px solid var(--color-rule-heavy);
+}
+
+.AccountDetailPage_compositionInserterLabel {
+  margin: 0;
+  color: var(--color-text-tertiary);
+  font-family: var(--font-mono);
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.AccountDetailPage_compositionInserterList {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-sm);
+}
+
+@media (max-width: 900px) {
+  .AccountDetailPage_compositionMastheadGrid,
+  .AccountDetailPage_compositionSection,
+  .AccountDetailPage_compositionTwoColumn,
+  .AccountDetailPage_compositionMetricGrid,
+  .AccountDetailPage_compositionRelationshipGrid,
+  .AccountDetailPage_compositionReportGrid {
+    grid-template-columns: 1fr;
+  }
+
+  .AccountDetailPage_compositionSectionLabel {
+    position: static;
+  }
+
+  .AccountDetailPage_compositionSectionHeader,
+  .AccountDetailPage_compositionEvidenceRow,
+  .AccountDetailPage_compositionActionRow {
+    grid-template-columns: 1fr;
+  }
+
+  .AccountDetailPage_compositionSectionHeader,
+  .AccountDetailPage_compositionBlockHeader {
+    align-items: flex-start;
+    flex-direction: column;
+  }
+
+  .AccountDetailPage_compositionSectionMeta,
+  .AccountDetailPage_compositionBlockMeta {
+    justify-content: flex-start;
+  }
+
+  .AccountDetailPage_compositionTitle {
+    font-size: 54px;
+  }
+}
+
+@media (max-width: 640px) {
+  .AccountDetailPage_referenceBody :global(.AccountDetailPage_FloatingNavIsland_navIslandContainer),
+  .AccountDetailPage_referenceBody :global(.AccountDetailPage_FolioBar_folioCenter),
+  .AccountDetailPage_referenceBody :global(.AccountDetailPage_FolioBar_folioRight) {
+    display: none;
+  }
+
+  .AccountDetailPage_referenceBody :global(.AccountDetailPage_FolioBar_folioBreadcrumbs) {
+    max-width: calc(100vw - 96px);
+  }
+
+  .AccountDetailPage_referenceBody :global(.AccountDetailPage_MagazinePageLayout_pageContainer) {
+    width: 100%;
+    max-width: 100%;
+    overflow-x: hidden;
+  }
+
+  .AccountDetailPage_compositionSurface {
+    gap: var(--space-2xl);
+  }
+
+  .AccountDetailPage_compositionMasthead {
+    padding-top: var(--space-3xl);
+  }
+
+  .AccountDetailPage_compositionMastheadGrid > * {
+    min-width: 0;
+  }
+
+  .AccountDetailPage_compositionTitle {
+    max-width: 300px;
+    font-size: 48px;
+    overflow-wrap: normal;
+  }
+
+  .AccountDetailPage_compositionSubhead {
+    max-width: 300px;
+    font-size: 19px;
+  }
+
+  .AccountDetailPage_compositionVitalRow {
+    grid-template-columns: 1fr;
+    gap: var(--space-xs);
+  }
+
+  .AccountDetailPage_compositionVitalValue {
+    text-align: left;
+  }
+}

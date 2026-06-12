@@ -1,5 +1,5 @@
 /* ==========================================================================
- * WorkSurface.module.css — Work tab (DOS-13)
+ * WorkSurface.module.css — Work tab
  *
  * Workbench, not todo list. Zero-guilt execution surface.
  * Colocated styles for the 8-chapter Work view components:
@@ -243,6 +243,14 @@
 .WorkSurface_commitmentOwnerRow strong {
   font-weight: 600;
 }
+.WorkSurface_ownerAmbiguous {
+  font-family: var(--font-mono);
+  font-size: 9px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--color-spice-terracotta);
+  margin-left: 8px;
+}
 .WorkSurface_pillRow {
   display: flex;
   flex-wrap: wrap;
@@ -250,57 +258,45 @@
   align-items: center;
 }
 
-/* ── Audience pill ── */
-.WorkSurface_audiencePill {
+.WorkSurface_aboutCommitment {
+  border-top: 1px dashed var(--color-rule-light);
+  border-bottom: 1px dashed var(--color-rule-light);
+  padding: 8px 0;
+}
+
+.WorkSurface_aboutCommitmentSummary {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  cursor: pointer;
+  font-family: var(--font-mono);
+  font-size: 10px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--color-text-tertiary);
+}
+
+.WorkSurface_aboutCommitmentSummary::marker {
+  color: var(--color-text-tertiary);
+}
+
+.WorkSurface_aboutTrustDot {
+  margin-left: 0;
+}
+
+.WorkSurface_aboutCommitmentBody {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px 16px;
+  padding-top: 8px;
   font-family: var(--font-sans);
   font-size: 12px;
-  font-weight: 500;
-  line-height: 1;
-  padding: 5px 14px;
-  border-radius: 100px;
-}
-.WorkSurface_audienceCustomer {
-  background: var(--color-garden-sage-15);
-  color: var(--color-garden-rosemary);
-}
-.WorkSurface_audienceInternal {
-  background: var(--color-desk-charcoal-8);
+  line-height: 1.5;
   color: var(--color-text-secondary);
 }
 
-/* ── Visibility pill (Private / Shared) ── */
-.WorkSurface_visibilityPill {
-  font-family: var(--font-sans);
-  font-size: 12px;
-  font-weight: 500;
-  line-height: 1;
-  padding: 5px 14px;
-  border-radius: 100px;
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
-  text-decoration: none;
-}
-.WorkSurface_visibilityPill::before {
-  content: "";
-  width: 5px;
-  height: 5px;
-  border-radius: 50%;
-}
-.WorkSurface_visibilityPrivate {
-  background: var(--color-desk-charcoal-8);
-  color: var(--color-text-secondary);
-}
-.WorkSurface_visibilityPrivate::before {
-  background: var(--color-text-tertiary);
-}
-.WorkSurface_visibilityShared {
-  background: var(--color-garden-sage-15);
-  color: var(--color-garden-rosemary);
+.WorkSurface_visibilityLink {
   border-bottom: 1px dotted var(--color-garden-rosemary);
-}
-.WorkSurface_visibilityShared::before {
-  background: var(--color-garden-sage);
 }
 
 /* ── Soft nudge (non-guilt flag inside a commitment) ── */

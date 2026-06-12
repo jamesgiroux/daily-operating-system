@@ -1,4 +1,4 @@
-/* PersonNetwork — "Their Orbit" chapter (I392, ADR-0088) */
+/* PersonNetwork — "Their Orbit" chapter (ADR-0088) */
 
 .PersonNetwork_section {
   /* scroll-margin and spacing handled by page-level chapterSectionWithPadding wrapper */
@@ -170,8 +170,8 @@
 }
 
 .PersonNetwork_addRoleBtn:hover {
-  border-color: var(--color-garden-larkspur);
-  color: var(--color-garden-larkspur);
+  border-color: var(--color-person);
+  color: var(--color-person);
 }
 
 /* ── Role picker dropdown ── */

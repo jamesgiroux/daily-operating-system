@@ -8,6 +8,11 @@
   margin: 0 auto;
 }
 
+.ActionDetailPage_controlsPanel {
+  border-top: 1px solid var(--color-rule-light);
+  margin-top: 56px;
+}
+
 /* ── Loading skeleton ── */
 
 .ActionDetailPage_loadingSkeleton {

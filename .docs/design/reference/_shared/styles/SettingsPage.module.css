@@ -1,4 +1,4 @@
-/* SettingsPage — CSS Module (I541) */
+/* SettingsPage — CSS Module  */
 
 .SettingsPage_container {
   max-width: var(--page-content-width-standard);
@@ -167,6 +167,76 @@
   color: var(--color-text-tertiary);
 }
 
+/* ── Surfaces ── */
+
+.SettingsPage_surfacePanel {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 20px;
+  align-items: start;
+  padding: 18px 0;
+  border-top: 1px solid var(--color-rule-heavy);
+  border-bottom: 1px solid var(--color-rule-light);
+}
+
+.SettingsPage_surfacePanelMain {
+  display: grid;
+  gap: 6px;
+}
+
+.SettingsPage_surfacePanelLabel {
+  margin: 0;
+  color: var(--color-text-primary);
+  font-family: var(--font-sans);
+  font-size: 15px;
+  font-weight: 700;
+  letter-spacing: 0;
+}
+
+.SettingsPage_surfacePanelText,
+.SettingsPage_surfacePanelError {
+  margin: 0;
+  color: var(--color-text-secondary);
+  font-family: var(--font-sans);
+  font-size: 13px;
+  line-height: 1.45;
+}
+
+.SettingsPage_surfacePanelError {
+  color: var(--color-trust-needs-verification);
+}
+
+.SettingsPage_surfacePanelButton {
+  appearance: none;
+  display: inline-flex;
+  min-height: 30px;
+  align-items: center;
+  gap: 6px;
+  border: 1px solid var(--color-rule-light);
+  border-radius: var(--radius-editorial-sm);
+  background: transparent;
+  color: var(--color-text-secondary);
+  cursor: pointer;
+  font-family: var(--font-mono);
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  padding: 0 10px;
+  text-transform: uppercase;
+}
+
+.SettingsPage_surfacePanelButton:hover,
+.SettingsPage_surfacePanelButton:focus-visible {
+  border-color: var(--color-spice-turmeric);
+  color: var(--color-text-primary);
+  outline: none;
+}
+
+.SettingsPage_surfacePanelButton:disabled {
+  cursor: default;
+  opacity: 0.5;
+}
+
 /* ── Icon utilities ── */
 
 .SettingsPage_iconTertiary {
@@ -177,4 +247,10 @@
 
 .SettingsPage_bottomSpacer {
   height: 80px;
+}
+
+@media (max-width: 640px) {
+  .SettingsPage_surfacePanel {
+    grid-template-columns: 1fr;
+  }
 }

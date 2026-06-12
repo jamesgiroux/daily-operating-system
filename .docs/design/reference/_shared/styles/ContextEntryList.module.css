@@ -161,3 +161,88 @@
 .ContextEntryList_addBtn:hover {
   color: var(--color-text-secondary);
 }
+
+.ContextEntryList_trustEmptyState {
+  margin: var(--space-sm) 0;
+  font-family: var(--font-sans);
+  font-size: 13px;
+  color: var(--color-text-tertiary);
+}
+
+.ContextEntryList_backgroundDetails {
+  margin-top: var(--space-sm);
+  border-top: 1px solid var(--color-rule-light);
+  border-bottom: 1px solid var(--color-rule-light);
+}
+
+.ContextEntryList_backgroundSummary {
+  display: flex;
+  align-items: center;
+  gap: var(--space-xs);
+  padding: var(--space-sm) 0;
+  cursor: pointer;
+  font-family: var(--font-mono);
+  font-size: 10px;
+  font-weight: 700;
+  color: var(--color-text-tertiary);
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+
+.ContextEntryList_backgroundCount {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 1.3rem;
+  height: 1.3rem;
+  border-radius: var(--radius-editorial-sm);
+  background: var(--color-surface-subtle);
+  color: var(--color-text-tertiary);
+  font-family: var(--font-mono);
+  font-size: 10px;
+  line-height: 1;
+}
+
+.ContextEntryList_backgroundList {
+  display: flex;
+  flex-direction: column;
+}
+
+.ContextEntryList_backgroundList[hidden] {
+  display: none;
+}
+
+.ContextEntryList_showAllEvidence {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-xs);
+  margin-top: var(--space-sm);
+}
+
+.ContextEntryList_showAllButton {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-xs);
+  width: fit-content;
+  font-family: var(--font-mono);
+  font-size: 10px;
+  font-weight: 700;
+  color: var(--color-spice-terracotta);
+  background: none;
+  border: 1px solid var(--color-spice-terracotta);
+  border-radius: var(--radius-editorial-sm);
+  cursor: pointer;
+  padding: var(--space-xs) var(--space-sm);
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+}
+
+.ContextEntryList_showAllButton[aria-pressed="true"] {
+  background: var(--color-spice-terracotta-12);
+}
+
+.ContextEntryList_showAllStatus {
+  font-family: var(--font-sans);
+  font-size: 12px;
+  color: var(--color-text-tertiary);
+}

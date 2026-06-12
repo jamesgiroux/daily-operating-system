@@ -168,18 +168,6 @@
   max-width: 640px;
 }
 
-.editorial-briefing_nowPillInline {
-  font-family: var(--font-mono);
-  font-size: 10px;
-  font-weight: 700;
-  letter-spacing: 0.06em;
-  text-transform: uppercase;
-  padding: 2px 8px;
-  background: var(--color-spice-turmeric-15);
-  color: var(--color-spice-turmeric);
-  margin-left: 8px;
-}
-
 /* =============================================================================
    THE ROOM — Grouped attendee display (their side / our side)
    ============================================================================= */
@@ -306,6 +294,14 @@
   min-width: 0;
 }
 
+.editorial-briefing_prepItemBody {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 6px;
+  min-width: 0;
+}
+
 .editorial-briefing_prepImpactBadge {
   font-family: var(--font-mono);
   font-size: 9px;
@@ -351,6 +347,116 @@
 .editorial-briefing_prepDotTurmeric { background: var(--color-spice-turmeric); }
 .editorial-briefing_prepDotTerracotta { background: var(--color-spice-terracotta); }
 .editorial-briefing_prepDotSage { background: var(--color-garden-sage); }
+
+.editorial-briefing_trustEvidenceEmpty {
+  grid-column: 1 / -1;
+  margin: 0;
+  font-family: var(--font-sans);
+  font-size: 13px;
+  color: var(--color-text-tertiary);
+}
+
+.editorial-briefing_trustBackground,
+.editorial-briefing_trustShowAll {
+  grid-column: 1 / -1;
+}
+
+.editorial-briefing_trustBackground {
+  border-top: 1px solid var(--color-rule-light);
+  border-bottom: 1px solid var(--color-rule-light);
+}
+
+.editorial-briefing_trustBackgroundSummary {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 10px 0;
+  cursor: pointer;
+  font-family: var(--font-mono);
+  font-size: 10px;
+  font-weight: 700;
+  color: var(--color-text-tertiary);
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.editorial-briefing_trustCount {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 18px;
+  height: 18px;
+  border-radius: var(--radius-editorial-sm);
+  background: var(--color-surface-subtle);
+  color: var(--color-text-tertiary);
+  font-family: var(--font-mono);
+  font-size: 10px;
+  line-height: 1;
+}
+
+.editorial-briefing_trustEvidenceList {
+  display: grid;
+  gap: 8px;
+  padding-bottom: 10px;
+}
+
+.editorial-briefing_trustEvidenceList[hidden] {
+  display: none;
+}
+
+.editorial-briefing_trustEvidenceItem {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 10px;
+  font-family: var(--font-sans);
+  font-size: 13px;
+  line-height: 1.45;
+  color: var(--color-text-secondary);
+}
+
+.editorial-briefing_trustEvidenceSection {
+  font-family: var(--font-mono);
+  font-size: 9px;
+  font-weight: 700;
+  color: var(--color-text-tertiary);
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.editorial-briefing_trustShowAll {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.editorial-briefing_trustShowAllButton {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  width: fit-content;
+  font-family: var(--font-mono);
+  font-size: 10px;
+  font-weight: 700;
+  color: var(--color-spice-terracotta);
+  background: none;
+  border: 1px solid var(--color-spice-terracotta);
+  border-radius: var(--radius-editorial-sm);
+  cursor: pointer;
+  padding: 6px 8px;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+}
+
+.editorial-briefing_trustShowAllButton[aria-pressed="true"] {
+  background: var(--color-spice-terracotta-12);
+}
+
+.editorial-briefing_trustShowAllStatus {
+  font-family: var(--font-sans);
+  font-size: 12px;
+  color: var(--color-text-tertiary);
+}
 
 .editorial-briefing_prepKv {
   font-family: var(--font-mono);
@@ -697,30 +803,6 @@
   line-height: 1.35;
 }
 
-.editorial-briefing_nowPill {
-  font-family: var(--font-mono);
-  font-size: 9px;
-  font-weight: 700;
-  letter-spacing: 0.08em;
-  text-transform: uppercase;
-  padding: 2px 8px;
-  background: var(--color-spice-turmeric-18);
-  color: var(--color-spice-turmeric);
-  flex-shrink: 0;
-}
-
-.editorial-briefing_upNextPill {
-  font-family: var(--font-mono);
-  font-size: 9px;
-  font-weight: 700;
-  letter-spacing: 0.08em;
-  text-transform: uppercase;
-  padding: 2px 8px;
-  background: var(--color-garden-sage-15);
-  color: var(--color-garden-sage);
-  flex-shrink: 0;
-}
-
 .editorial-briefing_scheduleSubtitle {
   font-family: var(--font-sans);
   font-size: 13px;
@@ -732,7 +814,7 @@
   gap: 6px;
 }
 
-/* .schedulePrepDot and .schedulePrepDotMuted removed — I329: hasPrep fallback eliminated */
+/*.schedulePrepDot and.schedulePrepDotMuted removed — hasPrep fallback eliminated */
 
 .editorial-briefing_prepFlag {
   font-family: var(--font-mono);
@@ -1263,7 +1345,7 @@
   margin: 0;
 }
 
-/* I395: Score reason metadata */
+/* Score reason metadata */
 .editorial-briefing_emailScoreReason {
   font-family: var(--font-mono);
   font-size: 10px;
@@ -1273,7 +1355,7 @@
   margin-top: 2px;
 }
 
-/* I395: Score band group headers */
+/* Score band group headers */
 .editorial-briefing_emailScoreBandLabel {
   font-family: var(--font-mono);
   font-size: 10px;

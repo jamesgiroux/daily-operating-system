@@ -2130,7 +2130,7 @@ fn data_source_for_claim(value: &str) -> DataSource {
 /// no source_ref (enrichment inference) is `"inferred"`. Surfaces fade
 /// `inferred` content; `sourced` reads at full presence. This is the render
 /// signal — distinct from the trust score, whose cold-start calibration is
-/// tracked separately (DOS-853).
+/// handled by scoring policy so render presence stays source-based.
 fn claim_provenance_kind(claim: &IntelligenceClaim) -> &'static str {
     match claim.source_ref.as_deref() {
         Some(reference) if !reference.trim().is_empty() => "sourced",

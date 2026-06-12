@@ -1,5 +1,5 @@
 /*
- * PendingStakeholderQueue — DOS-258 Lane F
+ * PendingStakeholderQueue — Lane F
  *
  * Review queue for account_stakeholders rows with status='pending_review'.
  * Saffron accent ("needs review") matches the SuggestionsQueue pattern in

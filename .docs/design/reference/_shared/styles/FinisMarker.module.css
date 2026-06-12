@@ -1,9 +1,8 @@
 /* =============================================================================
    FinisMarker.module.css — End-of-briefing marker
-   Mirror for the design reference layer (scoped class names).
+   Three spaced brand marks + optional enriched-at timestamp.
+   Mockup: Montserrat 18px, turmeric color, 0.4em letter-spacing.
    ============================================================================= */
-
-@import "design-tokens.css";
 
 .FinisMarker_root {
   text-align: center;

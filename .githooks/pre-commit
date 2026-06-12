@@ -299,15 +299,15 @@ fi
 if printf '%s\n' "$STAGED_FILES" | grep -qE '\.docs/design/reference/(surfaces|_shared)/|^src/(pages|components)/.*\.(tsx|module\.css)$'; then
   AUDIT_SCRIPT="${CWD}/.docs/design/_audits/audit-reference.py"
   if [ -f "$AUDIT_SCRIPT" ]; then
-    if ! python3 "$AUDIT_SCRIPT" --against-ref public/main --enforce-baseline 2>&1; then
+    if ! python3 "$AUDIT_SCRIPT" --against-ref HEAD --enforce-baseline 2>&1; then
       append_error "❌ Reference fidelity regressed vs production (see output above)."
       append_error "   Either fix the reference HTML, or if the regression is intentional,"
-      append_error "   re-baseline:  python3 .docs/design/_audits/audit-reference.py --against-ref public/main --write-baseline"
+      append_error "   re-baseline:  python3 .docs/design/_audits/audit-reference.py --against-ref HEAD --write-baseline"
     fi
   fi
   SYNC_SCRIPT="${CWD}/.docs/design/reference/_shared/sync-styles-from-ref.py"
   if [ -f "$SYNC_SCRIPT" ]; then
-    if ! python3 "$SYNC_SCRIPT" --ref public/main --check 2>&1; then
+    if ! python3 "$SYNC_SCRIPT" --ref HEAD --check 2>&1; then
       append_error "❌ Reference _shared stylesheets drifted from production CSS."
       append_error "   Regenerate:  python3 .docs/design/reference/_shared/sync-styles-from-ref.py --ref public/main"
     fi
