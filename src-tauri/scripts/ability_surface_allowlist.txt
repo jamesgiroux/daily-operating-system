@@ -386,6 +386,9 @@ get_sync_freshness
 export_all_data
 get_data_summary
 clear_intelligence
+# Local maintenance surface for operator-triggered generated-intelligence cleanup;
+# mutation logic remains service-owned and does not expose an MCP/headless ability.
+cleanup_over_cap_generated_intelligence
 delete_all_data
 # v1.5.0 list surfaces: user-invoked Tauri archive/repair commands for the
 # existing React entity-list and data-management workflows. Not MCP tools and

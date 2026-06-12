@@ -30,8 +30,8 @@ use crate::services::context::{
     AccountCompositionSnapshotReadError, CompositionCommitError, CompositionProposal,
 };
 use crate::types::{
-    prompt_input_sensitivity_allowed, subject_ref_from_json, ClaimState, ClaimSubjectRef,
-    IntelligenceClaim, SurfacingState,
+    prompt_input_sensitivity_allowed, subject_ref_from_json, ClaimSensitivity, ClaimState,
+    ClaimSubjectRef, IntelligenceClaim, SurfacingState,
 };
 
 const ABILITY_NAME: &str = "dailyos/account-overview";
@@ -479,7 +479,7 @@ fn build_composition(
         ("the-room", "The Room", claims_for(&[ClaimPlacement::Relationship]), SectionLayout::Stacked, 0.72, SalienceBand::Important, "stakeholders"),
         ("what-matters", "What matters", Vec::new(), SectionLayout::Stacked, 0.62, SalienceBand::Contextual, "what matters to them"),
         ("value-commitments", "What we've built", claims_for(&[ClaimPlacement::Win, ClaimPlacement::Value]), SectionLayout::Stacked, 0.72, SalienceBand::Important, "value and commitments"),
-        ("their-voice", "Their voice", Vec::new(), SectionLayout::Stacked, 0.5, SalienceBand::Contextual, "their voice"),
+        ("their-voice", "Their voice", claims_for(&[ClaimPlacement::Overview, ClaimPlacement::Risk, ClaimPlacement::Win, ClaimPlacement::Value, ClaimPlacement::Commitment, ClaimPlacement::Relationship, ClaimPlacement::Health]), SectionLayout::Stacked, 0.5, SalienceBand::Contextual, "their voice"),
         ("commercial-shape", "Commercial shape", Vec::new(), SectionLayout::Stacked, 0.55, SalienceBand::Contextual, "commercial shape"),
         ("technical-shape", "Technical shape", Vec::new(), SectionLayout::Stacked, 0.45, SalienceBand::Background, "technical shape"),
         ("relationship-fabric", "Relationship fabric", Vec::new(), SectionLayout::Stacked, 0.45, SalienceBand::Background, "relationship fabric"),
@@ -1049,22 +1049,31 @@ fn section_block_groups<'a>(
             intelligence: subset(),
             extras: extras("built", vec![]),
         }],
-        "their-voice" => vec![domain_block(
-            BlockType::EvidenceList,
-            "their-voice",
-            "quote_wall",
-            vec![(
-                "quotes",
-                snapshot
-                    .and_then(|snap| snap.glean_signals.as_ref())
-                    .and_then(|glean| glean.get("quoteWall"))
-                    .filter(|quotes| quotes.as_array().is_some_and(|rows| !rows.is_empty()))
-                    .cloned(),
-            )],
-            0.5,
-            SalienceBand::Contextual,
-            "their voice",
-        )],
+        "their-voice" => {
+            let quote_projections = projections
+                .iter()
+                .copied()
+                .filter(|projection| verified_transcript_quote_payload(projection).is_some())
+                .collect::<Vec<_>>();
+            let quotes = snapshot
+                .and_then(|snap| snap.glean_signals.as_ref())
+                .and_then(|glean| glean.get("quoteWall"))
+                .filter(|quotes| quotes.as_array().is_some_and(|rows| !rows.is_empty()))
+                .cloned()
+                .or_else(|| quote_wall_from_transcript_claims(&quote_projections));
+            vec![SectionBlockGroup {
+                block_type: BlockType::EvidenceList,
+                item_key: "items",
+                intent: None,
+                group_key: "their-voice",
+                projections: quote_projections,
+                salience_value: 0.5,
+                salience_band: SalienceBand::Contextual,
+                salience_reason: "their voice",
+                intelligence: None,
+                extras: extras("quote_wall", vec![("quotes", quotes)]),
+            }]
+        }
         "commercial-shape" => vec![domain_block(
             BlockType::ClaimSummary,
             "commercial-shape",
@@ -1117,6 +1126,85 @@ fn section_block_groups<'a>(
             intelligence: subset(),
             extras: serde_json::Map::new(),
         }],
+    }
+}
+
+fn quote_wall_from_transcript_claims(projections: &[&ClaimProjection]) -> Option<Value> {
+    let quotes = projections
+        .iter()
+        .filter_map(|projection| verified_transcript_quote_payload(projection))
+        .collect::<Vec<_>>();
+    if quotes.is_empty() {
+        None
+    } else {
+        Some(Value::Array(quotes))
+    }
+}
+
+fn verified_transcript_quote_payload(projection: &ClaimProjection) -> Option<Value> {
+    let metadata: Value = serde_json::from_str(projection.claim.metadata_json.as_deref()?).ok()?;
+    if !metadata
+        .get("quote_verified")
+        .and_then(Value::as_bool)
+        .unwrap_or(false)
+    {
+        return None;
+    }
+    let quote = metadata.pointer("/quote/text")?.as_str()?.trim();
+    if quote.is_empty() {
+        return None;
+    }
+    let workspace_file_kind = metadata
+        .get("workspace_file_kind")
+        .and_then(Value::as_str)
+        .unwrap_or("transcript");
+    let source_label = data_source_for_claim(&projection.claim.data_source).display_name();
+    let source_asof = projection.claim.source_asof.as_deref();
+    let claim_kind = metadata
+        .get("claim_kind")
+        .and_then(Value::as_str)
+        .unwrap_or(projection.claim.claim_type.as_str());
+    let redaction_policy = metadata
+        .pointer("/quote/redaction_policy")
+        .and_then(Value::as_str)
+        .unwrap_or("sensitivity_ceiling");
+
+    Some(json!({
+        "claim_id": projection.claim.id,
+        "speaker": "Customer",
+        "quote": quote,
+        "evidence_quote": quote,
+        "assertion_text": projection.rendered_text,
+        "meetingDate": source_asof,
+        "meetingTitle": "Transcript",
+        "topicTags": [claim_kind],
+        "sentiment": transcript_quote_sentiment(&projection.claim.claim_type),
+        "publicSafeConfidence": "high",
+        "source_label": source_label,
+        "source_asof": source_asof,
+        "workspace_file_kind": workspace_file_kind,
+        "workspaceFileKind": workspace_file_kind,
+        "trust_band": trust_band_label(projection.trust_band),
+        "sensitivity": sensitivity_label(&projection.claim.sensitivity),
+        "redaction_policy": redaction_policy,
+        "redaction_state": "policy_allowed"
+    }))
+}
+
+fn transcript_quote_sentiment(claim_type: &str) -> &'static str {
+    match claim_type {
+        "entity_win" | "value_delivered" => "positive",
+        "entity_risk" => "negative",
+        _ => "neutral",
+    }
+}
+
+fn sensitivity_label(sensitivity: &ClaimSensitivity) -> &'static str {
+    match sensitivity {
+        ClaimSensitivity::Public => "public",
+        ClaimSensitivity::Internal => "internal",
+        ClaimSensitivity::Confidential => "confidential",
+        ClaimSensitivity::UserOnly => "user_only",
     }
 }
 

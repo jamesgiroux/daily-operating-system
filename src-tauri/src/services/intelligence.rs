@@ -1,25 +1,29 @@
 // Intelligence service — extracted from commands.rs
 // Business logic for entity intelligence CRUD, enrichment, and risk briefings.
 
-use std::collections::BTreeSet;
+use std::collections::{BTreeMap, BTreeSet};
 use std::path::Path;
+use std::sync::Arc;
 
 use crate::db::ActionDb;
 use crate::intel_queue::{
-    compose_enrichment_intelligence, gather_enrichment_input,
-    persist_enrichment_write_results_via_db_service, run_enrichment,
-    run_enrichment_finalize_post_commit_via_db_service, FinalizeMode, IntelPriority, IntelRequest,
+    FinalizeMode, IntelPriority, IntelRequest, compose_enrichment_intelligence,
+    gather_enrichment_input, persist_enrichment_write_results_via_db_service, run_enrichment,
+    run_enrichment_finalize_post_commit_via_db_service,
 };
 use crate::pty::AiUsageContext;
 use crate::services::context::ServiceContext;
 use crate::signals::propagation::PropagationEngine;
 use crate::state::AppState;
 use chrono::{DateTime, Utc};
-use rusqlite::{params, OptionalExtension};
+use rusqlite::{OptionalExtension, params};
+use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
 use tauri::Emitter;
 
 const GENERATED_PROJECTION_SOURCE_REF_PREFIX: &str = "intelligence_projection_source:";
+pub(crate) const MAX_ITEMS_PER_DIMENSION: usize = 25;
+pub(crate) const ENRICHMENT_PROJECTION_CLAIM_BATCH_SIZE: usize = 20;
 
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub struct EntityIntelligenceProjectionBackfillReport {
@@ -37,6 +41,62 @@ pub struct EntityIntelligenceProjectionBackfillReport {
 pub struct GeneratedProjectionSourcePurgeReport {
     pub claims_withdrawn: usize,
     pub recompute_jobs_enqueued: usize,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct OverCapGeneratedProjectionCleanupInput {
+    pub entity_type: String,
+    pub entity_id: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub projection_producer: Option<String>,
+    #[serde(default)]
+    pub dry_run: bool,
+}
+
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct OverCapGeneratedProjectionCleanupDimensionReport {
+    pub projection_producer: String,
+    pub data_source: String,
+    pub dimension: String,
+    pub active_claims: usize,
+    pub retained_claims: usize,
+    pub claims_to_withdraw: usize,
+}
+
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct OverCapGeneratedProjectionCleanupReport {
+    pub dry_run: bool,
+    pub entity_type: String,
+    pub entity_id: String,
+    pub max_items_per_dimension: usize,
+    pub scanned_claims: usize,
+    pub retained_claims: usize,
+    pub claims_to_withdraw: usize,
+    pub claims_withdrawn: usize,
+    pub snapshot_items_to_trim: usize,
+    pub snapshot_items_trimmed: usize,
+    pub dimensions: Vec<OverCapGeneratedProjectionCleanupDimensionReport>,
+}
+
+#[derive(Debug, Clone)]
+struct OverCapProjectionClaimCandidate {
+    id: String,
+    projection_producer: String,
+    data_source: String,
+    field_root: String,
+    created_at: String,
+    source_asof: Option<String>,
+    rank: DimensionRankKey,
+}
+
+#[derive(Debug, Clone)]
+struct OverCapGeneratedProjectionCleanupPlan {
+    report: OverCapGeneratedProjectionCleanupReport,
+    claim_ids_to_withdraw: Vec<String>,
+    trimmed_snapshot: Option<crate::intelligence::IntelligenceJson>,
 }
 
 /// Preserve user-confirmed value_delivered items during re-enrichment.
@@ -92,6 +152,676 @@ fn blank_entity_intelligence_snapshot(
         enriched_at: enriched_at.to_string(),
         ..Default::default()
     }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(crate) struct IntelligenceDimensionCapDrop {
+    pub dimension: &'static str,
+    pub dropped: usize,
+}
+
+#[derive(Debug, Clone, Copy)]
+struct DimensionRankKey {
+    severity: i32,
+    confidence: f64,
+    recency: i64,
+}
+
+impl Default for DimensionRankKey {
+    fn default() -> Self {
+        Self {
+            severity: 0,
+            confidence: 0.5,
+            recency: 0,
+        }
+    }
+}
+
+pub(crate) fn rank_then_cap_intelligence_dimensions(
+    intel: &mut crate::intelligence::IntelligenceJson,
+) -> Vec<IntelligenceDimensionCapDrop> {
+    let mut drops = Vec::new();
+
+    cap_ranked_dimension(&mut intel.risks, "risks", &mut drops, |risk| {
+        rank_from_source(risk.urgency.as_str(), risk.item_source.as_ref(), None)
+    });
+    cap_ranked_dimension(&mut intel.recent_wins, "recentWins", &mut drops, |win| {
+        rank_from_source(
+            win.impact.as_deref().unwrap_or_default(),
+            win.item_source.as_ref(),
+            None,
+        )
+    });
+    cap_ranked_dimension(
+        &mut intel.recommended_actions,
+        "recommendedActions",
+        &mut drops,
+        |action| DimensionRankKey {
+            severity: recommended_priority_rank(action.priority),
+            ..Default::default()
+        },
+    );
+    if let Some(health) = intel.health.as_mut() {
+        cap_ranked_dimension(
+            &mut health.recommended_actions,
+            "health.recommendedActions",
+            &mut drops,
+            |_| DimensionRankKey::default(),
+        );
+    }
+    cap_ranked_dimension(
+        &mut intel.stakeholder_insights,
+        "stakeholderInsights",
+        &mut drops,
+        |insight| {
+            let mut rank = rank_from_source(
+                insight
+                    .engagement
+                    .as_deref()
+                    .or(insight.assessment.as_deref())
+                    .unwrap_or_default(),
+                insight.item_source.as_ref(),
+                insight.verified_at.as_deref(),
+            );
+            if insight.verified {
+                rank.severity = rank.severity.max(60);
+            }
+            rank
+        },
+    );
+    cap_ranked_dimension(
+        &mut intel.value_delivered,
+        "valueDelivered",
+        &mut drops,
+        |value| {
+            rank_from_source(
+                value.impact.as_deref().unwrap_or_default(),
+                value.item_source.as_ref(),
+                value.date.as_deref(),
+            )
+        },
+    );
+    cap_optional_ranked_dimension(
+        &mut intel.success_metrics,
+        "successMetrics",
+        &mut drops,
+        |metric| DimensionRankKey {
+            severity: severity_rank(metric.status.as_deref().unwrap_or_default()),
+            ..Default::default()
+        },
+    );
+    cap_optional_ranked_dimension(
+        &mut intel.open_commitments,
+        "openCommitments",
+        &mut drops,
+        |commitment| {
+            rank_from_source(
+                commitment.status.as_deref().unwrap_or_default(),
+                commitment.item_source.as_ref(),
+                commitment.due_date.as_deref(),
+            )
+        },
+    );
+    cap_ranked_dimension(
+        &mut intel.competitive_context,
+        "competitiveContext",
+        &mut drops,
+        |item| {
+            rank_from_source(
+                item.threat_level.as_deref().unwrap_or_default(),
+                item.item_source.as_ref(),
+                item.detected_at.as_deref(),
+            )
+        },
+    );
+    cap_ranked_dimension(
+        &mut intel.strategic_priorities,
+        "strategicPriorities",
+        &mut drops,
+        |priority| DimensionRankKey {
+            severity: severity_rank(priority.status.as_deref().unwrap_or_default()),
+            ..Default::default()
+        },
+    );
+    cap_ranked_dimension(
+        &mut intel.market_context,
+        "marketContext",
+        &mut drops,
+        |item| {
+            rank_from_source(
+                "",
+                item.item_source.as_ref(),
+                item.effective_date.as_deref(),
+            )
+        },
+    );
+    cap_ranked_dimension(
+        &mut intel.regulatory_context,
+        "regulatoryContext",
+        &mut drops,
+        |item| {
+            rank_from_source(
+                item.status.as_str(),
+                item.item_source.as_ref(),
+                Some(item.detected_at.as_str()),
+            )
+        },
+    );
+    cap_ranked_dimension(
+        &mut intel.organizational_changes,
+        "organizationalChanges",
+        &mut drops,
+        |change| {
+            rank_from_source(
+                change.change_type.as_str(),
+                change.item_source.as_ref(),
+                change.detected_at.as_deref(),
+            )
+        },
+    );
+    cap_ranked_dimension(&mut intel.internal_team, "internalTeam", &mut drops, |_| {
+        DimensionRankKey::default()
+    });
+    cap_ranked_dimension(&mut intel.blockers, "blockers", &mut drops, |blocker| {
+        DimensionRankKey {
+            severity: severity_rank(blocker.impact.as_deref().unwrap_or_default()),
+            recency: parse_rank_timestamp(blocker.since.as_deref()),
+            ..Default::default()
+        }
+    });
+    cap_ranked_dimension(
+        &mut intel.expansion_signals,
+        "expansionSignals",
+        &mut drops,
+        |signal| {
+            rank_from_source(
+                signal
+                    .strength
+                    .as_deref()
+                    .or(signal.stage.as_deref())
+                    .unwrap_or_default(),
+                signal.item_source.as_ref(),
+                None,
+            )
+        },
+    );
+    cap_ranked_dimension(
+        &mut intel.gong_call_summaries,
+        "gongCallSummaries",
+        &mut drops,
+        |_| DimensionRankKey::default(),
+    );
+    cap_ranked_dimension(&mut intel.domains, "domains", &mut drops, |_| {
+        DimensionRankKey::default()
+    });
+    cap_ranked_dimension(
+        &mut intel.dismissed_items,
+        "dismissedItems",
+        &mut drops,
+        |_| DimensionRankKey::default(),
+    );
+
+    drops
+}
+
+fn rank_from_source(
+    severity: &str,
+    item_source: Option<&crate::intelligence::io::ItemSource>,
+    fallback_timestamp: Option<&str>,
+) -> DimensionRankKey {
+    DimensionRankKey {
+        severity: severity_rank(severity),
+        confidence: item_source
+            .map(|source| source.confidence)
+            .filter(|confidence| confidence.is_finite())
+            .map(|confidence| confidence.clamp(0.0, 1.0))
+            .unwrap_or(0.5),
+        recency: item_source
+            .map(|source| source.sourced_at.as_str())
+            .filter(|sourced_at| !sourced_at.trim().is_empty())
+            .or(fallback_timestamp)
+            .map(Some)
+            .map(parse_rank_timestamp)
+            .unwrap_or_default(),
+    }
+}
+
+fn severity_rank(value: &str) -> i32 {
+    match value.trim().to_ascii_lowercase().as_str() {
+        "critical" | "urgent" | "red" | "blocked" | "blocker" | "overdue" | "gap" | "at_risk"
+        | "at risk" | "high" | "strong" | "displacement" | "contentious" => 90,
+        "warning" | "watch" | "yellow" | "moderate" | "medium" | "evaluating" | "evaluation"
+        | "in_progress" | "in progress" | "active" | "committed" => 60,
+        "low" | "green" | "met" | "completed" | "flat" | "early" | "mentioned" => 30,
+        _ => 0,
+    }
+}
+
+fn recommended_priority_rank(priority: i32) -> i32 {
+    match priority {
+        1 => 90,
+        2 => 75,
+        3 => 50,
+        4 => 25,
+        _ => 0,
+    }
+}
+
+fn parse_rank_timestamp(value: Option<&str>) -> i64 {
+    value
+        .map(str::trim)
+        .filter(|value| !value.is_empty())
+        .and_then(|value| {
+            DateTime::parse_from_rfc3339(value)
+                .ok()
+                .map(|timestamp| timestamp.timestamp())
+        })
+        .unwrap_or_default()
+}
+
+fn cap_optional_ranked_dimension<T, Ranker>(
+    items: &mut Option<Vec<T>>,
+    dimension: &'static str,
+    drops: &mut Vec<IntelligenceDimensionCapDrop>,
+    ranker: Ranker,
+) where
+    Ranker: Fn(&T) -> DimensionRankKey,
+{
+    if let Some(items) = items.as_mut() {
+        cap_ranked_dimension(items, dimension, drops, ranker);
+    }
+}
+
+fn cap_ranked_dimension<T, Ranker>(
+    items: &mut Vec<T>,
+    dimension: &'static str,
+    drops: &mut Vec<IntelligenceDimensionCapDrop>,
+    ranker: Ranker,
+) where
+    Ranker: Fn(&T) -> DimensionRankKey,
+{
+    if items.len() <= MAX_ITEMS_PER_DIMENSION {
+        return;
+    }
+    let original_len = items.len();
+    let mut ranked: Vec<(usize, T)> = std::mem::take(items).into_iter().enumerate().collect();
+    ranked.sort_by(|(left_idx, left), (right_idx, right)| {
+        let left_key = ranker(left);
+        let right_key = ranker(right);
+        right_key
+            .severity
+            .cmp(&left_key.severity)
+            .then_with(|| {
+                right_key
+                    .confidence
+                    .partial_cmp(&left_key.confidence)
+                    .unwrap_or(std::cmp::Ordering::Equal)
+            })
+            .then_with(|| right_key.recency.cmp(&left_key.recency))
+            .then_with(|| left_idx.cmp(right_idx))
+    });
+    *items = ranked
+        .into_iter()
+        .take(MAX_ITEMS_PER_DIMENSION)
+        .map(|(_, item)| item)
+        .collect();
+    drops.push(IntelligenceDimensionCapDrop {
+        dimension,
+        dropped: original_len.saturating_sub(MAX_ITEMS_PER_DIMENSION),
+    });
+}
+
+pub fn cleanup_over_cap_generated_projection_claims_for_subject(
+    ctx: &ServiceContext<'_>,
+    db: &ActionDb,
+    input: OverCapGeneratedProjectionCleanupInput,
+) -> Result<OverCapGeneratedProjectionCleanupReport, String> {
+    ctx.check_mutation_allowed().map_err(|e| e.to_string())?;
+    let plan = plan_over_cap_generated_projection_cleanup(db, &input)?;
+    if input.dry_run {
+        Ok(plan.report)
+    } else {
+        Err(
+            "over-cap generated projection cleanup apply requires db-service writer tasks"
+                .to_string(),
+        )
+    }
+}
+
+pub async fn cleanup_over_cap_generated_projection_claims_for_subject_via_db_service(
+    state: &Arc<AppState>,
+    input: OverCapGeneratedProjectionCleanupInput,
+) -> Result<OverCapGeneratedProjectionCleanupReport, String> {
+    let state_for_plan = Arc::clone(state);
+    let input_for_plan = input.clone();
+    let plan = state
+        .db_write(move |db| {
+            let ctx = state_for_plan
+                .live_service_context()
+                .with_actor("system:intelligence_maintenance");
+            ctx.check_mutation_allowed().map_err(|e| e.to_string())?;
+            plan_over_cap_generated_projection_cleanup(db, &input_for_plan)
+        })
+        .await
+        .map_err(String::from)?;
+
+    if input.dry_run {
+        return Ok(plan.report);
+    }
+
+    let mut report = plan.report;
+    for claim_ids in plan
+        .claim_ids_to_withdraw
+        .chunks(ENRICHMENT_PROJECTION_CLAIM_BATCH_SIZE)
+    {
+        let claim_ids = claim_ids.to_vec();
+        let state_for_write = Arc::clone(state);
+        let withdrawn = state
+            .db_write(move |db| {
+                let ctx = state_for_write
+                    .live_service_context()
+                    .with_actor("system:intelligence_maintenance");
+                db.with_transaction(|tx| {
+                    crate::services::claims::withdraw_generated_projection_claim_ids_for_maintenance_in_tx(
+                        &ctx,
+                        tx,
+                        claim_ids,
+                        "projection_over_cap_cleanup",
+                    )
+                    .map_err(|error| {
+                        format!("withdraw over-cap projection claims failed: {error}")
+                    })
+                })
+            })
+            .await
+            .map_err(String::from)?;
+        report.claims_withdrawn += withdrawn;
+    }
+
+    if let Some(snapshot) = plan.trimmed_snapshot {
+        let state_for_write = Arc::clone(state);
+        let snapshot_items_to_trim = report.snapshot_items_to_trim;
+        state
+            .db_write(move |db| {
+                let ctx = state_for_write
+                    .live_service_context()
+                    .with_actor("system:intelligence_maintenance");
+                db.with_transaction(|tx| {
+                    crate::services::derived_state::replace_entity_intelligence_snapshot_lists(
+                        &ctx, tx, &snapshot,
+                    )
+                })
+            })
+            .await
+            .map_err(String::from)?;
+        report.snapshot_items_trimmed = snapshot_items_to_trim;
+    }
+
+    log::info!(
+        "intelligence over-cap cleanup applied for {}:{}: withdrew {} claim(s), trimmed {} snapshot item(s)",
+        report.entity_type,
+        report.entity_id,
+        report.claims_withdrawn,
+        report.snapshot_items_trimmed
+    );
+    Ok(report)
+}
+
+fn plan_over_cap_generated_projection_cleanup(
+    db: &ActionDb,
+    input: &OverCapGeneratedProjectionCleanupInput,
+) -> Result<OverCapGeneratedProjectionCleanupPlan, String> {
+    let candidates = over_cap_generated_projection_claim_candidates(db, input)?;
+    let mut grouped: BTreeMap<(String, String, String), Vec<OverCapProjectionClaimCandidate>> =
+        BTreeMap::new();
+    for candidate in candidates {
+        grouped
+            .entry((
+                candidate.projection_producer.clone(),
+                candidate.data_source.clone(),
+                candidate.field_root.clone(),
+            ))
+            .or_default()
+            .push(candidate);
+    }
+
+    let mut claim_ids_to_withdraw = Vec::new();
+    let mut dimensions = Vec::new();
+    let mut retained_claims = 0usize;
+    let mut scanned_claims = 0usize;
+    for ((projection_producer, data_source, dimension), mut candidates) in grouped {
+        scanned_claims += candidates.len();
+        candidates.sort_by(|left, right| {
+            right
+                .rank
+                .severity
+                .cmp(&left.rank.severity)
+                .then_with(|| {
+                    right
+                        .rank
+                        .confidence
+                        .partial_cmp(&left.rank.confidence)
+                        .unwrap_or(std::cmp::Ordering::Equal)
+                })
+                .then_with(|| right.rank.recency.cmp(&left.rank.recency))
+                .then_with(|| right.source_asof.cmp(&left.source_asof))
+                .then_with(|| right.created_at.cmp(&left.created_at))
+                .then_with(|| left.id.cmp(&right.id))
+        });
+        let retained = candidates.len().min(MAX_ITEMS_PER_DIMENSION);
+        retained_claims += retained;
+        let to_withdraw: Vec<String> = candidates
+            .into_iter()
+            .skip(MAX_ITEMS_PER_DIMENSION)
+            .map(|candidate| candidate.id)
+            .collect();
+        dimensions.push(OverCapGeneratedProjectionCleanupDimensionReport {
+            projection_producer,
+            data_source,
+            dimension,
+            active_claims: retained + to_withdraw.len(),
+            retained_claims: retained,
+            claims_to_withdraw: to_withdraw.len(),
+        });
+        claim_ids_to_withdraw.extend(to_withdraw);
+    }
+
+    let mut snapshot_items_to_trim = 0usize;
+    let mut trimmed_snapshot = None;
+    if let Some(mut snapshot) = db
+        .get_entity_intelligence(&input.entity_id)
+        .map_err(|error| format!("read intelligence snapshot failed: {error}"))?
+        .filter(|snapshot| snapshot.entity_type == input.entity_type)
+    {
+        let drops = rank_then_cap_intelligence_dimensions(&mut snapshot);
+        snapshot_items_to_trim = drops.iter().map(|drop| drop.dropped).sum();
+        if !input.dry_run && snapshot_items_to_trim > 0 {
+            trimmed_snapshot = Some(snapshot);
+        }
+    }
+
+    let claims_to_withdraw = claim_ids_to_withdraw.len();
+    Ok(OverCapGeneratedProjectionCleanupPlan {
+        report: OverCapGeneratedProjectionCleanupReport {
+            dry_run: input.dry_run,
+            entity_type: input.entity_type.clone(),
+            entity_id: input.entity_id.clone(),
+            max_items_per_dimension: MAX_ITEMS_PER_DIMENSION,
+            scanned_claims,
+            retained_claims,
+            claims_to_withdraw,
+            claims_withdrawn: 0,
+            snapshot_items_to_trim,
+            snapshot_items_trimmed: 0,
+            dimensions,
+        },
+        claim_ids_to_withdraw,
+        trimmed_snapshot,
+    })
+}
+
+fn over_cap_generated_projection_claim_candidates(
+    db: &ActionDb,
+    input: &OverCapGeneratedProjectionCleanupInput,
+) -> Result<Vec<OverCapProjectionClaimCandidate>, String> {
+    let subject_ref = subject_ref_for_entity(&input.entity_type, &input.entity_id)?;
+    let mut stmt = db
+        .conn_ref()
+        .prepare(
+            "SELECT ic.id,
+                    ic.data_source,
+                    coalesce(ic.field_path, ''),
+                    ic.metadata_json,
+                    ic.source_asof,
+                    ic.created_at
+               FROM intelligence_claims ic
+              WHERE ic.claim_state = 'active'
+                AND ic.surfacing_state = 'active'
+                AND ic.subject_ref = ?1
+                AND lower(ic.actor) NOT LIKE 'user%'
+                AND lower(ic.data_source) NOT IN ('user', 'user_input', 'user_correction')
+                AND NOT EXISTS (
+                    SELECT 1 FROM claim_feedback feedback
+                     WHERE feedback.claim_id = ic.id
+                )
+                AND NOT EXISTS (
+                    SELECT 1 FROM claim_corroborations corroboration
+                     WHERE corroboration.claim_id = ic.id
+                )
+                AND (
+                    ic.source_ref LIKE 'intelligence_projection_source:%'
+                    OR (
+                        json_valid(ic.provenance_json) = 1
+                        AND json_extract(ic.provenance_json, '$.ability_name') = 'claim_shaped_intelligence_projection'
+                    )
+                    OR (
+                        ic.metadata_json IS NOT NULL
+                        AND json_valid(ic.metadata_json) = 1
+                        AND json_type(ic.metadata_json, '$.legacy_projection_value') IS NOT NULL
+                    )
+                )
+              ORDER BY ic.id",
+        )
+        .map_err(|error| format!("prepare over-cap projection scan failed: {error}"))?;
+    let rows = stmt
+        .query_map(params![subject_ref], |row| {
+            Ok((
+                row.get::<_, String>(0)?,
+                row.get::<_, String>(1)?,
+                row.get::<_, String>(2)?,
+                row.get::<_, Option<String>>(3)?,
+                row.get::<_, Option<String>>(4)?,
+                row.get::<_, String>(5)?,
+            ))
+        })
+        .map_err(|error| format!("query over-cap projection scan failed: {error}"))?
+        .collect::<Result<Vec<_>, _>>()
+        .map_err(|error| format!("collect over-cap projection scan failed: {error}"))?;
+
+    let producer_filter = input
+        .projection_producer
+        .as_deref()
+        .map(str::trim)
+        .filter(|producer| !producer.is_empty());
+    let mut candidates = Vec::new();
+    for (id, data_source, field_path, metadata_json, source_asof, created_at) in rows {
+        let Some(projection_producer) =
+            projection_producer_from_metadata_value(metadata_json.as_deref())
+        else {
+            continue;
+        };
+        if producer_filter.is_some_and(|filter| !projection_producer.eq_ignore_ascii_case(filter)) {
+            continue;
+        }
+        let field_root = projection_field_root(&field_path);
+        candidates.push(OverCapProjectionClaimCandidate {
+            id,
+            projection_producer,
+            data_source,
+            field_root,
+            created_at: created_at.clone(),
+            source_asof: source_asof.clone(),
+            rank: over_cap_claim_rank(
+                metadata_json.as_deref(),
+                source_asof.as_deref(),
+                &created_at,
+            ),
+        });
+    }
+    Ok(candidates)
+}
+
+fn projection_field_root(field_path: &str) -> String {
+    field_path
+        .split(['[', '.'])
+        .next()
+        .filter(|root| !root.trim().is_empty())
+        .unwrap_or(field_path)
+        .to_string()
+}
+
+fn projection_producer_from_metadata_value(metadata_json: Option<&str>) -> Option<String> {
+    let value = serde_json::from_str::<serde_json::Value>(metadata_json?).ok()?;
+    value
+        .get("projection_producer")
+        .and_then(|value| value.as_str())
+        .map(str::trim)
+        .filter(|value| !value.is_empty())
+        .map(ToOwned::to_owned)
+}
+
+fn over_cap_claim_rank(
+    metadata_json: Option<&str>,
+    source_asof: Option<&str>,
+    created_at: &str,
+) -> DimensionRankKey {
+    let value = metadata_json
+        .and_then(|metadata| serde_json::from_str::<serde_json::Value>(metadata).ok())
+        .and_then(|metadata| metadata.get("legacy_projection_value").cloned())
+        .unwrap_or(serde_json::Value::Null);
+    let severity = legacy_rank_severity(&value);
+    let item_source = value.get("itemSource").or_else(|| value.get("item_source"));
+    let confidence = item_source
+        .and_then(|source| source.get("confidence"))
+        .and_then(|confidence| confidence.as_f64())
+        .filter(|confidence| confidence.is_finite())
+        .map(|confidence| confidence.clamp(0.0, 1.0))
+        .unwrap_or(0.5);
+    let recency = item_source
+        .and_then(|source| source.get("sourcedAt").or_else(|| source.get("sourced_at")))
+        .and_then(|timestamp| timestamp.as_str())
+        .or(source_asof)
+        .or(Some(created_at))
+        .map(Some)
+        .map(parse_rank_timestamp)
+        .unwrap_or_default();
+    DimensionRankKey {
+        severity,
+        confidence,
+        recency,
+    }
+}
+
+fn legacy_rank_severity(value: &serde_json::Value) -> i32 {
+    if let Some(priority) = value.get("priority").and_then(|value| value.as_i64()) {
+        return recommended_priority_rank(priority as i32);
+    }
+    [
+        "urgency",
+        "impact",
+        "status",
+        "strength",
+        "stage",
+        "threatLevel",
+        "threat_level",
+        "changeType",
+        "change_type",
+    ]
+    .into_iter()
+    .filter_map(|field| value.get(field).and_then(|value| value.as_str()))
+    .map(severity_rank)
+    .max()
+    .unwrap_or_default()
 }
 
 fn subject_ref_for_entity(entity_type: &str, entity_id: &str) -> Result<String, String> {
@@ -689,6 +1419,70 @@ struct ProjectionClaimInput<'a> {
     legacy_value: serde_json::Value,
 }
 
+#[derive(Debug, Clone)]
+struct ProjectionClaimDraft {
+    subject_ref: String,
+    projection_origin_subject: Option<String>,
+    actor: String,
+    data_source: String,
+    item_source: Option<crate::intelligence::io::ItemSource>,
+    source_asof: Option<String>,
+    claim_type: String,
+    field_path: String,
+    text: String,
+    legacy_value: serde_json::Value,
+}
+
+struct ProjectionClaimDraftSeed<'a> {
+    subject_ref: &'a str,
+    projection_origin_subject: Option<&'a str>,
+    actor: &'a str,
+    data_source: &'a str,
+    item_source: Option<&'a crate::intelligence::io::ItemSource>,
+    claim_type: &'a str,
+    field_path: String,
+    text: String,
+    legacy_value: serde_json::Value,
+}
+
+impl ProjectionClaimDraft {
+    fn as_input(&self) -> ProjectionClaimInput<'_> {
+        ProjectionClaimInput {
+            subject_ref: &self.subject_ref,
+            projection_origin_subject: self.projection_origin_subject.as_deref(),
+            actor: &self.actor,
+            data_source: &self.data_source,
+            item_source: self.item_source.as_ref(),
+            source_asof: self.source_asof.as_deref(),
+            claim_type: &self.claim_type,
+            field_path: &self.field_path,
+            text: &self.text,
+            legacy_value: self.legacy_value.clone(),
+        }
+    }
+}
+
+fn push_projection_claim_draft(
+    drafts: &mut Vec<ProjectionClaimDraft>,
+    seed: ProjectionClaimDraftSeed<'_>,
+) {
+    if seed.text.trim().is_empty() {
+        return;
+    }
+    drafts.push(ProjectionClaimDraft {
+        subject_ref: seed.subject_ref.to_string(),
+        projection_origin_subject: seed.projection_origin_subject.map(str::to_string),
+        actor: seed.actor.to_string(),
+        data_source: seed.data_source.to_string(),
+        item_source: seed.item_source.cloned(),
+        source_asof: source_asof_from_item_source(seed.item_source).map(str::to_string),
+        claim_type: seed.claim_type.to_string(),
+        field_path: seed.field_path,
+        text: seed.text,
+        legacy_value: seed.legacy_value,
+    });
+}
+
 enum ProjectionClaimPreflight {
     ExactActiveClaimAlreadyExists,
     Commit { supersedes: Option<String> },
@@ -921,169 +1715,197 @@ pub(crate) fn commit_claim_shaped_intelligence_projection(
     actor: &str,
     data_source: &str,
 ) -> Result<(), String> {
+    let drafts = projection_claim_drafts(intel, actor, data_source)?;
+    commit_projection_claim_drafts(ctx, db, drafts.iter())
+}
+
+pub(crate) fn projection_claim_shaped_intelligence_projection_claim_count(
+    intel: &crate::intelligence::IntelligenceJson,
+    actor: &str,
+    data_source: &str,
+) -> Result<usize, String> {
+    projection_claim_drafts(intel, actor, data_source).map(|drafts| drafts.len())
+}
+
+pub(crate) fn commit_claim_shaped_intelligence_projection_batch(
+    ctx: &ServiceContext<'_>,
+    db: &ActionDb,
+    intel: &crate::intelligence::IntelligenceJson,
+    actor: &str,
+    data_source: &str,
+    offset: usize,
+    limit: usize,
+) -> Result<usize, String> {
+    let drafts = projection_claim_drafts(intel, actor, data_source)?;
+    let total = drafts.len();
+    commit_projection_claim_drafts(ctx, db, drafts.iter().skip(offset).take(limit))?;
+    Ok(total)
+}
+
+fn commit_projection_claim_drafts<'a>(
+    ctx: &ServiceContext<'_>,
+    db: &ActionDb,
+    drafts: impl Iterator<Item = &'a ProjectionClaimDraft>,
+) -> Result<(), String> {
+    for draft in drafts {
+        commit_projection_claim(ctx, db, draft.as_input())?;
+    }
+    Ok(())
+}
+
+fn projection_claim_drafts(
+    intel: &crate::intelligence::IntelligenceJson,
+    actor: &str,
+    data_source: &str,
+) -> Result<Vec<ProjectionClaimDraft>, String> {
     let subject_ref = subject_ref_for_entity(&intel.entity_type, &intel.entity_id)?;
+    let mut drafts = Vec::new();
 
     if let Some(summary) = intel.executive_assessment.as_deref() {
-        commit_projection_claim(
-            ctx,
-            db,
-            ProjectionClaimInput {
+        push_projection_claim_draft(
+            &mut drafts,
+            ProjectionClaimDraftSeed {
                 subject_ref: &subject_ref,
                 projection_origin_subject: None,
                 actor,
                 data_source,
                 item_source: None,
-                source_asof: None,
                 claim_type: "entity_summary",
-                field_path: "executiveAssessment",
-                text: summary,
+                field_path: "executiveAssessment".to_string(),
+                text: summary.to_string(),
                 legacy_value: serde_json::Value::String(summary.to_string()),
             },
-        )?;
+        );
     }
 
     if let Some(pull_quote) = intel.pull_quote.as_deref() {
-        commit_projection_claim(
-            ctx,
-            db,
-            ProjectionClaimInput {
+        push_projection_claim_draft(
+            &mut drafts,
+            ProjectionClaimDraftSeed {
                 subject_ref: &subject_ref,
                 projection_origin_subject: None,
                 actor,
                 data_source,
                 item_source: None,
-                source_asof: None,
                 claim_type: "entity_summary",
-                field_path: "pullQuote",
-                text: pull_quote,
+                field_path: "pullQuote".to_string(),
+                text: pull_quote.to_string(),
                 legacy_value: serde_json::Value::String(pull_quote.to_string()),
             },
-        )?;
+        );
     }
 
     if let Some(health) = intel.health.as_ref() {
         if let Some(text) = health_projection_text(health) {
-            commit_projection_claim(
-                ctx,
-                db,
-                ProjectionClaimInput {
+            push_projection_claim_draft(
+                &mut drafts,
+                ProjectionClaimDraftSeed {
                     subject_ref: &subject_ref,
                     projection_origin_subject: None,
                     actor,
                     data_source,
                     item_source: None,
-                    source_asof: None,
                     claim_type: "entity_current_state",
-                    field_path: "health",
-                    text: &text,
+                    field_path: "health".to_string(),
+                    text: text.clone(),
                     legacy_value: serde_json::to_value(health)
-                        .unwrap_or_else(|_| serde_json::json!({ "narrative": text.clone() })),
+                        .unwrap_or_else(|_| serde_json::json!({ "narrative": text })),
                 },
-            )?;
+            );
         }
 
         for (idx, action) in health.recommended_actions.iter().enumerate() {
-            commit_projection_claim(
-                ctx,
-                db,
-                ProjectionClaimInput {
+            push_projection_claim_draft(
+                &mut drafts,
+                ProjectionClaimDraftSeed {
                     subject_ref: &subject_ref,
                     projection_origin_subject: None,
                     actor,
                     data_source,
                     item_source: None,
-                    source_asof: None,
                     claim_type: "recommendation",
-                    field_path: &format!("health.recommendedActions[{idx}]"),
-                    text: action,
+                    field_path: format!("health.recommendedActions[{idx}]"),
+                    text: action.clone(),
                     legacy_value: serde_json::Value::String(action.clone()),
                 },
-            )?;
+            );
         }
     }
 
     for (idx, risk) in intel.risks.iter().enumerate() {
-        commit_projection_claim(
-            ctx,
-            db,
-            ProjectionClaimInput {
+        push_projection_claim_draft(
+            &mut drafts,
+            ProjectionClaimDraftSeed {
                 subject_ref: &subject_ref,
                 projection_origin_subject: None,
                 actor,
                 data_source,
                 item_source: risk.item_source.as_ref(),
-                source_asof: source_asof_from_item_source(risk.item_source.as_ref()),
                 claim_type: "entity_risk",
-                field_path: &format!("risks[{idx}]"),
-                text: &risk.text,
+                field_path: format!("risks[{idx}]"),
+                text: risk.text.clone(),
                 legacy_value: serde_json::to_value(risk)
                     .unwrap_or_else(|_| serde_json::json!({ "text": &risk.text })),
             },
-        )?;
+        );
     }
 
     for (idx, action) in intel.recommended_actions.iter().enumerate() {
         let Some(text) = recommended_action_projection_text(action) else {
             continue;
         };
-        commit_projection_claim(
-            ctx,
-            db,
-            ProjectionClaimInput {
+        push_projection_claim_draft(
+            &mut drafts,
+            ProjectionClaimDraftSeed {
                 subject_ref: &subject_ref,
                 projection_origin_subject: None,
                 actor,
                 data_source,
                 item_source: None,
-                source_asof: None,
                 claim_type: "recommendation",
-                field_path: &format!("recommendedActions[{idx}]"),
-                text: &text,
+                field_path: format!("recommendedActions[{idx}]"),
+                text: text.clone(),
                 legacy_value: serde_json::to_value(action)
-                    .unwrap_or_else(|_| serde_json::json!({ "title": text.clone() })),
+                    .unwrap_or_else(|_| serde_json::json!({ "title": text })),
             },
-        )?;
+        );
     }
 
     for (idx, win) in intel.recent_wins.iter().enumerate() {
-        commit_projection_claim(
-            ctx,
-            db,
-            ProjectionClaimInput {
+        push_projection_claim_draft(
+            &mut drafts,
+            ProjectionClaimDraftSeed {
                 subject_ref: &subject_ref,
                 projection_origin_subject: None,
                 actor,
                 data_source,
                 item_source: win.item_source.as_ref(),
-                source_asof: source_asof_from_item_source(win.item_source.as_ref()),
                 claim_type: "entity_win",
-                field_path: &format!("recentWins[{idx}]"),
-                text: &win.text,
+                field_path: format!("recentWins[{idx}]"),
+                text: win.text.clone(),
                 legacy_value: serde_json::to_value(win)
                     .unwrap_or_else(|_| serde_json::json!({ "text": &win.text })),
             },
-        )?;
+        );
     }
 
     if let Some(state) = intel.current_state.as_ref() {
         if let Some(text) = current_state_projection_text(state) {
-            commit_projection_claim(
-                ctx,
-                db,
-                ProjectionClaimInput {
+            push_projection_claim_draft(
+                &mut drafts,
+                ProjectionClaimDraftSeed {
                     subject_ref: &subject_ref,
                     projection_origin_subject: None,
                     actor,
                     data_source,
                     item_source: None,
-                    source_asof: None,
                     claim_type: "entity_current_state",
-                    field_path: "currentState",
-                    text: &text,
+                    field_path: "currentState".to_string(),
+                    text: text.clone(),
                     legacy_value: serde_json::to_value(state)
-                        .unwrap_or_else(|_| serde_json::json!({ "text": text.clone() })),
+                        .unwrap_or_else(|_| serde_json::json!({ "text": text })),
                 },
-            )?;
+            );
         }
     }
 
@@ -1091,71 +1913,65 @@ pub(crate) fn commit_claim_shaped_intelligence_projection(
         let Some(text) = strategic_priority_projection_text(priority) else {
             continue;
         };
-        commit_projection_claim(
-            ctx,
-            db,
-            ProjectionClaimInput {
+        push_projection_claim_draft(
+            &mut drafts,
+            ProjectionClaimDraftSeed {
                 subject_ref: &subject_ref,
                 projection_origin_subject: None,
                 actor,
                 data_source,
                 item_source: None,
-                source_asof: None,
                 claim_type: "entity_current_state",
-                field_path: &format!("strategicPriorities[{idx}]"),
-                text: &text,
+                field_path: format!("strategicPriorities[{idx}]"),
+                text: text.clone(),
                 legacy_value: serde_json::to_value(priority)
-                    .unwrap_or_else(|_| serde_json::json!({ "priority": text.clone() })),
+                    .unwrap_or_else(|_| serde_json::json!({ "priority": text })),
             },
-        )?;
+        );
     }
 
     for (idx, blocker) in intel.blockers.iter().enumerate() {
         let Some(text) = blocker_projection_text(blocker) else {
             continue;
         };
-        commit_projection_claim(
-            ctx,
-            db,
-            ProjectionClaimInput {
+        push_projection_claim_draft(
+            &mut drafts,
+            ProjectionClaimDraftSeed {
                 subject_ref: &subject_ref,
                 projection_origin_subject: None,
                 actor,
                 data_source,
                 item_source: None,
-                source_asof: None,
                 claim_type: "entity_risk",
-                field_path: &format!("blockers[{idx}]"),
-                text: &text,
+                field_path: format!("blockers[{idx}]"),
+                text: text.clone(),
                 legacy_value: serde_json::to_value(blocker)
-                    .unwrap_or_else(|_| serde_json::json!({ "description": text.clone() })),
+                    .unwrap_or_else(|_| serde_json::json!({ "description": text })),
             },
-        )?;
+        );
     }
 
     if let Some(context) = intel.contract_context.as_ref() {
         if let Some(text) = contract_context_projection_text(context) {
-            commit_projection_claim(
-                ctx,
-                db,
-                ProjectionClaimInput {
+            push_projection_claim_draft(
+                &mut drafts,
+                ProjectionClaimDraftSeed {
                     subject_ref: &subject_ref,
                     projection_origin_subject: None,
                     actor,
                     data_source,
                     item_source: None,
-                    source_asof: None,
                     claim_type: if intel.entity_type == "account" {
                         "company_context"
                     } else {
                         "entity_current_state"
                     },
-                    field_path: "contractContext",
-                    text: &text,
+                    field_path: "contractContext".to_string(),
+                    text: text.clone(),
                     legacy_value: serde_json::to_value(context)
-                        .unwrap_or_else(|_| serde_json::json!({ "summary": text.clone() })),
+                        .unwrap_or_else(|_| serde_json::json!({ "summary": text })),
                 },
-            )?;
+            );
         }
     }
 
@@ -1163,65 +1979,59 @@ pub(crate) fn commit_claim_shaped_intelligence_projection(
         let Some(text) = expansion_signal_projection_text(signal) else {
             continue;
         };
-        commit_projection_claim(
-            ctx,
-            db,
-            ProjectionClaimInput {
+        push_projection_claim_draft(
+            &mut drafts,
+            ProjectionClaimDraftSeed {
                 subject_ref: &subject_ref,
                 projection_origin_subject: None,
                 actor,
                 data_source,
                 item_source: signal.item_source.as_ref(),
-                source_asof: source_asof_from_item_source(signal.item_source.as_ref()),
                 claim_type: "entity_current_state",
-                field_path: &format!("expansionSignals[{idx}]"),
-                text: &text,
+                field_path: format!("expansionSignals[{idx}]"),
+                text: text.clone(),
                 legacy_value: serde_json::to_value(signal)
-                    .unwrap_or_else(|_| serde_json::json!({ "opportunity": text.clone() })),
+                    .unwrap_or_else(|_| serde_json::json!({ "opportunity": text })),
             },
-        )?;
+        );
     }
 
     if let Some(outlook) = intel.agreement_outlook.as_ref() {
         if let Some(text) = agreement_outlook_projection_text(outlook) {
-            commit_projection_claim(
-                ctx,
-                db,
-                ProjectionClaimInput {
+            push_projection_claim_draft(
+                &mut drafts,
+                ProjectionClaimDraftSeed {
                     subject_ref: &subject_ref,
                     projection_origin_subject: None,
                     actor,
                     data_source,
                     item_source: None,
-                    source_asof: None,
                     claim_type: "entity_current_state",
-                    field_path: "agreementOutlook",
-                    text: &text,
+                    field_path: "agreementOutlook".to_string(),
+                    text: text.clone(),
                     legacy_value: serde_json::to_value(outlook)
-                        .unwrap_or_else(|_| serde_json::json!({ "summary": text.clone() })),
+                        .unwrap_or_else(|_| serde_json::json!({ "summary": text })),
                 },
-            )?;
+            );
         }
     }
 
     for (idx, value) in intel.value_delivered.iter().enumerate() {
-        commit_projection_claim(
-            ctx,
-            db,
-            ProjectionClaimInput {
+        push_projection_claim_draft(
+            &mut drafts,
+            ProjectionClaimDraftSeed {
                 subject_ref: &subject_ref,
                 projection_origin_subject: None,
                 actor,
                 data_source,
                 item_source: value.item_source.as_ref(),
-                source_asof: source_asof_from_item_source(value.item_source.as_ref()),
                 claim_type: "value_delivered",
-                field_path: &format!("valueDelivered[{idx}]"),
-                text: &value.statement,
+                field_path: format!("valueDelivered[{idx}]"),
+                text: value.statement.clone(),
                 legacy_value: serde_json::to_value(value)
                     .unwrap_or_else(|_| serde_json::json!({ "statement": &value.statement })),
             },
-        )?;
+        );
     }
 
     if let Some(metrics) = intel.success_metrics.as_ref() {
@@ -1229,23 +2039,21 @@ pub(crate) fn commit_claim_shaped_intelligence_projection(
             let Some(text) = success_metric_projection_text(metric) else {
                 continue;
             };
-            commit_projection_claim(
-                ctx,
-                db,
-                ProjectionClaimInput {
+            push_projection_claim_draft(
+                &mut drafts,
+                ProjectionClaimDraftSeed {
                     subject_ref: &subject_ref,
                     projection_origin_subject: None,
                     actor,
                     data_source,
                     item_source: None,
-                    source_asof: None,
                     claim_type: "entity_current_state",
-                    field_path: &format!("successMetrics[{idx}]"),
-                    text: &text,
+                    field_path: format!("successMetrics[{idx}]"),
+                    text: text.clone(),
                     legacy_value: serde_json::to_value(metric)
-                        .unwrap_or_else(|_| serde_json::json!({ "name": text.clone() })),
+                        .unwrap_or_else(|_| serde_json::json!({ "name": text })),
                 },
-            )?;
+            );
         }
     }
 
@@ -1254,27 +2062,25 @@ pub(crate) fn commit_claim_shaped_intelligence_projection(
             let Some(text) = open_commitment_projection_text(commitment) else {
                 continue;
             };
-            commit_projection_claim(
-                ctx,
-                db,
-                ProjectionClaimInput {
+            push_projection_claim_draft(
+                &mut drafts,
+                ProjectionClaimDraftSeed {
                     subject_ref: &subject_ref,
                     projection_origin_subject: None,
                     actor,
                     data_source,
                     item_source: commitment.item_source.as_ref(),
-                    source_asof: source_asof_from_item_source(commitment.item_source.as_ref()),
                     claim_type: if intel.entity_type == "account" {
                         "commitment"
                     } else {
                         "entity_current_state"
                     },
-                    field_path: &format!("openCommitments[{idx}]"),
-                    text: &text,
+                    field_path: format!("openCommitments[{idx}]"),
+                    text: text.clone(),
                     legacy_value: serde_json::to_value(commitment)
-                        .unwrap_or_else(|_| serde_json::json!({ "description": text.clone() })),
+                        .unwrap_or_else(|_| serde_json::json!({ "description": text })),
                 },
-            )?;
+            );
         }
     }
 
@@ -1286,50 +2092,46 @@ pub(crate) fn commit_claim_shaped_intelligence_projection(
             continue;
         };
         let person_subject_ref = subject_ref_for_entity("person", person_id)?;
-        commit_projection_claim(
-            ctx,
-            db,
-            ProjectionClaimInput {
+        push_projection_claim_draft(
+            &mut drafts,
+            ProjectionClaimDraftSeed {
                 subject_ref: &person_subject_ref,
                 projection_origin_subject: Some(&subject_ref),
                 actor,
                 data_source,
                 item_source: insight.item_source.as_ref(),
-                source_asof: source_asof_from_item_source(insight.item_source.as_ref()),
                 claim_type: "stakeholder_engagement",
-                field_path: &format!("stakeholderInsights[{idx}].engagement"),
-                text: &text,
+                field_path: format!("stakeholderInsights[{idx}].engagement"),
+                text: text.clone(),
                 legacy_value: serde_json::to_value(insight)
-                    .unwrap_or_else(|_| serde_json::json!({ "engagement": text.clone() })),
+                    .unwrap_or_else(|_| serde_json::json!({ "engagement": text })),
             },
-        )?;
+        );
     }
 
     if intel.entity_type == "account" {
         if let Some(context) = intel.company_context.as_ref() {
             if let Some(text) = company_context_projection_text(context) {
-                commit_projection_claim(
-                    ctx,
-                    db,
-                    ProjectionClaimInput {
+                push_projection_claim_draft(
+                    &mut drafts,
+                    ProjectionClaimDraftSeed {
                         subject_ref: &subject_ref,
                         projection_origin_subject: None,
                         actor,
                         data_source,
                         item_source: None,
-                        source_asof: None,
                         claim_type: "company_context",
-                        field_path: "companyContext",
-                        text: &text,
+                        field_path: "companyContext".to_string(),
+                        text: text.clone(),
                         legacy_value: serde_json::to_value(context)
-                            .unwrap_or_else(|_| serde_json::json!({ "description": text.clone() })),
+                            .unwrap_or_else(|_| serde_json::json!({ "description": text })),
                     },
-                )?;
+                );
             }
         }
     }
 
-    Ok(())
+    Ok(drafts)
 }
 
 /// Backfill claim-shaped projections for legacy entity intelligence rows.
@@ -1779,7 +2581,7 @@ pub async fn enrich_entity(
                     }
                 }
             } // end if let Some(provider) — bridge-empty case skipped Glean and
-              // falls through to the PTY path below via glean_result == None.
+            // falls through to the PTY path below via glean_result == None.
         }
 
         match glean_result {
@@ -2044,14 +2846,21 @@ pub(crate) struct EnrichmentAssessmentUpsert<'a> {
     pub cleared_dimensions: &'a [&'static str],
 }
 
-pub(crate) fn upsert_assessment_from_enrichment_in_active_transaction(
-    ctx: &ServiceContext<'_>,
+#[derive(Debug, Clone)]
+pub(crate) struct EnrichmentAssessmentPhasedPlan {
+    pub entity_type: String,
+    pub entity_id: String,
+    pub intel: crate::intelligence::IntelligenceJson,
+    pub projection_intel: crate::intelligence::IntelligenceJson,
+    pub projection_data_source: String,
+    pub cleared_dimensions: Vec<&'static str>,
+    pub projection_claim_count: usize,
+}
+
+pub(crate) fn prepare_enrichment_assessment_phased_plan(
     tx: &ActionDb,
-    engine: &PropagationEngine,
     upsert: EnrichmentAssessmentUpsert<'_>,
-) -> Result<(), String> {
-    ctx.check_mutation_allowed().map_err(|e| e.to_string())?;
-    // Merge value_delivered — preserve user-confirmed items during re-enrichment.
+) -> Result<EnrichmentAssessmentPhasedPlan, String> {
     let mut intel = upsert.intel.clone();
     let mut projection_intel = upsert.projection_intel.clone();
     if let Ok(Some(existing)) = tx.get_entity_intelligence(upsert.entity_id) {
@@ -2060,36 +2869,101 @@ pub(crate) fn upsert_assessment_from_enrichment_in_active_transaction(
             merge_user_confirmed_values(&mut projection_intel, &existing);
         }
     }
-    withdraw_cleared_dimension_projection_claims(
-        ctx,
-        tx,
-        upsert.entity_type,
-        upsert.entity_id,
-        upsert.cleared_dimensions,
-    )?;
-    commit_claim_shaped_intelligence_projection(
-        ctx,
-        tx,
+    let projection_claim_count = projection_claim_shaped_intelligence_projection_claim_count(
         &projection_intel,
         "agent:intelligence",
         upsert.projection_data_source,
     )?;
+    Ok(EnrichmentAssessmentPhasedPlan {
+        entity_type: upsert.entity_type.to_string(),
+        entity_id: upsert.entity_id.to_string(),
+        intel,
+        projection_intel,
+        projection_data_source: upsert.projection_data_source.to_string(),
+        cleared_dimensions: upsert.cleared_dimensions.to_vec(),
+        projection_claim_count,
+    })
+}
+
+pub(crate) fn begin_enrichment_assessment_phased_persist_in_active_transaction(
+    ctx: &ServiceContext<'_>,
+    tx: &ActionDb,
+    plan: &EnrichmentAssessmentPhasedPlan,
+) -> Result<(), String> {
+    ctx.check_mutation_allowed().map_err(|e| e.to_string())?;
+    withdraw_cleared_dimension_projection_claims(
+        ctx,
+        tx,
+        &plan.entity_type,
+        &plan.entity_id,
+        &plan.cleared_dimensions,
+    )
+    .map(|_| ())
+}
+
+pub(crate) fn commit_enrichment_assessment_projection_batch_in_active_transaction(
+    ctx: &ServiceContext<'_>,
+    tx: &ActionDb,
+    plan: &EnrichmentAssessmentPhasedPlan,
+    offset: usize,
+    limit: usize,
+) -> Result<(), String> {
+    ctx.check_mutation_allowed().map_err(|e| e.to_string())?;
+    let _projection_guard =
+        crate::services::claims::suppress_legacy_projection_for_current_thread();
+    let total = commit_claim_shaped_intelligence_projection_batch(
+        ctx,
+        tx,
+        &plan.projection_intel,
+        "agent:intelligence",
+        &plan.projection_data_source,
+        offset,
+        limit,
+    )?;
+    if total != plan.projection_claim_count {
+        log::warn!(
+            "intelligence phased persist claim count changed for {}:{} (planned {}, rebuilt {})",
+            plan.entity_type,
+            plan.entity_id,
+            plan.projection_claim_count,
+            total
+        );
+    }
+    Ok(())
+}
+
+pub(crate) fn finalize_enrichment_assessment_phased_persist_in_active_transaction(
+    ctx: &ServiceContext<'_>,
+    tx: &ActionDb,
+    engine: &PropagationEngine,
+    plan: &EnrichmentAssessmentPhasedPlan,
+) -> Result<(), String> {
+    ctx.check_mutation_allowed().map_err(|e| e.to_string())?;
     let refreshed_projection_withdrawal = withdraw_refreshed_projection_claims(
         ctx,
         tx,
-        upsert.entity_type,
-        upsert.entity_id,
-        &projection_intel,
-        upsert.projection_data_source,
+        &plan.entity_type,
+        &plan.entity_id,
+        &plan.projection_intel,
+        &plan.projection_data_source,
     )?;
-    crate::services::derived_state::upsert_entity_intelligence_legacy_snapshot(ctx, tx, &intel)
-        .map_err(|e| e.to_string())?;
+    crate::services::derived_state::upsert_entity_intelligence_legacy_snapshot(
+        ctx,
+        tx,
+        &plan.intel,
+    )
+    .map_err(|e| e.to_string())?;
+    crate::services::derived_state::replace_entity_intelligence_snapshot_lists(
+        ctx,
+        tx,
+        &plan.intel,
+    )?;
     let (signal_id, _) = crate::services::signals::emit_and_propagate(
         ctx,
         tx,
         engine,
-        upsert.entity_type,
-        upsert.entity_id,
+        &plan.entity_type,
+        &plan.entity_id,
         "entity_intelligence_updated",
         "ai_enrichment",
         None,
@@ -2097,41 +2971,38 @@ pub(crate) fn upsert_assessment_from_enrichment_in_active_transaction(
     )
     .map_err(|e| format!("signal emit failed: {e}"))?;
     let recompute_subjects = projection_claim_recompute_subjects(
-        upsert.entity_type,
-        upsert.entity_id,
-        &intel,
+        &plan.entity_type,
+        &plan.entity_id,
+        &plan.intel,
         &refreshed_projection_withdrawal.affected_subjects,
     );
     enqueue_projection_claim_recomputes(ctx, tx, &signal_id, recompute_subjects);
 
-    // After enrichment, reconcile AI objectives with user objectives
-    if upsert.entity_type == "account" {
+    if plan.entity_type == "account" {
         if let Err(e) =
-            crate::services::success_plans::reconcile_objectives(ctx, tx, upsert.entity_id)
+            crate::services::success_plans::reconcile_objectives(ctx, tx, &plan.entity_id)
         {
             log::warn!(
                 "Objective reconciliation failed for {}: {e}",
-                upsert.entity_id
+                plan.entity_id
             );
         }
     }
 
-    // DOS Work-tab: Best-effort bridge of AI-inferred commitments → Actions.
-    // Enrichment write is the source of truth; bridge errors must not fail it.
-    if upsert.entity_type == "account" {
-        if let Some(ref commitments) = intel.open_commitments {
+    if plan.entity_type == "account" {
+        if let Some(ref commitments) = plan.intel.open_commitments {
             let sync_result =
                 crate::services::commitment_bridge::intelligence_commitment_ingestion_items(
-                    upsert.entity_type,
-                    upsert.entity_id,
+                    &plan.entity_type,
+                    &plan.entity_id,
                     commitments,
                 )
                 .and_then(|items| {
                     crate::services::commitment_bridge::sync_ai_commitments_with_ingestion_sources(
                         ctx,
                         tx,
-                        upsert.entity_type,
-                        upsert.entity_id,
+                        &plan.entity_type,
+                        &plan.entity_id,
                         &items,
                     )
                 });
@@ -2143,19 +3014,37 @@ pub(crate) fn upsert_assessment_from_enrichment_in_active_transaction(
                     summary.skipped_tombstoned,
                     summary.skipped_missing_id,
                     summary.skipped_malformed_id,
-                    upsert.entity_type,
-                    upsert.entity_id
+                    plan.entity_type,
+                    plan.entity_id
                 ),
                 Err(e) => log::warn!(
                     "commitment_bridge sync failed for {}:{} (non-fatal): {e}",
-                    upsert.entity_type,
-                    upsert.entity_id
+                    plan.entity_type,
+                    plan.entity_id
                 ),
             }
         }
     }
 
     Ok(())
+}
+
+pub(crate) fn upsert_assessment_from_enrichment_in_active_transaction(
+    ctx: &ServiceContext<'_>,
+    tx: &ActionDb,
+    engine: &PropagationEngine,
+    upsert: EnrichmentAssessmentUpsert<'_>,
+) -> Result<(), String> {
+    let plan = prepare_enrichment_assessment_phased_plan(tx, upsert)?;
+    begin_enrichment_assessment_phased_persist_in_active_transaction(ctx, tx, &plan)?;
+    commit_claim_shaped_intelligence_projection(
+        ctx,
+        tx,
+        &plan.projection_intel,
+        "agent:intelligence",
+        &plan.projection_data_source,
+    )?;
+    finalize_enrichment_assessment_phased_persist_in_active_transaction(ctx, tx, engine, &plan)
 }
 
 fn enqueue_projection_claim_recomputes(
@@ -5682,8 +6571,8 @@ mod mutation_smoke_tests {
     use crate::db::test_utils::test_db;
     use crate::db::{AccountType, DbAccount};
     use crate::intel_queue::{
-        apply_enrichment_side_writes, compose_enrichment_intelligence_payload,
-        run_enrichment_finalize_post_commit, EnrichmentInput, FinalizeMode,
+        EnrichmentInput, FinalizeMode, apply_enrichment_side_writes,
+        compose_enrichment_intelligence_payload, run_enrichment_finalize_post_commit,
     };
     use crate::intelligence::io::{
         AccountHealth, AdoptionSignals, AgreementOutlook, Blocker, CompetitiveInsight,
@@ -5694,13 +6583,13 @@ mod mutation_smoke_tests {
     };
     use crate::intelligence::prompts::InferredRelationship;
     use crate::intelligence::write_fence::{
-        fenced_write_intelligence_json, write_fence_test_guard, FenceCycle,
+        FenceCycle, fenced_write_intelligence_json, write_fence_test_guard,
     };
     use crate::services::context::{ExternalClients, FixedClock, SeedableRng, ServiceContext};
     use crate::signals::propagation::PropagationEngine;
     use crate::state::AppState;
     use chrono::TimeZone;
-    use rusqlite::{params, OptionalExtension};
+    use rusqlite::{OptionalExtension, params};
     use std::path::Path;
     use std::sync::Arc;
     use std::time::Duration;
@@ -7635,12 +8524,16 @@ mod mutation_smoke_tests {
             2,
             "PTY and Glean commitments should coexist as producer-owned evidence"
         );
-        assert!(commitment_sources
-            .iter()
-            .any(|source| source.starts_with("pty_enrichment:")));
-        assert!(commitment_sources
-            .iter()
-            .any(|source| source.starts_with("glean_enrichment:")));
+        assert!(
+            commitment_sources
+                .iter()
+                .any(|source| source.starts_with("pty_enrichment:"))
+        );
+        assert!(
+            commitment_sources
+                .iter()
+                .any(|source| source.starts_with("glean_enrichment:"))
+        );
 
         let product_sources: Vec<String> = {
             let mut stmt = db
@@ -8733,10 +9626,12 @@ mod mutation_smoke_tests {
         assert!(report.degraded_classes.contains(
             &crate::services::glean_finalization::GleanFinalizationSideEffect::TechnicalFootprint
         ));
-        assert!(report
-            .warnings
-            .iter()
-            .any(|warning| warning.code == "technical_footprint_write_failed"));
+        assert!(
+            report
+                .warnings
+                .iter()
+                .any(|warning| warning.code == "technical_footprint_write_failed")
+        );
         assert_eq!(
             signal_count(&db, entity_id, "glean_finalization_degraded"),
             1,
@@ -8784,10 +9679,12 @@ mod mutation_smoke_tests {
             ),
             "trust recompute enqueue failure should be represented as degraded trust work"
         );
-        assert!(report
-            .warnings
-            .iter()
-            .any(|warning| warning.code == "account_fact_recompute_enqueue_failed"));
+        assert!(
+            report
+                .warnings
+                .iter()
+                .any(|warning| warning.code == "account_fact_recompute_enqueue_failed")
+        );
         assert_eq!(
             signal_count(&db, entity_id, "glean_finalization_degraded"),
             1,
@@ -8833,10 +9730,12 @@ mod mutation_smoke_tests {
         assert!(report.degraded_classes.contains(
             &crate::services::glean_finalization::GleanFinalizationSideEffect::HealthRecompute
         ));
-        assert!(report
-            .warnings
-            .iter()
-            .any(|warning| warning.code == "account_health_recompute_failed"));
+        assert!(
+            report
+                .warnings
+                .iter()
+                .any(|warning| warning.code == "account_health_recompute_failed")
+        );
         assert_eq!(
             signal_count(&db, entity_id, "glean_finalization_degraded"),
             1,
@@ -10676,7 +11575,7 @@ mod mutation_smoke_tests {
 mod dos15_leading_signals_db_tests {
     use crate::db::test_utils::test_db;
     use crate::db::{AccountType, DbAccount};
-    use crate::intelligence::glean_leading_signals::{parse_leading_signals, HealthOutlookSignals};
+    use crate::intelligence::glean_leading_signals::{HealthOutlookSignals, parse_leading_signals};
     use crate::services::context::{ExternalClients, FixedClock, SeedableRng, ServiceContext};
     use crate::signals::propagation::PropagationEngine;
     use chrono::TimeZone;
@@ -11066,19 +11965,18 @@ mod live_acceptance_tests {
     use std::sync::Arc;
 
     use chrono::Utc;
-    use rusqlite::{params, OptionalExtension};
+    use rusqlite::{OptionalExtension, params};
 
     use super::enrich_entity;
-    use crate::db::data_lifecycle::{purge_source, DataSource};
+    use crate::db::data_lifecycle::{DataSource, purge_source};
     use crate::db::{ActionDb, DbPerson};
     use crate::intel_queue::{
-        apply_enrichment_side_writes, compose_enrichment_intelligence,
+        EnrichmentInput, apply_enrichment_side_writes, compose_enrichment_intelligence,
         fenced_write_enrichment_intelligence, run_enrichment_post_commit_side_effects,
-        EnrichmentInput,
     };
     use crate::intelligence::{
-        write_intelligence_json, AccountHealth, ConsistencyStatus, DimensionScore, HealthSource,
-        HealthTrend, IntelRisk, IntelligenceJson, RelationshipDimensions,
+        AccountHealth, ConsistencyStatus, DimensionScore, HealthSource, HealthTrend, IntelRisk,
+        IntelligenceJson, RelationshipDimensions, write_intelligence_json,
     };
     use crate::state::AppState;
 

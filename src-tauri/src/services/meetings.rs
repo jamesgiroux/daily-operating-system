@@ -5485,16 +5485,18 @@ mod tests {
     fn seed_future_meeting_for_user_layer(db: &crate::db::ActionDb, meeting_id: &str) {
         // The freeze gate compares against wall-clock, not the injected test clock,
         // so the fixture must stay in the real future or the test becomes a time bomb.
-        let start = chrono::Utc::now() + chrono::Duration::days(4);
-        let end = start + chrono::Duration::minutes(30);
+        let start_time = chrono::Utc::now() + chrono::Duration::days(7);
+        let end_time = start_time + chrono::Duration::minutes(30);
+        let created_at = chrono::Utc::now();
         db.conn_ref()
             .execute(
                 "INSERT INTO meetings (id, title, meeting_type, start_time, end_time, attendees, created_at)
-                 VALUES (?1, 'Actor Boundary Prep', 'external', ?2, ?3, '[]', '2026-06-05T09:00:00Z')",
+                 VALUES (?1, 'Actor Boundary Prep', 'external', ?2, ?3, '[]', ?4)",
                 rusqlite::params![
                     meeting_id,
-                    start.to_rfc3339_opts(chrono::SecondsFormat::Secs, true),
-                    end.to_rfc3339_opts(chrono::SecondsFormat::Secs, true)
+                    start_time.to_rfc3339_opts(chrono::SecondsFormat::Secs, true),
+                    end_time.to_rfc3339_opts(chrono::SecondsFormat::Secs, true),
+                    created_at.to_rfc3339_opts(chrono::SecondsFormat::Secs, true),
                 ],
             )
             .expect("seed future meeting");
