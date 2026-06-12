@@ -1,0 +1,349 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>v2.0 Problem-Space Research · DailyOS</title>
+  <link rel="stylesheet" href="../design/reference/_shared/fonts.css">
+  <link rel="stylesheet" href="../design/reference/_shared/styles/design-tokens.css">
+  <link rel="stylesheet" href="../design/reference/_shared/styles/AtmosphereLayer.module.css">
+  <link rel="stylesheet" href="../design/reference/_shared/styles/MagazinePageLayout.module.css">
+  <link rel="stylesheet" href="../design/reference/_shared/chrome.css">
+  <link rel="stylesheet" href="../plans/plans.css">
+</head>
+<body
+  data-tint="eucalyptus"
+  data-active-page="planning">
+<div class="MagazinePageLayout_magazinePage">
+<main class="MagazinePageLayout_pageContainer">
+<div class="plans-shell">
+
+<nav class="plans-topnav" aria-label="Research surface">
+  <a class="plans-mark" href="../plans/index.html">
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 433 407" width="16" height="16" aria-hidden="true">
+      <path d="M159 407 161 292 57 355 0 259 102 204 0 148 57 52 161 115 159 0H273L271 115L375 52L433 148L331 204L433 259L375 355L271 292L273 407Z" fill="currentColor"/>
+    </svg>
+    DailyOS · Research
+  </a>
+  <div class="plans-topnav-links">
+    <a href="../plans/v2.0-case.html">v2.0 Case</a>
+    <a href="../plans/v2.0-waves.html">v2.0 Waves</a>
+    <a href="2026-06-12-v2.0-problem-space-research.html" data-active="true">Problem-Space Research</a>
+  </div>
+</nav>
+
+<!-- ============================================================
+     COVER
+     ============================================================ -->
+<section class="plans-cover">
+  <p class="plans-eyebrow">DailyOS · Foundational Research · 2026-06-12</p>
+  <h1 class="plans-title">Do We Even Need This?</h1>
+  <p class="plans-kicker">Problem-space research run the way a CPO would run it: five whys, behavioral evidence, the null hypothesis argued properly, GBrain actually researched, the platform-overlap audit — with "don't build" a fully valid outcome.</p>
+  <p class="plans-lede">
+    Method: seven independent persona streams — a discovery PM (five-whys problem validation), a behavioral analyst (14 days of audit log + the replica DB, read-only), a skeptical buy-vs-build analyst (null hypothesis + GBrain + Granola + Claude-only stacks), a principal engineer (minimal-system analysis, cold read), a category CPO (gstack office-hours + plan-ceo-review method), a corpus archaeologist (<code>.docs/research/</code> + gstack work product), and a platform-overlap researcher (Claude live artifacts + Cowork scheduled tasks). Each was instructed to treat our own product docs as <em>claims under test</em> and was blocked from reading the v2.0 vision as authority. This document corrects its predecessor — the <a href="2026-06-12-v2.0-overnight-research.md">overnight research compendium</a> — which was corroboration-shaped: it validated stated hypotheses instead of testing the problem space.
+  </p>
+  <div class="plans-meta">
+    <span>Verdict: the jobs are real but smaller than the build</span>
+    <span>Headline: the trust loop has never fired</span>
+    <span>CPO: the next dollar buys a reader, not a rebuild</span>
+    <span>Tension with ADR-0139 surfaced honestly in §8</span>
+  </div>
+</section>
+
+<!-- ============================================================
+     §1 PROBLEM VALIDATION
+     ============================================================ -->
+<section class="plans-section" aria-labelledby="s1">
+  <header class="plans-section-header">
+    <p class="plans-section-eyebrow">§1 · Problem validation (five whys)</p>
+    <h2 id="s1" class="plans-section-title">The five jobs, tested — two reframed, one not validated.</h2>
+    <p class="plans-section-lede">
+      The jobs verbatim all begin "I still need" — retention claims from the builder about his own product, the weakest form of JTBD evidence. The natural experiments outweigh the statements: the corruption-era abstention (weeks without the app; the workday survived), the WAL outage (a complaint about losing sight of "the claim-backed work," not a work stoppage), and the live token-burn complaint.
+    </p>
+  </header>
+
+  <table class="reviewer-matrix">
+    <thead>
+      <tr><th>Job</th><th>Verdict</th><th>Root problem (post five-whys)</th><th>Today's alternative</th></tr>
+    </thead>
+    <tbody>
+      <tr>
+        <td><strong>4 · Workspace where work product lives</strong></td>
+        <td><strong>VALIDATED — after reframe. Ranked #1.</strong></td>
+        <td>Not "a workbench" — <strong>"my accumulated context must be durable, inspectable, and mine."</strong> The only job whose failure changed behavior for weeks (corruption-era abstention) and whose loss was explicitly mourned (the WAL outage). A stock, not a flow.</td>
+        <td>None that he trusts — which is the point. Docs/P2 hold documents; nothing holds the claim graph.</td>
+      </tr>
+      <tr>
+        <td><strong>1 · Meeting briefings</strong></td>
+        <td><strong>VALIDATED, severity capped. #2.</strong></td>
+        <td>Per-meeting context reassembly under time pressure × ~48 accounts. Daily frequency, real cost — but twice proven survivable without the app.</td>
+        <td>Calendar + Gmail + memory + ad-hoc Claude. ~5–15 min/meeting.</td>
+      </tr>
+      <tr>
+        <td><strong>2 · Customer/exec briefings</strong></td>
+        <td><strong>PARTIALLY VALIDATED. #3.</strong></td>
+        <td>Episodic high-stakes synthesis restarting from zero. High per-instance stakes, low frequency, no documented failure incident. The surface was rebuilt 3× and never converged — consistent with a real but vague job.</td>
+        <td>Google Docs + Claude with pasted context; hours per artifact.</td>
+      </tr>
+      <tr>
+        <td><strong>5 · Local-agent customer work</strong></td>
+        <td><strong>Premise excellent; necessity unproven. #4.</strong></td>
+        <td>His agents are context-poor about his customers. The behavioral premise (agent-mediated work) is the best-evidenced fact in the repo — but his agents already reach Gmail/Calendar/Slack/Linear via direct MCP plus raw file reads, and no documented customer work has flowed through DailyOS-MCP in anger.</td>
+        <td>The agent harness he lives in (this one), with direct MCPs.</td>
+      </tr>
+      <tr>
+        <td><strong>3 · Signals → trust-banded claims → shareable output</strong></td>
+        <td><strong>SPLIT — sharing leg NOT validated. #5.</strong></td>
+        <td>Trust-for-own-consumption: plausible, modestly evidenced. Trust-bands-for-<em>shareable</em>-output: ADR-0117 still Proposed, one publish ability, zero documented shares of claim-banded artifacts. <em>"The product thesis wearing a JTBD costume."</em></td>
+        <td>He is the trust band — manual pre-share review.</td>
+      </tr>
+    </tbody>
+  </table>
+
+  <p>
+    The structural finding: the jobs split into <strong>PRODUCING</strong> (1, 2 — made for him, push-shaped, degrade gracefully), <strong>ASSEMBLING</strong> (4 reframed — his accumulation, loss-averse, the demonstrated attachment), and <strong>TRUSTING</strong> (3 — gate-shaped, currently aspirational on sharing). Both behavior-changing incidents were about the ASSEMBLING job; both live complaints (token burn, DB fear) were about the cost and risk of the PRODUCING machinery. <em>The project keeps investing where the churn is, not where the demonstrated attachment is.</em>
+  </p>
+</section>
+
+<!-- ============================================================
+     §2 BEHAVIORAL EVIDENCE
+     ============================================================ -->
+<section class="plans-section" aria-labelledby="s2">
+  <header class="plans-section-header">
+    <p class="plans-section-eyebrow">§2 · Behavioral evidence (14 days of audit log; replica DB read-only)</p>
+    <h2 id="s2" class="plans-section-title">The trust loop has never fired.</h2>
+    <p class="plans-section-lede">
+      Caveat carried honestly: the replica was rebuilt ~June 9, so pre-replica correction history is not visible in the DB; the 14-day audit log is unaffected by that caveat. Either way, the production:consumption asymmetry is unambiguous. This effectively pre-answers Gate 2 (the moat instrumentation): the 2026-05-29 adjudication asked "would the user notice if the judgment layer were off?" — the observable answer is no.
+    </p>
+  </header>
+
+  <table class="reviewer-matrix">
+    <thead>
+      <tr><th>Measure</th><th>Produced</th><th>Consumed / corrected</th></tr>
+    </thead>
+    <tbody>
+      <tr><td>AI calls (12 active days)</td><td>2,103 calls · ~1.17M tokens</td><td><strong>17 user-initiated (0.8%)</strong></td></tr>
+      <tr><td>Claims</td><td>8,407</td><td><strong>0 corrections, 0 feedback rows</strong> (claim_feedback, entity_feedback_events, intelligence_feedback: all zero)</td></tr>
+      <tr><td>Briefing callouts</td><td>699 (142 critical)</td><td><strong>0 dismissed, 0 acted on</strong></td></tr>
+      <tr><td>Extracted actions</td><td>319 (54 overdue)</td><td><strong>0 completed, 0 archived</strong></td></tr>
+      <tr><td>Captured commitments</td><td>468</td><td><strong>0 consumed</strong></td></tr>
+      <tr><td>Meeting preps</td><td>56 of 56 meetings</td><td>0 user notes, 0 agenda edits, 0 prep corrections</td></tr>
+      <tr><td>Daily briefing generations</td><td>154 (~14/day — polling, not event-driven)</td><td>~5 explicit section opens</td></tr>
+      <tr><td>MCP tool calls · in-app chat</td><td>—</td><td><strong>0 · 0</strong></td></tr>
+      <tr><td>Token burn vs budget</td><td>22K–258K/day vs 50K budget; email action-extraction alone = 59% of calls</td><td>Exceeded budget 5 of 12 days</td></tr>
+      <tr><td>Signal bus self-narration</td><td>~313,848 events in 2.5 days — <strong>94% are trust-recompute bookkeeping</strong> (ConfidenceEvidence)</td><td>No reader exists for these rows</td></tr>
+    </tbody>
+  </table>
+
+  <p class="plans-footnote">
+    Additional structural reads: 33%+ of Glean enrichment attempts degraded or failed; corroborations (381) and contradictions (128) are all machine-generated, with all 128 contradictions unresolved by any human. The behavioral analyst's full report and all per-stream sources: see <a href="2026-06-12-v2.0-overnight-research.md">research compendium</a> + session transcripts (agents a9f0…, ab6ae…, a970a…, a741c…, ac08b…, aaf73…).
+  </p>
+</section>
+
+<!-- ============================================================
+     §3 ALTERNATIVES / NULL HYPOTHESIS
+     ============================================================ -->
+<section class="plans-section" aria-labelledby="s3">
+  <header class="plans-section-header">
+    <p class="plans-section-eyebrow">§3 · The null hypothesis, argued properly</p>
+    <h2 id="s3" class="plans-section-title">"Assemble, don't build" covers Jobs 1 and 4. It cannot cover 2, 3, and 5.</h2>
+    <p class="plans-section-lede">
+      The strongest honest don't-build: Granola Business ($19/mo) + Claude Enterprise Projects + Cowork scheduled tasks ≈ 60–70% of the five jobs, with the human as the trust band and ~30–60 min/week of manual context maintenance per active account. Where it breaks, it breaks on the same three gaps every time.
+    </p>
+  </header>
+
+  <table class="reviewer-matrix">
+    <thead>
+      <tr><th>Alternative</th><th>What it actually is (researched, not assumed)</th><th>Verdict vs the five jobs</th></tr>
+    </thead>
+    <tbody>
+      <tr>
+        <td><strong>GBrain</strong> (finally researched properly)</td>
+        <td>Markdown-in-git + pgvector + regex-linked entity graph + ~30 MCP tools; MIT; 146K pages in production — <em>all Garry Tan's</em>. Single-operator by design, engineer-shaped (Bun + Postgres + git setup). <strong>No trust layer, no claim lifecycle, no belief revision, no meeting prep.</strong></td>
+        <td>Adjacent, non-overlapping. <strong>Our corpus overstated it as a judgment peer</strong> — it is memory substrate for developers. Architectural validation of the category; not a substitute. (Corpus positioning claims at <code>.docs/plans/dailyos-rearchitecture-examination-2026-05-29.md:15</code>.)</td>
+      </tr>
+      <tr>
+        <td><strong>Granola</strong> ($1.5B)</td>
+        <td>Bot-free transcription → structured docs; <strong>pre-meeting briefs shipped</strong> (prior notes + LinkedIn + Gmail, with an explicit accuracy caveat and no provenance); Spaces; MCP server; HubSpot push.</td>
+        <td>Job 1 at ~65–70%. Briefs don't source email threads/Glean/Slack history; no provenance on brief claims; internal meetings excluded.</td>
+      </tr>
+      <tr>
+        <td><strong>Claude Enterprise / Projects / Cowork</strong></td>
+        <td>500K context; Projects+RAG; memory = <em>synthesized prose, not structured records</em>, 24h synthesis delay; scheduled tasks (see §4); "dreaming" (gated) extracts patterns from transcripts, not typed claims; explicit compliance warning — Cowork activity not audit-logged.</td>
+        <td>Jobs 1/2 at ~60–75% with paste-maintenance; Job 4 container adequate; <strong>Job 3 at ~zero — no analog in current or announced features.</strong></td>
+      </tr>
+      <tr>
+        <td><strong>Obsidian/markdown + Agent SDK skills</strong></td>
+        <td>The artisanal stack (claude-obsidian pattern: vault + write-boundary conventions).</td>
+        <td>Works for a developer-IC who writes; breaks for a CS leader with multi-channel inbound across 20+ accounts. Skill-authoring is the maintenance tax.</td>
+      </tr>
+    </tbody>
+  </table>
+
+  <p>
+    <strong>The residue — three gaps no alternative covers</strong> (the skeptic's own conclusion): (1) <strong>claim-level trust-band provenance for non-engineers</strong> — every alternative offloads trust to the human; (2) <strong>multi-channel signals → one entity graph without engineering work</strong>; (3) <strong>longitudinal belief revision</strong> — contradiction detection and propagation when the customer's Q3 becomes Q1. The market verdict per job: <strong>1 — marginal; 4 — don't justify the build on it; 2, 3, 5 — genuine unfilled gap.</strong> And the skeptic's caveat that matters most, echoing §2: the gap being unfilled is either an opportunity or a sign the market decided the problem isn't real. The behavioral data is currently consistent with the second reading — until a reader exists.
+  </p>
+</section>
+
+<!-- ============================================================
+     §4 PLATFORM OVERLAP
+     ============================================================ -->
+<section class="plans-section" aria-labelledby="s4">
+  <header class="plans-section-header">
+    <p class="plans-section-eyebrow">§4 · Platform overlap (live artifacts · scheduled tasks)</p>
+    <h2 id="s4" class="plans-section-title">What Anthropic ate, what survives, and the parasitic option.</h2>
+    <p class="plans-section-lede">
+      James's instinct confirmed: pieces of what we built now ship in Claude. Live artifacts (Apr 2026): persistent HTML dashboards re-querying MCP connectors — <strong>on-open refresh only</strong>, no push, no alerts, no sharing yet, local to one machine. Cowork scheduled tasks: a morning brief from Gmail+Calendar is demonstrably feasible — machine-awake + app-open constraints locally (cloud routines via Managed Agents lift that), in-app delivery, and cross-run memory loose enough that practitioners bolt on third-party stores. Anthropic ships a Cowork-adjacent release roughly every 3 weeks.
+    </p>
+  </header>
+
+  <table class="reviewer-matrix">
+    <thead>
+      <tr><th>Platform ate it</th><th>Survives — structurally out of platform reach</th></tr>
+    </thead>
+    <tbody>
+      <tr>
+        <td>On-demand meeting prep from calendar+email (adequate, not rich) · naïve auto-dashboards from connected apps · recurring morning-brief <em>generation</em> · work-product drafting with maintained context (Projects)</td>
+        <td>Typed claim model with provenance + lifecycle (memory is synthesized prose; "dreaming" reads transcripts, not entity records) · per-claim trust bands + staleness (Claude's confidence is response-level) · correction loop that mutates specific claims · longitudinal entity threading + contradiction detection · local owned claim store (their own compliance warnings are the absence) · shareable trust-marked output · me-shaped source-reliability learning. Stable gaps on a 12-month view.</td>
+      </tr>
+    </tbody>
+  </table>
+
+  <p>
+    <strong>The parasitic option (researched as structurally viable):</strong> DailyOS as the MCP source feeding Claude-native rendering — live artifacts and scheduled tasks call our local MCP for trust-banded briefing JSON; Claude provides rendering, scheduling, and (when it ships) sharing. Division of labor: <em>DailyOS owns intelligence, memory, trust; Claude owns the display surface.</em> This is a serious alternative to building W1's document renderer at all — bounded platform risk because the core value never lives in the MCP seam. It converges with the engineering finding in §5: the briefing-delivery problem may be a rendering-channel choice, not a surface-construction program.
+  </p>
+</section>
+
+<!-- ============================================================
+     §5 MINIMAL SYSTEM
+     ============================================================ -->
+<section class="plans-section" aria-labelledby="s5">
+  <header class="plans-section-header">
+    <p class="plans-section-eyebrow">§5 · Engineering lens (principal-engineer cold read)</p>
+    <h2 id="s5" class="plans-section-title">The five jobs fit in ~16k LOC. The repo holds 516k.</h2>
+    <p class="plans-section-lede">
+      The decisive observation: the system already delegates all intelligence to Claude CLI sessions over PTY — 433k LOC of Rust is, at its core, a context-assembler and output-router around Claude calls. The genuinely novel ~20% (claim anatomy, trust bands, claim-files projection, composition contract) is wrapped in ~80% machinery serving surface-independence, scale, and feedback volumes that remain hypothetical.
+    </p>
+  </header>
+
+  <table class="reviewer-matrix">
+    <thead>
+      <tr><th>Finding</th><th>Evidence</th></tr>
+    </thead>
+    <tbody>
+      <tr>
+        <td><strong>The one subsystem all five jobs touch</strong></td>
+        <td>The claims schema + trust function + sensitivity gate. "The crown jewel… one table + indexes." Everything else is per-job optional.</td>
+      </tr>
+      <tr>
+        <td><strong>Serves the architecture, not the user (top complexity findings)</strong></td>
+        <td>Signal-propagation engine: 94% of 313k events are trust-recompute narrating to nobody — plausibly a root <em>cause</em> of the write-contention saga (ADR-0133/0134). · Dual-API shell: 426 commands + 26 routes + parity layer. · ~20k LOC of local-to-local security ceremony "defending James from James." · 23 claim_* tables of belief-revision machinery against zero recorded feedback (claims.rs alone is 22k LOC). · 13 of 16 background workers serve an entity-360 ambition no job asked for — the direct token burn.</td>
+      </tr>
+      <tr>
+        <td><strong>The minimal sketch</strong></td>
+        <td>~16k LOC: SQLite ~12 tables (migration-140 claim schema nearly verbatim), calendar/Gmail pollers, one transcript intake, claim extraction via Claude with schema validation, <strong>trust computed on read</strong> (no events, no recompute queue), 3–4 briefing skills, markdown workspace projection with corrections-by-edit, sensitivity-gated share render, ~10-tool stdio MCP server, cron. Losses examined one by one — none of the five jobs needs what's lost. Keep the operational scar tissue (recovery/backup/Google-sync edge cases) in any path.</td>
+      </tr>
+      <tr>
+        <td><strong>The middle path (keep the substrate, delete the rest)</strong></td>
+        <td>Keep: claims core (trimmed), trust, sensitivity, claim-files projection, ADR-0138's one feedback path, ~12 jobs-relevant abilities, composition contract as the single render path, MCP minus ceremony, 3 pollers. Delete fraction: <strong>~65–70% of Rust, ~70–75% of TS, ~80% of tables, 16→5 workers, 426→~80 commands.</strong> Reachable by deletion + completion, not rewrite.</td>
+      </tr>
+    </tbody>
+  </table>
+</section>
+
+<!-- ============================================================
+     §6 CPO VERDICT
+     ============================================================ -->
+<section class="plans-section" aria-labelledby="s6">
+  <header class="plans-section-header">
+    <p class="plans-section-eyebrow">§6 · Category CPO (gstack office-hours + plan-ceo-review method)</p>
+    <h2 id="s6" class="plans-section-title">Identity: internal Automattic leverage first. The rebuild is the wrong next dollar.</h2>
+    <p class="plans-section-lede">
+      Run with the gstack skills' own forcing questions and anti-sycophancy rules. The hardest lines, kept intact.
+    </p>
+  </header>
+
+  <div class="callout-grid">
+    <article class="callout">
+      <h3 class="callout-title">Identity verdict</h3>
+      <p class="callout-prose"><strong>Primary: (b) internal Automattic leverage</strong> — the Glean exit opens a now-or-never window; three named colleagues with identical jobs are one Slack DM away; Claude standardization is our MCP surface's natural habitat. <strong>Hold: (c) substrate extraction</strong> for the Claude ecosystem — the hedge that survives every outcome, but extracting before the loop fires ships the unproven part. <strong>Kill (d) commercial</strong> — nothing on the board. (a) personal tooling is the current reality and is itself failing — that's the forcing function.</p>
+    </article>
+    <article class="callout">
+      <h3 class="callout-title">The office-hours lines that sting</h3>
+      <p class="callout-prose">"Who would be upset if it disappeared tomorrow? On the observable evidence — nobody, including you." · "The status-quo competitor was never Glean; it's the agent harness you live in 10 hours a day — and it's made by Anthropic." · "Building is the use: the system makes 99.2% of its own AI calls." · "The meta-system — the ladder, the K-channel, the lessons files — is the PRODUCT-THESIS fully realized: consumed daily, corrected daily, compounding. The real product has been trying to emerge in the repo's process layer for 19 weeks." · "Your zero is ambiguous (never wrong vs. never read); a second human disambiguates it in a week."</p>
+    </article>
+    <article class="callout">
+      <h3 class="callout-title">Resource allocation (one builder, ranked)</h3>
+      <p class="callout-prose"><strong>1. Make consumption happen</strong> — one daily artifact, pushed to a channel already in the habit loop, correction = one-line reply; two weeks, mostly deletion and routing. <strong>2. One colleague, then three</strong> — predeclared kill rule: 0/3 consuming at day 14 ends identity (b). <strong>3. Substrate extraction</strong> — jumps to #2 the moment the loop fires. <strong>4. The v2.0 surface rebuild — decline to fund.</strong> "Rebuilding surfaces nobody reads optimizes the render side of a loop whose failure is upstream." Carve-out: if the sprint proves delivery is the blocker, build that one channel — a week, not a program.</p>
+    </article>
+  </div>
+
+  <p class="plans-footnote">
+    The wedge, in one sentence: <em>a briefing that arrives before your customer call, in a channel you already look at, that's right about what changed</em> — no login, no app presence, no operating the system. Which is MISSION.md's own refusal honored: "We will not build another system the user has to maintain before it helps."
+  </p>
+</section>
+
+<!-- ============================================================
+     §7 CORPUS ARCHAEOLOGY
+     ============================================================ -->
+<section class="plans-section" aria-labelledby="s7">
+  <header class="plans-section-header">
+    <p class="plans-section-eyebrow">§7 · What the corpus already knew</p>
+    <h2 id="s7" class="plans-section-title">The archive predicted most of this.</h2>
+  </header>
+  <p>
+    The archaeology sweep (28 research files + gstack work product inventoried; every path verified) found: the <a href="../plans/dailyos-rearchitecture-examination-2026-05-29.md">2026-05-29 four-reviewer adjudication</a> already ruled "prove the moat first… would the user notice if the judgment layer were off?" — §2 above is that experiment's answer, arriving two weeks late and in the negative. The corpus had already settled: substrate-is-the-moat, calendar-as-spine, transcript-first, Cowork-as-delegation, Glean-as-complement, and ~22 other decisions the new research links rather than re-derives. Its one significant error, now corrected: positioning GBrain as a judgment-space peer (it has no trust layer at all). The gstack retro/review trail (scope-trap lessons, the parity spiral, the L0-diminishing-returns rule) reads in hindsight as the process layer repeatedly warning that build appetite was outrunning consumption evidence.
+  </p>
+  <p class="plans-footnote">
+    Companion artifacts: <a href="2026-06-12-v2.0-overnight-research.md">overnight research compendium</a> (the corroboration-shaped predecessor, sources preserved) · <a href="2026-05-25-dailyos-work-record-standalone.html">work-record research (2026-05-25)</a> · <a href="../plans/v2.0-shell-audit.md">measured shell audit</a> · <a href="../plans/v2.0-search-substrate-l0-draft.md">search-substrate L0 draft</a> · <a href="../plans/performance-srp-dry-cleanup-waves.html">performance/SRP audit waves</a>.
+  </p>
+</section>
+
+<!-- ============================================================
+     §8 SYNTHESIS
+     ============================================================ -->
+<section class="plans-section" aria-labelledby="s8">
+  <header class="plans-section-header">
+    <p class="plans-section-eyebrow">§8 · Synthesis</p>
+    <h2 id="s8" class="plans-section-title">The answer, and the tension it creates with last night's plan.</h2>
+  </header>
+
+  <p>
+    <strong>Do we even need this?</strong> The panel's convergent answer: <strong>the problems are real but smaller than the build, and the build's next increment was pointed at the wrong layer.</strong> What is validated: the durable, owned, accumulated context (Job 4 reframed — the thing whose loss changed behavior); the daily briefing as a liked, survivable layer (Job 1); and a trust substrate that is genuinely unique in the market (Jobs 2/3/5's residue — no personal-tier alternative exists, confirmed against GBrain, Granola, Claude, and the platform's 12-month trajectory). What is not validated: that anyone — including the builder — currently <em>consumes</em> what the system produces, or shares trust-banded output. The moat is real as architecture and unproven as product.
+  </p>
+  <p>
+    <strong>This conflicts with ADR-0139's accepted program, and the conflict should be faced rather than smoothed:</strong> the CPO lens declines to fund the v2.0 surface rebuild as the next dollar; the engineering lens says the five jobs need ~16k LOC plus the substrate; the behavioral lens pre-answers Gate 2 in the negative. What survives of last night intact: the two-gate structure (vindicated — the gates exist precisely to catch this), W0's substrate fixes (token burn and write shapes are real regardless), the deletion-as-AC discipline, and the six-primitives vision <em>as a hypothesis about what comes after consumption is proven</em>. What this research argues changes: <strong>before any conversion wave, run the consumption sprint (one pushed briefing, correction-by-reply, two weeks — possibly delivered through the §4 parasitic channel rather than new surface) and the one-colleague pilot.</strong> That is not a new gate — it is Gate 2 (DOS-869) sharpened from "instrument the moat" to "buy a reader," with the colleague pilot as its second arm. The Glean-exit window prices the urgency.
+  </p>
+  <p>
+    James's call to make, stated plainly: accept the re-pointing (consumption sprint + colleague pilot become WI; conversion waves wait on a reader, not just a readout), or overrule with reasons the record should carry. Either way, this document is the problem-space baseline the v2.0 program should have started from.
+  </p>
+</section>
+
+<!-- ============================================================
+     RELATED
+     ============================================================ -->
+<section class="plans-section plans-section-footer">
+  <header class="plans-section-header">
+    <p class="plans-section-eyebrow">Related</p>
+    <h2 class="plans-section-title">Reading chain.</h2>
+  </header>
+  <ul class="plans-related">
+    <li><strong>This document</strong> — problem-space baseline (evidence + verdicts).</li>
+    <li><a href="2026-06-12-v2.0-overnight-research.md"><strong>Overnight research compendium</strong></a> — the five earlier streams with sources; corroboration-shaped, corrected here.</li>
+    <li><a href="../plans/v2.0-surface-vision.md"><strong>Surface vision</strong></a> + <a href="../plans/v2.0-waves.html"><strong>wave plan</strong></a> — now hypotheses gated on consumption evidence, per §8.</li>
+    <li><a href="../plans/v2.0-case.html"><strong>v2.0 case</strong></a> + ADR-0139 — the program this research re-points; its own gates absorb the verdict.</li>
+    <li><a href="../plans/dailyos-rearchitecture-examination-2026-05-29.md"><strong>2026-05-29 examination</strong></a> — the prior strategy exam whose "prove the moat first" this research finally executed.</li>
+  </ul>
+</section>
+
+<div class="finis">
+  <div class="finis-mark">VALIDATE · MEASURE · COMPARE · DECIDE</div>
+  <div class="finis-date">v2.0 Problem-Space Research · 2026-06-12</div>
+  <div class="finis-caption">The next dollar buys a reader, not a rebuild.</div>
+</div>
+
+</div><!-- /.plans-shell -->
+</main>
+</div><!-- /.MagazinePageLayout_magazinePage -->
+</body>
+</html>
