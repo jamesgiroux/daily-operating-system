@@ -2285,16 +2285,14 @@ mod tests {
             "SQLCipher key-verify alone must not trigger manual recovery"
         );
 
-        let disk_io_only: DbAccessError =
-            DbAccessError::Other("disk I/O error".to_string());
+        let disk_io_only: DbAccessError = DbAccessError::Other("disk I/O error".to_string());
         assert!(
             !db_access_error_requires_manual_recovery(&disk_io_only),
             "disk I/O alone must not trigger manual recovery"
         );
 
-        let malformed: DbAccessError = DbAccessError::Other(
-            "SQLite error: database disk image is malformed".to_string(),
-        );
+        let malformed: DbAccessError =
+            DbAccessError::Other("SQLite error: database disk image is malformed".to_string());
         assert!(
             db_access_error_requires_manual_recovery(&malformed),
             "real btree corruption must trigger manual recovery"

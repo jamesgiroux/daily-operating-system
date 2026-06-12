@@ -15,7 +15,10 @@ pub fn write(db: &ActionDb, req: &WriteRequest) -> Result<WriteOutcome, WriteErr
     debug_assert_eq!(req.source, MeetingSource::Reconcile);
     invariants::validate(req)?;
 
-    let existed = db.get_meeting_by_id(&req.id).map_err(WriteError::from)?.is_some();
+    let existed = db
+        .get_meeting_by_id(&req.id)
+        .map_err(WriteError::from)?
+        .is_some();
     let meeting = build_db_meeting(req);
     db.upsert_meeting(&meeting)?;
 

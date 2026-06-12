@@ -738,7 +738,9 @@ mod tests {
         // 1024 pages * 4 KB = 4 MB; seed with 8 MB worth of payload so the copy
         // requires at least two chunked-step iterations.
         let payload = vec![0xA5_u8; 8192];
-        let mut stmt = src.prepare("INSERT INTO rows (payload) VALUES (?1)").expect("prep");
+        let mut stmt = src
+            .prepare("INSERT INTO rows (payload) VALUES (?1)")
+            .expect("prep");
         for _ in 0..1024 {
             stmt.execute([&payload]).expect("insert");
         }

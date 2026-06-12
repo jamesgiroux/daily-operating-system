@@ -43,8 +43,7 @@ pub fn upsert_meeting_for_reconcile(
             user_notes: meeting.user_notes.clone(),
             intelligence_state: meeting.intelligence_state.clone(),
         };
-        crate::services::meetings_writer::write(tx, &write_req)
-            .map_err(|e| e.to_string())?;
+        crate::services::meetings_writer::write(tx, &write_req).map_err(|e| e.to_string())?;
         crate::services::signals::emit(
             ctx,
             tx,

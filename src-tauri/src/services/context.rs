@@ -1401,7 +1401,12 @@ mod tests {
         // 4 personal blocks (matches the phantom-row shape) + 1 customer
         // meeting. The customer meeting is the only row Briefing should return.
         let rows = [
-            ("meet-personal-1", "Lunch", "personal", "2026-05-23T12:00:00Z"),
+            (
+                "meet-personal-1",
+                "Lunch",
+                "personal",
+                "2026-05-23T12:00:00Z",
+            ),
             ("meet-personal-2", "Gym", "personal", "2026-05-23T07:00:00Z"),
             (
                 "meet-personal-3",

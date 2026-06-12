@@ -698,9 +698,8 @@ impl DbService {
     /// the call returns without truncating and we try again next interval.
     fn spawn_checkpoint_task(weak_svc: std::sync::Weak<DbService>) {
         tokio::spawn(async move {
-            let mut interval = tokio::time::interval(std::time::Duration::from_secs(
-                WAL_CHECKPOINT_INTERVAL_SECS,
-            ));
+            let mut interval =
+                tokio::time::interval(std::time::Duration::from_secs(WAL_CHECKPOINT_INTERVAL_SECS));
             interval.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Skip);
             // First tick fires immediately; consume it so the first real
             // checkpoint happens one interval after open, not at t=0.

@@ -394,15 +394,8 @@ fn process_granola_document(
             reason = "intentional best-effort discard; preserves existing non-blocking behavior"
         )]
         // dos7-allowed: transcript-db-write - transcript sync-state write; not workspace-file ingestion
-        let _ = crate::quill::sync::transition_state(
-            db,
-            sync_id,
-            "processing",
-            None,
-            None,
-            None,
-            None,
-        );
+        let _ =
+            crate::quill::sync::transition_state(db, sync_id, "processing", None, None, None, None);
 
         Ok((calendar_event, workspace, profile, ai_config))
     })?; // DB lock dropped
