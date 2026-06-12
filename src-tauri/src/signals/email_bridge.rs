@@ -279,7 +279,11 @@ pub fn emit_linked_email_signals(
         );
         // Truncate source_context to avoid oversized signal values
         let ctx = if source_context.len() > 200 {
-            &source_context[..200]
+            let mut end = 200;
+            while end > 0 && !source_context.is_char_boundary(end) {
+                end -= 1;
+            }
+            &source_context[..end]
         } else {
             &source_context
         };
