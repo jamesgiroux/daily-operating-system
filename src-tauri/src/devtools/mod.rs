@@ -1350,9 +1350,9 @@ pub fn run_today_mechanical(state: &AppState) -> Result<String, String> {
     ))
 }
 
-/// Daily briefing — full pipeline including AI enrichment.
+/// Daily briefing — full pipeline including prep and briefing AI enrichment.
 ///
-/// Same as mechanical + enrich_emails, enrich_preps, enrich_briefing via Claude Code CLI.
+/// Same as mechanical + enrich_preps, enrich_briefing via Claude Code CLI.
 /// Requires Claude Code installed and authenticated.
 pub fn run_today_full(state: &AppState) -> Result<String, String> {
     if !cfg!(debug_assertions) {
@@ -1383,7 +1383,7 @@ pub fn run_today_full(state: &AppState) -> Result<String, String> {
     let emails_data = crate::workflow::deliver::deliver_emails(&directive, &data_dir)
         .unwrap_or_else(|_| serde_json::json!({}));
 
-    // Partial manifest (AI enrichment pending)
+    // Partial manifest (prep and briefing AI enrichment pending)
     crate::workflow::deliver::deliver_manifest(
         &directive,
         &schedule_data,
@@ -1402,14 +1402,14 @@ pub fn run_today_full(state: &AppState) -> Result<String, String> {
     let extraction_pty =
         crate::pty::PtyManager::for_tier(crate::pty::ModelTier::Extraction, &ai_config)
             .with_usage_context(
-                crate::pty::AiUsageContext::new("devtools", "sample_email_enrichment")
+                crate::pty::AiUsageContext::new("devtools", "sample_prep_enrichment")
                     .with_trigger("devtools")
                     .with_tier(crate::pty::ModelTier::Extraction),
             );
     let synthesis_pty =
         crate::pty::PtyManager::for_tier(crate::pty::ModelTier::Synthesis, &ai_config)
             .with_usage_context(
-                crate::pty::AiUsageContext::new("devtools", "sample_email_enrichment_fallback")
+                crate::pty::AiUsageContext::new("devtools", "sample_briefing_generation")
                     .with_trigger("devtools")
                     .with_tier(crate::pty::ModelTier::Synthesis),
             );
@@ -1425,18 +1425,6 @@ pub fn run_today_full(state: &AppState) -> Result<String, String> {
     });
 
     let mut enriched = Vec::new();
-
-    let known_domains = std::collections::HashSet::new(); // devtools: no domain filter
-    match crate::workflow::deliver::enrich_emails(
-        &data_dir,
-        &extraction_pty,
-        &workspace,
-        &user_ctx,
-        &known_domains,
-    ) {
-        Ok(()) => enriched.push("emails"),
-        Err(e) => log::warn!("Email enrichment failed (non-fatal): {}", e),
-    }
 
     match crate::workflow::deliver::enrich_preps(&data_dir, &extraction_pty, &workspace) {
         Ok(()) => enriched.push("preps"),

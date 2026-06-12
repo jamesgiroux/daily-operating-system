@@ -262,10 +262,6 @@ export function CommandMenu({ open, onOpenChange }: CommandMenuProps) {
             <CalendarDays className="mr-2 size-4" />
             <span>This Week</span>
           </CommandItem>
-          <CommandItem onSelect={() => go("/emails")}>
-            <Mail className="mr-2 size-4" />
-            <span>Mail</span>
-          </CommandItem>
           <CommandItem onSelect={() => go("/actions")}>
             <CheckSquare className="mr-2 size-4" />
             <span>Actions</span>

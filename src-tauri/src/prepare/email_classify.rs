@@ -440,13 +440,9 @@ pub fn should_suppress_email(
         return true;
     }
 
-    // List-Unsubscribe heuristic is intentionally dropped.
-    // The AI enrichment pass (`prepare/email_enrich.rs`) judges noise
-    // for everything that survives the deterministic rules above. The
-    // LLM has the full body context and can distinguish a genuine
-    // customer reply (List-Unsubscribe present, but real 1:1) from a
-    // marketing blast much more reliably than substring matching on
-    // the sender header.
+    // List-Unsubscribe is too broad for signal-only email sync: genuine 1:1
+    // correspondence can carry this header, so deterministic suppression stays
+    // bounded to clearer bulk/no-reply signals above.
     let _ = list_unsubscribe;
 
     false

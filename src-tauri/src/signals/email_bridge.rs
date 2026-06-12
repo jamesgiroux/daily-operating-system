@@ -170,19 +170,18 @@ pub fn run_email_meeting_bridge(
     Ok(correlations)
 }
 
-/// Emit entity signals from ALL enriched emails (not just meeting-linked).
+/// Emit entity signals from linked email metadata (not just meeting-linked).
 ///
-/// For each recently enriched email with a resolved entity, emit:
-/// - `email_sentiment` — the sentiment assessment (positive/negative/mixed)
-/// - `email_urgency_high` — only for high-urgency emails
+/// For each recently synced email with a resolved entity, emit baseline
+/// relationship signals derived from sender, subject, and entity linkage.
 ///
-/// Source: `email_enrichment`. Signals compound with existing entity signals
+/// Source: `email_metadata`. Signals compound with existing entity signals
 /// via the propagation engine.
-pub fn emit_enriched_email_signals(
+pub fn emit_linked_email_signals(
     db: &ActionDb,
     engine: &super::propagation::PropagationEngine,
 ) -> usize {
-    // Get enriched emails with resolved entities
+    // Get recently synced metadata-ready emails with resolved entities.
     let mut stmt = match db.conn_ref().prepare(
         // noise emails (LinkedIn/Slack/etc.) must not emit entity
         // signals — they were never user-meaningful correspondence.
@@ -198,7 +197,7 @@ pub fn emit_enriched_email_signals(
     ) {
         Ok(s) => s,
         Err(e) => {
-            log::warn!("I372: Failed to prepare enriched email query: {}", e);
+            log::warn!("I372: Failed to prepare linked email query: {}", e);
             return 0;
         }
     };
@@ -224,7 +223,7 @@ pub fn emit_enriched_email_signals(
     }) {
         Ok(r) => r.filter_map(|r| r.ok()).collect(),
         Err(e) => {
-            log::warn!("I372: Failed to query enriched emails: {}", e);
+            log::warn!("I372: Failed to query linked emails: {}", e);
             return 0;
         }
     };
@@ -241,7 +240,7 @@ pub fn emit_enriched_email_signals(
         .prepare(
             "SELECT DISTINCT se.entity_type || ':' || json_extract(se.value, '$.email_id')
              FROM signal_events se
-             WHERE se.data_source = 'email_enrichment'
+             WHERE se.data_source IN ('email_enrichment', 'email_metadata')
                AND se.superseded_by IS NULL
                AND json_extract(se.value, '$.email_id') IS NOT NULL",
         )
@@ -323,7 +322,7 @@ pub fn emit_enriched_email_signals(
                         entity_type,
                         entity_id,
                         "email_sentiment",
-                        "email_enrichment",
+                        "email_metadata",
                         Some(&value),
                         0.7,
                     )
@@ -349,7 +348,7 @@ pub fn emit_enriched_email_signals(
                         sentiment: Some(s.as_str()),
                         urgency: urgency.as_deref(),
                         detected_at: None,
-                        source: Some("email_enrichment"),
+                        source: Some("email_metadata"),
                     });
                 }
             }
@@ -387,7 +386,7 @@ pub fn emit_enriched_email_signals(
                             entity_type,
                             entity_id,
                             "email_commitment",
-                            "email_enrichment",
+                            "email_metadata",
                             Some(&value),
                             0.65,
                         )
@@ -413,7 +412,7 @@ pub fn emit_enriched_email_signals(
                             sentiment: sentiment.as_deref(),
                             urgency: urgency.as_deref(),
                             detected_at: None,
-                            source: Some("email_enrichment"),
+                            source: Some("email_metadata"),
                         });
                     }
                 }
@@ -433,7 +432,7 @@ pub fn emit_enriched_email_signals(
                     entity_type,
                     entity_id,
                     "email_urgency_high",
-                    "email_enrichment",
+                    "email_metadata",
                     Some(&value),
                     0.8,
                 )
@@ -459,11 +458,11 @@ pub fn emit_enriched_email_signals(
                     sentiment: sentiment.as_deref(),
                     urgency: Some("high"),
                     detected_at: None,
-                    source: Some("email_enrichment"),
+                    source: Some("email_metadata"),
                 });
             }
 
-            // For ALL enriched emails (even neutral sentiment), create a
+            // For all metadata-ready emails without AI sentiment, create a
             // baseline email_signal so health scoring sees email activity.
             // Uses "relationship" type — the email demonstrates active relationship.
             if sentiment.as_deref() == Some("neutral") || sentiment.is_none() {
@@ -483,7 +482,7 @@ pub fn emit_enriched_email_signals(
                     sentiment: sentiment.as_deref(),
                     urgency: urgency.as_deref(),
                     detected_at: None,
-                    source: Some("email_enrichment"),
+                    source: Some("email_metadata"),
                 });
             }
         } // end !skip_direct
@@ -491,7 +490,7 @@ pub fn emit_enriched_email_signals(
         // Propagate person email signals to linked accounts.
         // When an email is resolved to a person entity, emit corresponding
         // account-level signals so that `signal_events` contains account-type
-        // rows with source 'email_enrichment'. This is direct emission (not
+        // rows with source 'email_metadata'. This is direct emission (not
         // the propagation engine) so the source remains '%email%'-queryable.
         //
         //  Layer 2: Skip propagation entirely for internal senders.
@@ -555,7 +554,7 @@ pub fn emit_enriched_email_signals(
                             "account",
                             account_id,
                             "email_sentiment",
-                            "email_enrichment",
+                            "email_metadata",
                             Some(&acct_value),
                             0.42, // 0.7 * 0.6
                         );
@@ -581,7 +580,7 @@ pub fn emit_enriched_email_signals(
                             sentiment: Some(s.as_str()),
                             urgency: urgency.as_deref(),
                             detected_at: None,
-                            source: Some("email_enrichment"),
+                            source: Some("email_metadata"),
                         });
                     }
                 }
@@ -596,7 +595,7 @@ pub fn emit_enriched_email_signals(
                         "account",
                         account_id,
                         "email_urgency_high",
-                        "email_enrichment",
+                        "email_metadata",
                         Some(&acct_value),
                         0.48, // 0.8 * 0.6
                     );
@@ -619,7 +618,7 @@ pub fn emit_enriched_email_signals(
                         sentiment: sentiment.as_deref(),
                         urgency: Some("high"),
                         detected_at: None,
-                        source: Some("email_enrichment"),
+                        source: Some("email_metadata"),
                     });
                 }
 
@@ -640,7 +639,7 @@ pub fn emit_enriched_email_signals(
                     sentiment: sentiment.as_deref(),
                     urgency: urgency.as_deref(),
                     detected_at: None,
-                    source: Some("email_enrichment"),
+                    source: Some("email_metadata"),
                 });
             }
         }
@@ -648,7 +647,7 @@ pub fn emit_enriched_email_signals(
 
     if emitted > 0 {
         log::info!(
-            "I372: emitted {} entity signals from {} enriched emails",
+            "I372: emitted {} entity signals from {} linked emails",
             emitted,
             rows.len()
         );

@@ -3,7 +3,7 @@
 //! Per-operation pipeline (ADR-0042, ADR-0049):
 //! 1. Rust-native prepare — fetch calendar/emails, classify, write directive
 //! 2. Rust-native mechanical delivery — schedule, actions, preps, emails
-//! 3. AI enrichment — Claude Code enriches emails + briefing narrative
+//! 3. AI enrichment — Claude Code enriches prep context + briefing narrative
 //!
 //! sync_actions_to_db removed — DB is the source of truth for actions.
 //! The old JSON→DB sync direction is no longer needed.

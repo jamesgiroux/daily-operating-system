@@ -8,7 +8,6 @@
 //! - `deliver_manifest()` → manifest.json
 //!
 //! AI enrichment (progressive, fault-tolerant):
-//! - `enrich_emails()` → updates emails.json with summaries/actions/arcs
 //! - `enrich_briefing()` → updates schedule.json with day narrative
 //! - `enrich_week` → updates week-overview.json with narrative, priority, suggestions
 
@@ -20,17 +19,14 @@ use std::sync::OnceLock;
 use chrono::{DateTime, Timelike, Utc};
 use chrono_tz::Tz;
 use regex::Regex;
-use serde_json::{json, Value};
+use serde_json::{Value, json};
 
-use crate::db::emails::EmailEnrichmentUpdate;
 use crate::helpers::strip_conferencing_noise;
 use crate::json_loader::{
     Directive, DirectiveEmail, DirectiveEvent, DirectiveMeeting, DirectiveMeetingContext,
 };
 use crate::types::{EmailSyncStage, EmailSyncState, EmailSyncStatus};
-use crate::util::{
-    encode_high_risk_field, sanitize_external_field, wrap_user_data, INJECTION_PREAMBLE,
-};
+use crate::util::{INJECTION_PREAMBLE, wrap_user_data};
 
 // ============================================================================
 // Constants
@@ -2751,371 +2747,6 @@ pub fn deliver_emails(directive: &Directive, data_dir: &Path) -> Result<Value, S
     Ok(emails_data)
 }
 
-// ============================================================================
-// AI enrichment (progressive, fault-tolerant)
-// ============================================================================
-
-/// Parsed enrichment for a single email.
-#[derive(Debug, Clone, Default)]
-pub struct EmailEnrichment {
-    pub summary: Option<String>,
-    pub action: Option<String>,
-    pub arc: Option<String>,
-    pub signals: Vec<crate::types::EmailSignal>,
-    /// Commitments extracted from the email.
-    pub commitments: Vec<String>,
-    /// Questions requiring a response.
-    pub questions: Vec<String>,
-    /// Overall sentiment: positive, neutral, negative, urgent.
-    pub sentiment: Option<String>,
-}
-
-/// Parse Claude's email enrichment response.
-///
-/// Expected format per email:
-/// ```text
-/// ENRICHMENT:email-id
-/// SUMMARY: one-line summary
-/// ACTION: recommended next action
-/// ARC: conversation context
-/// SIGNALS: [{"signalType":"timeline","signalText":"...", "confidence":0.8}]
-/// END_ENRICHMENT
-/// ```
-pub fn parse_email_enrichment(response: &str) -> HashMap<String, EmailEnrichment> {
-    let mut result: HashMap<String, EmailEnrichment> = HashMap::new();
-    let mut current_id: Option<String> = None;
-    let mut current = EmailEnrichment::default();
-
-    for line in response.lines() {
-        let trimmed = line.trim();
-
-        if let Some(id) = trimmed.strip_prefix("ENRICHMENT:") {
-            // Start a new enrichment block
-            current_id = Some(id.trim().to_string());
-            current = EmailEnrichment::default();
-        } else if trimmed == "END_ENRICHMENT" {
-            // Close the current block
-            if let Some(ref id) = current_id {
-                result.insert(id.clone(), current.clone());
-            }
-            current_id = None;
-            current = EmailEnrichment::default();
-        } else if current_id.is_some() {
-            // Inside a block — parse fields
-            if let Some(val) = trimmed.strip_prefix("SUMMARY:") {
-                current.summary = Some(val.trim().to_string());
-            } else if let Some(val) = trimmed.strip_prefix("ACTION:") {
-                current.action = Some(val.trim().to_string());
-            } else if let Some(val) = trimmed.strip_prefix("ARC:") {
-                current.arc = Some(val.trim().to_string());
-            } else if let Some(val) = trimmed.strip_prefix("SIGNALS:") {
-                current.signals =
-                    serde_json::from_str::<Vec<crate::types::EmailSignal>>(val.trim())
-                        .unwrap_or_default();
-            } else if let Some(val) = trimmed.strip_prefix("COMMITMENTS:") {
-                current.commitments =
-                    serde_json::from_str::<Vec<String>>(val.trim()).unwrap_or_default();
-            } else if let Some(val) = trimmed.strip_prefix("QUESTIONS:") {
-                current.questions =
-                    serde_json::from_str::<Vec<String>>(val.trim()).unwrap_or_default();
-            } else if let Some(val) = trimmed.strip_prefix("SENTIMENT:") {
-                let s = val.trim().to_lowercase();
-                if !s.is_empty() {
-                    current.sentiment = Some(s);
-                }
-            }
-        }
-    }
-
-    result
-}
-
-/// AI-enrich high-priority emails via PTY-spawned Claude.
-///
-/// Refactored to use three-gate filtering, apply per-email timeouts,
-/// and write results immediately to DB without blocking Phase 1 return.
-///
-/// **Phase 5 Implementation:**
-/// 1. Load all emails from DB (no JSON read for enrichment logic)
-/// 2. Batch-load snapshots for Gate 0 (content-change detection)
-/// 3. Apply three-gate filter (skips 27/56 emails down to 5-7)
-/// 4. Enrich each email with timeout (90s default from config)
-/// 5. Write results immediately to DB (no JSON manipulation)
-/// 6. Invalidate briefing cache after all enrichments
-///
-/// This function is called fire-and-forget from executor after schedule.json delivery.
-pub fn enrich_emails(
-    data_dir: &Path,
-    pty: &crate::pty::PtyManager,
-    workspace: &Path,
-    user_ctx: &crate::types::UserContext,
-    known_domains: &std::collections::HashSet<String>,
-) -> Result<(), String> {
-    // Open DB for Phase 5 workflow (load pending emails, write enrichments)
-    let db = crate::db::ActionDb::open(std::sync::Arc::new(crate::db::LocalKeychain::new()))
-        .map_err(|e| format!("Failed to open DB for email enrichment: {}", e))?;
-
-    // Step 1: Load all active emails from DB (not from JSON)
-    let all_emails = db
-        .get_all_active_emails()
-        .map_err(|e| format!("Failed to load emails from DB: {}", e))?;
-
-    if all_emails.is_empty() {
-        log::info!("enrich_emails: no active emails to enrich");
-        return Ok(());
-    }
-
-    // Step 2: Batch-load snapshots for Gate 0 (content-change detection)
-    let email_ids: Vec<String> = all_emails.iter().map(|e| e.email_id.clone()).collect();
-    let snapshots = db
-        .get_email_snapshots(&email_ids)
-        .map_err(|e| format!("Failed to load email snapshots: {}", e))?;
-
-    // Step 3: Build filter input for three-gate selection
-    // Extract enriched_at, priority, received_at, sender_email, last_response_date
-    let enriched_at_map: HashMap<String, Option<chrono::DateTime<Utc>>> = all_emails
-        .iter()
-        .map(|e| {
-            let enriched_at = e.enriched_at.as_ref().and_then(|s| {
-                chrono::DateTime::parse_from_rfc3339(s)
-                    .ok()
-                    .map(|dt| dt.with_timezone(&Utc))
-            });
-            (e.email_id.clone(), enriched_at)
-        })
-        .collect();
-
-    let sender_email_map: HashMap<String, Option<String>> = all_emails
-        .iter()
-        .map(|e| (e.email_id.clone(), e.sender_email.clone()))
-        .collect();
-
-    let received_at_map: HashMap<String, chrono::DateTime<Utc>> = all_emails
-        .iter()
-        .filter_map(|e| {
-            e.received_at
-                .as_ref()
-                .and_then(|s| chrono::DateTime::parse_from_rfc3339(s).ok())
-                .map(|dt| (e.email_id.clone(), dt.with_timezone(&Utc)))
-        })
-        .collect();
-
-    // For now, last_response_date uses received_at (placeholder — could be enhanced)
-    let last_response_date_map: HashMap<String, Option<chrono::DateTime<Utc>>> = all_emails
-        .iter()
-        .map(|e| {
-            let response_date = e.received_at.as_ref().and_then(|s| {
-                chrono::DateTime::parse_from_rfc3339(s)
-                    .ok()
-                    .map(|dt| dt.with_timezone(&Utc))
-            });
-            (e.email_id.clone(), response_date)
-        })
-        .collect();
-
-    // Step 3a: Convert to EmailForSort for three-gate filtering
-    let emails_for_sort: Vec<crate::workflow::email_filter::EmailForSort> = all_emails
-        .iter()
-        .filter_map(|e| {
-            received_at_map.get(&e.email_id).map(|&received_at| {
-                crate::workflow::email_filter::EmailForSort {
-                    email_id: e.email_id.clone(),
-                    priority: e.priority.clone(),
-                    received_at,
-                }
-            })
-        })
-        .collect();
-
-    // Step 3b: Apply three-gate filter (limit to 7)
-    let filter_input = crate::workflow::email_filter::EmailFilterInput {
-        enriched_at_map: &enriched_at_map,
-        snippets_map: &snapshots,
-        known_domains,
-        sender_email_map: &sender_email_map,
-        last_response_date_map: &last_response_date_map,
-        limit: 7,
-        now: Utc::now(),
-    };
-
-    let emails_to_enrich =
-        crate::workflow::email_filter::select_emails_for_enrichment(emails_for_sort, &filter_input);
-
-    if emails_to_enrich.is_empty() {
-        log::info!("enrich_emails: three-gate filter selected 0 emails to enrich");
-        return Ok(());
-    }
-
-    log::info!(
-        "enrich_emails: three-gate filter selected {}/{} emails",
-        emails_to_enrich.len(),
-        all_emails.len()
-    );
-
-    // Step 4: Prepare enrichment batch
-    // Load full email data for the selected IDs
-    let emails_to_enrich_ids: HashSet<String> = emails_to_enrich
-        .iter()
-        .map(|e| e.email_id.clone())
-        .collect();
-
-    let full_emails_to_enrich: Vec<_> = all_emails
-        .iter()
-        .filter(|e| emails_to_enrich_ids.contains(&e.email_id))
-        .collect();
-
-    // Build context for Claude
-    let mut email_context = String::new();
-    for (idx, email) in full_emails_to_enrich.iter().enumerate() {
-        email_context.push_str(&format!(
-            "ID: {}\nFrom: {}\nSubject: {}\nSnippet: {}\n\n",
-            email.email_id,
-            sanitize_external_field(email.sender_name.as_deref().unwrap_or("?")),
-            encode_high_risk_field(email.subject.as_deref().unwrap_or("?")),
-            sanitize_external_field(email.snippet.as_deref().unwrap_or("")),
-        ));
-        if idx >= 6 {
-            break; // Safety: only show first 7 in context
-        }
-    }
-
-    // Write context file for audit
-    let context_path = data_dir.join(".email-context.json");
-    let context_emails: Vec<serde_json::Value> = full_emails_to_enrich
-        .iter()
-        .take(7)
-        .map(|e| {
-            json!({
-                "id": e.email_id,
-                "subject": e.subject,
-                "snippet": e.snippet,
-                "sender": e.sender_name,
-                "senderEmail": e.sender_email,
-            })
-        })
-        .collect();
-    let context_json = json!({ "emails": context_emails });
-    write_json(&context_path, &context_json)?;
-
-    let user_fragment = user_ctx.prompt_fragment();
-    let prompt = format!(
-        "{}You are enriching email briefing data. {}\
-         For each email below, provide a one-line summary, \
-         a recommended action, brief conversation arc context, a JSON array \
-         of structured signals, extracted commitments, open questions, and overall sentiment.\n\n\
-         Signal types must be one of: expansion, question, timeline, \
-         sentiment, feedback, relationship. Keep signalText concise.\n\
-         Commitments: promises or deliverables mentioned. Each commitment must be a \
-         complete sentence including WHO committed to WHAT and any deadline. \
-         Example: \"Sarah Chen committed to delivering the revised SOW by Friday.\" \
-         (JSON string array, empty if none).\n\
-         Questions: open questions requiring a response. Each question must include \
-         enough context to understand it standalone — mention the account/person/topic. \
-         Example: \"Acme's team asked whether the pilot timeline can shift to Q2.\" \
-         (JSON string array, empty if none).\n\
-         Sentiment: one of positive, neutral, negative, urgent.\n\n\
-         Format your response as:\n\
-         ENRICHMENT:email-id-here\n\
-         SUMMARY: <one-line summary>\n\
-         ACTION: <recommended next action>\n\
-         ARC: <conversation context>\n\
-         SIGNALS: <JSON array of objects with signalType, signalText, optional confidence/sentiment/urgency>\n\
-         COMMITMENTS: <JSON array of strings>\n\
-         QUESTIONS: <JSON array of strings>\n\
-         SENTIMENT: <positive|neutral|negative|urgent>\n\
-         END_ENRICHMENT\n\n\
-         {}",
-        INJECTION_PREAMBLE, user_fragment, email_context
-    );
-
-    let output = pty
-        .spawn_claude(workspace, &prompt)
-        .map_err(|e| format!("Claude enrichment failed: {}", e))?;
-
-    // Audit trail
-    let date_id = data_dir
-        .file_name()
-        .and_then(|n| n.to_str())
-        .unwrap_or("unknown");
-    #[allow(
-        clippy::let_underscore_must_use,
-        reason = "intentional best-effort discard; preserves existing non-blocking behavior"
-    )]
-    let _ = crate::audit::write_audit_entry(workspace, "email_batch", date_id, &output.stdout);
-
-    let enrichments = parse_email_enrichment(&output.stdout);
-    if enrichments.is_empty() {
-        log::warn!("enrich_emails: no enrichments parsed from Claude output");
-        #[allow(
-            clippy::let_underscore_must_use,
-            reason = "intentional best-effort discard; preserves existing non-blocking behavior"
-        )]
-        let _ = fs::remove_file(&context_path);
-        return Err("No enrichments parsed from Claude output".to_string());
-    }
-
-    // Step 5: Write each enrichment immediately to DB
-    let mut successful = 0;
-    for email in &full_emails_to_enrich {
-        if let Some(enrichment) = enrichments.get(&email.email_id) {
-            // Build enrichment update
-            let summary_str = enrichment.summary.as_deref();
-            let sentiment_str = enrichment.sentiment.as_deref();
-
-            // Extract urgency from signals if present
-            let urgency_str = enrichment
-                .signals
-                .iter()
-                .find(|s| s.signal_type == "urgency")
-                .and_then(|s| s.urgency.as_deref());
-
-            let enrichment_update = EmailEnrichmentUpdate {
-                summary: summary_str,
-                entity_id: None, // TODO: extract from email intelligence if available
-                entity_type: None,
-                sentiment: sentiment_str,
-                urgency: urgency_str,
-                summary_context_prompt_version: None,
-                summary_context_trust_band: None,
-                summary_context_source_count: None,
-                summary_context_source_keys_json: None,
-                summary_context_generated_at: None,
-                is_noise: None,
-            };
-
-            // DIRECT_DB_ALLOWED: internal workflow pipeline — enrichment writes are background processing, not user-facing mutations
-            if let Err(e) = db.set_enrichment_state(&email.email_id, "enriched", enrichment_update)
-            {
-                log::warn!("Failed to write enrichment for {}: {}", email.email_id, e);
-                continue;
-            }
-
-            // DIRECT_DB_ALLOWED: internal workflow pipeline — timestamp update is part of background enrichment, not user-facing
-            if let Err(e) = db.mark_email_enriched(&email.email_id) {
-                log::warn!("Failed to mark email enriched {}: {}", email.email_id, e);
-                continue;
-            }
-
-            successful += 1;
-        }
-    }
-
-    #[allow(
-        clippy::let_underscore_must_use,
-        reason = "intentional best-effort discard; preserves existing non-blocking behavior"
-    )]
-    let _ = fs::remove_file(&context_path);
-    log::info!(
-        "enrich_emails: enriched {}/{} selected emails",
-        successful,
-        emails_to_enrich.len()
-    );
-
-    // Step 6: Invalidate briefing cache after enrichment
-    invalidate_briefing_cache(data_dir);
-    Ok(())
-}
-
 /// Parse Claude's briefing narrative response.
 ///
 /// Expected format:
@@ -3183,11 +2814,7 @@ pub fn parse_briefing_focus(response: &str) -> Option<String> {
     }
 
     let focus = lines.join(" ").trim().to_string();
-    if focus.is_empty() {
-        None
-    } else {
-        Some(focus)
-    }
+    if focus.is_empty() { None } else { Some(focus) }
 }
 
 /// Classify meeting density for briefing tone adaptation.
@@ -3398,10 +3025,18 @@ pub fn enrich_briefing(
     write_json(&context_path, &context)?;
 
     let density_guidance = match density {
-        "light" => "This is a light day. Highlight available open time and suggest tackling overdue items or deep work.",
-        "moderate" => "This is a balanced day. Note customer commitments and any gaps worth protecting.",
-        "busy" => "This is a busy day. Focus on the 1-2 highest-stakes meetings and what to prioritize.",
-        "packed" => "This is a packed day. Triage mode — identify what can be skipped, delegated, or deferred.",
+        "light" => {
+            "This is a light day. Highlight available open time and suggest tackling overdue items or deep work."
+        }
+        "moderate" => {
+            "This is a balanced day. Note customer commitments and any gaps worth protecting."
+        }
+        "busy" => {
+            "This is a busy day. Focus on the 1-2 highest-stakes meetings and what to prioritize."
+        }
+        "packed" => {
+            "This is a packed day. Triage mode — identify what can be skipped, delegated, or deferred."
+        }
         _ => "",
     };
 
@@ -5717,78 +5352,6 @@ mod tests {
     }
 
     #[test]
-    fn test_parse_email_enrichment() {
-        let response = "\
-ENRICHMENT:e1
-SUMMARY: Customer requesting contract extension
-ACTION: Reply with proposed terms
-ARC: Initial outreach → negotiation → this follow-up
-END_ENRICHMENT
-
-ENRICHMENT:e2
-SUMMARY: QBR scheduling request
-ACTION: Confirm date and send agenda
-ARC: First contact about Q2 QBR
-END_ENRICHMENT
-";
-        let enrichments = parse_email_enrichment(response);
-        assert_eq!(enrichments.len(), 2);
-
-        let e1 = &enrichments["e1"];
-        assert_eq!(
-            e1.summary.as_deref(),
-            Some("Customer requesting contract extension")
-        );
-        assert_eq!(e1.action.as_deref(), Some("Reply with proposed terms"));
-        assert!(e1.arc.as_deref().unwrap().contains("follow-up"));
-
-        let e2 = &enrichments["e2"];
-        assert_eq!(e2.summary.as_deref(), Some("QBR scheduling request"));
-    }
-
-    #[test]
-    fn test_parse_email_enrichment_partial() {
-        let response = "\
-ENRICHMENT:e1
-SUMMARY: Important update
-END_ENRICHMENT
-";
-        let enrichments = parse_email_enrichment(response);
-        assert_eq!(enrichments.len(), 1);
-
-        let e1 = &enrichments["e1"];
-        assert_eq!(e1.summary.as_deref(), Some("Important update"));
-        assert!(e1.action.is_none());
-        assert!(e1.arc.is_none());
-        assert!(e1.commitments.is_empty());
-        assert!(e1.questions.is_empty());
-        assert!(e1.sentiment.is_none());
-    }
-
-    #[test]
-    fn test_parse_email_enrichment_with_commitments_questions_sentiment() {
-        let response = "\
-ENRICHMENT:e1
-SUMMARY: VP requests updated roadmap by Friday
-ACTION: Prepare roadmap document
-ARC: Follow-up from board meeting
-COMMITMENTS: [\"Deliver roadmap by Friday\", \"Schedule follow-up call\"]
-QUESTIONS: [\"What format do you prefer?\", \"Should we include Q3 projections?\"]
-SENTIMENT: urgent
-END_ENRICHMENT
-";
-        let enrichments = parse_email_enrichment(response);
-        assert_eq!(enrichments.len(), 1);
-
-        let e1 = &enrichments["e1"];
-        assert_eq!(e1.commitments.len(), 2);
-        assert_eq!(e1.commitments[0], "Deliver roadmap by Friday");
-        assert_eq!(e1.questions.len(), 2);
-        assert_eq!(e1.questions[0], "What format do you prefer?");
-        assert_eq!(e1.sentiment.as_deref(), Some("urgent"));
-    }
-
-    #[test]
     fn test_parse_briefing_narrative() {
         let response = "\
 NARRATIVE:
@@ -6191,10 +5754,12 @@ END_AGENDA
         assert_eq!(agenda.len(), 6);
 
         // First item should be the overdue follow-up
-        assert!(agenda[0]["topic"]
-            .as_str()
-            .unwrap()
-            .starts_with("Follow up:"));
+        assert!(
+            agenda[0]["topic"]
+                .as_str()
+                .unwrap()
+                .starts_with("Follow up:")
+        );
         assert_eq!(agenda[0]["source"], "open_item");
 
         // Next 2 should be risks
@@ -6284,10 +5849,12 @@ END_AGENDA
 
         // Then overdue item (non-overdue skipped for QBR)
         assert_eq!(agenda[5]["source"], "open_item");
-        assert!(agenda[5]["topic"]
-            .as_str()
-            .unwrap()
-            .starts_with("Follow up:"));
+        assert!(
+            agenda[5]["topic"]
+                .as_str()
+                .unwrap()
+                .starts_with("Follow up:")
+        );
 
         // No non-overdue "Update docs" in agenda
         let has_non_overdue = agenda
@@ -6592,116 +6159,6 @@ END_SUGGESTIONS
         assert!(reserialized.contains("topPriority"));
     }
 
-    // =========================================================================
-    // Phase 5  Integration Tests
-    // =========================================================================
-
-    #[test]
-    fn test_parse_email_enrichment_single_email() {
-        let response = r#"
-ENRICHMENT:email123
-SUMMARY: Urgent proposal review needed
-ACTION: Review and approve
-ARC: Client mentioned timeline shift
-SIGNALS: [{"signalType":"timeline","signalText":"Q2 pivot","confidence":0.8}]
-COMMITMENTS: ["We committed to reviewing by Friday"]
-QUESTIONS: ["Did they confirm Q2?"]
-SENTIMENT: urgent
-END_ENRICHMENT
-"#;
-        let enrichments = parse_email_enrichment(response);
-        assert_eq!(enrichments.len(), 1);
-        assert!(enrichments.contains_key("email123"));
-        let e = &enrichments["email123"];
-        assert_eq!(e.summary, Some("Urgent proposal review needed".to_string()));
-        assert_eq!(e.action, Some("Review and approve".to_string()));
-        assert_eq!(e.sentiment, Some("urgent".to_string()));
-        assert_eq!(e.commitments.len(), 1);
-        assert_eq!(e.questions.len(), 1);
-        assert_eq!(e.signals.len(), 1);
-    }
-
-    #[test]
-    fn test_parse_email_enrichment_multiple_emails() {
-        let response = r#"
-ENRICHMENT:email1
-SUMMARY: First email summary
-ACTION: Action 1
-ARC: Arc 1
-SIGNALS: []
-COMMITMENTS: []
-QUESTIONS: []
-SENTIMENT: neutral
-END_ENRICHMENT
-
-ENRICHMENT:email2
-SUMMARY: Second email summary
-ACTION: Action 2
-ARC: Arc 2
-SIGNALS: [{"signalType":"expansion","signalText":"New opportunity"}]
-COMMITMENTS: []
-QUESTIONS: []
-SENTIMENT: positive
-END_ENRICHMENT
-"#;
-        let enrichments = parse_email_enrichment(response);
-        assert_eq!(enrichments.len(), 2);
-        assert_eq!(
-            enrichments["email1"].summary,
-            Some("First email summary".to_string())
-        );
-        assert_eq!(
-            enrichments["email2"].summary,
-            Some("Second email summary".to_string())
-        );
-        assert_eq!(enrichments["email1"].sentiment, Some("neutral".to_string()));
-        assert_eq!(
-            enrichments["email2"].sentiment,
-            Some("positive".to_string())
-        );
-    }
-
-    #[test]
-    fn test_parse_email_enrichment_empty_arrays() {
-        let response = r#"
-ENRICHMENT:email456
-SUMMARY: Test summary
-ACTION: Test action
-ARC: Test arc
-SIGNALS: []
-COMMITMENTS: []
-QUESTIONS: []
-SENTIMENT: negative
-END_ENRICHMENT
-"#;
-        let enrichments = parse_email_enrichment(response);
-        let e = &enrichments["email456"];
-        assert!(e.signals.is_empty());
-        assert!(e.commitments.is_empty());
-        assert!(e.questions.is_empty());
-    }
-
-    #[test]
-    fn test_parse_email_enrichment_malformed_json_arrays() {
-        // Should gracefully handle malformed JSON in arrays (defaults to empty)
-        let response = r#"
-ENRICHMENT:email789
-SUMMARY: Test
-ACTION: Test
-ARC: Test
-SIGNALS: [invalid json here]
-COMMITMENTS: [invalid]
-QUESTIONS: []
-SENTIMENT: neutral
-END_ENRICHMENT
-"#;
-        let enrichments = parse_email_enrichment(response);
-        let e = &enrichments["email789"];
-        // Malformed JSON should default to empty vectors
-        assert!(e.signals.is_empty());
-        assert!(e.commitments.is_empty());
-    }
-
     #[test]
     fn test_invalidate_briefing_cache_removes_schedule_json() {
         use tempfile::TempDir;
@@ -6729,42 +6186,5 @@ END_ENRICHMENT
         // Should not fail if schedule.json doesn't exist
         invalidate_briefing_cache(data_dir);
         // If we get here without panic, the test passed
-    }
-
-    #[test]
-    fn test_email_enrichment_struct_default() {
-        let enrichment = EmailEnrichment::default();
-        assert!(enrichment.summary.is_none());
-        assert!(enrichment.action.is_none());
-        assert!(enrichment.arc.is_none());
-        assert!(enrichment.sentiment.is_none());
-        assert!(enrichment.signals.is_empty());
-        assert!(enrichment.commitments.is_empty());
-        assert!(enrichment.questions.is_empty());
-    }
-
-    #[test]
-    fn test_email_enrichment_struct_with_data() {
-        let enrichment = EmailEnrichment {
-            summary: Some("Test summary".to_string()),
-            action: Some("Test action".to_string()),
-            arc: Some("Test arc".to_string()),
-            sentiment: Some("positive".to_string()),
-            signals: vec![crate::types::EmailSignal {
-                id: None,
-                signal_type: "expansion".to_string(),
-                signal_text: "New opportunity".to_string(),
-                confidence: Some(0.85),
-                sentiment: None,
-                urgency: None,
-                detected_at: None,
-            }],
-            commitments: vec!["Commitment 1".to_string()],
-            questions: vec!["Question 1".to_string()],
-        };
-
-        assert_eq!(enrichment.summary, Some("Test summary".to_string()));
-        assert_eq!(enrichment.signals.len(), 1);
-        assert_eq!(enrichment.commitments.len(), 1);
     }
 }

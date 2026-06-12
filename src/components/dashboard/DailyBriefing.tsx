@@ -248,8 +248,8 @@ export function DailyBriefing({ data, freshness: _freshness, onRunBriefing, isRu
   const emails = data.emails ?? [];
   const lifecycleUpdates = data.lifecycleUpdates ?? [];
 
-  // Score-based email selection — scored emails first, then enriched fill.
-  // Shows up to 5 emails: high-scored ones first, then enriched emails with summaries
+  // Score-based email selection from metadata-linked inbox rows.
+  // Shows up to 5 emails, high-scored first.
   // that didn't meet the score threshold (avoids hiding useful intelligence).
   // Cached emails shown immediately even when briefing is stale — background
   // reconciliation will remove archived ones within seconds.
@@ -264,7 +264,7 @@ export function DailyBriefing({ data, freshness: _freshness, onRunBriefing, isRu
       .filter((e) => (e.relevanceScore ?? 0) >= 0.15)
       .slice(0, 5);
     const scoredIds = new Set(scored.map((e) => e.id));
-    // Fill remaining slots with enriched emails that have summaries but scored below threshold
+    // Fill remaining slots with lower-scored metadata-linked emails.
     const enrichedFill = ranked
       .filter((e) => !scoredIds.has(e.id) && e.summary && e.summary.trim().length > 0)
       .slice(0, Math.max(0, 5 - scored.length));
@@ -577,7 +577,6 @@ export function DailyBriefing({ data, freshness: _freshness, onRunBriefing, isRu
         onComplete={handleComplete}
         briefingEmails={briefingEmails}
         emailSectionLabel={emailSectionLabel}
-        allEmails={emails}
         todayMeetingIds={new Set(meetings.map((m) => m.id))}
         emailSyncTimestamp={data.emailSync?.lastSuccessAt}
         agingActionCount={data.agingActionCount}
@@ -680,7 +679,6 @@ function AttentionSection({
   onComplete,
   briefingEmails,
   emailSectionLabel,
-  allEmails,
   todayMeetingIds,
   emailSyncTimestamp,
   agingActionCount,
@@ -702,7 +700,6 @@ function AttentionSection({
   onComplete: (id: string) => void;
   briefingEmails: Email[];
   emailSectionLabel: string;
-  allEmails: Email[];
   todayMeetingIds: Set<string>;
   emailSyncTimestamp?: string;
   agingActionCount?: number;
@@ -914,11 +911,6 @@ function AttentionSection({
                 View all {pendingActions.length} actions &rarr;
               </Link>
             )}
-            {allEmails.length > briefingEmails.length && (
-              <Link to="/emails" className={s.viewAllLink}>
-                View all emails &rarr;
-              </Link>
-            )}
           </div>
         </div>
       </div>
@@ -1014,8 +1006,7 @@ function formatAsOfTime(isoString: string): string {
 
 function PriorityEmailItem({ email }: { email: Email }) {
   return (
-    <Link
-      to="/emails"
+    <div
       className={clsx(s.priorityItem, s.priorityItemEmailType, briefingStyles.linkNoDecoration)}
     >
       <div
@@ -1064,7 +1055,7 @@ function PriorityEmailItem({ email }: { email: Email }) {
           </div>
         )}
       </div>
-    </Link>
+    </div>
   );
 }
 

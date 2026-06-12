@@ -304,60 +304,45 @@ impl ActionDb {
         Ok(results)
     }
 
-    /// Set enrichment state and related fields for an email.
-    #[must_use = "check whether enrichment state was saved before advancing the enrichment pipeline"]
-    pub fn set_enrichment_state(
+    /// Mark a fetched email as ready using deterministic metadata only.
+    ///
+    /// This clears AI-derived fields while preserving an existing entity
+    /// assignment when one is already present. Email is now a signal source,
+    /// not an LLM enrichment surface.
+    #[must_use = "check whether email metadata readiness was saved before using email-derived signals"]
+    pub fn mark_email_metadata_ready(
         &self,
         email_id: &str,
-        state: &str,
-        enrichment: EmailEnrichmentUpdate<'_>,
+        entity_id: Option<&str>,
+        entity_type: Option<&str>,
     ) -> Result<(), DbError> {
-        self.with_transaction(|tx| {
-            let now = Utc::now().to_rfc3339();
-            // is_noise gets COALESCE-style "only update if AI gave a
-            // verdict" semantics via a CASE expression -- Some(bool) -> 0/1,
-            // None -> keep existing column value.
-            let is_noise_param: Option<i32> = enrichment.is_noise.map(|b| if b { 1 } else { 0 });
-            tx.conn
-                .execute(
-                    "UPDATE emails SET
-                        enrichment_state = ?1,
-                        enrichment_attempts = enrichment_attempts + 1,
-                        last_enrichment_at = ?2,
-                        contextual_summary = COALESCE(?3, contextual_summary),
-                        entity_id = COALESCE(?4, entity_id),
-                        entity_type = COALESCE(?5, entity_type),
-                        sentiment = COALESCE(?6, sentiment),
-                        urgency = COALESCE(?7, urgency),
-                        is_noise = COALESCE(?8, is_noise),
-                        summary_context_prompt_version = CASE WHEN ?3 IS NOT NULL THEN ?9 ELSE NULL END,
-                        summary_context_trust_band = CASE WHEN ?3 IS NOT NULL THEN ?10 ELSE NULL END,
-                        summary_context_source_count = CASE WHEN ?3 IS NOT NULL THEN ?11 ELSE NULL END,
-                        summary_context_source_keys_json = CASE WHEN ?3 IS NOT NULL THEN ?12 ELSE NULL END,
-                        summary_context_generated_at = CASE WHEN ?3 IS NOT NULL THEN ?13 ELSE NULL END,
-                        updated_at = ?2
-                     WHERE email_id = ?14",
-                    params![
-                        state,
-                        now,
-                        enrichment.summary,
-                        enrichment.entity_id,
-                        enrichment.entity_type,
-                        enrichment.sentiment,
-                        enrichment.urgency,
-                        is_noise_param,
-                        enrichment.summary_context_prompt_version,
-                        enrichment.summary_context_trust_band,
-                        enrichment.summary_context_source_count.map(|count| count as i64),
-                        enrichment.summary_context_source_keys_json,
-                        enrichment.summary_context_generated_at,
-                        email_id,
-                    ],
-                )
-                .map_err(|e| format!("Failed to set enrichment state for {email_id}: {e}"))?;
-            Ok(())
-        })
-        .map_err(Into::into)
+        let now = Utc::now().to_rfc3339();
+        self.conn
+            .execute(
+                "UPDATE emails SET
+                    enrichment_state = 'enriched',
+                    enrichment_attempts = 0,
+                    last_enrichment_at = ?1,
+                    enriched_at = COALESCE(enriched_at, ?1),
+                    entity_type = CASE WHEN entity_id IS NULL THEN ?3 ELSE entity_type END,
+                    entity_id = COALESCE(entity_id, ?2),
+                    contextual_summary = NULL,
+                    sentiment = NULL,
+                    urgency = NULL,
+                    commitments = NULL,
+                    questions = NULL,
+                    summary_context_prompt_version = NULL,
+                    summary_context_trust_band = NULL,
+                    summary_context_source_count = NULL,
+                    summary_context_source_keys_json = NULL,
+                    summary_context_generated_at = NULL,
+                    updated_at = ?1
+                 WHERE email_id = ?4
+                   AND resolved_at IS NULL",
+                params![now, entity_id, entity_type, email_id],
+            )
+            .map_err(|e| format!("Failed to mark email metadata ready {email_id}: {e}"))?;
+        Ok(())
     }
 
     /// Get all active (non-resolved) emails.
@@ -1334,75 +1319,6 @@ impl ActionDb {
             .map(|n| n as usize)
             .map_err(|e| format!("Failed to count retriable emails: {e}").into())
     }
-
-    /// Mark an email as enriched, setting `enriched_at` to now.
-    /// Used after successful enrichment to support Gate 0 deduplication.
-    #[must_use = "check whether enriched watermark was saved before applying deduplication"]
-    pub fn mark_email_enriched(&self, email_id: &str) -> Result<(), DbError> {
-        let now = Utc::now().to_rfc3339();
-        self.conn
-            .execute(
-                "UPDATE emails SET enriched_at = ?1, updated_at = ?1 WHERE email_id = ?2",
-                params![now, email_id],
-            )
-            .map_err(|e| format!("Failed to mark email enriched {email_id}: {e}"))?;
-        Ok(())
-    }
-
-    /// Get snapshot of email content (snippet + subject) for all provided email IDs.
-    /// Used in Gate 0 to detect content changes for re-enrichment eligibility.
-    pub fn get_email_snapshots(
-        &self,
-        email_ids: &[String],
-    ) -> Result<HashMap<String, crate::workflow::email_filter::PriorEmailSnapshot>, DbError> {
-        if email_ids.is_empty() {
-            return Ok(HashMap::new());
-        }
-
-        let mut result = HashMap::new();
-        for email_id in email_ids {
-            match self.conn.query_row(
-                "SELECT snippet, subject FROM emails WHERE email_id = ?1",
-                params![email_id],
-                |row| {
-                    Ok((
-                        row.get::<_, Option<String>>(0)?,
-                        row.get::<_, Option<String>>(1)?,
-                    ))
-                },
-            ) {
-                Ok((snippet, subject)) => {
-                    result.insert(
-                        email_id.clone(),
-                        crate::workflow::email_filter::PriorEmailSnapshot { snippet, subject },
-                    );
-                }
-                Err(_) => {
-                    // Email not found or query failed — skip it
-                }
-            }
-        }
-
-        Ok(result)
-    }
-}
-
-/// Parameters for enrichment state updates (avoids too_many_arguments lint).
-pub struct EmailEnrichmentUpdate<'a> {
-    pub summary: Option<&'a str>,
-    pub entity_id: Option<&'a str>,
-    pub entity_type: Option<&'a str>,
-    pub sentiment: Option<&'a str>,
-    pub urgency: Option<&'a str>,
-    pub summary_context_prompt_version: Option<&'a str>,
-    pub summary_context_trust_band: Option<&'a str>,
-    pub summary_context_source_count: Option<usize>,
-    pub summary_context_source_keys_json: Option<&'a str>,
-    pub summary_context_generated_at: Option<&'a str>,
-    /// LLM-determined noise verdict. None = no opinion (don't
-    /// change the deterministic value); Some(true) = AI says noise;
-    /// Some(false) = AI says signal (overrides any prior is_noise=1).
-    pub is_noise: Option<bool>,
 }
 
 /// Row mapper for emails SELECT queries (38 columns).

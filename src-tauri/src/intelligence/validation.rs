@@ -20,30 +20,6 @@ pub fn validate_intelligence_response(raw: &str) -> Result<serde_json::Value, St
     Ok(value)
 }
 
-/// Validate an email enrichment response.
-///
-/// Checks for expected fields (`contextual_summary` or `summary`) and
-/// runs anomaly detection on the raw text.
-pub fn validate_email_enrichment_response(raw: &str) -> Result<serde_json::Value, String> {
-    let value: serde_json::Value =
-        serde_json::from_str(raw).map_err(|e| format!("Invalid JSON: {e}"))?;
-
-    if !value.is_object() {
-        return Err("Response is not a JSON object".to_string());
-    }
-
-    // Check expected fields exist
-    if let Some(obj) = value.as_object() {
-        if !obj.contains_key("contextual_summary") && !obj.contains_key("summary") {
-            log::warn!("Email enrichment response missing expected summary field");
-        }
-    }
-
-    check_anomalies(raw);
-
-    Ok(value)
-}
-
 /// Check for anomalies that might indicate prompt injection in the output.
 ///
 /// Logs warnings but does not block — anomalies are flagged, not rejected.
@@ -111,21 +87,6 @@ mod tests {
         let result = validate_intelligence_response(raw);
         assert!(result.is_err());
         assert!(result.unwrap_err().contains("not a JSON object"));
-    }
-
-    #[test]
-    fn test_email_enrichment_valid() {
-        let raw = r#"{"contextual_summary": "Important email.", "sentiment": "positive"}"#;
-        let result = validate_email_enrichment_response(raw);
-        assert!(result.is_ok());
-    }
-
-    #[test]
-    fn test_email_enrichment_missing_summary() {
-        // Should still succeed but log a warning
-        let raw = r#"{"sentiment": "positive"}"#;
-        let result = validate_email_enrichment_response(raw);
-        assert!(result.is_ok());
     }
 
     #[test]

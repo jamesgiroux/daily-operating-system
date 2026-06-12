@@ -12,7 +12,6 @@
 pub mod actions;
 pub mod constants;
 pub mod email_classify;
-pub mod email_enrich;
 pub mod entity_resolver;
 pub mod gaps;
 pub mod meeting_context;

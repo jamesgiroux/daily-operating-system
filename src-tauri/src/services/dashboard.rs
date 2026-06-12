@@ -1009,7 +1009,7 @@ async fn get_dashboard_data_inner(state: &AppState, db_busy: &mut bool) -> Dashb
         })
         .unwrap_or_default();
 
-    // Try DB first for enriched emails, fall back to JSON
+    // Try DB first for metadata-linked emails.
     let (emails, email_sync): (Option<Vec<crate::types::Email>>, Option<EmailSyncStatus>) = {
         let mut db_emails: Vec<crate::types::Email> = state
             .db_read(|db| {
@@ -1056,8 +1056,6 @@ async fn get_dashboard_data_inner(state: &AppState, db_busy: &mut bool) -> Dashb
                             .entity_id
                             .as_ref()
                             .and_then(|eid| entity_names.get(eid).cloned());
-                        let (summary_context_trust_band, summary_context_source_count) =
-                            crate::services::emails::email_summary_context_for_display(dbe);
                         crate::types::Email {
                             id: dbe.email_id.clone(),
                             sender: dbe.sender_name.clone().unwrap_or_default(),
@@ -1070,24 +1068,16 @@ async fn get_dashboard_data_inner(state: &AppState, db_busy: &mut bool) -> Dashb
                                 _ => crate::types::EmailPriority::Medium,
                             },
                             avatar_url: None,
-                            summary: dbe.contextual_summary.clone(),
-                            summary_context_trust_band,
-                            summary_context_source_count,
+                            summary: None,
+                            summary_context_trust_band: None,
+                            summary_context_source_count: None,
                             recommended_action: None,
                             conversation_arc: None,
                             email_type: None,
-                            commitments: dbe
-                                .commitments
-                                .as_ref()
-                                .and_then(|c| serde_json::from_str::<Vec<String>>(c).ok())
-                                .unwrap_or_default(),
-                            questions: dbe
-                                .questions
-                                .as_ref()
-                                .and_then(|q| serde_json::from_str::<Vec<String>>(q).ok())
-                                .unwrap_or_default(),
-                            sentiment: dbe.sentiment.clone(),
-                            urgency: dbe.urgency.clone(),
+                            commitments: Vec::new(),
+                            questions: Vec::new(),
+                            sentiment: None,
+                            urgency: None,
                             entity_id: dbe.entity_id.clone(),
                             entity_type: dbe.entity_type.clone(),
                             entity_name,
