@@ -104,8 +104,9 @@ export function MeetingSpineItem({
 }: MeetingSpineItemProps) {
   const hasCreateAction = prepState === "needs" && onCreateBriefing;
   const resolvedShowStatus = showStatus ?? state === "in-progress";
+  const hasPrepPill = prepState !== "none" || Boolean(prepLabel);
   const hasFooter =
-    attendees || prepState !== "none" || briefingUrl || hasCreateAction;
+    attendees || hasPrepPill || briefingUrl || hasCreateAction;
 
   return (
     <article
@@ -157,10 +158,10 @@ export function MeetingSpineItem({
         {hasFooter ? (
           <div className={styles.footer}>
             {attendees ? <span>{attendees}</span> : null}
-            {attendees && (prepState !== "none" || briefingUrl || hasCreateAction) ? (
+            {attendees && (hasPrepPill || briefingUrl || hasCreateAction) ? (
               <span className={styles.separator} aria-hidden="true" />
             ) : null}
-            {prepState !== "none" ? (
+            {hasPrepPill ? (
               <Pill tone={PREP_TONE[prepState]} size="compact" dot>
                 {prepLabel ?? DEFAULT_PREP_LABEL[prepState]}
               </Pill>

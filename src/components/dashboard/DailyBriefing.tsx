@@ -52,10 +52,19 @@ import type {
 } from "@/types";
 import { HealthBadge } from "@/components/shared/HealthBadge";
 import { TrustBandIndicator } from "@/components/ui/TrustBandIndicator";
-import { ReactBlockRenderer } from "@/components/composition/ReactBlockRenderer";
+import { Pill } from "@/components/ui/Pill";
+import { EditableBlockText, ItemFeedback } from "@/components/composition/blocks/BlockComponents";
 import { compareEmailRank } from "@/lib/email-ranking";
 import type { DailyBriefingOutput } from "@/services/daily-briefing/contracts";
-import type { ProjectedComposition, RenderedProvenance } from "@/services/composition/contracts";
+import { normalizeTrustBand, type ProjectedBlock, type ProjectedComposition } from "@/services/composition/contracts";
+import { DayChart, type DayChartMeeting, type DayChartMeetingState, type DayChartMeetingType } from "./DayChart";
+import { DayStrip } from "./DayStrip";
+import {
+  MeetingSpineItem,
+  type MeetingSpinePrepState,
+  type MeetingSpineState,
+  type MeetingSpineType,
+} from "./MeetingSpineItem";
 import s from "@/styles/editorial-briefing.module.css";
 import briefingStyles from "./DailyBriefing.module.css";
 
@@ -232,50 +241,543 @@ function localDateKey(date: Date): string {
   return `${year}-${month}-${day}`;
 }
 
+function dateFromLocalDateKey(key: string): Date {
+  const [year, month, day] = key.split("-").map((part) => Number(part));
+  if (!year || !month || !day) return new Date();
+  return new Date(year, month - 1, day);
+}
+
+type PayloadRecord = Record<string, unknown>;
+
+const D_SPINE_SECTION_TOKENS = {
+  lead: ["lead", "hero"],
+  schedule: ["schedule", "today"],
+  moving: ["moving", "attention"],
+  watch: ["watch", "follow", "action"],
+} as const;
+
+function payloadText(value: unknown): string | null {
+  if (typeof value === "string") return value;
+  if (typeof value === "number" || typeof value === "boolean") return String(value);
+  return null;
+}
+
+function payloadObject(value: unknown): PayloadRecord | null {
+  return value && typeof value === "object" && !Array.isArray(value)
+    ? (value as PayloadRecord)
+    : null;
+}
+
+function payloadArray(value: unknown): PayloadRecord[] {
+  return Array.isArray(value)
+    ? value.filter((item): item is PayloadRecord => Boolean(payloadObject(item)))
+    : [];
+}
+
+function projectionBlocksForSection(
+  projection: ProjectedComposition,
+  tokens: readonly string[],
+): ProjectedBlock[] {
+  const blocksById = new Map(projection.blocks.map((block) => [block.block_id, block]));
+  return projection.sections
+    .filter((section) => {
+      const haystack = `${section.section_id} ${section.label ?? ""}`.toLowerCase();
+      return tokens.some((token) => haystack.includes(token));
+    })
+    .flatMap((section) =>
+      section.block_ids
+        .map((blockId) => blocksById.get(blockId))
+        .filter((block): block is ProjectedBlock => Boolean(block)),
+    );
+}
+
+function blockItems(block?: ProjectedBlock | null): PayloadRecord[] {
+  return payloadArray(block?.payload.items);
+}
+
+function firstBlockWithItems(
+  blocks: ProjectedBlock[],
+  predicate: (item: PayloadRecord) => boolean,
+): ProjectedBlock | null {
+  return blocks.find((block) => blockItems(block).some(predicate)) ?? null;
+}
+
+function firstTextBlock(blocks: ProjectedBlock[]): ProjectedBlock | null {
+  return blocks.find((block) =>
+    Boolean(
+      payloadText(block.payload.headline) ??
+      payloadText(block.payload.text) ??
+      payloadText(block.payload.summary) ??
+      payloadText(block.payload.body),
+    ),
+  ) ?? null;
+}
+
+function projectedLeadText(block: ProjectedBlock | null): string | null {
+  if (!block) return null;
+  return (
+    payloadText(block.payload.headline) ??
+    payloadText(block.payload.text) ??
+    payloadText(block.payload.summary) ??
+    payloadText(block.payload.body)
+  );
+}
+
+function readinessLabels(projection: ProjectedComposition): string[] {
+  const block = projection.blocks.find((candidate) =>
+    Boolean(
+      payloadText(candidate.payload.availability_label) ||
+      payloadText(candidate.payload.freshness_label) ||
+      payloadText(candidate.payload.integrity_label),
+    ),
+  );
+  if (!block) return [];
+  return [
+    payloadText(block.payload.availability_label),
+    payloadText(block.payload.freshness_label),
+    payloadText(block.payload.integrity_label),
+  ].filter((label): label is string => Boolean(label));
+}
+
+function humanizeLabel(value: string | null): string | null {
+  if (!value) return null;
+  const normalized = value.replace(/[_-]+/g, " ").trim();
+  if (!normalized) return null;
+  return normalized.replace(/\b\w/g, (letter) => letter.toUpperCase());
+}
+
+function formatAsofLabel(value: string | null): string | null {
+  if (!value) return null;
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return null;
+  const hasTime = /t\d{2}:\d{2}/i.test(value);
+  const formatted = hasTime
+    ? date.toLocaleTimeString(undefined, { hour: "numeric", minute: "2-digit" })
+    : date.toLocaleDateString(undefined, { month: "short", day: "numeric" });
+  return `as of ${formatted}`;
+}
+
+function parseDate(value: string | null): Date | null {
+  if (!value) return null;
+  const date = new Date(value);
+  return Number.isNaN(date.getTime()) ? null : date;
+}
+
+function formatMeetingTime(value: string | null): string {
+  const date = parseDate(value);
+  if (!date) return "TBD";
+  return date.toLocaleTimeString(undefined, { hour: "numeric", minute: "2-digit" });
+}
+
+function formatMeetingDuration(startsAt: string | null, endsAt: string | null): string | undefined {
+  const start = parseDate(startsAt);
+  const end = parseDate(endsAt);
+  if (!start || !end) return undefined;
+  const minutes = Math.round((end.getTime() - start.getTime()) / 60000);
+  return minutes > 0 ? formatMinutes(minutes) : undefined;
+}
+
+function meetingState(item: PayloadRecord): MeetingSpineState {
+  const status = payloadText(item.status)?.toLowerCase() ?? "";
+  const label = payloadText(item.label)?.toLowerCase() ?? "";
+  if (status.includes("cancel")) return "cancelled";
+  if (status.includes("progress") || status.includes("current") || label.includes("current")) {
+    return "in-progress";
+  }
+  if (status.includes("past") || status.includes("ended") || status.includes("complete")) {
+    return "past";
+  }
+  return "upcoming";
+}
+
+function meetingType(item: PayloadRecord): MeetingSpineType {
+  const entityType = payloadText(item.linked_entity_type)?.toLowerCase();
+  if (entityType === "account" || entityType === "customer" || entityType === "company") {
+    return "customer";
+  }
+  if (entityType === "person" || entityType === "contact") return "one_on_one";
+  if (entityType === "project") return "project";
+  if (entityType === "partner") return "partner";
+  return "internal";
+}
+
+function prepStateForStatus(item: PayloadRecord): MeetingSpinePrepState {
+  const statusLabel = payloadText(item.status_label);
+  if (!statusLabel) return "none";
+  const lookup = `${payloadText(item.status) ?? ""} ${statusLabel}`.toLowerCase();
+  if (/need|missing|unavailable|no briefing/.test(lookup)) return "needs";
+  if (/build|prepar|pending|running/.test(lookup)) return "building";
+  if (/captur|complete|done|notes/.test(lookup)) return "captured";
+  if (/ready|fresh|current|available|clean/.test(lookup)) return "ready";
+  return "none";
+}
+
+function chartType(item: PayloadRecord): DayChartMeetingType {
+  if (meetingState(item) === "cancelled") return "cancel";
+  const type = meetingType(item);
+  if (type === "customer") return "customer";
+  if (type === "partner" || type === "project") return "partner";
+  if (type === "one_on_one") return "oo";
+  return "internal";
+}
+
+function chartState(item: PayloadRecord): DayChartMeetingState {
+  const state = meetingState(item);
+  if (state === "in-progress") return "now";
+  if (state === "past") return "past";
+  if (state === "cancelled") return "cancelled";
+  return "upcoming";
+}
+
+function chartPercent(date: Date): number {
+  const workdayStart = 7;
+  const workdayHours = 10;
+  const hour = date.getHours() + date.getMinutes() / 60;
+  return ((hour - workdayStart) / workdayHours) * 100;
+}
+
+function dayChartMeeting(item: PayloadRecord, index: number): DayChartMeeting | null {
+  const start = parseDate(payloadText(item.starts_at));
+  if (!start) return null;
+  const end = parseDate(payloadText(item.ends_at));
+  const fallbackEnd = new Date(start);
+  fallbackEnd.setMinutes(fallbackEnd.getMinutes() + 30);
+  const resolvedEnd = end && end > start ? end : fallbackEnd;
+  const title = payloadText(item.text) ?? "Untitled meeting";
+  const time = formatMeetingTime(payloadText(item.starts_at));
+  const durationMinutes = Math.max(15, Math.round((resolvedEnd.getTime() - start.getTime()) / 60000));
+  return {
+    id: payloadText(item.linked_entity_id) ?? `${title}-${index}`,
+    type: chartType(item),
+    state: chartState(item),
+    startPct: chartPercent(start),
+    durationPct: (durationMinutes / (10 * 60)) * 100,
+    title,
+    time,
+    tooltip: `${title} · ${time}`,
+    ariaLabel: `${title}, ${time}`,
+  };
+}
+
+function nowPositionForDate(selectedDate: Date, now: number): number | null {
+  const current = new Date(now);
+  if (localDateKey(selectedDate) !== localDateKey(current)) return null;
+  const position = chartPercent(current);
+  return position >= 0 && position <= 100 ? position : null;
+}
+
+function movingKind(item: PayloadRecord): "customer" | "person" | undefined {
+  const entityType = payloadText(item.entity_type)?.toLowerCase();
+  if (entityType === "person" || entityType === "contact") return "person";
+  if (entityType === "account" || entityType === "customer" || entityType === "company") {
+    return "customer";
+  }
+  return undefined;
+}
+
+function countLabel(count: number, singular: string, plural = `${singular}s`): string {
+  return `${count} ${count === 1 ? singular : plural}`;
+}
+
 function ProjectedBriefingChapter({
   projection,
-  renderedProvenance,
+  briefingEntityId,
+  selectedDate,
+  now,
 }: {
   projection: ProjectedComposition | null;
-  renderedProvenance: RenderedProvenance | null;
+  briefingEntityId: string;
+  selectedDate: Date;
+  now: number;
 }) {
-  if (!projection || projection.sections.length === 0 || projection.blocks.length === 0) {
+  if (!projection || projection.blocks.length === 0) {
     return null;
   }
-  const blocksById = new Map(projection.blocks.map((block) => [block.block_id, block]));
+
+  const leadBlocks = projectionBlocksForSection(projection, D_SPINE_SECTION_TOKENS.lead);
+  const scheduleBlocks = projectionBlocksForSection(projection, D_SPINE_SECTION_TOKENS.schedule);
+  const movingBlocks = projectionBlocksForSection(projection, D_SPINE_SECTION_TOKENS.moving);
+  const watchBlocks = projectionBlocksForSection(projection, D_SPINE_SECTION_TOKENS.watch);
+  const leadBlock = firstTextBlock(leadBlocks);
+  const scheduleBlock =
+    firstBlockWithItems(scheduleBlocks, (item) => Boolean(payloadText(item.starts_at) || payloadText(item.ends_at))) ??
+    firstBlockWithItems(projection.blocks, (item) => Boolean(payloadText(item.starts_at) || payloadText(item.ends_at)));
+  const movingBlock =
+    firstBlockWithItems(movingBlocks, (item) => Boolean(payloadText(item.body) || payloadText(item.entity_name))) ??
+    firstBlockWithItems(projection.blocks, (item) => Boolean(payloadText(item.body) || payloadText(item.entity_name)));
+  const watchBlock =
+    watchBlocks.find((block) => block.selected_known_type_id === "action_list") ??
+    firstBlockWithItems(watchBlocks, (item) => Boolean(payloadText(item.status_label) || payloadText(item.text))) ??
+    projection.blocks.find((block) => block.selected_known_type_id === "action_list") ??
+    null;
+  const scheduleItems = blockItems(scheduleBlock);
+  const movingItems = blockItems(movingBlock);
+  const watchItems = blockItems(watchBlock);
+  const leadText = projectedLeadText(leadBlock) ?? "Your day is ready.";
+  const readiness = readinessLabels(projection);
+  const chartMeetings = scheduleItems
+    .map((item, index) => dayChartMeeting(item, index))
+    .filter((meeting): meeting is DayChartMeeting => Boolean(meeting));
+  const hasDSpineContent =
+    leadBlock || scheduleBlock || movingBlock || watchBlock || readiness.length > 0;
+
+  if (!hasDSpineContent) return null;
+
   return (
-    <section className={briefingStyles.projectedCompositionSection}>
-      <div className={s.marginGrid}>
-        <div className={s.marginLabel}>Briefing</div>
-        <div className={s.marginContent}>
-          <div className={s.sectionRule} />
-          <div
-            className={briefingStyles.projectedCompositionStack}
-            data-composition-id={projection.composition_id}
-            data-composition-version={projection.composition_version ?? 0}
-          >
-            {projection.sections.map((section) => {
-              const blocks = section.block_ids
-                .map((blockId) => blocksById.get(blockId))
-                .filter((block): block is ProjectedComposition["blocks"][number] => Boolean(block));
-              if (blocks.length === 0) return null;
-              return (
-                <div key={section.section_id} className={briefingStyles.projectedCompositionGroup}>
-                  {section.label && (
-                    <p className={briefingStyles.projectedCompositionLabel}>{section.label}</p>
+    <section
+      className={briefingStyles.projectedCompositionSection}
+      data-composition-id={projection.composition_id}
+      data-composition-version={projection.composition_version ?? 0}
+    >
+      <div
+        data-ds-tier="surface"
+        data-ds-name="DailyBriefingDSpine"
+        data-ds-spec="surfaces/DailyBriefingDSpine.md"
+        data-ds-state="proposed"
+      >
+        <section
+          id="lead"
+          className={s.hero}
+          data-ds-tier="pattern"
+          data-ds-name="Lead"
+          data-ds-spec="patterns/Lead.md"
+          data-ds-state="proposed"
+          data-trust-band={leadBlock ? normalizeTrustBand(leadBlock.trust_band) : undefined}
+        >
+          <h1 className={s.heroHeadline}>{leadText}</h1>
+          {readiness.length > 0 ? (
+            <div className={briefingStyles.abilityStrip} aria-label="Briefing readiness">
+              {readiness.map((label) => (
+                <Pill key={label} tone="neutral" size="compact">
+                  {label}
+                </Pill>
+              ))}
+            </div>
+          ) : null}
+        </section>
+
+        {scheduleBlock ? (
+          <section id="schedule" className={s.scheduleSection}>
+            <div className={s.marginGrid} data-ds-tier="pattern" data-ds-name="MarginGrid" data-ds-spec="patterns/MarginGrid.md">
+              <div className={s.marginLabel}>
+                Today
+                <span className={s.marginLabelCount}>
+                  {countLabel(scheduleItems.length, "meeting")}
+                </span>
+              </div>
+              <div className={s.marginContent}>
+                <div className={s.sectionRule} />
+                <h2 className={briefingStyles["dspine-section-heading"]}>Today's schedule</h2>
+
+                {chartMeetings.length > 0 ? (
+                  <DayChart
+                    meetings={chartMeetings}
+                    nowPosition={nowPositionForDate(selectedDate, now)}
+                    chartHeight={118}
+                  />
+                ) : null}
+
+                <div className={briefingStyles["dspine-stack"]}>
+                  {scheduleItems.length > 0 ? (
+                    scheduleItems.map((item, index) => {
+                      const title = payloadText(item.text) ?? "Untitled meeting";
+                      const entityName =
+                        payloadText(item.linked_entity_name) ??
+                        humanizeLabel(payloadText(item.linked_entity_type)) ??
+                        "Unlinked";
+                      const state = meetingState(item);
+                      const timeLabel = formatMeetingTime(payloadText(item.starts_at));
+                      const statusLabel = payloadText(item.status_label);
+                      return (
+                        <MeetingSpineItem
+                          key={`${payloadText(item.linked_entity_id) ?? title}-${index}`}
+                          time={timeLabel}
+                          duration={formatMeetingDuration(payloadText(item.starts_at), payloadText(item.ends_at))}
+                          state={state}
+                          type={meetingType(item)}
+                          entityName={entityName}
+                          title={title}
+                          attendees={formatAsofLabel(payloadText(item.source_asof))}
+                          prepState={prepStateForStatus(item)}
+                          prepLabel={statusLabel}
+                          statusLabel={payloadText(item.label)}
+                          showStatus={Boolean(payloadText(item.label)) || state === "in-progress"}
+                          data-trust-band={normalizeTrustBand(scheduleBlock.trust_band)}
+                        />
+                      );
+                    })
+                  ) : (
+                    <p className={briefingStyles["dspine-section-summary"]}>
+                      {payloadText(scheduleBlock.payload.empty_state_text) ?? "No meetings in this briefing."}
+                    </p>
                   )}
-                  {blocks.map((block) => (
-                    <ReactBlockRenderer
-                      key={block.block_id}
-                      block={block}
-                      renderedProvenance={renderedProvenance}
-                    />
-                  ))}
                 </div>
-              );
-            })}
-          </div>
-        </div>
+              </div>
+            </div>
+          </section>
+        ) : null}
+
+        {movingBlock ? (
+          <section id="moving" className={s.prioritiesSection}>
+            <div className={s.marginGrid} data-ds-tier="pattern" data-ds-name="MarginGrid" data-ds-spec="patterns/MarginGrid.md">
+              <div className={s.marginLabel}>
+                Moving
+                <span className={s.marginLabelCount}>
+                  {countLabel(movingItems.length, "change")}
+                </span>
+              </div>
+              <div className={s.marginContent}>
+                <div className={s.sectionRule} />
+                <h2 className={briefingStyles["dspine-section-heading"]}>What's moving</h2>
+                <div
+                  className={briefingStyles["dspine-moving-list"]}
+                  data-ds-tier="pattern"
+                  data-ds-name="DailyBriefingAttentionSection"
+                  data-ds-spec="patterns/DailyBriefingAttentionSection.md"
+                  data-ds-variant="moving"
+                >
+                  {movingItems.length > 0 ? (
+                    movingItems.map((item, index) => {
+                      const title = payloadText(item.text) ?? "Untitled signal";
+                      const body = payloadText(item.body);
+                      const fieldPath = `/items/${index}/text`;
+                      return (
+                        <article
+                          key={`${payloadText(item.claim_id) ?? title}-${index}`}
+                          className={briefingStyles["dspine-moving-row"]}
+                          data-kind={movingKind(item)}
+                          data-trust-band={normalizeTrustBand(movingBlock.trust_band)}
+                        >
+                          <div className={briefingStyles["dspine-moving-name"]}>
+                            {payloadText(item.entity_name) ?? humanizeLabel(payloadText(item.entity_type)) ?? "Signal"}
+                          </div>
+                          <div className={briefingStyles["dspine-moving-copy"]}>
+                            <EditableBlockText
+                              accountId={briefingEntityId}
+                              entityType="briefing"
+                              block={movingBlock}
+                              fieldPath={fieldPath}
+                              value={title}
+                              as="div"
+                              className={briefingStyles["dspine-moving-title"]}
+                            />
+                            {body ? (
+                              <EditableBlockText
+                                accountId={briefingEntityId}
+                                entityType="briefing"
+                                block={movingBlock}
+                                fieldPath={`/items/${index}/body`}
+                                value={body}
+                                as="p"
+                                className={briefingStyles["dspine-moving-context"]}
+                              />
+                            ) : null}
+                            <ItemFeedback
+                              accountId={briefingEntityId}
+                              entityType="briefing"
+                              block={movingBlock}
+                              fieldPath={fieldPath}
+                              value={title}
+                            />
+                          </div>
+                          {formatAsofLabel(payloadText(item.source_asof)) ? (
+                            <div className={briefingStyles["dspine-moving-meta"]}>
+                              {formatAsofLabel(payloadText(item.source_asof))}
+                            </div>
+                          ) : null}
+                        </article>
+                      );
+                    })
+                  ) : (
+                    <article className={briefingStyles["dspine-moving-row"]}>
+                      <div className={briefingStyles["dspine-moving-name"]}>Moving</div>
+                      <div className={briefingStyles["dspine-moving-copy"]}>
+                        <div className={briefingStyles["dspine-moving-title"]}>
+                          {payloadText(movingBlock.payload.empty_state_text) ?? "Nothing to surface."}
+                        </div>
+                      </div>
+                    </article>
+                  )}
+                </div>
+              </div>
+            </div>
+          </section>
+        ) : null}
+
+        {watchBlock ? (
+          <section
+            id="watch"
+            className={s.prioritiesSection}
+            data-ds-tier="pattern"
+            data-ds-name="DailyBriefingAttentionSection"
+            data-ds-spec="patterns/DailyBriefingAttentionSection.md"
+            data-ds-variant="watch"
+          >
+            <div className={s.marginGrid} data-ds-tier="pattern" data-ds-name="MarginGrid" data-ds-spec="patterns/MarginGrid.md">
+              <div className={s.marginLabel}>
+                Watch
+                <span className={s.marginLabelCount}>
+                  {countLabel(watchItems.length, "quiet")}
+                </span>
+              </div>
+              <div className={s.marginContent}>
+                <div className={s.sectionRule} />
+                <h2 className={briefingStyles["dspine-section-heading"]}>Watch</h2>
+                <div className={briefingStyles["dspine-watch-list"]}>
+                  {watchItems.length > 0 ? (
+                    watchItems.map((item, index) => {
+                      const value = payloadText(item.text) ?? "Untitled follow-through";
+                      const fieldPath = `/items/${index}/text`;
+                      return (
+                        <div
+                          key={`${payloadText(item.claim_id) ?? value}-${index}`}
+                          className={briefingStyles["dspine-watch-row"]}
+                          data-trust-band={normalizeTrustBand(watchBlock.trust_band)}
+                        >
+                          <span className={briefingStyles["dspine-watch-who"]}>
+                            {payloadText(item.status_label) ?? "Tracked"}
+                          </span>
+                          <span>
+                            <EditableBlockText
+                              accountId={briefingEntityId}
+                              entityType="briefing"
+                              block={watchBlock}
+                              fieldPath={fieldPath}
+                              value={value}
+                              as="span"
+                              className={briefingStyles["dspine-watch-what"]}
+                            />
+                            <ItemFeedback
+                              accountId={briefingEntityId}
+                              entityType="briefing"
+                              block={watchBlock}
+                              fieldPath={fieldPath}
+                              value={value}
+                            />
+                          </span>
+                          {formatAsofLabel(payloadText(item.source_asof)) ? (
+                            <span className={briefingStyles["dspine-watch-quiet"]}>
+                              {formatAsofLabel(payloadText(item.source_asof))}
+                            </span>
+                          ) : null}
+                        </div>
+                      );
+                    })
+                  ) : (
+                    <div className={briefingStyles["dspine-watch-row"]}>
+                      <span className={briefingStyles["dspine-watch-who"]}>Watch</span>
+                      <span className={briefingStyles["dspine-watch-what"]}>
+                        {payloadText(watchBlock.payload.empty_state_text) ?? "Nothing parked for later."}
+                      </span>
+                    </div>
+                  )}
+                </div>
+              </div>
+            </div>
+          </section>
+        ) : null}
+
+        <FinisMarker />
       </div>
     </section>
   );
@@ -295,10 +797,21 @@ function formatMinutes(minutes: number): string {
 export function DailyBriefing({ data, freshness, onRunBriefing, isRunning, workflowStatus, onRefresh }: DailyBriefingProps) {
   const { now, currentMeeting } = useCalendar();
   const dailyBriefingAbility = useDailyBriefingAbility();
+  const [projectedBriefingDateKey, setProjectedBriefingDateKey] = useState(() =>
+    localDateKey(new Date(now)),
+  );
+  const projectedBriefingDate = useMemo(
+    () => dateFromLocalDateKey(projectedBriefingDateKey),
+    [projectedBriefingDateKey],
+  );
+  const projectedBriefingEntityId = `local~${projectedBriefingDateKey}`;
   const projectedBriefing = useProjectedComposition({
     entityType: "briefing",
-    entityId: `local~${localDateKey(new Date(now))}`,
+    entityId: projectedBriefingEntityId,
   });
+  const handleProjectedBriefingDateSelect = useCallback((date: Date) => {
+    setProjectedBriefingDateKey(localDateKey(date));
+  }, []);
   const hasMountedProjectedBriefingRefreshRef = useRef(false);
   const freshnessRevision = freshness.freshness === "unknown" ? "unknown" : freshness.generatedAt;
   const refreshProjectedBriefing = useCallback(() => {
@@ -542,6 +1055,18 @@ export function DailyBriefing({ data, freshness, onRunBriefing, isRunning, workf
 
   return (
     <div>
+      <DayStrip
+        selectedDate={projectedBriefingDate}
+        today={new Date(now)}
+        onSelectDate={handleProjectedBriefingDateSelect}
+      />
+      <ProjectedBriefingChapter
+        projection={projectedBriefing.data?.projection ?? null}
+        briefingEntityId={projectedBriefingEntityId}
+        selectedDate={projectedBriefingDate}
+        now={now}
+      />
+
       {/* ═══ DAY FRAME (Hero + Focus) ═══ */}
       <section className={s.hero}>
         <h1 className={s.heroHeadline}>{heroHeadline}</h1>
@@ -575,11 +1100,6 @@ export function DailyBriefing({ data, freshness, onRunBriefing, isRunning, workf
         {/* Staleness indicator removed — orphaned "Last updated" with no date
             was confusing. The hero headline already communicates state. */}
       </section>
-
-      <ProjectedBriefingChapter
-        projection={projectedBriefing.data?.projection ?? null}
-        renderedProvenance={projectedBriefing.renderedProvenance}
-      />
 
       {/* ═══ SCHEDULE (with Up Next) ═══ */}
       {hasSchedule && (

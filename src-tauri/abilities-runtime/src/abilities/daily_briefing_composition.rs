@@ -367,50 +367,35 @@ fn meeting_item(label: &str, meeting: &MeetingBriefRef) -> Value {
     json!({
         "text": meeting.title.as_deref().unwrap_or("Untitled meeting"),
         "status": meeting.prep_status.as_str(),
+        "status_label": prep_status_label(meeting.prep_status.as_str()),
         "label": label,
         "starts_at": meeting.starts_at.as_deref(),
         "ends_at": meeting.ends_at.as_deref(),
         "linked_entity_type": meeting.linked_entity_type.as_deref(),
         "linked_entity_id": meeting.linked_entity_id.as_deref(),
+        "linked_entity_name": meeting.linked_entity_name.as_deref(),
         "source_asof": meeting.last_prepared_at.as_deref(),
     })
 }
 
 fn attention_attributes(briefing: &DailyBriefingOutput) -> Value {
-    let mut lines = Vec::new();
-    for advisory in &briefing.state.advisories {
-        lines.push(advisory_label(advisory));
-    }
-    for proposal in &briefing.watch_proposals {
-        lines.push(format!("{}: {}", proposal.subject_kind, proposal.headline));
-    }
-    let text = if lines.is_empty() {
-        "No source-backed advisories need attention for this briefing.".to_string()
-    } else {
-        lines.join("\n")
-    };
+    let items = briefing
+        .watch_proposals
+        .iter()
+        .map(attention_item)
+        .collect::<Vec<_>>();
     json!({
-        "title": "Attention",
-        "text": text,
-        "body": text,
-        "trust_band": trust_band_label(briefing.trust_summary.aggregate_band),
-        "advisory_count": briefing.state.advisories.len(),
-        "watch_proposal_count": briefing.watch_proposals.len(),
-        "source_asof": latest_source_asof(briefing),
+        "items": items,
+        "source_asof": latest_attention_source_asof(briefing).or_else(|| latest_source_asof(briefing)),
+        "empty_state_text": "Nothing needs attention right now.",
     })
 }
 
 fn readiness_attributes(briefing: &DailyBriefingOutput) -> Value {
-    let lines = [
-        availability_label(&briefing.state.availability),
-        freshness_label(&briefing.state.freshness),
-        integrity_label(&briefing.state.integrity),
-    ];
     json!({
-        "title": "Readiness",
-        "text": lines.join("\n"),
-        "body": lines.join("\n"),
-        "trust_band": trust_band_label(briefing.trust_summary.aggregate_band),
+        "availability_label": availability_label(&briefing.state.availability),
+        "freshness_label": freshness_label(&briefing.state.freshness),
+        "integrity_label": integrity_label(&briefing.state.integrity),
         "source_asof": latest_source_asof(briefing),
     })
 }
@@ -420,35 +405,30 @@ fn follow_through_attributes(briefing: &DailyBriefingOutput) -> Value {
     if let BriefingFreshness::NeedsPreparation { meeting_ids } = &briefing.state.freshness {
         items.push(json!({
             "text": format!("{} meeting(s) need preparation", meeting_ids.len()),
-            "status": "prep",
+            "status": "needs_preparation",
+            "status_label": "Prep needed",
+            "source_asof": latest_source_asof(briefing),
         }));
     }
     for advisory in &briefing.state.advisories {
         items.push(json!({
             "text": advisory_label(advisory),
             "status": "attention",
+            "status_label": "Needs attention",
+            "source_asof": latest_source_asof(briefing),
         }));
     }
     for proposal in &briefing.watch_proposals {
         items.push(json!({
             "text": proposal.headline.as_str(),
-            "status": proposal.subject_kind.as_str(),
-            "trust_band": trust_band_label(proposal.trust_band),
-        }));
-    }
-    let empty = items.is_empty();
-    if empty {
-        items.push(json!({
-            "text": "No source-backed follow-through items are currently open for this briefing.",
-            "status": "clear",
+            "status": "attention",
+            "status_label": severity_label(proposal.severity.as_str()),
+            "source_asof": proposal.source_asof.as_deref(),
         }));
     }
     json!({
-        "title": "Follow-through",
         "items": items,
-        "empty_state": empty,
-        "trust_band": trust_band_label(briefing.trust_summary.aggregate_band),
-        "source_asof": latest_source_asof(briefing),
+        "empty_state_text": "No follow-through is open right now.",
     })
 }
 
@@ -480,58 +460,101 @@ fn latest_source_asof(briefing: &DailyBriefingOutput) -> Option<&str> {
         .max()
 }
 
+fn latest_attention_source_asof(briefing: &DailyBriefingOutput) -> Option<&str> {
+    briefing
+        .watch_proposals
+        .iter()
+        .filter_map(|proposal| proposal.source_asof.as_deref())
+        .max()
+}
+
+fn attention_item(proposal: &crate::abilities::get_daily_briefing::WatchProposal) -> Value {
+    let body = proposal
+        .detail
+        .as_deref()
+        .filter(|detail| *detail != proposal.headline.as_str());
+    let mut item = json!({
+        "text": proposal.headline.as_str(),
+        "body": body,
+        "severity": proposal.severity.as_str(),
+        "entity_name": proposal.entity_name.as_deref(),
+        "entity_type": proposal.subject_kind.as_str(),
+        "entity_id": proposal.subject_id.as_str(),
+        "source_asof": proposal.source_asof.as_deref(),
+    });
+    if let Some(claim_id) = proposal.claim_id.as_deref() {
+        item["claim_id"] = json!(claim_id);
+    }
+    item
+}
+
 fn briefing_state_summary(briefing: &DailyBriefingOutput) -> String {
-    let availability = match &briefing.state.availability {
-        BriefingAvailability::Available => "available".to_string(),
-        BriefingAvailability::Empty { reason } => format!("empty: {reason:?}"),
-        BriefingAvailability::AuthLocked => "auth locked".to_string(),
-    };
-    let freshness = match &briefing.state.freshness {
-        BriefingFreshness::Fresh => "fresh".to_string(),
-        BriefingFreshness::Stale { reason } => format!("stale: {reason:?}"),
-        BriefingFreshness::NeedsPreparation { meeting_ids } => {
-            format!("needs preparation for {} meeting(s)", meeting_ids.len())
-        }
-    };
-    let integrity = match &briefing.state.integrity {
-        BriefingIntegrity::Clean => "clean".to_string(),
-        BriefingIntegrity::HasCorrections {
-            superseded_claim_ids,
-        } => format!("{} correction(s)", superseded_claim_ids.len()),
-        BriefingIntegrity::HasAmbiguity { ambiguous_pairs } => {
-            format!("{} ambiguity pair(s)", ambiguous_pairs.len())
-        }
-    };
+    let availability = availability_label(&briefing.state.availability);
+    let freshness = freshness_label(&briefing.state.freshness);
+    let integrity = integrity_label(&briefing.state.integrity);
     format!("{availability}; {freshness}; {integrity}")
 }
 
 fn availability_label(value: &BriefingAvailability) -> String {
     match value {
-        BriefingAvailability::Available => "available".to_string(),
-        BriefingAvailability::Empty { reason } => format!("empty: {reason:?}"),
-        BriefingAvailability::AuthLocked => "auth locked".to_string(),
+        BriefingAvailability::Available => "Available".to_string(),
+        BriefingAvailability::Empty { reason } => match reason {
+            crate::abilities::get_daily_briefing::BriefingEmptyReason::NoMeetings => {
+                "No meetings today".to_string()
+            }
+            crate::abilities::get_daily_briefing::BriefingEmptyReason::DateOutsideKnownWindow => {
+                "Outside the known schedule".to_string()
+            }
+            crate::abilities::get_daily_briefing::BriefingEmptyReason::WorkspaceUnknown => {
+                "Workspace unavailable".to_string()
+            }
+        },
+        BriefingAvailability::AuthLocked => "Sign in needed".to_string(),
     }
 }
 
 fn freshness_label(value: &BriefingFreshness) -> String {
     match value {
-        BriefingFreshness::Fresh => "fresh".to_string(),
-        BriefingFreshness::Stale { reason } => format!("stale: {reason:?}"),
+        BriefingFreshness::Fresh => "Fresh".to_string(),
+        BriefingFreshness::Stale { .. } => "Refresh suggested".to_string(),
         BriefingFreshness::NeedsPreparation { meeting_ids } => {
-            format!("needs preparation for {} meeting(s)", meeting_ids.len())
+            format!("Prep needed for {} meeting(s)", meeting_ids.len())
         }
     }
 }
 
 fn integrity_label(value: &BriefingIntegrity) -> String {
     match value {
-        BriefingIntegrity::Clean => "clean".to_string(),
+        BriefingIntegrity::Clean => "Clean".to_string(),
         BriefingIntegrity::HasCorrections {
             superseded_claim_ids,
-        } => format!("{} correction(s)", superseded_claim_ids.len()),
+        } => format!("{} correction(s) applied", superseded_claim_ids.len()),
         BriefingIntegrity::HasAmbiguity { ambiguous_pairs } => {
-            format!("{} ambiguity pair(s)", ambiguous_pairs.len())
+            format!("{} item(s) need review", ambiguous_pairs.len())
         }
+    }
+}
+
+fn prep_status_label(status: &str) -> &'static str {
+    match status {
+        "ready" => "Ready",
+        "prep_needed" => "Prep needed",
+        "queued" | "running" => "Building",
+        "limited" => "Limited",
+        "stale" => "Refresh suggested",
+        "failed" => "Needs attention",
+        "blocked_no_entity" => "No linked account",
+        "user_suppressed" | "user_dismissed" => "Dismissed",
+        _ => "Needs attention",
+    }
+}
+
+fn severity_label(severity: &str) -> &'static str {
+    match severity {
+        "critical" => "Needs attention",
+        "warning" => "Watch",
+        "info" => "For awareness",
+        _ => "For awareness",
     }
 }
 
@@ -577,7 +600,11 @@ fn block(
         None,
     )
     .map_err(block_error)?;
-    block.field_bindings = vec![display_only_binding("/title")?];
+    block.field_bindings = if block.attributes.get("title").is_some() {
+        vec![display_only_binding("/title")?]
+    } else {
+        Vec::new()
+    };
     block.salience = salience;
     attribute_block(
         provenance_builder,
@@ -864,6 +891,127 @@ mod tests {
         )
     }
 
+    fn briefing_fixture() -> DailyBriefingOutput {
+        DailyBriefingOutput {
+            schema_version: BRIEFING_SCHEMA_VERSION,
+            date: chrono::NaiveDate::from_ymd_opt(2026, 6, 3).unwrap(),
+            state: crate::abilities::get_daily_briefing::BriefingState {
+                availability: BriefingAvailability::Available,
+                freshness: BriefingFreshness::NeedsPreparation {
+                    meeting_ids: vec!["meeting-1".to_string()],
+                },
+                integrity: BriefingIntegrity::Clean,
+                advisories: Vec::new(),
+            },
+            current_meeting: Some(MeetingBriefRef {
+                meeting_id: "meeting-1".to_string(),
+                title: Some("Customer checkpoint".to_string()),
+                starts_at: Some("2026-06-03T14:00:00Z".to_string()),
+                ends_at: Some("2026-06-03T14:30:00Z".to_string()),
+                linked_entity_type: Some("account".to_string()),
+                linked_entity_id: Some("acct-1".to_string()),
+                linked_entity_name: Some("Example Account".to_string()),
+                prep_status: "blocked_no_entity".to_string(),
+                blocking_reason: None,
+                stale_reason: None,
+                last_prepared_at: Some("2026-06-03T13:00:00Z".to_string()),
+            }),
+            next_meeting: None,
+            upcoming_meetings:
+                crate::abilities::get_entity_intelligence::contracts::Paginated::empty_stable(),
+            candidate_set: crate::abilities::get_entity_intelligence::contracts::CandidateSetRef {
+                window_start: None,
+                window_end: None,
+                filter_description: "fixture".to_string(),
+            },
+            watch_proposals: vec![crate::abilities::get_daily_briefing::WatchProposal {
+                proposal_id: "callout-1".to_string(),
+                subject_kind: "account".to_string(),
+                subject_id: "acct-1".to_string(),
+                headline: "Champion going cold".to_string(),
+                detail: Some("No contact in 30 days".to_string()),
+                severity: "warning".to_string(),
+                entity_name: Some("Example Account".to_string()),
+                source_asof: Some("2026-06-03T12:00:00Z".to_string()),
+                claim_id: Some("claim-1".to_string()),
+                trust_band: TrustBand::NeedsVerification,
+                sensitivity: crate::types::ClaimSensitivity::Public,
+            }],
+            trust_summary: crate::abilities::get_daily_briefing::BriefingTrustSummary {
+                aggregate_band: TrustBand::Unscored,
+                likely_current_count: 0,
+                use_with_caution_count: 0,
+                needs_verification_count: 0,
+            },
+            provenance: crate::abilities::get_entity_intelligence::contracts::EnvelopeProvenance::empty(
+            ),
+            sensitivity: crate::types::ClaimSensitivity::Public,
+            source_asof_inputs: vec![crate::abilities::get_daily_briefing::SourceAsofRef {
+                source: "briefing_callout:callout-1".to_string(),
+                as_of: "2026-06-03T12:00:00Z".to_string(),
+            }],
+        }
+    }
+
+    #[test]
+    fn daily_briefing_payload_contract_maps_content_and_labels() {
+        let briefing = briefing_fixture();
+
+        let attention = attention_attributes(&briefing);
+        assert!(attention.get("title").is_none());
+        assert!(attention.get("text").is_none());
+        assert!(attention.get("body").is_none());
+        assert_eq!(attention["source_asof"], "2026-06-03T12:00:00Z");
+        assert_eq!(attention["empty_state_text"], "Nothing needs attention right now.");
+        let attention_item = &attention["items"][0];
+        assert_eq!(attention_item["text"], "Champion going cold");
+        assert_eq!(attention_item["body"], "No contact in 30 days");
+        assert_ne!(attention_item["text"], attention_item["body"]);
+        assert_eq!(attention_item["severity"], "warning");
+        assert_eq!(attention_item["entity_name"], "Example Account");
+        assert_eq!(attention_item["entity_type"], "account");
+        assert_eq!(attention_item["entity_id"], "acct-1");
+        assert_eq!(attention_item["source_asof"], "2026-06-03T12:00:00Z");
+        assert_eq!(attention_item["claim_id"], "claim-1");
+
+        let readiness = readiness_attributes(&briefing);
+        assert!(readiness.get("title").is_none());
+        assert!(readiness.get("text").is_none());
+        assert!(readiness.get("body").is_none());
+        assert_eq!(readiness["availability_label"], "Available");
+        assert_eq!(readiness["freshness_label"], "Prep needed for 1 meeting(s)");
+        assert_eq!(readiness["integrity_label"], "Clean");
+        assert_eq!(readiness["source_asof"], "2026-06-03T12:00:00Z");
+
+        let schedule = meetings_attributes(&briefing);
+        let schedule_item = &schedule["items"][0];
+        assert_eq!(schedule_item["status"], "blocked_no_entity");
+        assert_eq!(schedule_item["status_label"], "No linked account");
+        assert_eq!(schedule_item["linked_entity_name"], "Example Account");
+
+        let follow_through = follow_through_attributes(&briefing);
+        assert!(follow_through.get("title").is_none());
+        assert_eq!(follow_through["empty_state_text"], "No follow-through is open right now.");
+        let prep_item = &follow_through["items"][0];
+        assert_eq!(prep_item["status"], "needs_preparation");
+        assert_eq!(prep_item["status_label"], "Prep needed");
+        let callout_item = &follow_through["items"][1];
+        assert_eq!(callout_item["text"], "Champion going cold");
+        assert_eq!(callout_item["status"], "attention");
+        assert_eq!(callout_item["status_label"], "Watch");
+        assert_eq!(callout_item["source_asof"], "2026-06-03T12:00:00Z");
+    }
+
+    #[test]
+    fn daily_briefing_payload_contract_normalizes_unscored_trust_band() {
+        let briefing = briefing_fixture();
+
+        assert_eq!(trust_band_label(TrustBand::Unscored), "needs_verification");
+        assert_eq!(state_attributes(&briefing)["trust_band"], "needs_verification");
+        assert_eq!(meetings_attributes(&briefing)["trust_band"], "needs_verification");
+        assert_eq!(sources_attributes(&briefing)["trust_band"], "needs_verification");
+    }
+
     #[test]
     fn daily_briefing_bindings_project_for_tauri_surface() {
         let headline = test_block(
@@ -899,9 +1047,12 @@ mod tests {
             json!({
                 "title": "Meetings",
                 "items": [{
-                    "title": "Customer checkpoint",
+                    "text": "Customer checkpoint",
                     "status": "ready",
-                    "trust_band": "likely_current",
+                    "status_label": "Ready",
+                    "label": "Current",
+                    "starts_at": "2026-06-03T00:00:00Z",
+                    "linked_entity_name": "Example Account",
                     "source_asof": "2026-06-03T00:00:00Z",
                 }],
                 "trust_band": "likely_current",
@@ -914,13 +1065,20 @@ mod tests {
             "attention",
             BlockType::ClaimSummary,
             json!({
-                "title": "Attention",
-                "text": "No source-backed advisories need attention for this briefing.",
-                "body": "No source-backed advisories need attention for this briefing.",
-                "trust_band": "likely_current",
+                "items": [{
+                    "text": "Champion going cold",
+                    "body": "No contact in 30 days",
+                    "severity": "warning",
+                    "entity_name": "Example Account",
+                    "entity_type": "account",
+                    "entity_id": "acct-1",
+                    "source_asof": "2026-06-03T00:00:00Z",
+                    "claim_id": "claim-1",
+                }],
                 "source_asof": "2026-06-03T00:00:00Z",
+                "empty_state_text": "Nothing needs attention right now.",
             }),
-            vec![display_only_binding("/title").unwrap()],
+            Vec::new(),
             2,
         );
         let sources = test_block(

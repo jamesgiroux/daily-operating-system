@@ -864,6 +864,7 @@ pub struct ServiceContext<'a> {
     list_open_loops_reader: Option<Arc<dyn ListOpenLoopsReadHandle>>,
     prepare_meeting_context_reader: Option<Arc<dyn PrepareMeetingContextReadHandle>>,
     daily_readiness_context_reader: Option<Arc<dyn DailyReadinessContextReadHandle>>,
+    briefing_callout_reader: Option<Arc<dyn BriefingCalloutReadHandle>>,
     trajectory_reader: Option<Arc<dyn TrajectoryReadHandle>>,
     temporal_maintenance: Option<Arc<dyn TemporalMaintenanceHandle>>,
     composition_commit: Option<Arc<dyn CompositionCommitHandle>>,
@@ -2071,6 +2072,45 @@ pub trait DailyReadinessContextReadHandle: Send + Sync {
 }
 
 // -----------------------------------------------------------------------------
+// Briefing callout read handle
+// -----------------------------------------------------------------------------
+
+#[derive(Debug, Clone, PartialEq)]
+pub struct BriefingCalloutSnapshot {
+    pub id: String,
+    pub headline: String,
+    pub detail: Option<String>,
+    pub severity: String,
+    pub entity_name: Option<String>,
+    pub entity_type: String,
+    pub entity_id: String,
+    pub created_at: String,
+    pub claim_id: Option<String>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
+pub enum BriefingCalloutReadError {
+    #[error("briefing callout read failed: {0}")]
+    ReadFailed(String),
+}
+
+pub type BriefingCalloutReadFuture<'a> = Pin<
+    Box<dyn Future<Output = Result<Vec<BriefingCalloutSnapshot>, BriefingCalloutReadError>> + Send + 'a>,
+>;
+
+/// Read today's durable briefing callouts. This is the attention substrate for
+/// the daily briefing producer; ability code receives row-shaped snapshots,
+/// never raw database handles.
+pub trait BriefingCalloutReadHandle: Send + Sync {
+    fn read_briefing_callouts_for_date<'a>(
+        &'a self,
+        workspace_scope: String,
+        date: String,
+        limit: usize,
+    ) -> BriefingCalloutReadFuture<'a>;
+}
+
+// -----------------------------------------------------------------------------
 // Meeting prep status read handle
 // -----------------------------------------------------------------------------
 
@@ -2370,6 +2410,7 @@ impl<'a> ServiceContext<'a> {
             list_open_loops_reader: None,
             prepare_meeting_context_reader: None,
             daily_readiness_context_reader: None,
+            briefing_callout_reader: None,
             trajectory_reader: None,
             temporal_maintenance: None,
             composition_commit: None,
@@ -2417,6 +2458,7 @@ impl<'a> ServiceContext<'a> {
             list_open_loops_reader: None,
             prepare_meeting_context_reader: None,
             daily_readiness_context_reader: None,
+            briefing_callout_reader: None,
             trajectory_reader: None,
             temporal_maintenance: None,
             composition_commit: None,
@@ -2475,6 +2517,7 @@ impl<'a> ServiceContext<'a> {
             list_open_loops_reader: None,
             prepare_meeting_context_reader: None,
             daily_readiness_context_reader: None,
+            briefing_callout_reader: None,
             trajectory_reader: None,
             temporal_maintenance: None,
             composition_commit: None,
@@ -2553,6 +2596,14 @@ impl<'a> ServiceContext<'a> {
         reader: Arc<dyn DailyReadinessContextReadHandle>,
     ) -> Self {
         self.daily_readiness_context_reader = Some(reader);
+        self
+    }
+
+    pub fn with_briefing_callout_reader(
+        mut self,
+        reader: Arc<dyn BriefingCalloutReadHandle>,
+    ) -> Self {
+        self.briefing_callout_reader = Some(reader);
         self
     }
 
@@ -2914,6 +2965,22 @@ impl<'a> ServiceContext<'a> {
         }
 
         Err(self.missing_reader_error("daily_readiness_context_reader"))
+    }
+
+    pub async fn read_briefing_callouts_for_date(
+        &self,
+        workspace_scope: String,
+        date: String,
+        limit: usize,
+    ) -> Result<Vec<BriefingCalloutSnapshot>, BriefingCalloutReadError> {
+        let Some(reader) = &self.briefing_callout_reader else {
+            return Err(BriefingCalloutReadError::ReadFailed(
+                self.missing_reader_error("briefing_callout_reader"),
+            ));
+        };
+        reader
+            .read_briefing_callouts_for_date(workspace_scope, date, limit)
+            .await
     }
 
     /// Read active entity-context claims for the caller's actual render context.

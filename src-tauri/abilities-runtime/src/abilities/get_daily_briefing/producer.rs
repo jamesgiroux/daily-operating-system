@@ -39,8 +39,8 @@ use crate::abilities::{
     AbilityCategory, AbilityContext, AbilityError, AbilityErrorKind, AbilityResult, Actor,
 };
 use crate::services::context::{
-    is_customer_facing, DailyReadinessContextSnapshot, DailyReadinessMeetingSnapshot,
-    MeetingPrepStatusReadError, MeetingPrepStatusSnapshot,
+    is_customer_facing, BriefingCalloutSnapshot, DailyReadinessContextSnapshot,
+    DailyReadinessMeetingSnapshot, MeetingPrepStatusReadError, MeetingPrepStatusSnapshot,
 };
 use crate::types::{ClaimSensitivity, ClaimState};
 
@@ -49,6 +49,7 @@ const ABILITY_NAME: &str = "get_daily_briefing";
 /// Hard cap on `upcoming_meetings.items` per page. AC-507.10 cursor pagination
 /// kicks in when the readiness context returns more than this.
 const UPCOMING_MEETINGS_PAGE_SIZE: usize = 25;
+const BRIEFING_CALLOUT_LIMIT: usize = 10;
 
 pub async fn build_daily_briefing(
     ctx: &AbilityContext<'_>,
@@ -88,11 +89,22 @@ pub async fn build_daily_briefing(
         }
     };
 
+    let (callouts, callout_read_failure) =
+        read_briefing_callouts(ctx, workspace_id, date_str.clone()).await;
+    let watch_proposals = project_watch_proposals(&callouts);
+    let callout_source_asof_inputs = project_callout_source_asof_inputs(&callouts);
+
     let mut meetings: Vec<&DailyReadinessMeetingSnapshot> = readiness.meetings.iter().collect();
     sort_meeting_snapshots(&mut meetings);
 
     if meetings.is_empty() {
-        return empty_no_meetings(&input, workspace_id).into_envelope(ctx, input.schema_version);
+        return empty_no_meetings(
+            &input,
+            workspace_id,
+            watch_proposals,
+            callout_source_asof_inputs,
+        )
+        .into_envelope(ctx, input.schema_version);
     }
 
     // Daily Briefing may run on unusually dense calendar days. Keep the
@@ -164,13 +176,19 @@ pub async fn build_daily_briefing(
         .collect();
 
     // ---- compose: meeting brief refs --------------------------------------
+    let linked_entity_names = linked_entity_names_by_key(&readiness);
     let current_meeting = current_meeting_seed
         .as_ref()
-        .map(|meeting| project_meeting_brief(meeting, prep_snapshots.get(&meeting.id)));
+        .map(|meeting| {
+            project_meeting_brief(meeting, prep_snapshots.get(&meeting.id), &linked_entity_names)
+        });
     let next_meeting = next_meeting_seed
         .as_ref()
-        .map(|meeting| project_meeting_brief(meeting, prep_snapshots.get(&meeting.id)));
-    let upcoming_meetings = project_upcoming_meetings(upcoming_meeting_seeds, &prep_snapshots);
+        .map(|meeting| {
+            project_meeting_brief(meeting, prep_snapshots.get(&meeting.id), &linked_entity_names)
+        });
+    let upcoming_meetings =
+        project_upcoming_meetings(upcoming_meeting_seeds, &prep_snapshots, &linked_entity_names);
     let expanded_meeting_refs = collect_expanded_meeting_refs(
         current_meeting.as_ref(),
         next_meeting.as_ref(),
@@ -246,6 +264,7 @@ pub async fn build_daily_briefing(
         &non_customer_meeting_ids,
         &prep_read_failures,
         &envelope_failures,
+        callout_read_failure.as_deref(),
     );
 
     let state = BriefingState {
@@ -256,10 +275,7 @@ pub async fn build_daily_briefing(
     };
 
     // ---- compose: watch proposals + trust summary -------------------------
-    // W1 substrate: WatchProposal is a contract slot. The producer surfaces
-    // an empty list when no upstream signal substrate has emitted proposals
-    // — never a stub, never synthesized. Consumers see the typed empty.
-    let watch_proposals: Vec<WatchProposal> = Vec::new();
+    source_asof_inputs.extend(callout_source_asof_inputs);
 
     let aggregate_band = aggregate_trust_band(likely_current, use_with_caution, needs_verification);
     let trust_summary = BriefingTrustSummary {
@@ -338,9 +354,65 @@ fn section_or_none<T>(
     }
 }
 
+async fn read_briefing_callouts(
+    ctx: &AbilityContext<'_>,
+    workspace_id: &str,
+    date: String,
+) -> (Vec<BriefingCalloutSnapshot>, Option<String>) {
+    match ctx
+        .services()
+        .read_briefing_callouts_for_date(
+            workspace_id.to_string(),
+            date,
+            BRIEFING_CALLOUT_LIMIT,
+        )
+        .await
+    {
+        Ok(callouts) => (callouts, None),
+        Err(error) => {
+            let message = error.to_string();
+            if message.contains("briefing_callout_reader") {
+                (Vec::new(), None)
+            } else {
+                (Vec::new(), Some(message))
+            }
+        }
+    }
+}
+
+fn project_watch_proposals(callouts: &[BriefingCalloutSnapshot]) -> Vec<WatchProposal> {
+    callouts
+        .iter()
+        .map(|callout| WatchProposal {
+            proposal_id: callout.id.clone(),
+            subject_kind: callout.entity_type.clone(),
+            subject_id: callout.entity_id.clone(),
+            headline: callout.headline.clone(),
+            detail: callout.detail.clone(),
+            severity: callout.severity.clone(),
+            entity_name: callout.entity_name.clone(),
+            source_asof: Some(callout.created_at.clone()),
+            claim_id: callout.claim_id.clone(),
+            trust_band: TrustBand::NeedsVerification,
+            sensitivity: ClaimSensitivity::Public,
+        })
+        .collect()
+}
+
+fn project_callout_source_asof_inputs(callouts: &[BriefingCalloutSnapshot]) -> Vec<SourceAsofRef> {
+    callouts
+        .iter()
+        .map(|callout| SourceAsofRef {
+            source: format!("briefing_callout:{}", callout.id),
+            as_of: callout.created_at.clone(),
+        })
+        .collect()
+}
+
 fn project_meeting_brief(
     meeting: &DailyReadinessMeetingSnapshot,
     prep: Option<&MeetingPrepStatusSnapshot>,
+    linked_entity_names: &BTreeMap<(String, String), String>,
 ) -> MeetingBriefRef {
     let (
         prep_status,
@@ -365,6 +437,11 @@ fn project_meeting_brief(
         title: Some(meeting.title.clone()),
         starts_at: meeting.starts_at.clone(),
         ends_at: meeting.ends_at.clone(),
+        linked_entity_name: linked_entity_name(
+            linked_entity_type.as_deref(),
+            linked_entity_id.as_deref(),
+            linked_entity_names,
+        ),
         linked_entity_type,
         linked_entity_id,
         prep_status,
@@ -372,6 +449,30 @@ fn project_meeting_brief(
         stale_reason,
         last_prepared_at,
     }
+}
+
+fn linked_entity_name(
+    entity_type: Option<&str>,
+    entity_id: Option<&str>,
+    linked_entity_names: &BTreeMap<(String, String), String>,
+) -> Option<String> {
+    let key = (entity_type?.to_string(), entity_id?.to_string());
+    linked_entity_names.get(&key).cloned()
+}
+
+fn linked_entity_names_by_key(
+    readiness: &DailyReadinessContextSnapshot,
+) -> BTreeMap<(String, String), String> {
+    readiness
+        .tracked_subjects
+        .iter()
+        .map(|subject| {
+            (
+                (subject.kind.clone(), subject.id.clone()),
+                subject.display_name.clone(),
+            )
+        })
+        .collect()
 }
 
 fn sort_meeting_snapshots(meetings: &mut Vec<&DailyReadinessMeetingSnapshot>) {
@@ -598,12 +699,15 @@ fn paginate_upcoming_snapshots(
 fn project_upcoming_meetings(
     page: Paginated<DailyReadinessMeetingSnapshot>,
     prep_snapshots: &BTreeMap<String, MeetingPrepStatusSnapshot>,
+    linked_entity_names: &BTreeMap<(String, String), String>,
 ) -> Paginated<MeetingBriefRef> {
     Paginated {
         items: page
             .items
             .iter()
-            .map(|meeting| project_meeting_brief(meeting, prep_snapshots.get(&meeting.id)))
+            .map(|meeting| {
+                project_meeting_brief(meeting, prep_snapshots.get(&meeting.id), linked_entity_names)
+            })
             .collect(),
         next_cursor: page.next_cursor,
         total_hint: page.total_hint,
@@ -697,6 +801,7 @@ fn derive_advisories(
     non_customer_meeting_ids: &std::collections::HashSet<String>,
     prep_read_failures: &[String],
     envelope_failures: &[String],
+    callout_read_failure: Option<&str>,
 ) -> Vec<BriefingAdvisory> {
     let mut advisories = Vec::new();
     let unlinked = meetings
@@ -726,6 +831,11 @@ fn derive_advisories(
                 "{} entity envelope read(s) failed; trust summary degraded",
                 envelope_failures.len()
             ),
+        });
+    }
+    if let Some(message) = callout_read_failure {
+        advisories.push(BriefingAdvisory::PartialReadFailure {
+            advisory: format!("briefing attention read failed; {message}"),
         });
     }
     for warning in &readiness.coverage_warnings {
@@ -782,11 +892,16 @@ fn empty_workspace_unknown(
         advisories: vec![BriefingAdvisory::PartialReadFailure { advisory }],
     };
     EmptyEnvelopeSeed {
-        output: empty_envelope(input, workspace_id, state),
+        output: empty_envelope(input, workspace_id, state, Vec::new(), Vec::new()),
     }
 }
 
-fn empty_no_meetings(input: &DailyBriefingInput, workspace_id: &str) -> EmptyEnvelopeSeed {
+fn empty_no_meetings(
+    input: &DailyBriefingInput,
+    workspace_id: &str,
+    watch_proposals: Vec<WatchProposal>,
+    source_asof_inputs: Vec<SourceAsofRef>,
+) -> EmptyEnvelopeSeed {
     let state = BriefingState {
         availability: BriefingAvailability::Empty {
             reason: BriefingEmptyReason::NoMeetings,
@@ -796,7 +911,7 @@ fn empty_no_meetings(input: &DailyBriefingInput, workspace_id: &str) -> EmptyEnv
         advisories: Vec::new(),
     };
     EmptyEnvelopeSeed {
-        output: empty_envelope(input, workspace_id, state),
+        output: empty_envelope(input, workspace_id, state, watch_proposals, source_asof_inputs),
     }
 }
 
@@ -804,6 +919,8 @@ fn empty_envelope(
     input: &DailyBriefingInput,
     workspace_id: &str,
     state: BriefingState,
+    watch_proposals: Vec<WatchProposal>,
+    source_asof_inputs: Vec<SourceAsofRef>,
 ) -> DailyBriefingOutput {
     DailyBriefingOutput {
         schema_version: BRIEFING_SCHEMA_VERSION,
@@ -820,11 +937,11 @@ fn empty_envelope(
                 input.date, workspace_id
             ),
         },
-        watch_proposals: Vec::new(),
+        watch_proposals,
         trust_summary: BriefingTrustSummary::unscored(),
         provenance: EnvelopeProvenance::empty(),
         sensitivity: ClaimSensitivity::Public,
-        source_asof_inputs: Vec::new(),
+        source_asof_inputs,
     }
 }
 
@@ -983,10 +1100,11 @@ mod state_matrix_fixtures {
     use crate::abilities::NOOP_ABILITY_TRACER;
     use crate::intelligence::provider::ReplayProvider;
     use crate::services::context::{
-        ClaimDismissalSurface, DailyReadinessContextReadFuture, DailyReadinessContextReadHandle,
-        EntityContextClaimReadFuture, EntityContextClaimReadHandle, ExternalClients, FixedClock,
-        MeetingPrepStatusReadFuture, MeetingPrepStatusReadHandle, MeetingsViewIntent, SeedableRng,
-        ServiceContext,
+        BriefingCalloutReadFuture, BriefingCalloutReadHandle, ClaimDismissalSurface,
+        DailyReadinessContextReadFuture, DailyReadinessContextReadHandle,
+        DailyReadinessSubjectSnapshot, EntityContextClaimReadFuture, EntityContextClaimReadHandle,
+        ExternalClients, FixedClock, MeetingPrepStatusReadFuture, MeetingPrepStatusReadHandle,
+        MeetingsViewIntent, SeedableRng, ServiceContext,
     };
     use crate::types::IntelligenceClaim;
     use chrono::TimeZone;
@@ -1069,6 +1187,23 @@ mod state_matrix_fixtures {
                 .expect("record limited entity claim read")
                 .push(entity_id);
             Box::pin(async move { Ok(Vec::<IntelligenceClaim>::new()) })
+        }
+    }
+
+    #[derive(Clone)]
+    struct FixtureBriefingCalloutReader {
+        callouts: Vec<BriefingCalloutSnapshot>,
+    }
+
+    impl BriefingCalloutReadHandle for FixtureBriefingCalloutReader {
+        fn read_briefing_callouts_for_date<'a>(
+            &'a self,
+            _workspace_scope: String,
+            _date: String,
+            _limit: usize,
+        ) -> BriefingCalloutReadFuture<'a> {
+            let callouts = self.callouts.clone();
+            Box::pin(async move { Ok(callouts) })
         }
     }
 
@@ -1406,6 +1541,103 @@ mod state_matrix_fixtures {
         );
     }
 
+    #[tokio::test]
+    async fn daily_briefing_producer_maps_callouts_to_attention_proposals() {
+        let snapshot = DailyReadinessContextSnapshot {
+            workspace_scope: "local".to_string(),
+            date: "2026-05-20".to_string(),
+            meetings: vec![daily_meeting(
+                "meeting-1",
+                Some("2026-05-20T11:30:00Z".to_string()),
+            )],
+            tracked_subjects: vec![DailyReadinessSubjectSnapshot {
+                kind: "account".to_string(),
+                id: "acct-meeting-1".to_string(),
+                display_name: "Example Account".to_string(),
+                workspace_scope: "local".to_string(),
+            }],
+            overnight_changes: Vec::new(),
+            risk_shifts: Vec::new(),
+            open_loops: Vec::new(),
+            coverage_warnings: Vec::new(),
+        };
+        let callout = BriefingCalloutSnapshot {
+            id: "callout-1".to_string(),
+            headline: "Champion going cold".to_string(),
+            detail: Some("No contact in 30 days".to_string()),
+            severity: "warning".to_string(),
+            entity_name: Some("Example Account".to_string()),
+            entity_type: "account".to_string(),
+            entity_id: "acct-meeting-1".to_string(),
+            created_at: "2026-05-20T08:00:00Z".to_string(),
+            claim_id: Some("claim-1".to_string()),
+        };
+        let clock = FixedClock::new(
+            chrono::Utc
+                .with_ymd_and_hms(2026, 5, 20, 10, 30, 0)
+                .unwrap(),
+        );
+        let rng = SeedableRng::new(508);
+        let external = ExternalClients::default();
+        let services = ServiceContext::test_live(&clock, &rng, &external)
+            .with_daily_readiness_context_reader(Arc::new(FixtureDailyReadinessReader { snapshot }))
+            .with_meeting_prep_status_reader(Arc::new(RecordingPrepReader {
+                seen: Arc::new(Mutex::new(Vec::new())),
+            }))
+            .with_entity_context_claim_reader(Arc::new(RecordingClaimReader {
+                seen: Arc::new(Mutex::new(Vec::new())),
+            }))
+            .with_briefing_callout_reader(Arc::new(FixtureBriefingCalloutReader {
+                callouts: vec![callout],
+            }));
+        let provider = ReplayProvider::new(HashMap::new());
+        let ctx = AbilityContext::new(
+            &services,
+            &provider,
+            &NOOP_ABILITY_TRACER,
+            Actor::User,
+            None,
+            ClaimDismissalSurface::TauriEntityDetail,
+        );
+
+        let output = build_daily_briefing(
+            &ctx,
+            DailyBriefingInput {
+                schema_version: BRIEFING_SCHEMA_VERSION,
+                date: chrono::NaiveDate::from_ymd_opt(2026, 5, 20).unwrap(),
+                workspace_id: "local".to_string(),
+                sections: None,
+                upcoming_meetings_cursor: None,
+            },
+        )
+        .await
+        .expect("daily briefing builds")
+        .into_data();
+
+        let proposal = output
+            .watch_proposals
+            .first()
+            .expect("callout projected into watch proposals");
+        assert_eq!(proposal.proposal_id, "callout-1");
+        assert_eq!(proposal.headline, "Champion going cold");
+        assert_eq!(proposal.detail.as_deref(), Some("No contact in 30 days"));
+        assert_eq!(proposal.severity, "warning");
+        assert_eq!(proposal.entity_name.as_deref(), Some("Example Account"));
+        assert_eq!(proposal.subject_kind, "account");
+        assert_eq!(proposal.subject_id, "acct-meeting-1");
+        assert_eq!(proposal.source_asof.as_deref(), Some("2026-05-20T08:00:00Z"));
+        assert_eq!(proposal.claim_id.as_deref(), Some("claim-1"));
+        assert_eq!(proposal.trust_band, TrustBand::NeedsVerification);
+        assert!(output.source_asof_inputs.iter().any(|source| {
+            source.source == "briefing_callout:callout-1"
+                && source.as_of == "2026-05-20T08:00:00Z"
+        }));
+        assert_eq!(
+            output.next_meeting.as_ref().unwrap().linked_entity_name.as_deref(),
+            Some("Example Account")
+        );
+    }
+
     #[test]
     fn daily_briefing_entity_sections_omit_open_loops_for_aggregate_pass() {
         assert_eq!(
@@ -1496,7 +1728,7 @@ mod state_matrix_fixtures {
         .map(|s| s.to_string())
         .collect();
 
-        let advisories = derive_advisories(&readiness, &meetings, &non_customer, &[], &[]);
+        let advisories = derive_advisories(&readiness, &meetings, &non_customer, &[], &[], None);
 
         // Only the customer meeting should appear in the unlinked advisory.
         // Pre-fix this would have produced "Link 5 meetings" — the bug shape.
@@ -1535,7 +1767,7 @@ mod state_matrix_fixtures {
             .map(|s| s.to_string())
             .collect();
 
-        let advisories = derive_advisories(&readiness, &meetings, &non_customer, &[], &[]);
+        let advisories = derive_advisories(&readiness, &meetings, &non_customer, &[], &[], None);
 
         let has_unlinked = advisories
             .iter()
@@ -1555,6 +1787,7 @@ mod state_matrix_fixtures {
             ends_at: Some("2026-05-28T10:30:00Z".to_string()),
             linked_entity_type: None,
             linked_entity_id: None,
+            linked_entity_name: None,
             prep_status: "prep_needed".to_string(),
             blocking_reason: None,
             stale_reason: None,

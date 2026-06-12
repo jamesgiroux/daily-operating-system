@@ -4,6 +4,7 @@ import { act, renderHook, waitFor } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { invoke } from "@tauri-apps/api/core";
 import {
+  __clearProjectedCompositionCacheForTests,
   compositionIdForSubject,
   useProjectedComposition,
   type CompositionSubjectKind,
@@ -60,6 +61,7 @@ function response(
 describe("useProjectedComposition", () => {
   beforeEach(() => {
     invokeMock.mockReset();
+    __clearProjectedCompositionCacheForTests();
   });
 
   it.each([
@@ -240,6 +242,32 @@ describe("useProjectedComposition", () => {
 
     await waitFor(() => expect(result.current.loading).toBe(false));
     expect(result.current.data?.request_id).toBe("second-request");
+  });
+
+  it("keeps cached same-composition data visible on remount while refetching", async () => {
+    const second = deferred<ProjectedCompositionCommandResponse>();
+    invokeMock
+      .mockResolvedValueOnce(response({ accountId: "acct-a", requestId: "first-request", version: 1 }))
+      .mockReturnValueOnce(second.promise);
+
+    const firstHook = renderHook(() => useProjectedComposition("acct-a"));
+
+    await waitFor(() => expect(firstHook.result.current.data?.request_id).toBe("first-request"));
+    firstHook.unmount();
+
+    const remountedHook = renderHook(() => useProjectedComposition("acct-a"));
+
+    expect(remountedHook.result.current.loading).toBe(true);
+    expect(remountedHook.result.current.data?.request_id).toBe("first-request");
+    await waitFor(() => expect(invokeMock).toHaveBeenCalledTimes(2));
+
+    await act(async () => {
+      second.resolve(response({ accountId: "acct-a", requestId: "second-request", version: 2 }));
+      await second.promise;
+    });
+
+    await waitFor(() => expect(remountedHook.result.current.loading).toBe(false));
+    expect(remountedHook.result.current.data?.request_id).toBe("second-request");
   });
 
   it("surfaces first-load errors instead of keeping the account loading", async () => {

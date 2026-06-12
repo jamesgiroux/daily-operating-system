@@ -78,6 +78,7 @@ pub struct LiveActionCompositionSnapshotReader;
 pub struct LiveMeetingCompositionSnapshotReader;
 pub struct LivePrepareMeetingContextReader;
 pub struct LiveDailyReadinessContextReader;
+pub struct LiveBriefingCalloutReader;
 pub struct LiveTemporalWorkspaceReader;
 pub struct LiveCompositionCommitter;
 /// Live adapter projecting `services::meeting_prep_status::read`
@@ -141,6 +142,7 @@ pub fn attach_live_workspace_readers_with_signal_engine(
         ))
         .with_prepare_meeting_context_reader(Arc::new(LivePrepareMeetingContextReader))
         .with_daily_readiness_context_reader(Arc::new(LiveDailyReadinessContextReader))
+        .with_briefing_callout_reader(Arc::new(LiveBriefingCalloutReader))
         .with_trajectory_reader(Arc::new(LiveTemporalWorkspaceReader))
         .with_temporal_maintenance(Arc::new(LiveTemporalWorkspaceReader))
         .with_composition_commit_handle(Arc::new(LiveCompositionCommitter))
@@ -3632,6 +3634,178 @@ impl DailyReadinessContextReadHandle for LiveDailyReadinessContextReader {
             .map_err(|error| format!("daily readiness context read task failed: {error}"))?
         })
     }
+}
+
+impl BriefingCalloutReadHandle for LiveBriefingCalloutReader {
+    fn read_briefing_callouts_for_date<'a>(
+        &'a self,
+        workspace_scope: String,
+        date: String,
+        limit: usize,
+    ) -> BriefingCalloutReadFuture<'a> {
+        let tz: chrono_tz::Tz = crate::state::load_config()
+            .ok()
+            .map(|c| c.schedules.today.timezone)
+            .and_then(|t| t.parse().ok())
+            .unwrap_or(chrono_tz::America::New_York);
+        Box::pin(async move {
+            tokio::task::spawn_blocking(move || {
+                let db = open_action_db().map_err(BriefingCalloutReadError::ReadFailed)?;
+                project_briefing_callouts_for_date(&db, &workspace_scope, &date, &tz, limit)
+                    .map_err(BriefingCalloutReadError::ReadFailed)
+            })
+            .await
+            .map_err(|error| {
+                BriefingCalloutReadError::ReadFailed(format!(
+                    "briefing callout read task failed: {error}"
+                ))
+            })?
+        })
+    }
+}
+
+fn project_briefing_callouts_for_date(
+    db: &crate::db::ActionDb,
+    workspace_scope: &str,
+    date: &str,
+    tz: &chrono_tz::Tz,
+    limit: usize,
+) -> Result<Vec<BriefingCalloutSnapshot>, String> {
+    if workspace_scope.trim().is_empty() {
+        return Err("workspace_scope must be non-empty".to_string());
+    }
+    let parsed_date = chrono::NaiveDate::parse_from_str(date, "%Y-%m-%d")
+        .map_err(|error| format!("invalid briefing callout date `{date}`: {error}"))?;
+    let next_date = parsed_date
+        .succ_opt()
+        .ok_or_else(|| format!("invalid briefing callout date `{date}`"))?;
+    let start_naive = parsed_date
+        .and_hms_opt(0, 0, 0)
+        .ok_or_else(|| format!("invalid briefing callout date `{date}`"))?;
+    let end_naive = next_date
+        .and_hms_opt(0, 0, 0)
+        .ok_or_else(|| format!("invalid briefing callout date `{date}`"))?;
+    let start_utc = local_datetime_to_utc(tz, start_naive, date)?;
+    let end_utc = local_datetime_to_utc(tz, end_naive, date)?;
+    let limit = limit.min(100) as i64;
+
+    let sql = "
+        SELECT bc.id,
+               bc.entity_id,
+               bc.entity_type,
+               bc.entity_name,
+               bc.severity,
+               bc.headline,
+               bc.detail,
+               bc.created_at,
+               se.value,
+               se.source_context
+          FROM briefing_callouts bc
+          LEFT JOIN signal_events se ON se.id = bc.signal_id
+         WHERE bc.dismissed_at IS NULL
+           AND datetime(bc.created_at) >= datetime(?1)
+           AND datetime(bc.created_at) < datetime(?2)
+         ORDER BY
+           CASE bc.severity WHEN 'critical' THEN 0 WHEN 'warning' THEN 1 ELSE 2 END,
+           datetime(bc.created_at) DESC
+         LIMIT ?3";
+    let mut stmt = db
+        .conn_ref()
+        .prepare(sql)
+        .map_err(|error| format!("prepare briefing callout query: {error}"))?;
+    let rows = stmt
+        .query_map(
+            rusqlite::params![start_utc.to_rfc3339(), end_utc.to_rfc3339(), limit],
+            |row| {
+                let signal_value: Option<String> = row.get(8)?;
+                let source_context: Option<String> = row.get(9)?;
+                Ok(BriefingCalloutSnapshot {
+                    id: row.get(0)?,
+                    entity_id: row.get(1)?,
+                    entity_type: row.get(2)?,
+                    entity_name: row.get(3)?,
+                    severity: row.get(4)?,
+                    headline: row.get(5)?,
+                    detail: row.get(6)?,
+                    created_at: row.get(7)?,
+                    claim_id: extract_callout_claim_id(signal_value.as_deref())
+                        .or_else(|| extract_callout_claim_id(source_context.as_deref())),
+                })
+            },
+        )
+        .map_err(|error| format!("query briefing callouts: {error}"))?;
+
+    rows.collect::<Result<Vec<_>, _>>()
+        .map_err(|error| format!("map briefing callouts: {error}"))
+}
+
+fn local_datetime_to_utc(
+    tz: &chrono_tz::Tz,
+    value: chrono::NaiveDateTime,
+    date: &str,
+) -> Result<chrono::DateTime<chrono::Utc>, String> {
+    use chrono::TimeZone;
+
+    tz.from_local_datetime(&value)
+        .earliest()
+        .map(|value| value.with_timezone(&chrono::Utc))
+        .ok_or_else(|| format!("invalid local briefing callout boundary for `{date}`"))
+}
+
+fn extract_callout_claim_id(raw: Option<&str>) -> Option<String> {
+    let raw = raw?.trim();
+    if raw.is_empty() {
+        return None;
+    }
+    if let Ok(value) = serde_json::from_str::<serde_json::Value>(raw) {
+        return claim_id_from_value(&value);
+    }
+    raw.strip_prefix("claim:")
+        .or_else(|| raw.strip_prefix("claim_id="))
+        .map(str::trim)
+        .map(first_token)
+        .filter(|value| !value.is_empty())
+        .map(ToString::to_string)
+}
+
+fn first_token(value: &str) -> &str {
+    value
+        .split_whitespace()
+        .next()
+        .unwrap_or(value)
+        .trim_end_matches([',', ';'])
+}
+
+fn claim_id_from_value(value: &serde_json::Value) -> Option<String> {
+    for key in ["claim_id", "claimId", "canonical_claim_id"] {
+        if let Some(claim_id) = value.get(key).and_then(serde_json::Value::as_str) {
+            let claim_id = claim_id.trim();
+            if !claim_id.is_empty() {
+                return Some(claim_id.to_string());
+            }
+        }
+    }
+    if let Some(claim_id) = value
+        .get("target_ref")
+        .and_then(|target| target.get("claim_id"))
+        .and_then(serde_json::Value::as_str)
+    {
+        let claim_id = claim_id.trim();
+        if !claim_id.is_empty() {
+            return Some(claim_id.to_string());
+        }
+    }
+    value
+        .get("claim_ids")
+        .and_then(serde_json::Value::as_array)
+        .and_then(|items| {
+            items
+                .iter()
+                .filter_map(serde_json::Value::as_str)
+                .map(str::trim)
+                .find(|claim_id| !claim_id.is_empty())
+        })
+        .map(ToString::to_string)
 }
 
 fn project_daily_readiness_context_snapshot(

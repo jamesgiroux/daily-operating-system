@@ -66,6 +66,30 @@
   color: var(--color-text-secondary);
 }
 
+.DailyBriefing_projectedCompositionSection {
+  margin-top: 10px;
+}
+
+.DailyBriefing_projectedCompositionStack {
+  display: grid;
+  gap: 22px;
+}
+
+.DailyBriefing_projectedCompositionGroup {
+  display: grid;
+  gap: 10px;
+}
+
+.DailyBriefing_projectedCompositionLabel {
+  margin: 0;
+  font-family: var(--font-mono);
+  font-size: 11px;
+  line-height: 1.4;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: var(--color-text-tertiary);
+}
+
 /* ─────────────────────────────────────────────────────────────────────────────
    LIFECYCLE CORRECTION MODAL
    ───────────────────────────────────────────────────────────────────────────── */
