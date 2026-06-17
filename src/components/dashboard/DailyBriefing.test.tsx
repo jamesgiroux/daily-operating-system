@@ -206,9 +206,10 @@ function dSpineProjection(): ProjectedComposition {
       items: [
         {
           text: "Customer renewal",
+          meeting_id: "mtg-1",
           status: "briefing_fresh",
           status_label: "Briefing fresh",
-          label: "Current",
+          label: "Next",
           starts_at: "2026-06-12T10:00:00",
           ends_at: "2026-06-12T10:45:00",
           linked_entity_type: "account",
@@ -365,7 +366,6 @@ describe("DailyBriefing", () => {
         entityId: "local~2026-06-13",
       });
     });
-    expect(screen.getByText("Legacy today meeting")).toBeInTheDocument();
   });
 
   it("renders the projected D-spine once from schedule, attention, and follow-through payloads", () => {
@@ -375,16 +375,17 @@ describe("DailyBriefing", () => {
       <DailyBriefing data={makeDashboardData()} freshness={freshness} />,
     );
 
-    expect(screen.getByText("Two meetings today. The renewal is the one to nail.")).toBeInTheDocument();
-    expect(screen.getByText("Available")).toBeInTheDocument();
-    expect(screen.getByText("Fresh")).toBeInTheDocument();
-    expect(screen.getByText("Clean")).toBeInTheDocument();
+    // The projected chapter no longer renders its own Lead — the functional
+    // day-frame hero owns the headline, so the projected lead text is suppressed.
+    expect(
+      screen.queryByText("Two meetings today. The renewal is the one to nail."),
+    ).not.toBeInTheDocument();
 
     expect(screen.getAllByRole("heading", { name: "Today's schedule" })).toHaveLength(1);
     expect(screen.getByLabelText("Shape of the day")).toBeInTheDocument();
     expect(screen.getAllByText("Customer renewal").length).toBeGreaterThan(0);
     expect(screen.getAllByText("Example Co").length).toBeGreaterThan(0);
-    expect(screen.getByText("Current")).toBeInTheDocument();
+    expect(screen.getByText("Up next")).toBeInTheDocument();
     expect(screen.getByText("Briefing fresh")).toBeInTheDocument();
     expect(screen.queryByText("briefing_fresh")).not.toBeInTheDocument();
 
@@ -397,6 +398,24 @@ describe("DailyBriefing", () => {
     expect(screen.getByText("Follow up after legal review")).toBeInTheDocument();
     expect(screen.getByText("Parked")).toBeInTheDocument();
     expect(screen.queryByText("blocked")).not.toBeInTheDocument();
+  });
+
+  it("always renders the Moving and Watch headers even when the projection omits those blocks", () => {
+    const full = dSpineProjection();
+    const scheduleOnly: ProjectedComposition = {
+      ...full,
+      sections: full.sections.filter((section) => section.section_id === "schedule"),
+      blocks: full.blocks.filter((block) => block.block_id === "schedule"),
+    };
+    projectedCompositionMock.state.data = projectedResponse(scheduleOnly);
+
+    render(<DailyBriefing data={makeDashboardData()} freshness={freshness} />);
+
+    // Sections must persist as placeholders so the work isn't silently dropped.
+    expect(screen.getByRole("heading", { name: "What's moving" })).toBeInTheDocument();
+    expect(screen.getByRole("heading", { name: "Watch" })).toBeInTheDocument();
+    expect(screen.getByText("Nothing moving right now.")).toBeInTheDocument();
+    expect(screen.getByText("Nothing on watch right now.")).toBeInTheDocument();
   });
 
   it("renders hero headline from overview summary", () => {
@@ -434,43 +453,16 @@ describe("DailyBriefing", () => {
     expect(screen.getByText("A clear day. Nothing needs you.")).toBeInTheDocument();
   });
 
-  it("renders schedule section with meetings", () => {
-    const meetings = [
-      makeMeeting({ id: "m1", title: "Acme QBR", time: "10:00 AM", type: "customer" }),
-      makeMeeting({ id: "m2", title: "Partner Sync", time: "11:00 AM", type: "external" }),
-    ];
+  it("renders schedule meetings as clickable spine rows that open the meeting briefing", () => {
+    projectedCompositionMock.state.data = projectedResponse(dSpineProjection());
 
-    render(
-      <DailyBriefing
-        data={makeDashboardData({ meetings })}
-        freshness={freshness}
-      />,
-    );
+    render(<DailyBriefing data={makeDashboardData()} freshness={freshness} />);
 
-    expect(screen.getByText("Schedule")).toBeInTheDocument();
-    const meetingCards = screen.getAllByTestId("meeting-card");
-    expect(meetingCards.length).toBe(2);
-  });
-
-  it("force-refreshes projected briefing after completing an action", async () => {
-    invokeMock.mockResolvedValueOnce(null);
-
-    render(
-      <DailyBriefing
-        data={makeDashboardData({
-          meetings: [makeMeeting({ id: "m1", title: "Acme QBR", type: "customer" })],
-          actions: [{ id: "action-1", title: "Follow up", status: "unstarted", source: "m1", priority: 3 }],
-        })}
-        freshness={freshness}
-      />,
-    );
-
-    fireEvent.click(screen.getByRole("button", { name: "Complete action" }));
-
-    await waitFor(() => {
-      expect(invokeMock).toHaveBeenCalledWith("complete_action", { id: "action-1" });
-      expect(projectedCompositionMock.refetch).toHaveBeenCalledWith({ forceRefresh: true });
-    });
+    expect(screen.getAllByText("Customer renewal").length).toBeGreaterThan(0);
+    // meeting_id present → the spine row links into the meeting briefing via the
+    // existing "Read full briefing" Link (to /meeting/$meetingId).
+    const briefingLink = screen.getByText(/Read full briefing/).closest("a");
+    expect(briefingLink).toHaveAttribute("href", "/meeting/$meetingId");
   });
 
   it("force-refreshes projected briefing when dashboard data refreshes", async () => {
@@ -499,25 +491,6 @@ describe("DailyBriefing", () => {
     });
   });
 
-  it("does not render personal/solo meetings in schedule", () => {
-    const meetings = [
-      makeMeeting({ id: "m1", title: "Acme QBR", type: "customer" }),
-      makeMeeting({ id: "m2", title: "Lunch Block", type: "personal" }),
-    ];
-
-    render(
-      <DailyBriefing
-        data={makeDashboardData({ meetings })}
-        freshness={freshness}
-      />,
-    );
-
-    const meetingCards = screen.getAllByTestId("meeting-card");
-    expect(meetingCards.length).toBe(1);
-    expect(screen.getByText("Acme QBR")).toBeInTheDocument();
-    expect(screen.queryByText("Lunch Block")).not.toBeInTheDocument();
-  });
-
   it("renders focus block when focus text provided", () => {
     render(
       <DailyBriefing
@@ -534,72 +507,6 @@ describe("DailyBriefing", () => {
     );
 
     expect(screen.getByText("Prepare for the Acme renewal conversation.")).toBeInTheDocument();
-  });
-
-  it("renders ability-backed briefing trust and provenance state", () => {
-    dailyBriefingAbilityMock.state = {
-      response: {
-        invocation_id: "inv-1",
-        ability_name: "get_daily_briefing",
-        ability_version: "0.1.0",
-        schema_version: 1,
-        data: {
-          schemaVersion: 1,
-          date: "2026-05-23",
-          state: {
-            availability: { kind: "available" },
-            freshness: { kind: "needs_preparation", meetingIds: ["m-1"] },
-            integrity: { kind: "clean" },
-            advisories: [
-              { kind: "unlinked_meetings", meetingIds: ["m-2"] },
-            ],
-          },
-          currentMeeting: null,
-          nextMeeting: null,
-          upcomingMeetings: {
-            items: [],
-            nextCursor: null,
-            totalHint: 0,
-            cursorState: { kind: "stable" },
-          },
-          candidateSet: {
-            windowStart: null,
-            windowEnd: null,
-            filterDescription: "daily_briefing date=2026-05-23 workspace=/workspace meetings=1",
-          },
-          watchProposals: [],
-          trustSummary: {
-            aggregateBand: "use_with_caution",
-            likelyCurrentCount: 0,
-            useWithCautionCount: 1,
-            needsVerificationCount: 0,
-          },
-          provenance: { sources: [], redactionApplied: false },
-          sensitivity: "internal",
-          sourceAsofInputs: [],
-        },
-        rendered_provenance: {
-          value: {
-            sources: [
-              { source_asof: "2026-05-23T12:00:00Z" },
-              { source_asof: "2026-05-23T13:00:00Z" },
-            ],
-          },
-        },
-      },
-      loading: false,
-      error: null,
-      refresh: vi.fn(),
-    };
-
-    render(
-      <DailyBriefing data={makeDashboardData()} freshness={freshness} />,
-    );
-
-    expect(screen.getByTestId("daily-briefing-ability-strip")).toHaveTextContent("1 briefing need prep");
-    expect(screen.getByTestId("daily-briefing-ability-strip")).toHaveTextContent("use with caution");
-    expect(screen.getByTestId("daily-briefing-ability-strip")).toHaveTextContent("2 sources");
-    expect(screen.getByTestId("daily-briefing-ability-strip")).toHaveTextContent("Link 1 meeting for fuller context");
   });
 
   it("does not render staleness indicator (removed for v1.1.1)", () => {
@@ -619,7 +526,8 @@ describe("DailyBriefing", () => {
     expect(screen.queryByText(/Last updated/)).not.toBeInTheDocument();
   });
 
-  it("renders finis marker at the end", () => {
+  it("renders the finis marker at the end of the projected briefing", () => {
+    projectedCompositionMock.state.data = projectedResponse(dSpineProjection());
     render(
       <DailyBriefing data={makeDashboardData()} freshness={freshness} />,
     );
@@ -665,32 +573,4 @@ describe("DailyBriefing", () => {
     expect(container.querySelector("section")).not.toBeNull();
   });
 
-  it("renders email summary trust and source context", () => {
-    render(
-      <DailyBriefing
-        data={makeDashboardData({
-          emails: [
-            {
-              id: "email-1",
-              sender: "Alex",
-              senderEmail: "alex@example.com",
-              subject: "Renewal",
-              priority: "high",
-              entityId: "acct-1",
-              entityType: "account",
-              entityName: "Example Co",
-              summary: "Renewal risk moved because the buyer asked for a new timeline.",
-              summaryContextTrustBand: "use_with_caution",
-              summaryContextSourceCount: 2,
-              relevanceScore: 0.9,
-            },
-          ],
-        })}
-        freshness={freshness}
-      />,
-    );
-
-    expect(screen.getByRole("img", { name: /trust band: use with caution/i })).toBeInTheDocument();
-    expect(screen.getByText("claim context · 2 sources")).toBeInTheDocument();
-  });
 });

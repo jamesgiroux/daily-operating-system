@@ -141,6 +141,11 @@
   letter-spacing: 0;
   line-height: 1.55;
   color: var(--color-text-secondary);
+  display: -webkit-box;
+  -webkit-line-clamp: 3;
+  line-clamp: 3;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
 }
 
 .footer {
@@ -184,12 +189,15 @@
 }
 
 .createButton {
+  display: inline-flex;
+  align-items: center;
   min-height: 28px;
   padding: 0 10px;
   border: 1px solid var(--color-rule-heavy);
   border-radius: var(--radius-editorial-sm);
   background: var(--color-paper-warm-white);
   color: var(--color-text-primary);
+  text-decoration: none;
   cursor: pointer;
   transition: background var(--transition-normal), border-color var(--transition-normal);
 }

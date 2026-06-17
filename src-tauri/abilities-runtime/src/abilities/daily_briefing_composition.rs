@@ -365,17 +365,37 @@ fn meetings_attributes(briefing: &DailyBriefingOutput) -> Value {
 
 fn meeting_item(label: &str, meeting: &MeetingBriefRef) -> Value {
     json!({
+        "meeting_id": meeting.meeting_id.as_str(),
         "text": meeting.title.as_deref().unwrap_or("Untitled meeting"),
         "status": meeting.prep_status.as_str(),
         "status_label": prep_status_label(meeting.prep_status.as_str()),
         "label": label,
         "starts_at": meeting.starts_at.as_deref(),
         "ends_at": meeting.ends_at.as_deref(),
+        "context": meeting.context_narrative.as_deref(),
+        "attendees": attendees_display(&meeting.attendees),
+        "kind": meeting.kind.as_deref(),
         "linked_entity_type": meeting.linked_entity_type.as_deref(),
         "linked_entity_id": meeting.linked_entity_id.as_deref(),
         "linked_entity_name": meeting.linked_entity_name.as_deref(),
         "source_asof": meeting.last_prepared_at.as_deref(),
     })
+}
+
+fn attendees_display(attendees: &[String]) -> Option<String> {
+    if attendees.is_empty() {
+        return None;
+    }
+    if attendees.len() <= 3 {
+        return Some(attendees.join(", "));
+    }
+    let mut display = attendees
+        .iter()
+        .take(3)
+        .cloned()
+        .collect::<Vec<_>>();
+    display.push(format!("+{}", attendees.len() - 3));
+    Some(display.join(", "))
 }
 
 fn attention_attributes(briefing: &DailyBriefingOutput) -> Value {
@@ -908,6 +928,16 @@ mod tests {
                 title: Some("Customer checkpoint".to_string()),
                 starts_at: Some("2026-06-03T14:00:00Z".to_string()),
                 ends_at: Some("2026-06-03T14:30:00Z".to_string()),
+                context_narrative: Some(
+                    "Renewal risk is low; focus on confirming rollout timing.".to_string(),
+                ),
+                attendees: vec![
+                    "Avery Lee".to_string(),
+                    "Morgan Chen".to_string(),
+                    "Riley Park".to_string(),
+                    "Jordan Smith".to_string(),
+                ],
+                kind: Some("Customer".to_string()),
                 linked_entity_type: Some("account".to_string()),
                 linked_entity_id: Some("acct-1".to_string()),
                 linked_entity_name: Some("Example Account".to_string()),
@@ -985,8 +1015,15 @@ mod tests {
 
         let schedule = meetings_attributes(&briefing);
         let schedule_item = &schedule["items"][0];
+        assert_eq!(schedule_item["meeting_id"], "meeting-1");
         assert_eq!(schedule_item["status"], "blocked_no_entity");
         assert_eq!(schedule_item["status_label"], "No linked account");
+        assert_eq!(
+            schedule_item["context"],
+            "Renewal risk is low; focus on confirming rollout timing."
+        );
+        assert_eq!(schedule_item["attendees"], "Avery Lee, Morgan Chen, Riley Park, +1");
+        assert_eq!(schedule_item["kind"], "Customer");
         assert_eq!(schedule_item["linked_entity_name"], "Example Account");
 
         let follow_through = follow_through_attributes(&briefing);
@@ -1048,11 +1085,15 @@ mod tests {
                 "title": "Meetings",
                 "items": [{
                     "text": "Customer checkpoint",
+                    "meeting_id": "mtg-1",
                     "status": "ready",
                     "status_label": "Ready",
                     "label": "Current",
                     "starts_at": "2026-06-03T00:00:00Z",
                     "linked_entity_name": "Example Account",
+                    "context": "Legal needs final terms language.",
+                    "attendees": "Jen Park, Dan Mitchell",
+                    "kind": "Customer",
                     "source_asof": "2026-06-03T00:00:00Z",
                 }],
                 "trust_band": "likely_current",
@@ -1108,5 +1149,14 @@ mod tests {
             .blocks
             .iter()
             .all(|block| block.trust_band != TrustBand::Unscored));
+
+        // The schedule reuses ActionList; the daily-briefing meeting-row fields
+        // must survive projection or the meeting cards lose their identity
+        // (no click target) and their reference content (context/attendees/kind).
+        let schedule_item = &projection.blocks[1].payload["items"][0];
+        assert_eq!(schedule_item["meeting_id"], "mtg-1");
+        assert_eq!(schedule_item["context"], "Legal needs final terms language.");
+        assert_eq!(schedule_item["attendees"], "Jen Park, Dan Mitchell");
+        assert_eq!(schedule_item["kind"], "Customer");
     }
 }

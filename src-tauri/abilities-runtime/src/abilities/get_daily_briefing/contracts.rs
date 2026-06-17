@@ -82,6 +82,12 @@ pub struct MeetingBriefRef {
     pub title: Option<String>,
     pub starts_at: Option<String>,
     pub ends_at: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub context_narrative: Option<String>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub attendees: Vec<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub kind: Option<String>,
     pub linked_entity_type: Option<String>,
     pub linked_entity_id: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]

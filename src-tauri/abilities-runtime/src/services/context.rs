@@ -871,6 +871,7 @@ pub struct ServiceContext<'a> {
     entity_touchpoints_reader: Option<Arc<dyn EntityTouchpointsReadHandle>>,
     entity_neighborhood_reader: Option<Arc<dyn EntityNeighborhoodReadHandle>>,
     meeting_prep_status_reader: Option<Arc<dyn MeetingPrepStatusReadHandle>>,
+    meeting_prep_narrative_reader: Option<Arc<dyn MeetingPrepNarrativeReadHandle>>,
     claim_receipt_reader: Option<Arc<dyn ClaimReceiptReadHandle>>,
     account_composition_snapshot_reader: Option<Arc<dyn AccountCompositionSnapshotReadHandle>>,
     project_composition_snapshot_reader: Option<Arc<dyn ProjectCompositionSnapshotReadHandle>>,
@@ -2172,6 +2173,20 @@ pub trait MeetingPrepStatusReadHandle: Send + Sync {
     ) -> MeetingPrepStatusReadFuture<'a>;
 }
 
+pub type MeetingPrepNarrativeReadFuture<'a> =
+    Pin<Box<dyn Future<Output = Result<Option<String>, String>> + Send + 'a>>;
+
+/// Narrow read handle attached by the app crate so the `get_daily_briefing`
+/// ability can compose each meeting's prep-context narrative (the
+/// `prep_context_json` summary) into its briefing envelope. Read-only by
+/// contract; the adapter must not perform any mutation.
+pub trait MeetingPrepNarrativeReadHandle: Send + Sync {
+    fn read_meeting_prep_narrative<'a>(
+        &'a self,
+        meeting_id: String,
+    ) -> MeetingPrepNarrativeReadFuture<'a>;
+}
+
 // ---------------------------------------------------------------------------
 // claim_receipt — Read ability dispatch surface
 // ---------------------------------------------------------------------------
@@ -2417,6 +2432,7 @@ impl<'a> ServiceContext<'a> {
             entity_touchpoints_reader: None,
             entity_neighborhood_reader: None,
             meeting_prep_status_reader: None,
+            meeting_prep_narrative_reader: None,
             claim_receipt_reader: None,
             account_composition_snapshot_reader: None,
             project_composition_snapshot_reader: None,
@@ -2465,6 +2481,7 @@ impl<'a> ServiceContext<'a> {
             entity_touchpoints_reader: None,
             entity_neighborhood_reader: None,
             meeting_prep_status_reader: None,
+            meeting_prep_narrative_reader: None,
             claim_receipt_reader: None,
             account_composition_snapshot_reader: None,
             project_composition_snapshot_reader: None,
@@ -2524,6 +2541,7 @@ impl<'a> ServiceContext<'a> {
             entity_touchpoints_reader: None,
             entity_neighborhood_reader: None,
             meeting_prep_status_reader: None,
+            meeting_prep_narrative_reader: None,
             claim_receipt_reader: None,
             account_composition_snapshot_reader: None,
             project_composition_snapshot_reader: None,
@@ -2649,6 +2667,14 @@ impl<'a> ServiceContext<'a> {
         reader: Arc<dyn MeetingPrepStatusReadHandle>,
     ) -> Self {
         self.meeting_prep_status_reader = Some(reader);
+        self
+    }
+
+    pub fn with_meeting_prep_narrative_reader(
+        mut self,
+        reader: Arc<dyn MeetingPrepNarrativeReadHandle>,
+    ) -> Self {
+        self.meeting_prep_narrative_reader = Some(reader);
         self
     }
 
@@ -2830,6 +2856,21 @@ impl<'a> ServiceContext<'a> {
             ));
         };
         reader.read_meeting_prep_status(meeting_id).await
+    }
+
+    /// Read a meeting's prep-context narrative (the `prep_context_json`
+    /// summary). Returns `Ok(None)` when the reader is attached but the meeting
+    /// has no narrative, and a missing-reader `Err` when no adapter is attached
+    /// (test contexts without fixtures); the briefing producer treats both as
+    /// "no narrative" rather than failing the envelope.
+    pub async fn read_meeting_prep_narrative(
+        &self,
+        meeting_id: String,
+    ) -> Result<Option<String>, String> {
+        let Some(reader) = &self.meeting_prep_narrative_reader else {
+            return Err(self.missing_reader_error("meeting_prep_narrative_reader"));
+        };
+        reader.read_meeting_prep_narrative(meeting_id).await
     }
 
     /// Dispatch the `claim_receipt` ability through the app crate's

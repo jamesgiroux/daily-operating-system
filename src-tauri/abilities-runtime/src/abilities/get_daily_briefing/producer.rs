@@ -25,14 +25,14 @@ use super::contracts::{
     BRIEFING_SCHEMA_VERSION,
 };
 use crate::abilities::get_entity_intelligence::contracts::{
-    CandidateSetRef, ContextDepth, Cursor, CursorState, EntityIntelligenceEnvelope,
-    EntityIntelligenceInput, EntityKind, EnvelopeProvenance, EnvelopeProvenanceSource,
-    EnvelopeSection, Paginated, ENVELOPE_SCHEMA_VERSION,
+    CandidateSetRef, Cursor, CursorState, EntityKind, EnvelopeProvenance,
+    EnvelopeProvenanceSource, Paginated,
 };
-use crate::abilities::get_entity_intelligence::producer::build_entity_intelligence;
 use crate::abilities::provenance::{
-    AbilityExecutionMode, AbilityVersion, FieldAttribution, FieldPath, ProvenanceBuilder,
-    ProvenanceBuilderConfig, SchemaVersion, SubjectAttribution, SubjectRef,
+    claim_trust_band_from_score, data_source_from_key, parse_source_timestamp,
+    AbilityExecutionMode, AbilityVersion, DataSource, FieldAttribution, FieldPath,
+    ProvenanceBuilder, ProvenanceBuilderConfig, SchemaVersion, SourceTimestampStatus,
+    SubjectAttribution, SubjectRef,
 };
 use crate::abilities::trust::types::TrustBand;
 use crate::abilities::{
@@ -42,7 +42,8 @@ use crate::services::context::{
     is_customer_facing, BriefingCalloutSnapshot, DailyReadinessContextSnapshot,
     DailyReadinessMeetingSnapshot, MeetingPrepStatusReadError, MeetingPrepStatusSnapshot,
 };
-use crate::types::{ClaimSensitivity, ClaimState};
+use crate::types::{ClaimSensitivity, ClaimState, IntelligenceClaim};
+use chrono::{DateTime, Utc};
 
 const ABILITY_NAME: &str = "get_daily_briefing";
 
@@ -50,6 +51,8 @@ const ABILITY_NAME: &str = "get_daily_briefing";
 /// kicks in when the readiness context returns more than this.
 const UPCOMING_MEETINGS_PAGE_SIZE: usize = 25;
 const BRIEFING_CALLOUT_LIMIT: usize = 10;
+const ENTITY_FACT_PAGE_SIZE: usize = 50;
+const ENTITY_CLAIM_READ_LIMIT: usize = ENTITY_FACT_PAGE_SIZE + 1;
 
 pub async fn build_daily_briefing(
     ctx: &AbilityContext<'_>,
@@ -114,8 +117,13 @@ pub async fn build_daily_briefing(
     let now = ctx.services().clock.now();
     let (current_meeting_seed, next_meeting_seed) =
         pick_current_and_next_snapshots(&meetings, &now);
-    let upcoming_meeting_seeds =
-        paginate_upcoming_snapshots(&meetings, input.upcoming_meetings_cursor.as_ref());
+    let selected_meeting_ids =
+        current_next_meeting_ids(current_meeting_seed.as_ref(), next_meeting_seed.as_ref());
+    let upcoming_meeting_seeds = paginate_upcoming_snapshots(
+        &meetings,
+        input.upcoming_meetings_cursor.as_ref(),
+        &selected_meeting_ids,
+    );
     let expansion_ids = collect_expansion_meeting_ids(
         current_meeting_seed.as_ref(),
         next_meeting_seed.as_ref(),
@@ -177,30 +185,44 @@ pub async fn build_daily_briefing(
 
     // ---- compose: meeting brief refs --------------------------------------
     let linked_entity_names = linked_entity_names_by_key(&readiness);
+    let meeting_extras = read_meeting_brief_extras(ctx, &expansion_ids).await;
     let current_meeting = current_meeting_seed
         .as_ref()
         .map(|meeting| {
-            project_meeting_brief(meeting, prep_snapshots.get(&meeting.id), &linked_entity_names)
+            project_meeting_brief(
+                meeting,
+                prep_snapshots.get(&meeting.id),
+                &linked_entity_names,
+                meeting_extras.get(&meeting.id),
+            )
         });
     let next_meeting = next_meeting_seed
         .as_ref()
         .map(|meeting| {
-            project_meeting_brief(meeting, prep_snapshots.get(&meeting.id), &linked_entity_names)
+            project_meeting_brief(
+                meeting,
+                prep_snapshots.get(&meeting.id),
+                &linked_entity_names,
+                meeting_extras.get(&meeting.id),
+            )
         });
-    let upcoming_meetings =
-        project_upcoming_meetings(upcoming_meeting_seeds, &prep_snapshots, &linked_entity_names);
+    let upcoming_meetings = project_upcoming_meetings(
+        upcoming_meeting_seeds,
+        &prep_snapshots,
+        &linked_entity_names,
+        &meeting_extras,
+    );
     let expanded_meeting_refs = collect_expanded_meeting_refs(
         current_meeting.as_ref(),
         next_meeting.as_ref(),
         &upcoming_meetings.items,
     );
 
-    // ---- compose: per-linked-entity envelopes -----------------------------
-    // The L0 contract calls for per-subject `get_entity_intelligence`
-    // envelopes "for the meetings' linked entities". We compose them as part
-    // of building the integrity + trust summary; they do not need to be
-    // emitted back through this envelope verbatim because the W3 briefing
-    // block re-invokes `get_entity_intelligence` for any deeper drill-in.
+    // ---- compose: per-linked-entity claim aggregates ----------------------
+    // Daily briefing only needs aggregate trust, sensitivity, corrections,
+    // and source provenance for linked entities. Read the same bounded claim
+    // window that `get_entity_intelligence` uses for its facts page without
+    // building and discarding full entity-intelligence envelopes.
     let linked_entities = collect_linked_entities(&expanded_meeting_refs);
     let mut envelope_provenance = EnvelopeProvenance::empty();
     let mut superseded_claim_ids: Vec<String> = Vec::new();
@@ -212,33 +234,35 @@ pub async fn build_daily_briefing(
     let mut envelope_failures: Vec<String> = Vec::new();
 
     for (entity_type, entity_id) in linked_entities {
-        let env_input = EntityIntelligenceInput {
-            schema_version: ENVELOPE_SCHEMA_VERSION,
-            entity_type: entity_type.clone(),
-            entity_id: entity_id.clone(),
-            depth: ContextDepth::Shallow,
-            sections: Some(daily_briefing_entity_sections()),
-        };
-        match build_entity_intelligence(ctx, env_input).await {
-            Ok(envelope_output) => {
-                let envelope = envelope_output.into_data();
-                accumulate_from_envelope(
-                    &envelope,
-                    &mut envelope_provenance,
-                    &mut superseded_claim_ids,
-                    &mut aggregate_sensitivity,
-                    &mut likely_current,
-                    &mut use_with_caution,
-                    &mut needs_verification,
-                    &mut source_asof_inputs,
-                );
+        match ctx
+            .services()
+            .read_entity_context_claims_limited(
+                entity_type.as_lower_str().to_string(),
+                entity_id.clone(),
+                ctx.entity_context_claim_surface(),
+                1,
+                ENTITY_CLAIM_READ_LIMIT,
+            )
+            .await
+        {
+            Ok(claims) => {
+                let mut accumulator = ClaimAggregateAccumulator {
+                    provenance_index: &mut envelope_provenance,
+                    superseded_claim_ids: &mut superseded_claim_ids,
+                    aggregate_sensitivity: &mut aggregate_sensitivity,
+                    likely_current: &mut likely_current,
+                    use_with_caution: &mut use_with_caution,
+                    needs_verification: &mut needs_verification,
+                    source_asof_inputs: &mut source_asof_inputs,
+                };
+                accumulate_from_claims(&claims, &mut accumulator);
             }
             Err(err) => {
                 envelope_failures.push(format!(
                     "entity intelligence ({}:{}) — {}",
                     entity_type.as_lower_str(),
                     entity_id,
-                    err.message
+                    err
                 ));
             }
         }
@@ -413,6 +437,7 @@ fn project_meeting_brief(
     meeting: &DailyReadinessMeetingSnapshot,
     prep: Option<&MeetingPrepStatusSnapshot>,
     linked_entity_names: &BTreeMap<(String, String), String>,
+    extras: Option<&MeetingBriefExtras>,
 ) -> MeetingBriefRef {
     let (
         prep_status,
@@ -437,6 +462,11 @@ fn project_meeting_brief(
         title: Some(meeting.title.clone()),
         starts_at: meeting.starts_at.clone(),
         ends_at: meeting.ends_at.clone(),
+        context_narrative: extras.and_then(|extra| extra.context_narrative.clone()),
+        attendees: extras
+            .map(|extra| extra.attendees.clone())
+            .unwrap_or_default(),
+        kind: humanize_meeting_kind(&meeting.meeting_type),
         linked_entity_name: linked_entity_name(
             linked_entity_type.as_deref(),
             linked_entity_id.as_deref(),
@@ -448,6 +478,88 @@ fn project_meeting_brief(
         blocking_reason,
         stale_reason,
         last_prepared_at,
+    }
+}
+
+#[derive(Debug, Clone, Default)]
+struct MeetingBriefExtras {
+    context_narrative: Option<String>,
+    attendees: Vec<String>,
+}
+
+async fn read_meeting_brief_extras(
+    ctx: &AbilityContext<'_>,
+    meeting_ids: &BTreeSet<String>,
+) -> BTreeMap<String, MeetingBriefExtras> {
+    let mut out = BTreeMap::new();
+    for meeting_id in meeting_ids {
+        let attendees = ctx
+            .services()
+            .read_prepare_meeting_context(meeting_id.clone())
+            .await
+            .map(|snapshot| {
+                snapshot
+                    .attendees
+                    .into_iter()
+                    .filter_map(|attendee| clean_text(attendee.name))
+                    .collect::<Vec<_>>()
+            })
+            .unwrap_or_default();
+        let context_narrative = ctx
+            .services()
+            .read_meeting_prep_narrative(meeting_id.clone())
+            .await
+            .ok()
+            .flatten();
+
+        if context_narrative.is_some() || !attendees.is_empty() {
+            out.insert(
+                meeting_id.clone(),
+                MeetingBriefExtras {
+                    context_narrative,
+                    attendees,
+                },
+            );
+        }
+    }
+    out
+}
+
+fn humanize_meeting_kind(kind: &str) -> Option<String> {
+    let trimmed = kind.trim();
+    if trimmed.is_empty() {
+        return None;
+    }
+    Some(match trimmed {
+        "qbr" => "QBR".to_string(),
+        "one_on_one" => "1:1".to_string(),
+        "team_sync" => "Team sync".to_string(),
+        "all_hands" => "All-hands".to_string(),
+        "customer" => "Customer".to_string(),
+        "partnership" => "Partnership".to_string(),
+        "external" => "External".to_string(),
+        "internal" => "Internal".to_string(),
+        "training" => "Training".to_string(),
+        "personal" => "Personal".to_string(),
+        other => humanize_snake_label(other),
+    })
+}
+
+fn humanize_snake_label(value: &str) -> String {
+    let label = value.replace('_', " ");
+    let mut chars = label.chars();
+    match chars.next() {
+        Some(first) => first.to_uppercase().collect::<String>() + chars.as_str(),
+        None => label,
+    }
+}
+
+fn clean_text(value: String) -> Option<String> {
+    let trimmed = value.trim();
+    if trimmed.is_empty() {
+        None
+    } else {
+        Some(trimmed.to_string())
     }
 }
 
@@ -503,6 +615,20 @@ fn collect_expansion_meeting_ids(
     ids
 }
 
+fn current_next_meeting_ids(
+    current: Option<&DailyReadinessMeetingSnapshot>,
+    next: Option<&DailyReadinessMeetingSnapshot>,
+) -> BTreeSet<String> {
+    let mut ids = BTreeSet::new();
+    if let Some(meeting) = current {
+        ids.insert(meeting.id.clone());
+    }
+    if let Some(meeting) = next {
+        ids.insert(meeting.id.clone());
+    }
+    ids
+}
+
 fn collect_expanded_meeting_refs(
     current: Option<&MeetingBriefRef>,
     next: Option<&MeetingBriefRef>,
@@ -548,10 +674,6 @@ fn parse_entity_kind(kind: &str) -> Option<EntityKind> {
     }
 }
 
-fn daily_briefing_entity_sections() -> Vec<EnvelopeSection> {
-    vec![EnvelopeSection::Facts]
-}
-
 fn prep_status_is_needs_preparation(status: &str) -> bool {
     matches!(
         status,
@@ -559,67 +681,95 @@ fn prep_status_is_needs_preparation(status: &str) -> bool {
     )
 }
 
-#[allow(clippy::too_many_arguments)]
-fn accumulate_from_envelope(
-    envelope: &EntityIntelligenceEnvelope,
-    provenance_index: &mut EnvelopeProvenance,
-    superseded_claim_ids: &mut Vec<String>,
-    aggregate_sensitivity: &mut ClaimSensitivity,
-    likely_current: &mut u32,
-    use_with_caution: &mut u32,
-    needs_verification: &mut u32,
-    source_asof_inputs: &mut Vec<SourceAsofRef>,
-) {
-    // Provenance: merge unique sources into the briefing-level index.
-    for source in &envelope.provenance.sources {
-        if !provenance_index
-            .sources
-            .iter()
-            .any(|existing| existing.id == source.id)
-        {
-            provenance_index.sources.push(EnvelopeProvenanceSource {
-                id: source.id.clone(),
-                label: source.label.clone(),
-                source_type: source.source_type.clone(),
-                workspace_file_kind: source.workspace_file_kind.clone(),
-                as_of: source.as_of,
-                redacted: source.redacted,
-            });
-            if let Some(as_of) = source.as_of {
-                let canonical = SourceAsofRef {
-                    source: source.id.clone(),
-                    as_of: as_of.to_rfc3339(),
-                };
-                if !source_asof_inputs
-                    .iter()
-                    .any(|existing| existing.source == canonical.source)
-                {
-                    source_asof_inputs.push(canonical);
-                }
-            }
-        }
-    }
-    if envelope.provenance.redaction_applied {
-        provenance_index.redaction_applied = true;
-    }
+struct ClaimAggregateAccumulator<'a> {
+    provenance_index: &'a mut EnvelopeProvenance,
+    superseded_claim_ids: &'a mut Vec<String>,
+    aggregate_sensitivity: &'a mut ClaimSensitivity,
+    likely_current: &'a mut u32,
+    use_with_caution: &'a mut u32,
+    needs_verification: &'a mut u32,
+    source_asof_inputs: &'a mut Vec<SourceAsofRef>,
+}
 
-    // Trust band tally.
-    for fact in &envelope.facts.items {
-        match fact.trust_band {
-            TrustBand::LikelyCurrent => *likely_current += 1,
-            TrustBand::UseWithCaution => *use_with_caution += 1,
-            TrustBand::NeedsVerification => *needs_verification += 1,
+fn accumulate_from_claims(claims: &[IntelligenceClaim], acc: &mut ClaimAggregateAccumulator<'_>) {
+    for claim in claims.iter().take(ENTITY_FACT_PAGE_SIZE) {
+        let source = provenance_source_for_claim(claim);
+        upsert_briefing_provenance_source(acc.provenance_index, source, acc.source_asof_inputs);
+
+        match claim_trust_band_from_score(claim.trust_score) {
+            TrustBand::LikelyCurrent => *acc.likely_current += 1,
+            TrustBand::UseWithCaution => *acc.use_with_caution += 1,
+            TrustBand::NeedsVerification => *acc.needs_verification += 1,
             TrustBand::Unscored => {}
         }
-        if rank_sensitivity(&fact.sensitivity) > rank_sensitivity(aggregate_sensitivity) {
-            *aggregate_sensitivity = fact.sensitivity.clone();
+        if rank_sensitivity(&claim.sensitivity) > rank_sensitivity(acc.aggregate_sensitivity) {
+            *acc.aggregate_sensitivity = claim.sensitivity.clone();
         }
         if matches!(
-            fact.lifecycle_state,
+            claim.claim_state,
             ClaimState::Tombstoned | ClaimState::Withdrawn
         ) {
-            superseded_claim_ids.push(fact.claim_id.clone());
+            acc.superseded_claim_ids.push(claim.id.clone());
         }
+    }
+}
+
+fn provenance_source_for_claim(claim: &IntelligenceClaim) -> EnvelopeProvenanceSource {
+    let (label, source_type, workspace_file_kind) = envelope_source_descriptor(&claim.data_source);
+    EnvelopeProvenanceSource {
+        id: format!("claim_source:{}", claim.id),
+        label,
+        source_type: Some(source_type),
+        workspace_file_kind,
+        as_of: parse_optional_timestamp(claim.source_asof.as_deref()),
+        redacted: false,
+    }
+}
+
+fn upsert_briefing_provenance_source(
+    provenance_index: &mut EnvelopeProvenance,
+    source: EnvelopeProvenanceSource,
+    source_asof_inputs: &mut Vec<SourceAsofRef>,
+) {
+    if provenance_index
+        .sources
+        .iter()
+        .any(|existing| existing.id == source.id)
+    {
+        return;
+    }
+
+    if let Some(as_of) = source.as_of {
+        let canonical = SourceAsofRef {
+            source: source.id.clone(),
+            as_of: as_of.to_rfc3339(),
+        };
+        if !source_asof_inputs
+            .iter()
+            .any(|existing| existing.source == canonical.source)
+        {
+            source_asof_inputs.push(canonical);
+        }
+    }
+    provenance_index.sources.push(source);
+}
+
+fn envelope_source_descriptor(source_key: &str) -> (String, String, Option<String>) {
+    match data_source_from_key(source_key) {
+        DataSource::WorkspaceFile { kind } => (
+            DataSource::WorkspaceFile { kind: kind.clone() }.display_name(),
+            "workspace_file".to_string(),
+            Some(kind.slug().to_string()),
+        ),
+        parsed => (parsed.display_name(), source_key.trim().to_string(), None),
+    }
+}
+
+fn parse_optional_timestamp(candidate: Option<&str>) -> Option<DateTime<Utc>> {
+    match parse_source_timestamp(candidate, Utc::now(), None) {
+        SourceTimestampStatus::Accepted(parsed)
+        | SourceTimestampStatus::Implausible { parsed, .. } => Some(parsed),
+        SourceTimestampStatus::Malformed(_) | SourceTimestampStatus::Missing => None,
     }
 }
 
@@ -671,19 +821,30 @@ fn pick_current_and_next_snapshots(
 fn paginate_upcoming_snapshots(
     meetings: &[&DailyReadinessMeetingSnapshot],
     cursor: Option<&Cursor>,
+    excluded_meeting_ids: &BTreeSet<String>,
 ) -> Paginated<DailyReadinessMeetingSnapshot> {
     let offset = cursor
         .and_then(|c| parse_cursor_offset(c.as_str()))
         .unwrap_or(0);
-    let total = meetings.len() as u64;
-    let slice = meetings
+    let mut seen = BTreeSet::new();
+    let upcoming_candidates = meetings
         .iter()
+        .filter_map(|meeting| {
+            if excluded_meeting_ids.contains(&meeting.id) || !seen.insert(meeting.id.clone()) {
+                None
+            } else {
+                Some((*meeting).clone())
+            }
+        })
+        .collect::<Vec<_>>();
+    let total = upcoming_candidates.len();
+    let slice = upcoming_candidates
+        .into_iter()
         .skip(offset)
         .take(UPCOMING_MEETINGS_PAGE_SIZE)
-        .map(|meeting| (*meeting).clone())
         .collect::<Vec<_>>();
     let consumed = offset + slice.len();
-    let next_cursor = if consumed < meetings.len() {
+    let next_cursor = if consumed < total {
         Some(Cursor::new(format!("upcoming_meetings:offset={consumed}")))
     } else {
         None
@@ -691,7 +852,7 @@ fn paginate_upcoming_snapshots(
     Paginated {
         items: slice,
         next_cursor,
-        total_hint: Some(total),
+        total_hint: Some(total as u64),
         cursor_state: CursorState::Stable,
     }
 }
@@ -700,13 +861,19 @@ fn project_upcoming_meetings(
     page: Paginated<DailyReadinessMeetingSnapshot>,
     prep_snapshots: &BTreeMap<String, MeetingPrepStatusSnapshot>,
     linked_entity_names: &BTreeMap<(String, String), String>,
+    meeting_extras: &BTreeMap<String, MeetingBriefExtras>,
 ) -> Paginated<MeetingBriefRef> {
     Paginated {
         items: page
             .items
             .iter()
             .map(|meeting| {
-                project_meeting_brief(meeting, prep_snapshots.get(&meeting.id), linked_entity_names)
+                project_meeting_brief(
+                    meeting,
+                    prep_snapshots.get(&meeting.id),
+                    linked_entity_names,
+                    meeting_extras.get(&meeting.id),
+                )
             })
             .collect(),
         next_cursor: page.next_cursor,
@@ -1103,10 +1270,14 @@ mod state_matrix_fixtures {
         BriefingCalloutReadFuture, BriefingCalloutReadHandle, ClaimDismissalSurface,
         DailyReadinessContextReadFuture, DailyReadinessContextReadHandle,
         DailyReadinessSubjectSnapshot, EntityContextClaimReadFuture, EntityContextClaimReadHandle,
-        ExternalClients, FixedClock, MeetingPrepStatusReadFuture, MeetingPrepStatusReadHandle,
-        MeetingsViewIntent, SeedableRng, ServiceContext,
+        ExternalClients, FixedClock, MeetingPrepNarrativeReadFuture,
+        MeetingPrepNarrativeReadHandle, MeetingPrepStatusReadFuture, MeetingPrepStatusReadHandle,
+        MeetingsViewIntent, PrepareMeetingAttendeeSnapshot, PrepareMeetingContextReadFuture,
+        PrepareMeetingContextReadHandle, PrepareMeetingContextSnapshot, PrepareMeetingSnapshot,
+        SeedableRng, ServiceContext,
     };
-    use crate::types::IntelligenceClaim;
+    use crate::sensitivity::ClaimVerificationState;
+    use crate::types::{IntelligenceClaim, SurfacingState, TemporalScope};
     use chrono::TimeZone;
 
     #[derive(Clone)]
@@ -1191,6 +1362,91 @@ mod state_matrix_fixtures {
     }
 
     #[derive(Clone)]
+    struct FixtureClaimReader {
+        claims: Vec<IntelligenceClaim>,
+    }
+
+    impl EntityContextClaimReadHandle for FixtureClaimReader {
+        fn read_entity_context_claims<'a>(
+            &'a self,
+            _entity_type: String,
+            _entity_id: String,
+            _surface: ClaimDismissalSurface,
+            _depth: usize,
+        ) -> EntityContextClaimReadFuture<'a> {
+            let claims = self.claims.clone();
+            Box::pin(async move { Ok(claims) })
+        }
+
+        fn read_entity_context_claims_limited<'a>(
+            &'a self,
+            _entity_type: String,
+            _entity_id: String,
+            _surface: ClaimDismissalSurface,
+            _depth: usize,
+            limit: usize,
+        ) -> EntityContextClaimReadFuture<'a> {
+            let mut claims = self.claims.clone();
+            claims.truncate(limit);
+            Box::pin(async move { Ok(claims) })
+        }
+    }
+
+    #[derive(Clone)]
+    struct FixturePrepareMeetingReader {
+        attendees: Vec<String>,
+    }
+
+    impl PrepareMeetingContextReadHandle for FixturePrepareMeetingReader {
+        fn read_prepare_meeting_context<'a>(
+            &'a self,
+            meeting_id: String,
+        ) -> PrepareMeetingContextReadFuture<'a> {
+            let attendees = self
+                .attendees
+                .iter()
+                .map(|name| PrepareMeetingAttendeeSnapshot {
+                    name: name.clone(),
+                    email: None,
+                    person_id: None,
+                    account_id: None,
+                    domain: None,
+                })
+                .collect::<Vec<_>>();
+            Box::pin(async move {
+                Ok(PrepareMeetingContextSnapshot {
+                    meeting: PrepareMeetingSnapshot {
+                        id: meeting_id,
+                        title: "Customer checkpoint".to_string(),
+                        starts_at: None,
+                        ends_at: None,
+                        attendees_raw: None,
+                    },
+                    attendees,
+                    subjects: Vec::new(),
+                    claims: Vec::new(),
+                    linear_issue_changes: Vec::new(),
+                })
+            })
+        }
+    }
+
+    #[derive(Clone)]
+    struct FixtureMeetingPrepNarrativeReader {
+        narrative: Option<String>,
+    }
+
+    impl MeetingPrepNarrativeReadHandle for FixtureMeetingPrepNarrativeReader {
+        fn read_meeting_prep_narrative<'a>(
+            &'a self,
+            _meeting_id: String,
+        ) -> MeetingPrepNarrativeReadFuture<'a> {
+            let narrative = self.narrative.clone();
+            Box::pin(async move { Ok(narrative) })
+        }
+    }
+
+    #[derive(Clone)]
     struct FixtureBriefingCalloutReader {
         callouts: Vec<BriefingCalloutSnapshot>,
     }
@@ -1230,6 +1486,49 @@ mod state_matrix_fixtures {
             ends_at: ends_at.map(str::to_string),
             workspace_scope: "local".to_string(),
             meeting_type: "customer".to_string(),
+        }
+    }
+
+    fn claim_fixture(
+        id: &str,
+        trust_score: Option<f64>,
+        sensitivity: ClaimSensitivity,
+        claim_state: ClaimState,
+    ) -> IntelligenceClaim {
+        IntelligenceClaim {
+            id: id.to_string(),
+            claim_version: 1,
+            subject_ref: r#"{"kind":"account","id":"acct-meeting-1"}"#.to_string(),
+            claim_type: "account_fact".to_string(),
+            field_path: Some("/briefing/fact".to_string()),
+            topic_key: None,
+            text: format!("Fixture claim {id}"),
+            dedup_key: format!("dedup-{id}"),
+            item_hash: None,
+            actor: "system".to_string(),
+            data_source: "workspace_file:granola_transcript".to_string(),
+            source_ref: Some(format!("workspace_file:{id}")),
+            source_asof: Some("2026-05-20T08:00:00Z".to_string()),
+            observed_at: "2026-05-20T08:05:00Z".to_string(),
+            created_at: "2026-05-20T08:10:00Z".to_string(),
+            provenance_json: "{}".to_string(),
+            metadata_json: None,
+            claim_state,
+            surfacing_state: SurfacingState::Active,
+            demotion_reason: None,
+            reactivated_at: None,
+            retraction_reason: None,
+            expires_at: None,
+            superseded_by: None,
+            trust_score,
+            trust_computed_at: Some("2026-05-20T08:15:00Z".to_string()),
+            trust_version: Some(1),
+            thread_id: None,
+            temporal_scope: TemporalScope::State,
+            sensitivity,
+            verification_state: ClaimVerificationState::Active,
+            verification_reason: None,
+            needs_user_decision_at: None,
         }
     }
 
@@ -1394,12 +1693,60 @@ mod state_matrix_fixtures {
             })
             .collect::<Vec<_>>();
         let meeting_refs = meetings.iter().collect::<Vec<_>>();
-        let page_one = paginate_upcoming_snapshots(&meeting_refs, None);
+        let page_one = paginate_upcoming_snapshots(&meeting_refs, None, &BTreeSet::new());
         assert_eq!(page_one.items.len(), UPCOMING_MEETINGS_PAGE_SIZE);
         let next = page_one.next_cursor.clone().expect("cursor present");
-        let page_two = paginate_upcoming_snapshots(&meeting_refs, Some(&next));
+        let page_two =
+            paginate_upcoming_snapshots(&meeting_refs, Some(&next), &BTreeSet::new());
         assert_eq!(page_two.items.len(), 30 - UPCOMING_MEETINGS_PAGE_SIZE);
         assert!(page_two.next_cursor.is_none());
+    }
+
+    #[test]
+    fn upcoming_meetings_exclude_current_and_next_bucket_ids() {
+        let meetings = vec![
+            daily_meeting_with_end(
+                "current",
+                "2026-05-20T10:00:00Z",
+                Some("2026-05-20T11:00:00Z"),
+            ),
+            daily_meeting("next", Some("2026-05-20T11:30:00Z".to_string())),
+            daily_meeting("future", Some("2026-05-20T12:00:00Z".to_string())),
+        ];
+        let mut refs = meetings.iter().collect::<Vec<_>>();
+        sort_meeting_snapshots(&mut refs);
+        let now = chrono::DateTime::parse_from_rfc3339("2026-05-20T10:30:00Z")
+            .unwrap()
+            .with_timezone(&chrono::Utc);
+        let (current, next) = pick_current_and_next_snapshots(&refs, &now);
+        let excluded_ids = current_next_meeting_ids(current.as_ref(), next.as_ref());
+        let page = paginate_upcoming_snapshots(&refs, None, &excluded_ids);
+
+        assert_eq!(
+            current.as_ref().map(|meeting| meeting.id.as_str()),
+            Some("current")
+        );
+        assert_eq!(next.as_ref().map(|meeting| meeting.id.as_str()), Some("next"));
+        assert_eq!(
+            page.items
+                .iter()
+                .map(|meeting| meeting.id.as_str())
+                .collect::<Vec<_>>(),
+            vec!["future"]
+        );
+
+        let mut bucketed_ids = BTreeSet::new();
+        for meeting_id in current
+            .iter()
+            .chain(next.iter())
+            .map(|meeting| meeting.id.as_str())
+            .chain(page.items.iter().map(|meeting| meeting.id.as_str()))
+        {
+            assert!(
+                bucketed_ids.insert(meeting_id),
+                "meeting id {meeting_id} appeared in more than one briefing bucket"
+            );
+        }
     }
 
     #[test]
@@ -1424,13 +1771,16 @@ mod state_matrix_fixtures {
             .unwrap()
             .with_timezone(&chrono::Utc);
         let (current, next) = pick_current_and_next_snapshots(&refs, &now);
-        let page = paginate_upcoming_snapshots(&refs, None);
+        let excluded_ids = current_next_meeting_ids(current.as_ref(), next.as_ref());
+        let page = paginate_upcoming_snapshots(&refs, None, &excluded_ids);
         let expansion_ids =
             collect_expansion_meeting_ids(current.as_ref(), next.as_ref(), &page.items);
 
         assert!(expansion_ids.len() <= UPCOMING_MEETINGS_PAGE_SIZE + 2);
         assert!(expansion_ids.contains("current"));
         assert!(expansion_ids.contains("next"));
+        assert!(!page.items.iter().any(|meeting| meeting.id == "current"));
+        assert!(!page.items.iter().any(|meeting| meeting.id == "next"));
     }
 
     #[tokio::test]
@@ -1542,6 +1892,206 @@ mod state_matrix_fixtures {
     }
 
     #[tokio::test]
+    async fn daily_briefing_producer_tallies_trust_and_provenance_from_claims() {
+        let snapshot = DailyReadinessContextSnapshot {
+            workspace_scope: "local".to_string(),
+            date: "2026-05-20".to_string(),
+            meetings: vec![daily_meeting(
+                "meeting-1",
+                Some("2026-05-20T11:30:00Z".to_string()),
+            )],
+            tracked_subjects: vec![DailyReadinessSubjectSnapshot {
+                kind: "account".to_string(),
+                id: "acct-meeting-1".to_string(),
+                display_name: "Example Account".to_string(),
+                workspace_scope: "local".to_string(),
+            }],
+            overnight_changes: Vec::new(),
+            risk_shifts: Vec::new(),
+            open_loops: Vec::new(),
+            coverage_warnings: Vec::new(),
+        };
+        let claims = vec![
+            claim_fixture(
+                "claim-likely",
+                Some(0.9),
+                ClaimSensitivity::Public,
+                ClaimState::Active,
+            ),
+            claim_fixture(
+                "claim-caution",
+                Some(0.6),
+                ClaimSensitivity::Internal,
+                ClaimState::Active,
+            ),
+            claim_fixture(
+                "claim-withdrawn",
+                Some(0.2),
+                ClaimSensitivity::Confidential,
+                ClaimState::Withdrawn,
+            ),
+            claim_fixture(
+                "claim-unscored",
+                None,
+                ClaimSensitivity::Public,
+                ClaimState::Active,
+            ),
+        ];
+        let clock = FixedClock::new(
+            chrono::Utc
+                .with_ymd_and_hms(2026, 5, 20, 10, 30, 0)
+                .unwrap(),
+        );
+        let rng = SeedableRng::new(509);
+        let external = ExternalClients::default();
+        let services = ServiceContext::test_live(&clock, &rng, &external)
+            .with_daily_readiness_context_reader(Arc::new(FixtureDailyReadinessReader { snapshot }))
+            .with_meeting_prep_status_reader(Arc::new(RecordingPrepReader {
+                seen: Arc::new(Mutex::new(Vec::new())),
+            }))
+            .with_entity_context_claim_reader(Arc::new(FixtureClaimReader { claims }));
+        let provider = ReplayProvider::new(HashMap::new());
+        let ctx = AbilityContext::new(
+            &services,
+            &provider,
+            &NOOP_ABILITY_TRACER,
+            Actor::User,
+            None,
+            ClaimDismissalSurface::TauriEntityDetail,
+        );
+
+        let output = build_daily_briefing(
+            &ctx,
+            DailyBriefingInput {
+                schema_version: BRIEFING_SCHEMA_VERSION,
+                date: chrono::NaiveDate::from_ymd_opt(2026, 5, 20).unwrap(),
+                workspace_id: "local".to_string(),
+                sections: None,
+                upcoming_meetings_cursor: None,
+            },
+        )
+        .await
+        .expect("daily briefing builds")
+        .into_data();
+
+        assert_eq!(output.trust_summary.likely_current_count, 1);
+        assert_eq!(output.trust_summary.use_with_caution_count, 1);
+        assert_eq!(output.trust_summary.needs_verification_count, 1);
+        assert_eq!(
+            output.trust_summary.aggregate_band,
+            TrustBand::NeedsVerification
+        );
+        assert_eq!(output.sensitivity, ClaimSensitivity::Confidential);
+        assert_eq!(
+            output.state.integrity,
+            BriefingIntegrity::HasCorrections {
+                superseded_claim_ids: vec!["claim-withdrawn".to_string()],
+            }
+        );
+
+        let source = output
+            .provenance
+            .sources
+            .iter()
+            .find(|source| source.id == "claim_source:claim-likely")
+            .expect("claim provenance source");
+        assert_eq!(source.label, "Workspace file (Granola transcript)");
+        assert_eq!(source.source_type.as_deref(), Some("workspace_file"));
+        assert_eq!(
+            source.workspace_file_kind.as_deref(),
+            Some("granola_transcript")
+        );
+        assert_eq!(
+            source.as_of.map(|timestamp| timestamp.to_rfc3339()),
+            Some("2026-05-20T08:00:00+00:00".to_string())
+        );
+        assert!(!source.redacted);
+        assert!(output.source_asof_inputs.iter().any(|source| {
+            source.source == "claim_source:claim-likely"
+                && source.as_of == "2026-05-20T08:00:00+00:00"
+        }));
+    }
+
+    #[tokio::test]
+    async fn daily_briefing_producer_projects_meeting_context_attendees_and_kind() {
+        let mut meeting = daily_meeting("meeting-1", Some("2026-05-20T11:30:00Z".to_string()));
+        meeting.meeting_type = "qbr".to_string();
+        let snapshot = DailyReadinessContextSnapshot {
+            workspace_scope: "local".to_string(),
+            date: "2026-05-20".to_string(),
+            meetings: vec![meeting],
+            tracked_subjects: Vec::new(),
+            overnight_changes: Vec::new(),
+            risk_shifts: Vec::new(),
+            open_loops: Vec::new(),
+            coverage_warnings: Vec::new(),
+        };
+        let clock = FixedClock::new(
+            chrono::Utc
+                .with_ymd_and_hms(2026, 5, 20, 10, 30, 0)
+                .unwrap(),
+        );
+        let rng = SeedableRng::new(510);
+        let external = ExternalClients::default();
+        let services = ServiceContext::test_live(&clock, &rng, &external)
+            .with_daily_readiness_context_reader(Arc::new(FixtureDailyReadinessReader { snapshot }))
+            .with_meeting_prep_status_reader(Arc::new(RecordingPrepReader {
+                seen: Arc::new(Mutex::new(Vec::new())),
+            }))
+            .with_entity_context_claim_reader(Arc::new(RecordingClaimReader {
+                seen: Arc::new(Mutex::new(Vec::new())),
+            }))
+            .with_prepare_meeting_context_reader(Arc::new(FixturePrepareMeetingReader {
+                attendees: vec![
+                    "Avery Lee".to_string(),
+                    "Morgan Chen".to_string(),
+                    "Riley Park".to_string(),
+                ],
+            }))
+            .with_meeting_prep_narrative_reader(Arc::new(FixtureMeetingPrepNarrativeReader {
+                narrative: Some("Confirm rollout timing and renewal owner.".to_string()),
+            }));
+        let provider = ReplayProvider::new(HashMap::new());
+        let ctx = AbilityContext::new(
+            &services,
+            &provider,
+            &NOOP_ABILITY_TRACER,
+            Actor::User,
+            None,
+            ClaimDismissalSurface::TauriEntityDetail,
+        );
+
+        let output = build_daily_briefing(
+            &ctx,
+            DailyBriefingInput {
+                schema_version: BRIEFING_SCHEMA_VERSION,
+                date: chrono::NaiveDate::from_ymd_opt(2026, 5, 20).unwrap(),
+                workspace_id: "local".to_string(),
+                sections: None,
+                upcoming_meetings_cursor: None,
+            },
+        )
+        .await
+        .expect("daily briefing builds")
+        .into_data();
+
+        let meeting = output.next_meeting.expect("next meeting projected");
+        assert_eq!(
+            meeting.context_narrative.as_deref(),
+            Some("Confirm rollout timing and renewal owner.")
+        );
+        assert_eq!(
+            meeting.attendees,
+            vec![
+                "Avery Lee".to_string(),
+                "Morgan Chen".to_string(),
+                "Riley Park".to_string(),
+            ]
+        );
+        assert_eq!(meeting.kind.as_deref(), Some("QBR"));
+    }
+
+    #[tokio::test]
     async fn daily_briefing_producer_maps_callouts_to_attention_proposals() {
         let snapshot = DailyReadinessContextSnapshot {
             workspace_scope: "local".to_string(),
@@ -1635,14 +2185,6 @@ mod state_matrix_fixtures {
         assert_eq!(
             output.next_meeting.as_ref().unwrap().linked_entity_name.as_deref(),
             Some("Example Account")
-        );
-    }
-
-    #[test]
-    fn daily_briefing_entity_sections_omit_open_loops_for_aggregate_pass() {
-        assert_eq!(
-            daily_briefing_entity_sections(),
-            vec![EnvelopeSection::Facts]
         );
     }
 
@@ -1785,6 +2327,9 @@ mod state_matrix_fixtures {
             title: Some(id.to_string()),
             starts_at: Some("2026-05-28T10:00:00Z".to_string()),
             ends_at: Some("2026-05-28T10:30:00Z".to_string()),
+            context_narrative: None,
+            attendees: Vec::new(),
+            kind: Some("Customer".to_string()),
             linked_entity_type: None,
             linked_entity_id: None,
             linked_entity_name: None,

@@ -1609,6 +1609,14 @@ const ACTION_LIST_FIELDS: &[FieldPolicy] = &[
     text_field("/items/*/label", ClaimSensitivity::Internal),
     text_field("/items/*/starts_at", ClaimSensitivity::Internal),
     text_field("/items/*/ends_at", ClaimSensitivity::Internal),
+    // Daily-briefing meeting-row fields: the schedule reuses ActionList, so the
+    // meeting identity + prep narrative + attendees + kind must be admitted or
+    // the projection silently strips them (rows stop being clickable and lose
+    // their reference content).
+    text_field("/items/*/meeting_id", ClaimSensitivity::Internal),
+    text_field("/items/*/context", ClaimSensitivity::Internal),
+    text_field("/items/*/attendees", ClaimSensitivity::Internal),
+    text_field("/items/*/kind", ClaimSensitivity::Internal),
     text_field("/items/*/linked_entity_type", ClaimSensitivity::Internal),
     text_field("/items/*/linked_entity_id", ClaimSensitivity::Internal),
     text_field("/items/*/linked_entity_name", ClaimSensitivity::Internal),

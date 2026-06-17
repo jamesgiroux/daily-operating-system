@@ -493,7 +493,6 @@ fn build_empty_block(
         BlockType::ClaimSummary,
         json!({
             "title": title,
-            "body": body,
             "text": body,
             "empty_state": true,
             "trust_band": "needs_verification",
@@ -612,6 +611,7 @@ fn field_action_items(field: &MeetingCompositionSnapshotField) -> Vec<Value> {
                     items.push(json!({
                         "text": summary,
                         "status": field.label,
+                        "status_label": humanize_token(&field.label),
                         "trust_band": trust_band_label(field.trust_band),
                         "source_asof": field.source_asof.as_deref(),
                     }));
@@ -623,6 +623,7 @@ fn field_action_items(field: &MeetingCompositionSnapshotField) -> Vec<Value> {
                         items.push(json!({
                             "text": compact_item_label(value),
                             "status": key,
+                            "status_label": humanize_token(key),
                             "trust_band": trust_band_label(field.trust_band),
                             "source_asof": field.source_asof.as_deref(),
                         }));
@@ -638,6 +639,7 @@ fn field_action_items(field: &MeetingCompositionSnapshotField) -> Vec<Value> {
                 json!({
                     "text": compact_item_label(item),
                     "status": field.label,
+                    "status_label": humanize_token(&field.label),
                     "trust_band": trust_band_label(field.trust_band),
                     "source_asof": field.source_asof.as_deref(),
                 })
@@ -646,6 +648,7 @@ fn field_action_items(field: &MeetingCompositionSnapshotField) -> Vec<Value> {
         _ => vec![json!({
             "text": snapshot_value_text(&field.value),
             "status": field.label,
+            "status_label": humanize_token(&field.label),
             "trust_band": trust_band_label(field.trust_band),
             "source_asof": field.source_asof.as_deref(),
         })],
@@ -660,7 +663,7 @@ fn snapshot_field_evidence_items(field: &MeetingCompositionSnapshotField) -> Vec
             .take(12)
             .map(|item| {
                 json!({
-                    "label": format!("{}: {}", field.label, compact_item_label(item)),
+                    "label": evidence_label(&field.label, &compact_item_label(item)),
                     "source_label": source_label,
                     "source_asof": field.source_asof.as_deref(),
                     "trust_band": trust_band_label(field.trust_band),
@@ -668,13 +671,13 @@ fn snapshot_field_evidence_items(field: &MeetingCompositionSnapshotField) -> Vec
             })
             .collect(),
         Value::Object(_) => vec![json!({
-            "label": format!("{}: {}", field.label, compact_item_label(&field.value)),
+            "label": evidence_label(&field.label, &compact_item_label(&field.value)),
             "source_label": source_label,
             "source_asof": field.source_asof.as_deref(),
             "trust_band": trust_band_label(field.trust_band),
         })],
         _ => vec![json!({
-            "label": format!("{}: {}", field.label, snapshot_value_text(&field.value)),
+            "label": evidence_label(&field.label, &snapshot_value_text(&field.value)),
             "source_label": source_label,
             "source_asof": field.source_asof.as_deref(),
             "trust_band": trust_band_label(field.trust_band),
@@ -682,8 +685,21 @@ fn snapshot_field_evidence_items(field: &MeetingCompositionSnapshotField) -> Vec
     }
 }
 
+/// Compose a human-facing `label: value` evidence line, humanizing each side so
+/// neither a machine field name nor an enum value leaks as raw display text.
+/// A value that collapses to empty yields just the humanized label.
+fn evidence_label(label: &str, value: &str) -> String {
+    let label = humanize_token(label);
+    let value = humanize_token(value);
+    if value.is_empty() {
+        label
+    } else {
+        format!("{label}: {value}")
+    }
+}
+
 fn field_summary_line(field: &&MeetingCompositionSnapshotField) -> String {
-    format!("{}: {}", field.label, snapshot_value_text(&field.value))
+    evidence_label(&field.label, &snapshot_value_text(&field.value))
 }
 
 fn compact_item_label(value: &Value) -> String {
@@ -709,6 +725,29 @@ fn snapshot_value_text(value: &Value) -> String {
         Value::Bool(value) => value.to_string(),
         Value::Number(value) => value.to_string(),
         Value::Array(_) | Value::Object(_) => value.to_string(),
+    }
+}
+
+/// Convert a `snake_case` / lowercase machine token into a human-facing label.
+/// Strings that already read as prose (containing a space or any uppercase) are
+/// returned untouched, so real sentences are never mangled — only bare enum
+/// tokens like `prediction_status` or `pending_verification` are reshaped.
+fn humanize_token(value: &str) -> String {
+    let trimmed = value.trim();
+    if trimmed.is_empty() {
+        return String::new();
+    }
+    let looks_machine = trimmed
+        .chars()
+        .all(|c| c.is_ascii_lowercase() || c.is_ascii_digit() || c == '_');
+    if !looks_machine {
+        return trimmed.to_string();
+    }
+    let spaced = trimmed.replace('_', " ");
+    let mut chars = spaced.chars();
+    match chars.next() {
+        Some(first) => first.to_uppercase().collect::<String>() + chars.as_str(),
+        None => String::new(),
     }
 }
 
@@ -1019,6 +1058,29 @@ mod tests {
             test_invocation_id(),
             FieldPath::new(format!("/sections/0/blocks/{block_index}")).unwrap(),
         )
+    }
+
+    #[test]
+    fn humanize_token_reshapes_machine_tokens_but_preserves_prose() {
+        assert_eq!(humanize_token("prediction_status"), "Prediction status");
+        assert_eq!(humanize_token("pending_verification"), "Pending verification");
+        assert_eq!(humanize_token("wins"), "Wins");
+        // Anything already reading as prose (space or uppercase) is untouched.
+        assert_eq!(
+            humanize_token("Legal review is starting"),
+            "Legal review is starting"
+        );
+        assert_eq!(humanize_token(""), "");
+    }
+
+    #[test]
+    fn evidence_label_never_leaks_raw_snake_pairs() {
+        assert_eq!(
+            evidence_label("prediction_status", "pending_verification"),
+            "Prediction status: Pending verification"
+        );
+        // An empty value collapses to just the humanized label — no trailing colon.
+        assert_eq!(evidence_label("risks", ""), "Risks");
     }
 
     fn test_block(

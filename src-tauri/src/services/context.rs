@@ -77,6 +77,7 @@ pub struct LivePersonCompositionSnapshotReader;
 pub struct LiveActionCompositionSnapshotReader;
 pub struct LiveMeetingCompositionSnapshotReader;
 pub struct LivePrepareMeetingContextReader;
+pub struct LiveMeetingPrepNarrativeReader;
 pub struct LiveDailyReadinessContextReader;
 pub struct LiveBriefingCalloutReader;
 pub struct LiveTemporalWorkspaceReader;
@@ -141,6 +142,7 @@ pub fn attach_live_workspace_readers_with_signal_engine(
             LiveMeetingCompositionSnapshotReader,
         ))
         .with_prepare_meeting_context_reader(Arc::new(LivePrepareMeetingContextReader))
+        .with_meeting_prep_narrative_reader(Arc::new(LiveMeetingPrepNarrativeReader))
         .with_daily_readiness_context_reader(Arc::new(LiveDailyReadinessContextReader))
         .with_briefing_callout_reader(Arc::new(LiveBriefingCalloutReader))
         .with_trajectory_reader(Arc::new(LiveTemporalWorkspaceReader))
@@ -3605,6 +3607,83 @@ impl PrepareMeetingContextReadHandle for LivePrepareMeetingContextReader {
             .map_err(|error| format!("prepare_meeting context read task failed: {error}"))?
         })
     }
+}
+
+impl MeetingPrepNarrativeReadHandle for LiveMeetingPrepNarrativeReader {
+    fn read_meeting_prep_narrative<'a>(
+        &'a self,
+        meeting_id: String,
+    ) -> MeetingPrepNarrativeReadFuture<'a> {
+        Box::pin(async move {
+            tokio::task::spawn_blocking(move || {
+                // mcp-self-open-allowed: live adapter fallback; indirect reader routing is outside this direct MCP handler pass.
+                let keychain = crate::db::LocalKeychain::new(); // mcp-self-open-allowed: live adapter fallback
+                let db = crate::db::ActionDb::open_readonly(std::sync::Arc::new(keychain)) // mcp-self-open-allowed: live adapter fallback
+                    .map_err(|error| format!("Database unavailable: {error}"))?;
+                read_meeting_prep_narrative_from_db(&db, &meeting_id)
+            })
+            .await
+            .map_err(|error| format!("meeting_prep narrative read task failed: {error}"))?
+        })
+    }
+}
+
+fn read_meeting_prep_narrative_from_db(
+    db: &crate::db::ActionDb,
+    meeting_id: &str,
+) -> Result<Option<String>, String> {
+    use rusqlite::OptionalExtension;
+
+    let prep_json = db
+        .conn_ref()
+        .query_row(
+            "SELECT prep_context_json FROM meeting_prep WHERE meeting_id = ?1",
+            rusqlite::params![meeting_id],
+            |row| row.get::<_, Option<String>>(0),
+        )
+        .optional()
+        .map_err(|error| format!("meeting_prep narrative query failed: {error}"))?
+        .flatten();
+
+    Ok(prep_json
+        .as_deref()
+        .and_then(extract_meeting_prep_narrative))
+}
+
+fn extract_meeting_prep_narrative(prep_json: &str) -> Option<String> {
+    if let Ok(full) = serde_json::from_str::<crate::types::FullMeetingPrep>(prep_json) {
+        return clean_optional_text(full.meeting_context)
+            .or_else(|| clean_optional_text(full.intelligence_summary));
+    }
+
+    let value = serde_json::from_str::<serde_json::Value>(prep_json).ok()?;
+    string_field(&value, &["meeting_context", "meetingContext"])
+        .or_else(|| string_field(&value, &["intelligence_summary", "intelligenceSummary"]))
+        .or_else(|| {
+            value.get("ai_intelligence").and_then(|ai| {
+                string_field(ai, &["meeting_context", "meetingContext", "narrative"])
+            })
+        })
+}
+
+fn string_field(value: &serde_json::Value, keys: &[&str]) -> Option<String> {
+    keys.iter().find_map(|key| {
+        value
+            .get(*key)
+            .and_then(|candidate| candidate.as_str())
+            .and_then(|text| clean_optional_text(Some(text.to_string())))
+    })
+}
+
+fn clean_optional_text(value: Option<String>) -> Option<String> {
+    value.and_then(|text| {
+        let trimmed = text.trim();
+        if trimmed.is_empty() {
+            None
+        } else {
+            Some(trimmed.to_string())
+        }
+    })
 }
 
 impl DailyReadinessContextReadHandle for LiveDailyReadinessContextReader {
