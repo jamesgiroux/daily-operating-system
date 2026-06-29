@@ -29,6 +29,9 @@ export interface MeetingSpineItemProps
    *  briefing affordance link into the meeting detail surface via the same
    *  `/meeting/$meetingId` route the legacy card used. */
   meetingId?: string;
+  /** Apply the focal-row emphasis (the same chrome an in-progress meeting
+   *  gets) without the meeting being in progress — used for the up-next row. */
+  highlighted?: boolean;
   briefingLabel?: ReactNode;
   createLabel?: ReactNode;
   statusLabel?: ReactNode;
@@ -101,6 +104,7 @@ export function MeetingSpineItem({
   prepState = "none",
   prepLabel,
   meetingId,
+  highlighted = false,
   briefingLabel = "Read full briefing",
   createLabel = "Create briefing",
   statusLabel,
@@ -119,6 +123,7 @@ export function MeetingSpineItem({
         styles.item,
         TYPE_CLASS[type],
         STATE_CLASS[state],
+        highlighted && styles.inProgress,
         className,
       )}
       data-ds-name="MeetingSpineItem"

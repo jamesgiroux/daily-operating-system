@@ -510,7 +510,8 @@ async fn read_meeting_brief_extras(
             .read_meeting_prep_narrative(meeting_id.clone())
             .await
             .ok()
-            .flatten();
+            .flatten()
+            .and_then(constrain_narrative);
 
         if context_narrative.is_some() || !attendees.is_empty() {
             out.insert(
@@ -561,6 +562,37 @@ fn clean_text(value: String) -> Option<String> {
     } else {
         Some(trimmed.to_string())
     }
+}
+
+/// Roughly three rendered lines of the briefing spine's italic context prose
+/// (~680px column). Constraining here rather than relying on the surface's CSS
+/// clamp keeps the narrative clean prose cut at a sentence/word boundary
+/// instead of a mid-word ellipsis.
+const NARRATIVE_MAX_CHARS: usize = 280;
+
+/// Collapse whitespace and constrain a prep narrative to ~three lines, cutting
+/// at the last sentence end (preferred) or word boundary and appending an
+/// ellipsis only when the text was actually shortened.
+fn constrain_narrative(value: String) -> Option<String> {
+    let normalized = value.split_whitespace().collect::<Vec<_>>().join(" ");
+    if normalized.is_empty() {
+        return None;
+    }
+    if normalized.chars().count() <= NARRATIVE_MAX_CHARS {
+        return Some(normalized);
+    }
+    let slice: String = normalized.chars().take(NARRATIVE_MAX_CHARS).collect();
+    let cut = slice
+        .rfind(['.', '!', '?'])
+        .map(|i| i + 1)
+        .filter(|&i| i >= slice.len() / 2)
+        .or_else(|| slice.rfind(' '))
+        .unwrap_or(slice.len());
+    let mut out = slice[..cut].trim_end().to_string();
+    if !out.ends_with(['.', '!', '?']) {
+        out.push('…');
+    }
+    Some(out)
 }
 
 fn linked_entity_name(

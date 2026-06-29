@@ -29,6 +29,7 @@ import { EditableBlockText, ItemFeedback } from "@/components/composition/blocks
 import { normalizeTrustBand, type ProjectedBlock, type ProjectedComposition } from "@/services/composition/contracts";
 import { DayChart, type DayChartMeeting, type DayChartMeetingState, type DayChartMeetingType } from "./DayChart";
 import { DayStrip } from "./DayStrip";
+import { MeetingEntityPicker } from "./MeetingEntityPicker";
 import {
   MeetingSpineItem,
   type MeetingSpinePrepState,
@@ -312,11 +313,13 @@ function ProjectedBriefingChapter({
   briefingEntityId,
   selectedDate,
   now,
+  onMeetingEntityChanged,
 }: {
   projection: ProjectedComposition | null;
   briefingEntityId: string;
   selectedDate: Date;
   now: number;
+  onMeetingEntityChanged: () => void;
 }) {
   if (!projection || projection.blocks.length === 0) {
     return null;
@@ -396,13 +399,25 @@ function ProjectedBriefingChapter({
                         humanizeLabel(payloadText(item.linked_entity_type)) ??
                         "Unlinked";
                       const kindLabel = humanizeLabel(payloadText(item.kind));
-                      const entityName = [entityLabel, kindLabel]
-                        .filter(Boolean)
-                        .join(" · ");
                       const state = meetingState(item, now);
                       const timeLabel = formatMeetingTime(payloadText(item.starts_at));
                       const meetingId = payloadText(item.meeting_id) ?? undefined;
                       const isUpNext = state === "upcoming" && payloadText(item.label) === "Next";
+                      const entityName = meetingId ? (
+                        <>
+                          <MeetingEntityPicker
+                            meetingId={meetingId}
+                            label={entityLabel}
+                            meetingTitle={title}
+                            startTime={payloadText(item.starts_at) ?? ""}
+                            meetingType={payloadText(item.kind) ?? "internal"}
+                            onChanged={onMeetingEntityChanged}
+                          />
+                          {kindLabel ? ` · ${kindLabel}` : ""}
+                        </>
+                      ) : (
+                        [entityLabel, kindLabel].filter(Boolean).join(" · ")
+                      );
                       return (
                         <MeetingSpineItem
                           key={`${meetingId ?? payloadText(item.linked_entity_id) ?? title}-${index}`}
@@ -416,6 +431,7 @@ function ProjectedBriefingChapter({
                           attendees={payloadText(item.attendees) ?? undefined}
                           prepState={prepStateForStatus(item, state)}
                           showStatus={state === "in-progress" || isUpNext}
+                          highlighted={isUpNext}
                           meetingId={meetingId}
                           data-trust-band={normalizeTrustBand(scheduleBlock.trust_band)}
                         />
@@ -763,6 +779,7 @@ export function DailyBriefing({ data, freshness, onRunBriefing, isRunning, workf
         briefingEntityId={projectedBriefingEntityId}
         selectedDate={projectedBriefingDate}
         now={now}
+        onMeetingEntityChanged={refreshProjectedBriefing}
       />
 
     </div>
