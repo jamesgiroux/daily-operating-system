@@ -4680,14 +4680,21 @@ pub async fn refresh_meeting_briefing_full(
             },
         )?;
 
-        match crate::services::intelligence::enrich_entity(
+        // `enrich_entity` builds a large future (IntelligenceContext, prompt
+        // strings, IntelligenceJson held across awaits). Nested inside the
+        // scheduler → generate_meeting_intelligence → refresh_meeting_briefing
+        // chain, the summed future overflows the 2 MB tokio-worker stack —
+        // observed as a shallow (~70-frame) stack overflow while refreshing the
+        // user's own data-heavy person entity. Box the future onto the heap so
+        // it no longer inflates this frame's stack footprint.
+        match Box::pin(crate::services::intelligence::enrich_entity(
             ctx,
             entity_id.clone(),
             entity_type.clone(),
             state,
             app_handle,
             request_id,
-        )
+        ))
         .await
         {
             Ok(_) => {
