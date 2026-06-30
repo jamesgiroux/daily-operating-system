@@ -1,0 +1,165 @@
+/* Editorial in-spine entity selector — lives in the MeetingSpineItem eyebrow.
+   The trigger inherits the eyebrow's mono/uppercase/accent type; the panel is
+   token-styled (paper/rule/serif) so it reads as part of the magazine surface,
+   not the shadcn app chrome. */
+
+.trigger {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  min-width: 0;
+  max-width: 100%;
+  margin: 0;
+  padding: 0;
+  border: 0;
+  background: none;
+  color: inherit;
+  font: inherit;
+  letter-spacing: inherit;
+  text-transform: inherit;
+  cursor: pointer;
+}
+
+.label {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  border-bottom: 1px solid transparent;
+  transition: border-color var(--transition-normal);
+}
+
+.trigger:hover .label,
+.trigger:focus-visible .label {
+  border-color: currentColor;
+}
+
+.trigger:focus-visible {
+  outline: none;
+}
+
+.caret {
+  flex: 0 0 auto;
+  width: 11px;
+  height: 11px;
+  opacity: 0.7;
+}
+
+.panel {
+  width: 264px;
+  background: var(--color-paper-warm-white);
+  border: 1px solid var(--color-rule-heavy);
+  border-radius: var(--radius-editorial-sm);
+  box-shadow: var(--shadow-lg);
+  overflow: hidden;
+}
+
+.search {
+  display: block;
+  width: 100%;
+  box-sizing: border-box;
+  padding: 9px 12px;
+  border: 0;
+  border-bottom: 1px solid var(--color-rule-light);
+  background: transparent;
+  font-family: var(--font-mono);
+  font-size: 12px;
+  letter-spacing: 0;
+  color: var(--color-text-primary);
+}
+
+.search::placeholder {
+  color: var(--color-text-tertiary);
+}
+
+.search:focus {
+  outline: none;
+}
+
+.list {
+  margin: 0;
+  padding: 4px;
+  max-height: 264px;
+  overflow-y: auto;
+  list-style: none;
+}
+
+.option {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 10px;
+  width: 100%;
+  padding: 7px 8px;
+  border: 0;
+  border-radius: var(--radius-editorial-sm);
+  background: none;
+  text-align: left;
+  cursor: pointer;
+  font-family: var(--font-serif);
+  font-size: 14px;
+  color: var(--color-text-primary);
+  transition: background var(--transition-normal);
+}
+
+.option:hover,
+.option:focus-visible {
+  background: var(--color-spice-turmeric-10);
+  outline: none;
+}
+
+.option:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
+
+.optionName {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.optionKind {
+  flex: 0 0 auto;
+  font-family: var(--font-mono);
+  font-size: 9.5px;
+  letter-spacing: 0;
+  text-transform: uppercase;
+  color: var(--color-text-tertiary);
+}
+
+.groupHeading {
+  padding: 8px 10px 4px;
+  font-family: var(--font-mono);
+  font-size: 9.5px;
+  font-weight: 700;
+  letter-spacing: 0;
+  text-transform: uppercase;
+  color: var(--color-text-tertiary);
+}
+
+.groupHeading:not(:first-child) {
+  margin-top: 4px;
+  border-top: 1px solid var(--color-rule-light);
+}
+
+.optionChild {
+  padding-left: 22px;
+}
+
+.optionChild .optionName {
+  color: var(--color-text-secondary);
+}
+
+.optionChild .optionName::before {
+  content: "└ ";
+  color: var(--color-text-tertiary);
+}
+
+.empty {
+  padding: 10px 12px;
+  font-family: var(--font-mono);
+  font-size: 11px;
+  color: var(--color-text-tertiary);
+}

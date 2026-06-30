@@ -41,6 +41,7 @@ import { FolioRefreshButton } from "@/components/ui/folio-refresh-button";
 import { useRegisterMagazineShell } from "@/hooks/useMagazineShell";
 import { useRevealObserver } from "@/hooks/useRevealObserver";
 import { useTauriEvent } from "@/hooks/useTauriEvent";
+import { useProjectedComposition } from "@/hooks/useProjectedComposition";
 import { FinisMarker } from "@/components/editorial/FinisMarker";
 import { ChapterHeading } from "@/components/editorial/ChapterHeading";
 import { EditorialLoading } from "@/components/editorial/EditorialLoading";
@@ -50,6 +51,7 @@ import { PostMeetingIntelligence } from "@/components/meeting/PostMeetingIntelli
 import { EditableText } from "@/components/ui/EditableText";
 import { ClaimTextRenderer } from "@/components/ui/ClaimTextRenderer";
 import { TrustBandIndicator } from "@/components/ui/TrustBandIndicator";
+import { ReactBlockRenderer } from "@/components/composition/ReactBlockRenderer";
 import { useIntelligenceFeedback } from "@/hooks/useIntelligenceFeedback";
 import { useMeetingEntityIntelligence } from "@/hooks/useMeetingEntityIntelligence";
 import { useMeetingDetailCommands } from "@/hooks/useMeetingDetailCommands";
@@ -83,6 +85,7 @@ import {
 import clsx from "clsx";
 import styles from "./meeting-intel.module.css";
 import type { EntityIntelligenceEnvelope } from "@/services/entity-intelligence/contracts";
+import type { ProjectedComposition, RenderedProvenance } from "@/services/composition/contracts";
 
 // ── Chapter Nav definitions ──
 
@@ -163,6 +166,63 @@ interface MeetingTrustEvidenceItem {
 
 type MeetingTrustPartition = TrustEvidencePartition<MeetingTrustEvidenceItem>;
 
+function ProjectedMeetingComposition({
+  projection,
+  renderedProvenance,
+  feedbackEntityId,
+  error,
+}: {
+  projection: ProjectedComposition | null;
+  renderedProvenance: RenderedProvenance | null;
+  feedbackEntityId: string | null;
+  error: string | null;
+}) {
+  if (!projection || projection.sections.length === 0 || projection.blocks.length === 0) {
+    if (!error) return null;
+    return (
+      <section className={styles.projectedCompositionUnavailable}>
+        <p className={styles.projectedCompositionLabel}>Composition unavailable</p>
+        <p className={styles.projectedCompositionMeta}>{error}</p>
+      </section>
+    );
+  }
+
+  const blocksById = new Map(projection.blocks.map((block) => [block.block_id, block]));
+  return (
+    <section
+      className={styles.projectedCompositionSurface}
+      data-composition-id={projection.composition_id}
+      data-composition-version={projection.composition_version ?? 0}
+      data-fallback-policy-version={projection.fallback_policy_version}
+    >
+      {projection.sections.map((section) => {
+        const blocks = section.block_ids
+          .map((blockId) => blocksById.get(blockId))
+          .filter((block): block is ProjectedComposition["blocks"][number] => Boolean(block));
+        if (blocks.length === 0) return null;
+        return (
+          <div key={section.section_id} className={styles.projectedCompositionSection}>
+            {section.label && (
+              <p className={styles.projectedCompositionLabel}>{section.label}</p>
+            )}
+            <div className={styles.projectedCompositionBlocks}>
+              {blocks.map((block) => (
+                <ReactBlockRenderer
+                  key={block.block_id}
+                  block={block}
+                  entityId={feedbackEntityId ?? undefined}
+                  entityType="meeting"
+                  renderedProvenance={renderedProvenance}
+                />
+              ))}
+            </div>
+          </div>
+        );
+      })}
+    </section>
+  );
+}
+
 export default function MeetingDetailPage() {
   const { meetingId } = useParams({ strict: false });
   const navigate = useNavigate();
@@ -178,6 +238,8 @@ export default function MeetingDetailPage() {
   const [predictionScorecard, setPredictionScorecard] = useState<PredictionScorecard | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [meetingCompositionToken, setMeetingCompositionToken] = useState<string | null>(null);
+  const [meetingCompositionError, setMeetingCompositionError] = useState<string | null>(null);
   const [refreshingIntel, setRefreshingIntel] = useState(false);
   const transientRetryCount = useRef(0);
   const granolaAutoCheckInFlight = useRef(false);
@@ -192,6 +254,7 @@ export default function MeetingDetailPage() {
     attachMeetingTranscriptText,
     completeAction,
     getGranolaStatus,
+    getMeetingCompositionToken,
     getMeetingContinuityThread,
     getMeetingIntelligence,
     getMeetingPostIntelligence,
@@ -207,6 +270,11 @@ export default function MeetingDetailPage() {
     updateActionPriority,
     updateMeetingPrepField,
   } = useMeetingDetailCommands(meetingId);
+  const projectedMeeting = useProjectedComposition(
+    meetingCompositionToken
+      ? { entityType: "meeting", entityId: meetingCompositionToken }
+      : undefined,
+  );
 
   // Entity mutation in progress — shows "Updating briefing..."
   const [briefingUpdating, setBriefingUpdating] = useState(false);
@@ -246,6 +314,25 @@ export default function MeetingDetailPage() {
   useEffect(() => {
     setShowAllEvidence(readShowAllEvidenceState(trustSurfaceId));
   }, [trustSurfaceId]);
+
+  useEffect(() => {
+    let cancelled = false;
+    setMeetingCompositionToken(null);
+    setMeetingCompositionError(null);
+    if (!meetingId) return;
+    getMeetingCompositionToken()
+      .then((response) => {
+        if (!cancelled) setMeetingCompositionToken(response.meetingToken);
+      })
+      .catch((err) => {
+        if (!cancelled) {
+          setMeetingCompositionError(err instanceof Error ? err.message : String(err));
+        }
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [getMeetingCompositionToken, meetingId]);
 
   const invokeGranolaSync = useCallback(async (force: boolean) => {
     if (!meetingId) {
@@ -370,6 +457,24 @@ export default function MeetingDetailPage() {
     meetingId,
   ]);
 
+  const refreshProjectedMeetingComposition = useCallback(async () => {
+    if (!meetingCompositionToken) return;
+    await projectedMeeting.refetch({ forceRefresh: true });
+  }, [meetingCompositionToken, projectedMeeting.refetch]);
+
+  const submitMeetingFeedback = useCallback(
+    async (...args: Parameters<typeof feedback.submitFeedback>) => {
+      await feedback.submitFeedback(...args);
+      await refreshProjectedMeetingComposition();
+    },
+    [feedback.submitFeedback, refreshProjectedMeetingComposition],
+  );
+
+  const reloadMeetingSurface = useCallback(async () => {
+    await loadMeetingIntelligence();
+    await refreshProjectedMeetingComposition();
+  }, [loadMeetingIntelligence, refreshProjectedMeetingComposition]);
+
   const handleSyncTranscript = useCallback(async () => {
     if (!meetingId) return;
     setSyncing(true);
@@ -402,7 +507,7 @@ export default function MeetingDetailPage() {
             id: "granola-sync",
             description: result.message,
           });
-          await loadMeetingIntelligence();
+          await reloadMeetingSurface();
           return;
         }
 
@@ -411,7 +516,7 @@ export default function MeetingDetailPage() {
             id: "granola-sync",
             description: result.message,
           });
-          await loadMeetingIntelligence();
+          await reloadMeetingSurface();
           return;
         }
 
@@ -444,7 +549,7 @@ export default function MeetingDetailPage() {
     } finally {
       setSyncingGranola(false);
     }
-  }, [meetingId, invokeGranolaSync, loadMeetingIntelligence]);
+  }, [meetingId, invokeGranolaSync, reloadMeetingSurface]);
 
   const handleAttachTranscript = useCallback(async () => {
     if (!meetingId || !data) return;
@@ -488,7 +593,7 @@ export default function MeetingDetailPage() {
       } else {
         toast.success("Transcript processed");
       }
-      await loadMeetingIntelligence();
+      await reloadMeetingSurface();
     } catch (err) {
       const msg = err instanceof Error ? err.message : String(err);
       console.error("Failed to attach transcript:", msg);
@@ -496,7 +601,7 @@ export default function MeetingDetailPage() {
     } finally {
       setAttaching(false);
     }
-  }, [attachMeetingTranscript, meetingId, data, meetingMeta, loadMeetingIntelligence]);
+  }, [attachMeetingTranscript, meetingId, data, meetingMeta, reloadMeetingSurface]);
 
   const handlePasteTranscript = useCallback(() => {
     if (!meetingId || !data) return;
@@ -546,7 +651,7 @@ export default function MeetingDetailPage() {
           setPasteText("");
           toast.success("Transcript processed", { id: "paste-transcript" });
         }
-        await loadMeetingIntelligence();
+        await reloadMeetingSurface();
       } catch (err) {
         const msg = err instanceof Error ? err.message : String(err);
         console.error("Failed to paste transcript:", msg);
@@ -564,8 +669,8 @@ export default function MeetingDetailPage() {
     meetingMeta,
     pasteText,
     pasteFormat,
-    loadMeetingIntelligence,
     attachMeetingTranscriptText,
+    reloadMeetingSurface,
   ]);
 
   const handleReprocessTranscript = useCallback(async () => {
@@ -589,7 +694,7 @@ export default function MeetingDetailPage() {
       } else {
         toast.success("Transcript reprocessed", { id: "reprocess-transcript" });
       }
-      await loadMeetingIntelligence();
+      await reloadMeetingSurface();
     } catch (err) {
       const msg = err instanceof Error ? err.message : String(err);
       console.error("Failed to reprocess transcript:", msg);
@@ -597,7 +702,7 @@ export default function MeetingDetailPage() {
     } finally {
       setRetryingExtraction(false);
     }
-  }, [meetingId, loadMeetingIntelligence, reprocessMeetingTranscript]);
+  }, [meetingId, reloadMeetingSurface, reprocessMeetingTranscript]);
 
   const handleRetryTranscriptExtraction = useCallback(async () => {
     if (!meetingId || !data || !outcomes?.transcriptPath) return;
@@ -631,7 +736,7 @@ export default function MeetingDetailPage() {
       } else {
         toast.success("Outcomes extracted");
       }
-      await loadMeetingIntelligence();
+      await reloadMeetingSurface();
     } catch (err) {
       const msg = err instanceof Error ? err.message : String(err);
       console.error("Failed to retry transcript extraction:", msg);
@@ -639,7 +744,7 @@ export default function MeetingDetailPage() {
     } finally {
       setRetryingExtraction(false);
     }
-  }, [attachMeetingTranscript, meetingId, data, meetingMeta, outcomes?.transcriptPath, loadMeetingIntelligence]);
+  }, [attachMeetingTranscript, meetingId, data, meetingMeta, outcomes?.transcriptPath, reloadMeetingSurface]);
 
   const handleDraftAgendaMessage = useCallback(async () => {
     if (!meetingId) return;
@@ -665,7 +770,7 @@ export default function MeetingDetailPage() {
         setPrefillNotice(true);
         setTimeout(() => setPrefillNotice(false), 5000);
       }
-      await loadMeetingIntelligence();
+      await reloadMeetingSurface();
     } catch (err) {
       setError(
         err instanceof Error ? err.message : "Failed to prefill briefing context"
@@ -673,7 +778,7 @@ export default function MeetingDetailPage() {
     } finally {
       setPrefilling(false);
     }
-  }, [applyMeetingPrepPrefill, meetingId, canEditUserLayer, data, loadMeetingIntelligence]);
+  }, [applyMeetingPrepPrefill, meetingId, canEditUserLayer, data, reloadMeetingSurface]);
 
   const handleRefreshIntelligence = useCallback(async () => {
     if (!meetingId) return;
@@ -681,7 +786,7 @@ export default function MeetingDetailPage() {
     toast("Refreshing briefing…", { duration: 10_000, id: "intel-refresh" });
     try {
       const refreshed = await refreshMeetingBriefing();
-      await loadMeetingIntelligence();
+      await reloadMeetingSurface();
       if (refreshed.failedEntities > 0) {
         toast.success(
           `Briefing updated (${refreshed.failedEntities} retries queued)`,
@@ -695,7 +800,7 @@ export default function MeetingDetailPage() {
     } finally {
       setRefreshingIntel(false);
     }
-  }, [meetingId, loadMeetingIntelligence, refreshMeetingBriefing]);
+  }, [meetingId, refreshMeetingBriefing, reloadMeetingSurface]);
 
   const handleRefreshProgress = useCallback((progress: MeetingBriefingRefreshProgress) => {
     if (!meetingId || progress.meetingId !== meetingId) return;
@@ -712,8 +817,8 @@ export default function MeetingDetailPage() {
   const handlePrepReady = useCallback((payload: PrepReadyPayload) => {
     if (!meetingId || payload.meetingId !== meetingId) return;
     setBriefingUpdating(false);
-    void loadMeetingIntelligence();
-  }, [meetingId, loadMeetingIntelligence]);
+    void reloadMeetingSurface();
+  }, [meetingId, reloadMeetingSurface]);
 
   useTauriEvent<PrepReadyPayload>("prep-ready", handlePrepReady);
 
@@ -721,20 +826,20 @@ export default function MeetingDetailPage() {
     if (!meetingId) return;
     if (typeof payload === "string") {
       if (payload !== meetingId) return;
-      void loadMeetingIntelligence();
+      void reloadMeetingSurface();
       return;
     }
     if (payload.meetingId !== meetingId) return;
     setOutcomes(payload);
-    void loadMeetingIntelligence();
-  }, [meetingId, loadMeetingIntelligence]);
+    void reloadMeetingSurface();
+  }, [meetingId, reloadMeetingSurface]);
 
   useTauriEvent<TranscriptProcessedPayload>("transcript-processed", handleTranscriptProcessed);
 
   const handleTranscriptProgress = useCallback((payload: TranscriptProgressPayload) => {
     if (!meetingId || payload.meetingId !== meetingId) return;
-    void loadMeetingIntelligence();
-  }, [meetingId, loadMeetingIntelligence]);
+    void reloadMeetingSurface();
+  }, [meetingId, reloadMeetingSurface]);
 
   useTauriEvent<TranscriptProgressPayload>("transcript-progress", handleTranscriptProgress);
 
@@ -743,10 +848,10 @@ export default function MeetingDetailPage() {
     if (!briefingUpdating) return;
     const timer = setTimeout(() => {
       setBriefingUpdating(false);
-      void loadMeetingIntelligence();
+      void reloadMeetingSurface();
     }, 15_000);
     return () => clearTimeout(timer);
-  }, [briefingUpdating, loadMeetingIntelligence]);
+  }, [briefingUpdating, reloadMeetingSurface]);
 
   const copyToClipboard = useCallback(async (text: string, action: string) => {
     await navigator.clipboard.writeText(text);
@@ -866,6 +971,7 @@ Thanks!`;
     setSaveStatus("saving");
     try {
       await updateMeetingPrepField(fieldPath, value, targetPersonId);
+      await refreshProjectedMeetingComposition();
       setSaveStatus("saved");
       setTimeout(() => setSaveStatus("idle"), 2000);
     } catch (err) {
@@ -873,7 +979,7 @@ Thanks!`;
       toast.error("Failed to save change");
       setSaveStatus("idle");
     }
-  }, [meetingId, isEditable, updateMeetingPrepField]);
+  }, [meetingId, isEditable, refreshProjectedMeetingComposition, updateMeetingPrepField]);
 
   // Collaboration action visibility
   const isFutureMeeting = !isPastMeeting;
@@ -910,7 +1016,7 @@ Thanks!`;
       try {
         const result = await invokeGranolaSync(false);
         if (result.status === "attached" || result.status === "already_completed") {
-          await loadMeetingIntelligence();
+          await reloadMeetingSurface();
         }
       } catch {
         // Quiet background retry only.
@@ -927,7 +1033,7 @@ Thanks!`;
     return () => {
       window.clearInterval(intervalId);
     };
-  }, [granolaEnabled, invokeGranolaSync, isPastMeeting, loadMeetingIntelligence, millisecondsSinceMeetingEnd, outcomes?.transcriptPath]);
+  }, [granolaEnabled, invokeGranolaSync, isPastMeeting, reloadMeetingSurface, millisecondsSinceMeetingEnd, outcomes?.transcriptPath]);
 
   // Register magazine shell with chapter nav + folio actions
   const shellConfig = useMemo(() => ({
@@ -1097,6 +1203,17 @@ Thanks!`;
   return (
     <>
       <div className={styles.pageContainer}>
+        <ProjectedMeetingComposition
+          projection={projectedMeeting.data?.projection ?? null}
+          renderedProvenance={projectedMeeting.renderedProvenance}
+          feedbackEntityId={meetingId ?? null}
+          error={
+            meetingCompositionError || (meetingCompositionToken && projectedMeeting.error)
+              ? "Meeting composition is not available yet."
+              : null
+          }
+        />
+
         {/* Post-meeting intelligence — replaces flat outcomes when available */}
         {postIntel && (
           <>
@@ -1117,16 +1234,16 @@ Thanks!`;
                 summary={outcomes?.summary}
                 actions={outcomes?.actions ?? []}
                 getItemFeedback={feedback.getFeedback}
-                onItemFeedback={feedback.submitFeedback}
+                onItemFeedback={submitMeetingFeedback}
                 onAcceptAction={async (id) => {
                   const y = window.scrollY;
-                  try { await acceptSuggestedAction(id); await loadMeetingIntelligence(); }
+                  try { await acceptSuggestedAction(id); await reloadMeetingSurface(); }
                   catch { toast.error("Failed to accept action"); }
                   requestAnimationFrame(() => window.scrollTo(0, y));
                 }}
                 onDismissAction={async (id) => {
                   const y = window.scrollY;
-                  try { await rejectSuggestedAction(id); await loadMeetingIntelligence(); }
+                  try { await rejectSuggestedAction(id); await reloadMeetingSurface(); }
                   catch { toast.error("Failed to dismiss action"); }
                   requestAnimationFrame(() => window.scrollTo(0, y));
                 }}
@@ -1136,7 +1253,7 @@ Thanks!`;
                     const action = outcomes?.actions.find(a => a.id === id);
                     if (action?.status === "completed") { await reopenAction(id); }
                     else { await completeAction(id); }
-                    await loadMeetingIntelligence();
+                    await reloadMeetingSurface();
                   } catch { toast.error("Failed to update action"); }
                   requestAnimationFrame(() => window.scrollTo(0, y));
                 }}
@@ -1145,7 +1262,7 @@ Thanks!`;
                   const action = outcomes?.actions.find(a => a.id === id);
                   const p = action?.priority ?? 3;
                   const next = p <= 1 ? "3" : p <= 3 ? "4" : "1";
-                  try { await updateActionPriority(id, next); await loadMeetingIntelligence(); }
+                  try { await updateActionPriority(id, next); await reloadMeetingSurface(); }
                   catch { toast.error("Failed to update priority"); }
                   requestAnimationFrame(() => window.scrollTo(0, y));
                 }}
@@ -1164,7 +1281,7 @@ Thanks!`;
             <div className={styles.outcomesWrap}>
               <OutcomesSection
                 outcomes={outcomes}
-                onRefresh={loadMeetingIntelligence}
+                onRefresh={reloadMeetingSurface}
                 onSaveStatus={setSaveStatus}
                 onRetryTranscriptExtraction={handleRetryTranscriptExtraction}
                 retryingExtraction={retryingExtraction}
@@ -1209,7 +1326,7 @@ Thanks!`;
                   linkedEntities={linkedEntities}
                   onEntitiesChanged={() => {
                     setBriefingUpdating(true);
-                    void loadMeetingIntelligence();
+                    void reloadMeetingSurface();
                   }}
                 />
               </div>
@@ -1281,7 +1398,7 @@ Thanks!`;
                   linkedEntities={linkedEntities}
                   onEntitiesChanged={() => {
                     setBriefingUpdating(true);
-                    void loadMeetingIntelligence();
+                    void reloadMeetingSurface();
                   }}
                 />
               </div>
@@ -1363,7 +1480,7 @@ Thanks!`;
                   <span className={styles.itemActions}>
                     <IntelligenceFeedback
                       value={feedback.getFeedback("key_insight")}
-                      onFeedback={(type) => feedback.submitFeedback("key_insight", type)}
+                      onFeedback={(type) => submitMeetingFeedback("key_insight", type)}
                     />
                   </span>
                 </blockquote>
@@ -1469,7 +1586,7 @@ Thanks!`;
                       <span className={styles.itemActions}>
                         <IntelligenceFeedback
                           value={feedback.getFeedback(`risks[${i}]`)}
-                          onFeedback={(type) => feedback.submitFeedback(`risks[${i}]`, type)}
+                          onFeedback={(type) => submitMeetingFeedback(`risks[${i}]`, type)}
                         />
                         {isEditable && fieldPath && (
                           <button
@@ -1522,7 +1639,7 @@ Thanks!`;
                       <span className={styles.itemActions}>
                         <IntelligenceFeedback
                           value={feedback.getFeedback(`recentWins[${i}]`)}
-                          onFeedback={(type) => feedback.submitFeedback(`recentWins[${i}]`, type)}
+                          onFeedback={(type) => submitMeetingFeedback(`recentWins[${i}]`, type)}
                         />
                         {isEditable && (
                           <button
@@ -1584,6 +1701,7 @@ Thanks!`;
                   meetingId={meetingId ?? undefined}
                   onSaveStatus={setSaveStatus}
                   onSavePrepField={savePrepField}
+                  onCompositionRefresh={refreshProjectedMeetingComposition}
                 />
               </section>
             )}
@@ -1615,7 +1733,7 @@ Thanks!`;
                       <span className={styles.itemActions}>
                         <IntelligenceFeedback
                           value={feedback.getFeedback(`correspondence[${i}]`)}
-                          onFeedback={(type) => feedback.submitFeedback(`correspondence[${i}]`, type)}
+                          onFeedback={(type) => submitMeetingFeedback(`correspondence[${i}]`, type)}
                         />
                       </span>
                     </div>
@@ -1648,7 +1766,7 @@ Thanks!`;
                         <span className={styles.itemActions}>
                           <IntelligenceFeedback
                             value={feedback.getFeedback(`correspondence[${i}]`)}
-                            onFeedback={(type) => feedback.submitFeedback(`correspondence[${i}]`, type)}
+                            onFeedback={(type) => submitMeetingFeedback(`correspondence[${i}]`, type)}
                           />
                         </span>
                       </div>
@@ -1677,6 +1795,7 @@ Thanks!`;
                   calendarNotes={calendarNotes}
                   initialDismissedTopics={dismissedTopics}
                   onSaveStatus={setSaveStatus}
+                  onCompositionRefresh={refreshProjectedMeetingComposition}
                 />
 
                 {isEditable && (
@@ -1836,6 +1955,7 @@ function UnifiedAttendeeList({
   meetingId,
   onSaveStatus,
   onSavePrepField,
+  onCompositionRefresh,
 }: {
   attendees: UnifiedAttendee[];
   isEditable?: boolean;
@@ -1843,6 +1963,7 @@ function UnifiedAttendeeList({
   meetingId?: string;
   onSaveStatus?: (status: "idle" | "saving" | "saved") => void;
   onSavePrepField?: (fieldPath: string, value: string, targetPersonId?: string) => void;
+  onCompositionRefresh?: () => void | Promise<void>;
 }) {
   const [showAll, setShowAll] = useState(false);
   const [hiddenNames, setHiddenNames] = useState<Set<string>>(
@@ -2014,6 +2135,7 @@ function UnifiedAttendeeList({
                       await updateMeetingUserAgenda({
                         hiddenAttendees: Array.from(newHidden),
                       });
+                      await onCompositionRefresh?.();
                       onSaveStatus?.("saved");
                       setTimeout(() => onSaveStatus?.("idle"), 2000);
                     } catch (err) {
@@ -2206,6 +2328,7 @@ function UnifiedPlanEditor({
   calendarNotes,
   initialDismissedTopics,
   onSaveStatus,
+  onCompositionRefresh,
 }: {
   proposedItems: Array<{
     topic: string;
@@ -2220,6 +2343,7 @@ function UnifiedPlanEditor({
   calendarNotes?: string;
   initialDismissedTopics?: string[];
   onSaveStatus: (status: "idle" | "saving" | "saved") => void;
+  onCompositionRefresh?: () => void | Promise<void>;
 }) {
   const [userItems, setUserItems] = useState(userAgenda ?? []);
   const [newItem, setNewItem] = useState("");
@@ -2282,6 +2406,7 @@ function UnifiedPlanEditor({
         dismissedTopics: dismissed.length > 0 ? dismissed : null,
       });
       setUserItems(updatedItems);
+      await onCompositionRefresh?.();
       onSaveStatus("saved");
       setTimeout(() => onSaveStatus("idle"), 2000);
     } catch (err) {
@@ -2504,7 +2629,7 @@ function OutcomesSection({
   retryingExtraction,
 }: {
   outcomes: MeetingOutcomeData;
-  onRefresh: () => void;
+  onRefresh: () => void | Promise<void>;
   onSaveStatus: (status: "idle" | "saving" | "saved") => void;
   onRetryTranscriptExtraction: () => void;
   retryingExtraction: boolean;
@@ -2601,21 +2726,21 @@ function OutcomesSection({
                       } else {
                         await completeAction(action.id);
                       }
-                      onRefresh();
+                      await onRefresh();
                     } catch (err) { console.error("Failed to toggle action:", err); toast.error("Failed to update action"); }
                   }}
                   onAccept={async () => {
-                    try { await acceptSuggestedAction(action.id); onRefresh(); }
+                    try { await acceptSuggestedAction(action.id); await onRefresh(); }
                     catch (err) { console.error("Failed to accept action:", err); toast.error("Failed to accept action"); }
                   }}
                   onReject={async () => {
-                    try { await rejectSuggestedAction(action.id); onRefresh(); }
+                    try { await rejectSuggestedAction(action.id); await onRefresh(); }
                     catch (err) { console.error("Failed to reject action:", err); toast.error("Failed to dismiss action"); }
                   }}
                   onCyclePriority={async () => {
                     const p = action.priority ?? 3;
                     const next = p <= 1 ? "3" : p <= 3 ? "4" : "1";
-                    try { await updateActionPriority(action.id, next); onRefresh(); }
+                    try { await updateActionPriority(action.id, next); await onRefresh(); }
                     catch (err) { console.error("Failed to update priority:", err); toast.error("Failed to update priority"); }
                   }}
                 />

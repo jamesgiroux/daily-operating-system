@@ -84,6 +84,46 @@
       }
     },
     {
+      "name": "dailyos/daily-briefing",
+      "description": "",
+      "category": "read",
+      "annotations": {},
+      "wp_permission": "none",
+      "allowed_actors": [
+        "user"
+      ],
+      "required_scopes": [
+        "read.daily_briefing"
+      ],
+      "mcp_exposure": "none",
+      "client_side_executable": false,
+      "idempotency_class": "idempotent",
+      "composition_kind": {
+        "produces_blocks": false,
+        "block_types": []
+      }
+    },
+    {
+      "name": "dailyos/meeting-detail",
+      "description": "",
+      "category": "read",
+      "annotations": {},
+      "wp_permission": "none",
+      "allowed_actors": [
+        "user"
+      ],
+      "required_scopes": [
+        "read.meeting_detail"
+      ],
+      "mcp_exposure": "none",
+      "client_side_executable": false,
+      "idempotency_class": "idempotent",
+      "composition_kind": {
+        "produces_blocks": false,
+        "block_types": []
+      }
+    },
+    {
       "name": "dailyos/person-overview",
       "description": "",
       "category": "read",

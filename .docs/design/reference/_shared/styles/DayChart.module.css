@@ -49,8 +49,6 @@
 
 .DayChart_hourTicks {
   position: relative;
-  display: grid;
-  grid-template-columns: repeat(var(--day-chart-hour-count), minmax(0, 1fr));
   height: 18px;
   font-family: var(--font-mono);
   font-size: 11px;
@@ -59,10 +57,22 @@
   color: var(--color-text-tertiary);
 }
 
+/* Each label sits on its hour gridline (same 10-column scale as the bars'
+   gridlines), not in an 11-column grid — otherwise labels drift left of their
+   line and compound across the day. */
 .DayChart_hourTick {
+  position: absolute;
+  top: 0;
+  left: calc(var(--tick-index, 0) * 100% / var(--day-chart-grid-column-count));
   padding-left: 4px;
-  text-align: left;
-  min-width: 0;
+  white-space: nowrap;
+}
+
+.DayChart_hourTick:last-child {
+  left: 100%;
+  transform: translateX(-100%);
+  padding-left: 0;
+  padding-right: 2px;
 }
 
 .DayChart_hourTickMuted {

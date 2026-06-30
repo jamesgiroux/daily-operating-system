@@ -2373,7 +2373,9 @@ async fn local_loopback_project_composition_response(
     runtime: Arc<EndpointRuntime>,
     request_id: String,
 ) -> Response<ResponseBody> {
-    use crate::services::composition_render_orchestrator::project_composition_for_surface;
+    use crate::services::composition_render_orchestrator::{
+        hydrate_producer_projection_input, project_composition_for_surface,
+    };
 
     if !request.peer_addr.ip().is_loopback() {
         return error_response(SurfaceHttpError::route_not_found().with_request_id(request_id));
@@ -2428,8 +2430,9 @@ async fn local_loopback_project_composition_response(
         |producer_input| {
             let app_state = app_state.clone();
             let request_id = request_id.clone();
-            let input = producer_input.to_json();
             async move {
+                let input =
+                    hydrate_producer_projection_input(app_state.as_ref(), &producer_input).await?;
                 match TauriAbilityBridge::new(registry)
                     .invoke(
                         app_state.as_ref(),
@@ -2750,8 +2753,8 @@ async fn surface_project_composition_response(
     request_id: String,
 ) -> Response<ResponseBody> {
     use crate::services::composition_render_orchestrator::{
-        extract_account_id_from_composition_id, project_composition_for_surface,
-        resolve_producer_ability_name,
+        extract_account_id_from_composition_id, hydrate_producer_projection_input,
+        project_composition_for_surface, resolve_producer_ability_name,
     };
 
     let request: SurfaceProjectCompositionRequest = match serde_json::from_slice(&body) {
@@ -2837,27 +2840,30 @@ async fn surface_project_composition_response(
         }
     };
 
-    let snapshot = app_state.context_snapshot();
-    let provider = provider_from_context_snapshot(&snapshot);
-    let services = app_state
-        .live_service_context()
-        .with_actor("surface_client");
-
     let render = match project_composition_for_surface(
         app_state.as_ref(),
         validated.actor.clone(),
         SurfaceKind::SurfaceClient,
         &request.composition_id,
         |producer_input| {
-            let input = producer_input.to_json();
-            async {
+            let app_state = app_state.clone();
+            let registry_actor = validated.actor.clone();
+            let canonical_ability_name = authorization.canonical_ability_name.clone();
+            async move {
+                let input =
+                    hydrate_producer_projection_input(app_state.as_ref(), &producer_input).await?;
+                let snapshot = app_state.context_snapshot();
+                let provider = provider_from_context_snapshot(&snapshot);
+                let services = app_state
+                    .live_service_context()
+                    .with_actor("surface_client");
                 invoke_registry_json_for_actor(
                     registry,
                     &services,
                     provider,
                     &NOOP_ABILITY_TRACER,
                     RequestScopedInvocation {
-                        registry_actor: validated.actor.clone(),
+                        registry_actor,
                         response_actor: BridgeActor::SurfaceClient,
                         surface: BridgeSurface::SurfaceClient,
                         claim_dismissal_surface: ClaimDismissalSurface::LogStructured,
@@ -2865,7 +2871,7 @@ async fn surface_project_composition_response(
                         confirmation: None,
                         confirmation_store: None,
                     },
-                    &authorization.canonical_ability_name,
+                    &canonical_ability_name,
                     input,
                 )
                 .await

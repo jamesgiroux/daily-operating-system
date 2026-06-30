@@ -120,9 +120,10 @@ export function DayChart({
       ) : null}
 
       <div className={styles.hourTicks} aria-hidden="true">
-        {hours.map((hour) => (
+        {hours.map((hour, index) => (
           <span
             className={clsx(styles.hourTick, mutedHours.includes(hour) && styles.hourTickMuted)}
+            style={{ "--tick-index": index } as CSSProperties}
             key={hour}
           >
             {hour}

@@ -1,8 +1,15 @@
 /** @vitest-environment jsdom */
 
+import type React from "react";
 import { render, screen } from "@testing-library/react";
 import { describe, expect, it, vi } from "vitest";
 import { MeetingSpineItem } from "./MeetingSpineItem";
+
+vi.mock("@tanstack/react-router", () => ({
+  Link: ({ children, ...props }: Record<string, unknown>) => (
+    <a href={String(props.to ?? "#")}>{children as React.ReactNode}</a>
+  ),
+}));
 
 describe("MeetingSpineItem", () => {
   it("exposes design-system metadata and keeps the state label in the time rail", () => {
@@ -17,7 +24,7 @@ describe("MeetingSpineItem", () => {
         context="Legal needs final terms language before the MSA review."
         attendees="Jen Park, Dan Mitchell, +2"
         prepState="ready"
-        briefingUrl="/meeting/acme-renewal"
+        meetingId="acme-renewal"
       />,
     );
 
@@ -28,9 +35,7 @@ describe("MeetingSpineItem", () => {
     expect(screen.getByText("Briefing fresh")).toHaveAttribute("data-ds-name", "Pill");
   });
 
-  it("renders a create action for meetings that need briefing prep", () => {
-    const onCreateBriefing = vi.fn();
-
+  it("renders a create-briefing link for meetings that need prep", () => {
     render(
       <MeetingSpineItem
         time="2:00"
@@ -40,12 +45,12 @@ describe("MeetingSpineItem", () => {
         entityName="Priya Raman - 1:1"
         title="1:1 with Priya"
         prepState="needs"
-        onCreateBriefing={onCreateBriefing}
+        meetingId="priya-one-on-one"
       />,
     );
 
-    screen.getByRole("button", { name: "Create briefing" }).click();
-    expect(onCreateBriefing).toHaveBeenCalledTimes(1);
+    const createLink = screen.getByText("Create briefing").closest("a");
+    expect(createLink).toHaveAttribute("href", "/meeting/$meetingId");
     expect(screen.getByText("1:1 with Priya").closest("article")).toHaveAttribute(
       "data-type",
       "one_on_one",

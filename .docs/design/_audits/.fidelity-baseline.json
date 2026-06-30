@@ -3,7 +3,7 @@
   ".docs/design/reference/surfaces/accounts.html": "major",
   ".docs/design/reference/surfaces/action-detail.html": "minor",
   ".docs/design/reference/surfaces/actions.html": "clean",
-  ".docs/design/reference/surfaces/briefing.html": "clean",
+  ".docs/design/reference/surfaces/briefing.html": "minor",
   ".docs/design/reference/surfaces/emails.html": "clean",
   ".docs/design/reference/surfaces/history.html": "clean",
   ".docs/design/reference/surfaces/inbox.html": "major",

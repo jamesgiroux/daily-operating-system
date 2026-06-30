@@ -4813,13 +4813,19 @@ mod tests {
             .iter()
             .position(|marker| marker == "InjectedWrite")
             .expect("injected write marker");
-        let second_batch = markers
+        // The interleaving invariant is that the injected write runs *during* the
+        // phased persist — after the first batch commits and before the finalizer
+        // barrier — not that it lands before any specific later batch's task start.
+        // Under bounded concurrency the next batch's `BatchTask` marker is
+        // prefetched and can appear before the injected write even though the
+        // write genuinely interleaved, so the finalizer is the robust upper bound.
+        let finalizer = markers
             .iter()
-            .position(|marker| marker.starts_with("BatchTask { offset: 20"))
-            .expect("second batch marker");
+            .position(|marker| marker == "FinalizerTask")
+            .expect("finalizer task marker");
         assert!(
-            first_batch_done < injected && injected < second_batch,
-            "expected injected write between batches, got {markers:?}"
+            first_batch_done < injected && injected < finalizer,
+            "expected injected write to interleave after the first batch commit and before the finalizer barrier, got {markers:?}"
         );
     }
 

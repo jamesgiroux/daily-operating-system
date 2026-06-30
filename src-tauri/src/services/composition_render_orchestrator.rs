@@ -307,6 +307,22 @@ impl ProducerProjectionInput {
                     serde_json::json!({ "action": action_id.as_str() }),
                 );
             }
+            ProducerSubject::Briefing {
+                workspace_scope,
+                date,
+            } => {
+                object.insert(
+                    "workspace_scope".to_string(),
+                    serde_json::Value::from(workspace_scope.as_str()),
+                );
+                object.insert("date".to_string(), serde_json::Value::from(date.as_str()));
+            }
+            ProducerSubject::Meeting { meeting_token } => {
+                object.insert(
+                    "meeting_token".to_string(),
+                    serde_json::Value::from(meeting_token.as_str()),
+                );
+            }
         }
         value
     }
@@ -345,6 +361,13 @@ pub enum ProducerSubject {
     },
     Action {
         action_id: String,
+    },
+    Briefing {
+        workspace_scope: String,
+        date: String,
+    },
+    Meeting {
+        meeting_token: String,
     },
 }
 
@@ -564,8 +587,55 @@ pub fn project_from_ability_data(
         .map_err(|e| OrchestratorError::ProjectionFailed(format!("{e:?}")))
 }
 
-/// Map a request composition_id back to its producer ability name. W3 keeps
-/// this bounded to the four first-party detail composition ids so the
+pub async fn hydrate_producer_projection_input(
+    state: &AppState,
+    producer_input: &ProducerProjectionInput,
+) -> Result<serde_json::Value, BridgeSurfaceError> {
+    let mut input = producer_input.to_json();
+    let object = input
+        .as_object_mut()
+        .ok_or_else(|| BridgeSurfaceError::Validation("project_composition_input_shape".into()))?;
+
+    match &producer_input.subject {
+        ProducerSubject::Briefing { .. } => {
+            let config = state.config.read().clone().ok_or_else(|| {
+                BridgeSurfaceError::Validation("project_composition_workspace_unavailable".into())
+            })?;
+            object.insert(
+                "workspace_id".to_string(),
+                serde_json::Value::from(config.workspace_path),
+            );
+        }
+        ProducerSubject::Meeting { meeting_token } => {
+            let token = meeting_token.clone();
+            let meeting_id = state
+                .db_read(move |db| {
+                    crate::services::meetings::resolve_meeting_composition_token(db, &token)
+                })
+                .await
+                .map_err(|error| {
+                    BridgeSurfaceError::Validation(format!(
+                        "project_composition_meeting_token_read_failed: {error}"
+                    ))
+                })?
+                .ok_or_else(|| {
+                    BridgeSurfaceError::Validation(
+                        "project_composition_unknown_meeting_token".to_string(),
+                    )
+                })?;
+            object.insert(
+                "meeting_id".to_string(),
+                serde_json::Value::from(meeting_id),
+            );
+        }
+        ProducerSubject::Entity { .. } | ProducerSubject::Action { .. } => {}
+    }
+
+    Ok(input)
+}
+
+/// Map a request composition_id back to its producer ability name. Keeps
+/// this bounded to first-party detail/briefing composition ids so the
 /// orchestrator never invokes a foreign producer.
 pub fn resolve_producer_ability_name(composition_id: &str) -> Option<&'static str> {
     parse_producer_projection_input(composition_id, 0).map(|input| input.ability_name)
@@ -612,6 +682,27 @@ pub fn parse_producer_projection_input(
                 action_id: parts.subject_id.to_string(),
             },
         ),
+        ("dailyos/daily-briefing", "briefing") => {
+            let (workspace_scope, date) = parse_daily_briefing_subject(parts.subject_id)?;
+            (
+                "dailyos/daily-briefing",
+                ProducerSubject::Briefing {
+                    workspace_scope,
+                    date,
+                },
+            )
+        }
+        ("dailyos/meeting-detail", "meeting") => {
+            if !crate::services::meetings::valid_meeting_composition_token(parts.subject_id) {
+                return None;
+            }
+            (
+                "dailyos/meeting-detail",
+                ProducerSubject::Meeting {
+                    meeting_token: parts.subject_id.to_string(),
+                },
+            )
+        }
         _ => return None,
     };
     Some(ProducerProjectionInput {
@@ -621,6 +712,17 @@ pub fn parse_producer_projection_input(
         schema_version: 1,
         expected_composition_version,
     })
+}
+
+fn parse_daily_briefing_subject(subject_id: &str) -> Option<(String, String)> {
+    let (workspace_scope, date) = subject_id.split_once('~')?;
+    if workspace_scope != "local" {
+        return None;
+    }
+    if chrono::NaiveDate::parse_from_str(date, "%Y-%m-%d").is_err() {
+        return None;
+    }
+    Some((workspace_scope.to_string(), date.to_string()))
 }
 
 #[derive(Debug, Clone, Copy)]
@@ -901,6 +1003,14 @@ mod tests {
                 "dailyos/action-detail:action:action-1",
                 "dailyos/action-detail",
             ),
+            (
+                "dailyos/daily-briefing:briefing:local~2026-06-02",
+                "dailyos/daily-briefing",
+            ),
+            (
+                "dailyos/meeting-detail:meeting:mtg_0123456789abcdef",
+                "dailyos/meeting-detail",
+            ),
         ];
         for (composition_id, ability_name) in valid_ids {
             assert_eq!(
@@ -975,6 +1085,50 @@ mod tests {
                 "subject_ref": { "action": "action-42" },
             })
         );
+
+        let briefing =
+            parse_producer_projection_input("dailyos/daily-briefing:briefing:local~2026-06-02", 3)
+                .expect("briefing input");
+        assert_eq!(briefing.ability_name, "dailyos/daily-briefing");
+        assert_eq!(
+            briefing.subject,
+            ProducerSubject::Briefing {
+                workspace_scope: "local".to_string(),
+                date: "2026-06-02".to_string(),
+            }
+        );
+        assert_eq!(
+            briefing.to_json(),
+            serde_json::json!({
+                "composition_id": "dailyos/daily-briefing:briefing:local~2026-06-02",
+                "schema_version": 1,
+                "expected_composition_version": 3,
+                "workspace_scope": "local",
+                "date": "2026-06-02",
+            })
+        );
+
+        let meeting = parse_producer_projection_input(
+            "dailyos/meeting-detail:meeting:mtg_0123456789abcdef",
+            4,
+        )
+        .expect("meeting input");
+        assert_eq!(meeting.ability_name, "dailyos/meeting-detail");
+        assert_eq!(
+            meeting.subject,
+            ProducerSubject::Meeting {
+                meeting_token: "mtg_0123456789abcdef".to_string(),
+            }
+        );
+        assert_eq!(
+            meeting.to_json(),
+            serde_json::json!({
+                "composition_id": "dailyos/meeting-detail:meeting:mtg_0123456789abcdef",
+                "schema_version": 1,
+                "expected_composition_version": 4,
+                "meeting_token": "mtg_0123456789abcdef",
+            })
+        );
     }
 
     #[test]
@@ -989,6 +1143,20 @@ mod tests {
             "dailyos/person-overview:action:action-1",
             "dailyos/action-detail:person:person-1",
             "dailyos/action-detail:action:action-1\n",
+            "dailyos/daily-briefing:briefing:remote~2026-06-02",
+            "dailyos/daily-briefing:briefing:local~2026-99-02",
+            "dailyos/daily-briefing:briefing:local",
+            "dailyos/meeting-detail:meeting:",
+            "dailyos/meeting-detail:meeting:mtg_0123456789abcde",
+            "dailyos/meeting-detail:meeting:mtg_0123456789abcdef0123456789abcdef0",
+            "dailyos/meeting-detail:meeting:mtg_0123456789abcdeg",
+            "dailyos/meeting-detail:meeting:mtg_0123456789ABCDEF",
+            "dailyos/meeting-detail:meeting:calendar_evt_123",
+            "dailyos/meeting-detail:meeting:event_at_provider",
+            "dailyos/meeting-detail:meeting:provider@example.com",
+            "dailyos/meeting-detail:meeting:../meeting",
+            "dailyos/meeting-detail:meeting:path/to/meeting",
+            "dailyos/meeting-detail:meeting:meeting token",
             "dailyos/unknown:account:acct-1",
         ];
         for composition_id in malformed {
@@ -997,5 +1165,40 @@ mod tests {
                 "{composition_id:?} must be rejected"
             );
         }
+    }
+
+    #[tokio::test]
+    async fn hydrate_producer_projection_input_adds_briefing_workspace_id() {
+        let tempdir = tempfile::tempdir().expect("tempdir");
+        let db_service = crate::db_service::DbService::open_at_unencrypted(
+            tempdir.path().join("briefing-hydration.db"),
+        )
+        .await
+        .expect("test db service opens");
+        let state = AppState::test_with_db_service(db_service);
+        let config: crate::types::Config = serde_json::from_value(serde_json::json!({
+            "workspacePath": "/tmp/dailyos-briefing-workspace"
+        }))
+        .expect("test config");
+        *state.config.write() = Some(config);
+        let producer_input =
+            parse_producer_projection_input("dailyos/daily-briefing:briefing:local~2026-06-02", 3)
+                .expect("briefing input");
+
+        let hydrated = hydrate_producer_projection_input(&state, &producer_input)
+            .await
+            .expect("briefing input hydrates");
+
+        assert_eq!(
+            hydrated,
+            serde_json::json!({
+                "composition_id": "dailyos/daily-briefing:briefing:local~2026-06-02",
+                "schema_version": 1,
+                "expected_composition_version": 3,
+                "workspace_scope": "local",
+                "workspace_id": "/tmp/dailyos-briefing-workspace",
+                "date": "2026-06-02",
+            })
+        );
     }
 }

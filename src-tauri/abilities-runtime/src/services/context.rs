@@ -864,17 +864,20 @@ pub struct ServiceContext<'a> {
     list_open_loops_reader: Option<Arc<dyn ListOpenLoopsReadHandle>>,
     prepare_meeting_context_reader: Option<Arc<dyn PrepareMeetingContextReadHandle>>,
     daily_readiness_context_reader: Option<Arc<dyn DailyReadinessContextReadHandle>>,
+    briefing_callout_reader: Option<Arc<dyn BriefingCalloutReadHandle>>,
     trajectory_reader: Option<Arc<dyn TrajectoryReadHandle>>,
     temporal_maintenance: Option<Arc<dyn TemporalMaintenanceHandle>>,
     composition_commit: Option<Arc<dyn CompositionCommitHandle>>,
     entity_touchpoints_reader: Option<Arc<dyn EntityTouchpointsReadHandle>>,
     entity_neighborhood_reader: Option<Arc<dyn EntityNeighborhoodReadHandle>>,
     meeting_prep_status_reader: Option<Arc<dyn MeetingPrepStatusReadHandle>>,
+    meeting_prep_narrative_reader: Option<Arc<dyn MeetingPrepNarrativeReadHandle>>,
     claim_receipt_reader: Option<Arc<dyn ClaimReceiptReadHandle>>,
     account_composition_snapshot_reader: Option<Arc<dyn AccountCompositionSnapshotReadHandle>>,
     project_composition_snapshot_reader: Option<Arc<dyn ProjectCompositionSnapshotReadHandle>>,
     person_composition_snapshot_reader: Option<Arc<dyn PersonCompositionSnapshotReadHandle>>,
     action_composition_snapshot_reader: Option<Arc<dyn ActionCompositionSnapshotReadHandle>>,
+    meeting_composition_snapshot_reader: Option<Arc<dyn MeetingCompositionSnapshotReadHandle>>,
     account_list_reader: Option<Arc<dyn AccountListReadHandle>>,
     person_list_reader: Option<Arc<dyn PersonListReadHandle>>,
     project_list_reader: Option<Arc<dyn ProjectListReadHandle>>,
@@ -1207,6 +1210,65 @@ pub trait ActionCompositionSnapshotReadHandle: Send + Sync {
         action_id: String,
         surface: ClaimDismissalSurface,
     ) -> ActionCompositionSnapshotReadFuture<'a>;
+}
+
+pub type MeetingCompositionSnapshotSensitivity = AccountCompositionSnapshotSensitivity;
+pub type MeetingCompositionProvenanceKind = AccountCompositionProvenanceKind;
+pub type MeetingCompositionSnapshotField = AccountCompositionSnapshotField;
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct MeetingCompositionSnapshotQuery {
+    pub meeting_id: String,
+    pub meeting_token: String,
+    pub surface: ClaimDismissalSurface,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
+pub struct MeetingCompositionSnapshot {
+    pub meeting_token: String,
+    pub title: MeetingCompositionSnapshotField,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub starts_at: Option<MeetingCompositionSnapshotField>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub ends_at: Option<MeetingCompositionSnapshotField>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub meeting_type: Option<MeetingCompositionSnapshotField>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub lifecycle_state: Option<MeetingCompositionSnapshotField>,
+    #[serde(default)]
+    pub is_past: bool,
+    #[serde(default)]
+    pub is_current: bool,
+    #[serde(default)]
+    pub has_transcript: bool,
+    #[serde(default)]
+    pub fields: Vec<MeetingCompositionSnapshotField>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
+pub enum MeetingCompositionSnapshotReadError {
+    #[error("meeting not found: {0}")]
+    MeetingNotFound(String),
+    #[error("meeting composition snapshot read failed: {0}")]
+    ReadFailed(String),
+}
+
+pub type MeetingCompositionSnapshotReadFuture<'a> = Pin<
+    Box<
+        dyn Future<Output = Result<MeetingCompositionSnapshot, MeetingCompositionSnapshotReadError>>
+            + Send
+            + 'a,
+    >,
+>;
+
+/// Service-owned Meeting Detail input bundle. The query carries the raw row id
+/// only inside the Tauri/backend hydration path; the returned snapshot uses
+/// `meeting_token` as the render-visible identifier.
+pub trait MeetingCompositionSnapshotReadHandle: Send + Sync {
+    fn read_meeting_composition_snapshot<'a>(
+        &'a self,
+        query: MeetingCompositionSnapshotQuery,
+    ) -> MeetingCompositionSnapshotReadFuture<'a>;
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -2011,6 +2073,45 @@ pub trait DailyReadinessContextReadHandle: Send + Sync {
 }
 
 // -----------------------------------------------------------------------------
+// Briefing callout read handle
+// -----------------------------------------------------------------------------
+
+#[derive(Debug, Clone, PartialEq)]
+pub struct BriefingCalloutSnapshot {
+    pub id: String,
+    pub headline: String,
+    pub detail: Option<String>,
+    pub severity: String,
+    pub entity_name: Option<String>,
+    pub entity_type: String,
+    pub entity_id: String,
+    pub created_at: String,
+    pub claim_id: Option<String>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
+pub enum BriefingCalloutReadError {
+    #[error("briefing callout read failed: {0}")]
+    ReadFailed(String),
+}
+
+pub type BriefingCalloutReadFuture<'a> = Pin<
+    Box<dyn Future<Output = Result<Vec<BriefingCalloutSnapshot>, BriefingCalloutReadError>> + Send + 'a>,
+>;
+
+/// Read today's durable briefing callouts. This is the attention substrate for
+/// the daily briefing producer; ability code receives row-shaped snapshots,
+/// never raw database handles.
+pub trait BriefingCalloutReadHandle: Send + Sync {
+    fn read_briefing_callouts_for_date<'a>(
+        &'a self,
+        workspace_scope: String,
+        date: String,
+        limit: usize,
+    ) -> BriefingCalloutReadFuture<'a>;
+}
+
+// -----------------------------------------------------------------------------
 // Meeting prep status read handle
 // -----------------------------------------------------------------------------
 
@@ -2070,6 +2171,20 @@ pub trait MeetingPrepStatusReadHandle: Send + Sync {
         &'a self,
         meeting_id: String,
     ) -> MeetingPrepStatusReadFuture<'a>;
+}
+
+pub type MeetingPrepNarrativeReadFuture<'a> =
+    Pin<Box<dyn Future<Output = Result<Option<String>, String>> + Send + 'a>>;
+
+/// Narrow read handle attached by the app crate so the `get_daily_briefing`
+/// ability can compose each meeting's prep-context narrative (the
+/// `prep_context_json` summary) into its briefing envelope. Read-only by
+/// contract; the adapter must not perform any mutation.
+pub trait MeetingPrepNarrativeReadHandle: Send + Sync {
+    fn read_meeting_prep_narrative<'a>(
+        &'a self,
+        meeting_id: String,
+    ) -> MeetingPrepNarrativeReadFuture<'a>;
 }
 
 // ---------------------------------------------------------------------------
@@ -2310,17 +2425,20 @@ impl<'a> ServiceContext<'a> {
             list_open_loops_reader: None,
             prepare_meeting_context_reader: None,
             daily_readiness_context_reader: None,
+            briefing_callout_reader: None,
             trajectory_reader: None,
             temporal_maintenance: None,
             composition_commit: None,
             entity_touchpoints_reader: None,
             entity_neighborhood_reader: None,
             meeting_prep_status_reader: None,
+            meeting_prep_narrative_reader: None,
             claim_receipt_reader: None,
             account_composition_snapshot_reader: None,
             project_composition_snapshot_reader: None,
             person_composition_snapshot_reader: None,
             action_composition_snapshot_reader: None,
+            meeting_composition_snapshot_reader: None,
             account_list_reader: None,
             person_list_reader: None,
             project_list_reader: None,
@@ -2356,17 +2474,20 @@ impl<'a> ServiceContext<'a> {
             list_open_loops_reader: None,
             prepare_meeting_context_reader: None,
             daily_readiness_context_reader: None,
+            briefing_callout_reader: None,
             trajectory_reader: None,
             temporal_maintenance: None,
             composition_commit: None,
             entity_touchpoints_reader: None,
             entity_neighborhood_reader: None,
             meeting_prep_status_reader: None,
+            meeting_prep_narrative_reader: None,
             claim_receipt_reader: None,
             account_composition_snapshot_reader: None,
             project_composition_snapshot_reader: None,
             person_composition_snapshot_reader: None,
             action_composition_snapshot_reader: None,
+            meeting_composition_snapshot_reader: None,
             account_list_reader: None,
             person_list_reader: None,
             project_list_reader: None,
@@ -2413,17 +2534,20 @@ impl<'a> ServiceContext<'a> {
             list_open_loops_reader: None,
             prepare_meeting_context_reader: None,
             daily_readiness_context_reader: None,
+            briefing_callout_reader: None,
             trajectory_reader: None,
             temporal_maintenance: None,
             composition_commit: None,
             entity_touchpoints_reader: None,
             entity_neighborhood_reader: None,
             meeting_prep_status_reader: None,
+            meeting_prep_narrative_reader: None,
             claim_receipt_reader: None,
             account_composition_snapshot_reader: None,
             project_composition_snapshot_reader: None,
             person_composition_snapshot_reader: None,
             action_composition_snapshot_reader: None,
+            meeting_composition_snapshot_reader: None,
             account_list_reader: None,
             person_list_reader: None,
             project_list_reader: None,
@@ -2493,6 +2617,14 @@ impl<'a> ServiceContext<'a> {
         self
     }
 
+    pub fn with_briefing_callout_reader(
+        mut self,
+        reader: Arc<dyn BriefingCalloutReadHandle>,
+    ) -> Self {
+        self.briefing_callout_reader = Some(reader);
+        self
+    }
+
     pub fn with_trajectory_reader(mut self, reader: Arc<dyn TrajectoryReadHandle>) -> Self {
         self.trajectory_reader = Some(reader);
         self
@@ -2538,6 +2670,14 @@ impl<'a> ServiceContext<'a> {
         self
     }
 
+    pub fn with_meeting_prep_narrative_reader(
+        mut self,
+        reader: Arc<dyn MeetingPrepNarrativeReadHandle>,
+    ) -> Self {
+        self.meeting_prep_narrative_reader = Some(reader);
+        self
+    }
+
     pub fn with_claim_receipt_reader(mut self, reader: Arc<dyn ClaimReceiptReadHandle>) -> Self {
         self.claim_receipt_reader = Some(reader);
         self
@@ -2572,6 +2712,14 @@ impl<'a> ServiceContext<'a> {
         reader: Arc<dyn ActionCompositionSnapshotReadHandle>,
     ) -> Self {
         self.action_composition_snapshot_reader = Some(reader);
+        self
+    }
+
+    pub fn with_meeting_composition_snapshot_reader(
+        mut self,
+        reader: Arc<dyn MeetingCompositionSnapshotReadHandle>,
+    ) -> Self {
+        self.meeting_composition_snapshot_reader = Some(reader);
         self
     }
 
@@ -2710,6 +2858,21 @@ impl<'a> ServiceContext<'a> {
         reader.read_meeting_prep_status(meeting_id).await
     }
 
+    /// Read a meeting's prep-context narrative (the `prep_context_json`
+    /// summary). Returns `Ok(None)` when the reader is attached but the meeting
+    /// has no narrative, and a missing-reader `Err` when no adapter is attached
+    /// (test contexts without fixtures); the briefing producer treats both as
+    /// "no narrative" rather than failing the envelope.
+    pub async fn read_meeting_prep_narrative(
+        &self,
+        meeting_id: String,
+    ) -> Result<Option<String>, String> {
+        let Some(reader) = &self.meeting_prep_narrative_reader else {
+            return Err(self.missing_reader_error("meeting_prep_narrative_reader"));
+        };
+        reader.read_meeting_prep_narrative(meeting_id).await
+    }
+
     /// Dispatch the `claim_receipt` ability through the app crate's
     /// `LiveClaimReceiptReader` adapter, which wraps
     /// `services::claim_receipt::render::render_receipt_for`. Returns a typed
@@ -2788,6 +2951,18 @@ impl<'a> ServiceContext<'a> {
             .await
     }
 
+    pub async fn read_meeting_composition_snapshot(
+        &self,
+        query: MeetingCompositionSnapshotQuery,
+    ) -> Result<MeetingCompositionSnapshot, MeetingCompositionSnapshotReadError> {
+        let Some(reader) = &self.meeting_composition_snapshot_reader else {
+            return Err(MeetingCompositionSnapshotReadError::ReadFailed(
+                self.missing_reader_error("meeting_composition_snapshot_reader"),
+            ));
+        };
+        reader.read_meeting_composition_snapshot(query).await
+    }
+
     pub async fn commit_composition(
         &self,
         proposal: CompositionProposal,
@@ -2831,6 +3006,22 @@ impl<'a> ServiceContext<'a> {
         }
 
         Err(self.missing_reader_error("daily_readiness_context_reader"))
+    }
+
+    pub async fn read_briefing_callouts_for_date(
+        &self,
+        workspace_scope: String,
+        date: String,
+        limit: usize,
+    ) -> Result<Vec<BriefingCalloutSnapshot>, BriefingCalloutReadError> {
+        let Some(reader) = &self.briefing_callout_reader else {
+            return Err(BriefingCalloutReadError::ReadFailed(
+                self.missing_reader_error("briefing_callout_reader"),
+            ));
+        };
+        reader
+            .read_briefing_callouts_for_date(workspace_scope, date, limit)
+            .await
     }
 
     /// Read active entity-context claims for the caller's actual render context.

@@ -525,7 +525,7 @@ function BlockFeedback({
  *  IntelligenceCorrection affordance as the block-level prompt, routed
  *  through the item's own `/items/N/text` claim ref; hover-revealed so a
  *  chapter of N claims doesn't render N standing prompts. */
-function ItemFeedback({
+export function ItemFeedback({
   accountId,
   entityType = "account",
   block,
@@ -688,7 +688,7 @@ function BlockShell({
   );
 }
 
-function EditableBlockText({
+export function EditableBlockText({
   accountId,
   entityType,
   block,

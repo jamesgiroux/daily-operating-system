@@ -58,13 +58,18 @@ async fn refresh_meeting_briefing_from_state<S: MeetingIntelligenceState + ?Size
     })?;
     let ctx = app_state.live_service_context();
     let request_id = crate::audit_log::new_request_id();
-    let refreshed = crate::services::meetings::refresh_meeting_briefing_full(
+    // Box the briefing-refresh future onto the heap. This chain
+    // (generate_meeting_intelligence → here → refresh_meeting_briefing_full →
+    // enrich_entity) accumulates large futures that overflow the 2 MB
+    // tokio-worker stack in debug builds; boxing here plus at the enrich_entity
+    // leaf keeps each frame's stack footprint bounded.
+    let refreshed = Box::pin(crate::services::meetings::refresh_meeting_briefing_full(
         &ctx,
         state_arc,
         meeting_id,
         None,
         &request_id,
-    )
+    ))
     .await
     .map_err(ExecutionError::ConfigurationError)?;
     Ok(refreshed.quality)

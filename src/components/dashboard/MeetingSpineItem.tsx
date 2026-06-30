@@ -1,5 +1,6 @@
 import clsx from "clsx";
 import type { ComponentPropsWithoutRef, ReactNode } from "react";
+import { Link } from "@tanstack/react-router";
 import { Pill, type PillTone } from "@/components/ui/Pill";
 import type { MeetingType } from "@/types";
 import styles from "./MeetingSpineItem.module.css";
@@ -24,10 +25,15 @@ export interface MeetingSpineItemProps
   attendees?: ReactNode;
   prepState?: MeetingSpinePrepState;
   prepLabel?: ReactNode;
-  briefingUrl?: string;
+  /** Local meeting id. When present (and not cancelled) the title and the
+   *  briefing affordance link into the meeting detail surface via the same
+   *  `/meeting/$meetingId` route the legacy card used. */
+  meetingId?: string;
+  /** Apply the focal-row emphasis (the same chrome an in-progress meeting
+   *  gets) without the meeting being in progress — used for the up-next row. */
+  highlighted?: boolean;
   briefingLabel?: ReactNode;
   createLabel?: ReactNode;
-  onCreateBriefing?: () => void;
   statusLabel?: ReactNode;
   showStatus?: boolean;
 }
@@ -70,13 +76,17 @@ function defaultStatusLabel(state: MeetingSpineState): ReactNode {
   return "Cancelled";
 }
 
-function renderTitle(title: ReactNode, href?: string) {
-  if (!href) return <h3 className={styles.title}>{title}</h3>;
+function renderTitle(title: ReactNode, meetingId?: string) {
+  if (!meetingId) return <h3 className={styles.title}>{title}</h3>;
   return (
     <h3 className={styles.title}>
-      <a className={styles.titleLink} href={href}>
+      <Link
+        className={styles.titleLink}
+        to="/meeting/$meetingId"
+        params={{ meetingId }}
+      >
         {title}
-      </a>
+      </Link>
     </h3>
   );
 }
@@ -93,19 +103,19 @@ export function MeetingSpineItem({
   attendees,
   prepState = "none",
   prepLabel,
-  briefingUrl,
+  meetingId,
+  highlighted = false,
   briefingLabel = "Read full briefing",
   createLabel = "Create briefing",
-  onCreateBriefing,
   statusLabel,
   showStatus,
   className,
   ...rest
 }: MeetingSpineItemProps) {
-  const hasCreateAction = prepState === "needs" && onCreateBriefing;
   const resolvedShowStatus = showStatus ?? state === "in-progress";
-  const hasFooter =
-    attendees || prepState !== "none" || briefingUrl || hasCreateAction;
+  const hasPrepPill = prepState !== "none" || Boolean(prepLabel);
+  const canOpen = Boolean(meetingId) && state !== "cancelled";
+  const hasFooter = attendees || hasPrepPill || canOpen;
 
   return (
     <article
@@ -113,6 +123,7 @@ export function MeetingSpineItem({
         styles.item,
         TYPE_CLASS[type],
         STATE_CLASS[state],
+        highlighted && styles.inProgress,
         className,
       )}
       data-ds-name="MeetingSpineItem"
@@ -149,7 +160,7 @@ export function MeetingSpineItem({
         </div>
 
         <div className={styles.titleRow}>
-          {renderTitle(title, state === "cancelled" ? undefined : briefingUrl)}
+          {renderTitle(title, canOpen ? meetingId : undefined)}
         </div>
 
         {context ? <p className={styles.context}>{context}</p> : null}
@@ -157,23 +168,40 @@ export function MeetingSpineItem({
         {hasFooter ? (
           <div className={styles.footer}>
             {attendees ? <span>{attendees}</span> : null}
-            {attendees && (prepState !== "none" || briefingUrl || hasCreateAction) ? (
+            {attendees && (hasPrepPill || canOpen) ? (
               <span className={styles.separator} aria-hidden="true" />
             ) : null}
-            {prepState !== "none" ? (
+            {hasPrepPill ? (
               <Pill tone={PREP_TONE[prepState]} size="compact" dot>
                 {prepLabel ?? DEFAULT_PREP_LABEL[prepState]}
               </Pill>
             ) : null}
-            {briefingUrl && state !== "cancelled" ? (
-              <a className={styles.briefingLink} href={briefingUrl}>
-                {briefingLabel} {"\u2192"}
-              </a>
-            ) : null}
-            {hasCreateAction ? (
-              <button className={styles.createButton} type="button" onClick={onCreateBriefing}>
-                {createLabel}
-              </button>
+            {meetingId && state !== "cancelled" ? (
+              state === "past" ? (
+                <Link
+                  className={styles.briefingLink}
+                  to="/meeting/$meetingId"
+                  params={{ meetingId }}
+                >
+                  Notes &amp; actions {"\u2192"}
+                </Link>
+              ) : prepState === "needs" ? (
+                <Link
+                  className={styles.createButton}
+                  to="/meeting/$meetingId"
+                  params={{ meetingId }}
+                >
+                  {createLabel}
+                </Link>
+              ) : (
+                <Link
+                  className={styles.briefingLink}
+                  to="/meeting/$meetingId"
+                  params={{ meetingId }}
+                >
+                  {briefingLabel} {"\u2192"}
+                </Link>
+              )
             ) : null}
           </div>
         ) : null}

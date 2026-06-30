@@ -82,8 +82,16 @@ pub struct MeetingBriefRef {
     pub title: Option<String>,
     pub starts_at: Option<String>,
     pub ends_at: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub context_narrative: Option<String>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub attendees: Vec<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub kind: Option<String>,
     pub linked_entity_type: Option<String>,
     pub linked_entity_id: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub linked_entity_name: Option<String>,
     /// PrepStatus discriminant in lower_snake_case (e.g. `ready`,
     /// `prep_needed`, `queued`, `stale`, `user_suppressed`). Mirrors the
     /// snapshot read from the meeting_prep_status service.
@@ -204,6 +212,15 @@ pub struct WatchProposal {
     pub subject_kind: String,
     pub subject_id: String,
     pub headline: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub detail: Option<String>,
+    pub severity: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub entity_name: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub source_asof: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub claim_id: Option<String>,
     pub trust_band: TrustBand,
     pub sensitivity: ClaimSensitivity,
 }
