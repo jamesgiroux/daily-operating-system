@@ -17,6 +17,7 @@ use crate::state::AppState;
 use super::cache;
 use super::companion;
 use super::matcher;
+use super::mcp_client::GranolaMcpClient;
 
 const COMPANION_SCAN_DAYS_BACK: i32 = 90;
 
@@ -53,7 +54,7 @@ pub async fn run_granola_poller(state: Arc<AppState>, app_handle: AppHandle) {
 
         let poll_interval = Duration::from_secs((config.poll_interval_minutes as u64) * 60);
 
-        match poll_once_prefer_companion(&state, &app_handle, &config) {
+        match poll_once_prefer_companion(&state, &app_handle, &config).await {
             Ok(events) => {
                 // Re-run entity linking with the post-transcript context for
                 // each meeting we successfully ingested. The calendar poller
@@ -97,11 +98,15 @@ pub async fn run_granola_poller(state: Arc<AppState>, app_handle: AppHandle) {
     }
 }
 
-fn poll_once_prefer_companion(
+async fn poll_once_prefer_companion(
     state: &AppState,
     app_handle: &AppHandle,
     config: &super::GranolaConfig,
 ) -> Result<Vec<crate::types::CalendarEvent>, String> {
+    if crate::granola_oauth::token_store::load_token().is_ok() {
+        return poll_once_oauth(state, app_handle, config, COMPANION_SCAN_DAYS_BACK).await;
+    }
+
     if companion::CompanionClient::status().available {
         match poll_once_companion(state, app_handle, COMPANION_SCAN_DAYS_BACK) {
             Ok(events) => return Ok(events),
@@ -128,6 +133,42 @@ fn poll_once_prefer_companion(
     })?;
 
     poll_once(state, app_handle, &cache_path)
+}
+
+async fn poll_once_oauth(
+    state: &AppState,
+    app_handle: &AppHandle,
+    config: &super::GranolaConfig,
+    days_back: i32,
+) -> Result<Vec<crate::types::CalendarEvent>, String> {
+    let client = GranolaMcpClient::new(&config.mcp_endpoint);
+    let documents = client.list_recent_documents(days_back).await?;
+    if documents.is_empty() {
+        return Ok(Vec::new());
+    }
+
+    let meetings_for_matching =
+        state.with_db(|db| get_recent_meetings_for_matching(db, days_back))?;
+
+    let mut synced = 0;
+    let mut linkable_events = Vec::new();
+
+    for doc in &documents {
+        let Some(matched) = matcher::match_to_meeting(doc, &meetings_for_matching) else {
+            continue;
+        };
+
+        if let Some(event) = sync_matched_document(state, app_handle, doc, &matched)? {
+            synced += 1;
+            linkable_events.push(event);
+        }
+    }
+
+    if synced > 0 {
+        log::info!("Granola OAuth poller: synced {} documents", synced);
+    }
+
+    Ok(linkable_events)
 }
 
 fn poll_once_companion(
@@ -724,8 +765,11 @@ fn emit_transcript_processed(_state: &AppState, app_handle: &AppHandle, meeting_
     let _ = app_handle.emit("transcript-processed", &meeting_id);
 }
 
-/// Run a one-time backfill: match all Granola cache documents to meetings.
-pub fn run_granola_backfill(state: &AppState, days_back: i32) -> Result<(usize, usize), String> {
+/// Run a one-time backfill: match Granola documents to meetings.
+pub async fn run_granola_backfill(
+    state: &AppState,
+    days_back: i32,
+) -> Result<(usize, usize), String> {
     let granola_config = state
         .config
         .read()
@@ -733,6 +777,18 @@ pub fn run_granola_backfill(state: &AppState, days_back: i32) -> Result<(usize, 
         .map(|c| c.granola.clone())
         .unwrap_or_default();
 
+    if crate::granola_oauth::token_store::load_token().is_ok() {
+        return run_granola_oauth_backfill(state, &granola_config, days_back).await;
+    }
+
+    run_granola_legacy_backfill(state, &granola_config, days_back)
+}
+
+fn run_granola_legacy_backfill(
+    state: &AppState,
+    granola_config: &super::GranolaConfig,
+    days_back: i32,
+) -> Result<(usize, usize), String> {
     if companion::CompanionClient::status().available {
         match run_granola_companion_backfill(state, days_back) {
             Ok(result) => return Ok(result),
@@ -746,7 +802,7 @@ pub fn run_granola_backfill(state: &AppState, days_back: i32) -> Result<(usize, 
     }
 
     let cache_path =
-        super::resolve_cache_path(&granola_config).ok_or("Granola cache file not found")?;
+        super::resolve_cache_path(granola_config).ok_or("Granola cache file not found")?;
 
     let documents = cache::read_cache(&cache_path)?;
     let eligible = documents.len();
@@ -761,6 +817,33 @@ pub fn run_granola_backfill(state: &AppState, days_back: i32) -> Result<(usize, 
         let matched = match match_result {
             Some(m) => m,
             None => continue,
+        };
+
+        if insert_backfill_sync_state_if_missing(state, &matched.meeting_id)? {
+            created += 1;
+        }
+    }
+
+    Ok((created, eligible))
+}
+
+async fn run_granola_oauth_backfill(
+    state: &AppState,
+    granola_config: &super::GranolaConfig,
+    days_back: i32,
+) -> Result<(usize, usize), String> {
+    let client = GranolaMcpClient::new(&granola_config.mcp_endpoint);
+    let meetings = client.list_meetings(days_back).await?;
+    let eligible = meetings.len();
+
+    let meetings_for_matching =
+        state.with_db(|db| get_recent_meetings_for_matching(db, days_back))?;
+
+    let mut created = 0;
+    for meeting in &meetings {
+        let doc = meeting.as_match_document();
+        let Some(matched) = matcher::match_to_meeting(&doc, &meetings_for_matching) else {
+            continue;
         };
 
         if insert_backfill_sync_state_if_missing(state, &matched.meeting_id)? {

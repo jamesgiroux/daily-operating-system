@@ -18,7 +18,7 @@ export const connectors: ConnectorEntry[] = [
   { id: "google", name: "Google", component: GoogleConnector, statusCommand: "get_google_auth_status" },
   { id: "claude-desktop", name: "Claude Desktop", component: ClaudeDesktopConnector, statusCommand: "get_claude_desktop_status" },
   { id: "quill", name: "Quill Transcripts", component: QuillConnector, statusCommand: "get_quill_status" },
-  { id: "granola", name: "Granola Transcripts", component: GranolaConnector, statusCommand: "get_granola_status" },
+  { id: "granola", name: "Granola Transcripts", component: GranolaConnector, statusCommand: "get_granola_oauth_status" },
   { id: "gravatar", name: "Gravatar Avatars", component: GravatarConnector, statusCommand: "get_gravatar_status" },
   { id: "clay", name: "Clay Enrichment", component: ClayConnector, statusCommand: "get_clay_status" },
   { id: "linear", name: "Linear Issues", component: LinearConnector, statusCommand: "get_linear_status" },

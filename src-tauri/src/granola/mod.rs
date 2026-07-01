@@ -7,6 +7,7 @@
 pub mod cache;
 pub mod companion;
 pub mod matcher;
+pub mod mcp_client;
 pub mod poller;
 
 use serde::{Deserialize, Serialize};
@@ -24,10 +25,16 @@ pub struct GranolaConfig {
     pub cache_path: String,
     #[serde(default = "default_poll_interval_minutes")]
     pub poll_interval_minutes: u32,
+    #[serde(default = "default_mcp_endpoint")]
+    pub mcp_endpoint: String,
 }
 
 fn default_poll_interval_minutes() -> u32 {
     10
+}
+
+fn default_mcp_endpoint() -> String {
+    crate::granola_oauth::DEFAULT_GRANOLA_MCP_ENDPOINT.to_string()
 }
 
 impl Default for GranolaConfig {
@@ -36,6 +43,7 @@ impl Default for GranolaConfig {
             enabled: false,
             cache_path: String::new(),
             poll_interval_minutes: default_poll_interval_minutes(),
+            mcp_endpoint: default_mcp_endpoint(),
         }
     }
 }

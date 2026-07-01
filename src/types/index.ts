@@ -986,6 +986,10 @@ export type GleanAuthStatus =
   | { status: "notconfigured" }
   | { status: "authenticated"; email: string; name?: string };
 
+export type GranolaAuthStatus =
+  | { status: "notconfigured" }
+  | { status: "authenticated"; email: string; name?: string };
+
 // Onboarding: Three Connectors
 export interface OnboardingImportResult {
   created: number;
@@ -1010,6 +1014,13 @@ export interface EnrichmentProgress {
 }
 
 export interface GleanTokenHealth {
+  connected: boolean;
+  status: "healthy" | "expiring" | "expired" | "not_connected";
+  expiresAt: string | null;
+  expiresInHours: number | null;
+}
+
+export interface GranolaTokenHealth {
   connected: boolean;
   status: "healthy" | "expiring" | "expired" | "not_connected";
   expiresAt: string | null;
@@ -3094,6 +3105,7 @@ export interface GranolaStatus {
   completedSyncs: number;
   lastSyncAt: string | null;
   pollIntervalMinutes: number;
+  mcpEndpoint: string;
 }
 
 // =============================================================================
