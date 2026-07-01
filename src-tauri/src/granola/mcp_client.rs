@@ -5,7 +5,8 @@
 
 use std::time::Duration;
 
-use chrono::{SecondsFormat, Utc};
+use chrono::{FixedOffset, NaiveDateTime, SecondsFormat, TimeZone, Utc};
+use regex::Regex;
 use serde::Deserialize;
 use serde_json::Value;
 use tokio::sync::Mutex;
@@ -118,7 +119,13 @@ impl GranolaMcpClient {
                 }),
             )
             .await?;
-        let mut meetings = meetings_from_value(&payload);
+        // Granola's list_meetings returns an XML-ish `<meetings_data>` text blob,
+        // not JSON — parse that shape first, falling back to JSON for safety.
+        let mut meetings = if let Some(text) = payload.as_str() {
+            parse_meetings_xml(text)
+        } else {
+            meetings_from_value(&payload)
+        };
         meetings.truncate(MAX_MEETINGS_PER_SCAN);
         Ok(meetings)
     }
@@ -373,6 +380,105 @@ fn meetings_from_value(value: &Value) -> Vec<GranolaMeeting> {
         .filter_map(|item| serde_json::from_value::<RawMeeting>(item).ok())
         .filter_map(RawMeeting::into_meeting)
         .collect()
+}
+
+/// Parse Granola's `list_meetings` XML text shape into meetings.
+///
+/// Granola returns human-readable markup, e.g.:
+/// ```text
+/// <meetings_data from="Jun 1, 2026" to="Jun 30, 2026" count="43">
+/// <meeting id="UUID" title="JG and Brant sync" date="Jun 30, 2026 2:30 PM EDT">
+///   <known_participants><a@x.com><b@x.com></known_participants>
+/// </meeting>
+/// </meetings_data>
+/// ```
+/// Participant emails are encoded as child tag names inside `<known_participants>`.
+fn parse_meetings_xml(text: &str) -> Vec<GranolaMeeting> {
+    let block_re = match Regex::new(r"(?s)<meeting\b([^>]*)>(.*?)</meeting>") {
+        Ok(re) => re,
+        Err(_) => return Vec::new(),
+    };
+    let email_re = Regex::new(r"<([^<>/\s]+@[^<>/\s]+)>").ok();
+
+    let mut meetings = Vec::new();
+    for cap in block_re.captures_iter(text) {
+        let attrs = cap.get(1).map(|m| m.as_str()).unwrap_or("");
+        let body = cap.get(2).map(|m| m.as_str()).unwrap_or("");
+
+        let Some(id) = xml_attr(attrs, "id").and_then(|v| non_empty(&v)) else {
+            continue;
+        };
+        let title = xml_attr(attrs, "title")
+            .and_then(|v| non_empty(&v))
+            .unwrap_or_else(|| "Untitled meeting".to_string());
+        let start_rfc3339 = xml_attr(attrs, "date").and_then(|d| parse_granola_date(&d));
+
+        let attendee_emails: Vec<String> = email_re
+            .as_ref()
+            .map(|re| {
+                re.captures_iter(body)
+                    .filter_map(|c| c.get(1).map(|m| m.as_str().to_lowercase()))
+                    .collect()
+            })
+            .unwrap_or_default();
+
+        let google_calendar_event = build_google_calendar_event(
+            &title,
+            None,
+            start_rfc3339.clone(),
+            None,
+            None,
+            &attendee_emails,
+        );
+
+        meetings.push(GranolaMeeting {
+            id,
+            title,
+            created_at: start_rfc3339,
+            updated_at: None,
+            google_calendar_event,
+            attendee_emails,
+        });
+    }
+    meetings
+}
+
+/// Extract a double-quoted XML attribute value by name from a tag's attribute string.
+fn xml_attr(attrs: &str, name: &str) -> Option<String> {
+    let re = Regex::new(&format!(r#"{}\s*=\s*"([^"]*)""#, regex::escape(name))).ok()?;
+    re.captures(attrs)
+        .and_then(|c| c.get(1))
+        .map(|m| m.as_str().to_string())
+}
+
+/// Parse Granola's human date, e.g. `Jun 30, 2026 2:30 PM EDT`, to an RFC 3339 UTC string.
+fn parse_granola_date(value: &str) -> Option<String> {
+    let value = value.trim();
+    // Split a trailing alphabetic timezone abbreviation (EDT, PST, UTC, ...).
+    let (datetime_part, tz_offset_hours) = match value.rsplit_once(' ') {
+        Some((rest, tz)) if !tz.is_empty() && tz.chars().all(|c| c.is_ascii_alphabetic()) => {
+            (rest.trim(), tz_offset_hours(tz))
+        }
+        _ => (value, 0),
+    };
+
+    let naive = NaiveDateTime::parse_from_str(datetime_part, "%b %d, %Y %I:%M %p").ok()?;
+    let offset = FixedOffset::east_opt(tz_offset_hours * 3600)?;
+    let local = offset.from_local_datetime(&naive).single()?;
+    Some(local.with_timezone(&Utc).to_rfc3339())
+}
+
+/// Map common North American timezone abbreviations to a UTC offset (hours).
+/// Unknown zones fall back to UTC; time-proximity matching tolerates small drift.
+fn tz_offset_hours(tz: &str) -> i32 {
+    match tz.to_ascii_uppercase().as_str() {
+        "EDT" => -4,
+        "EST" | "CDT" => -5,
+        "CST" | "MDT" => -6,
+        "MST" | "PDT" => -7,
+        "PST" => -8,
+        _ => 0,
+    }
 }
 
 fn values_from_payload(value: &Value) -> Vec<Value> {
@@ -748,6 +854,43 @@ mod tests {
             Some("cal-123@example.com")
         );
         assert_eq!(doc.attendee_emails, vec!["user@example.com"]);
+    }
+
+    #[test]
+    fn parses_granola_xml_meetings() {
+        let xml = "<meetings_data from=\"Jun 1, 2026\" to=\"Jun 30, 2026\" count=\"2\">\n\
+            <meeting id=\"b9f74b7b-3e04-432e-a897-d63fa7341f0f\" title=\"JG and Brant sync\" date=\"Jun 30, 2026 2:30 PM EDT\">\n\
+            <known_participants><james.giroux@a8c.com><Brant.Williams@a8c.com></known_participants>\n\
+            </meeting>\n\
+            <meeting id=\"no-date-id\" title=\"Standup\" date=\"\">\n</meeting>\n\
+            </meetings_data>";
+        let meetings = parse_meetings_xml(xml);
+        assert_eq!(meetings.len(), 2);
+
+        let first = &meetings[0];
+        assert_eq!(first.id, "b9f74b7b-3e04-432e-a897-d63fa7341f0f");
+        assert_eq!(first.title, "JG and Brant sync");
+        // EDT 2:30 PM == 18:30 UTC
+        assert_eq!(first.created_at.as_deref(), Some("2026-06-30T18:30:00+00:00"));
+        assert_eq!(
+            first.attendee_emails,
+            vec![
+                "james.giroux@a8c.com".to_string(),
+                "brant.williams@a8c.com".to_string()
+            ]
+        );
+        assert_eq!(
+            first
+                .google_calendar_event
+                .as_ref()
+                .and_then(|e| e.start.as_ref())
+                .and_then(|s| s.date_time.as_deref()),
+            Some("2026-06-30T18:30:00+00:00")
+        );
+
+        // Meeting with an empty date still parses (id + title); no start time.
+        assert_eq!(meetings[1].id, "no-date-id");
+        assert!(meetings[1].created_at.is_none());
     }
 
     #[test]
