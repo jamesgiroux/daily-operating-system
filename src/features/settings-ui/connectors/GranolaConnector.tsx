@@ -1,138 +1,210 @@
-import { useState, useEffect, type CSSProperties } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { toast } from "sonner";
+import clsx from "clsx";
+import { AlertCircle, Check, Loader2, LogIn, LogOut, RefreshCw } from "lucide-react";
 import {
+  FormRow,
   SettingsButton,
+  SettingsInput,
   SettingsSectionLabel,
   formRowStyles,
 } from "@/features/settings-ui/FormRow";
+import { useGranolaAuth } from "@/hooks/useGranolaAuth";
+import type { GranolaStatus, GranolaTokenHealth } from "@/types";
 import surface from "./ConnectorSurface.module.css";
 
-interface GranolaStatusData {
-  enabled: boolean;
-  cacheExists: boolean;
-  cachePath: string;
-  source: "companion" | "cache" | "encrypted_cache" | "none";
-  companionAvailable: boolean;
-  companionMessage: string | null;
-  encryptedCacheExists: boolean;
-  documentCount: number;
-  pendingSyncs: number;
-  failedSyncs: number;
-  completedSyncs: number;
-  lastSyncAt: string | null;
-  pollIntervalMinutes: number;
-}
+const DEFAULT_GRANOLA_ENDPOINT = "https://mcp.granola.ai/mcp";
+const BACKFILL_DAYS = 365;
 
 export default function GranolaConnection() {
-  const BACKFILL_DAYS = 365;
-  const [status, setStatus] = useState<GranolaStatusData | null>(null);
+  const granola = useGranolaAuth();
+  const previousPhase = useRef(granola.phase);
+  const [endpoint, setEndpoint] = useState(DEFAULT_GRANOLA_ENDPOINT);
+  const [status, setStatus] = useState<GranolaStatus | null>(null);
+  const [tokenHealth, setTokenHealth] = useState<GranolaTokenHealth | null>(null);
   const [backfilling, setBackfilling] = useState(false);
 
-  useEffect(() => {
-    invoke<GranolaStatusData>("get_granola_status")
-      .then(setStatus)
-      .catch((err) => console.error("get_granola_status failed:", err)); // Expected: background init on mount
+  const isConnected = granola.status.status === "authenticated";
+
+  const refreshStatus = useCallback(async () => {
+    try {
+      const result = await invoke<GranolaStatus>("get_granola_status");
+      setStatus(result);
+      if (result.mcpEndpoint) {
+        setEndpoint(result.mcpEndpoint);
+      }
+    } catch (err) {
+      console.error("get_granola_status failed:", err);
+    }
   }, []);
 
-  async function toggleEnabled() {
-    if (!status) return;
-    const newEnabled = !status.enabled;
+  const refreshTokenHealth = useCallback(async () => {
     try {
-      await invoke("set_granola_enabled", { enabled: newEnabled });
-      const refreshed = await invoke<GranolaStatusData>("get_granola_status");
-      setStatus(refreshed);
-    } catch (err) {
-      console.error("Failed to toggle Granola:", err);
-      toast.error("Failed to toggle Granola");
+      const health = await invoke<GranolaTokenHealth>("get_granola_token_health");
+      setTokenHealth(health);
+    } catch {
+      setTokenHealth(null);
     }
-  }
+  }, []);
 
-  const statusLabel = !status
-    ? "Loading..."
-    : status.companionAvailable
-      ? `Granola connected (${status.documentCount} notes)`
-      : status.cacheExists
-        ? `Legacy cache found (${status.documentCount} documents)`
-        : status.encryptedCacheExists
-          ? "Granola access unavailable"
-          : "Granola not found";
+  useEffect(() => {
+    void refreshStatus();
+    void refreshTokenHealth();
+  }, [refreshStatus, refreshTokenHealth]);
 
-  const statusColor = !status
-    ? "var(--color-text-tertiary)"
-    : !status.companionAvailable && !status.cacheExists
-      ? "var(--color-spice-terracotta)"
-      : "var(--color-garden-olive)";
+  useEffect(() => {
+    const previous = previousPhase.current;
+    previousPhase.current = granola.phase;
+
+    if (previous !== "idle" && granola.phase === "idle") {
+      void refreshStatus();
+      void refreshTokenHealth();
+    }
+  }, [granola.phase, refreshStatus, refreshTokenHealth]);
+
+  const handleConnect = async () => {
+    const target = endpoint.trim() || DEFAULT_GRANOLA_ENDPOINT;
+    await granola.connect(target);
+    void refreshStatus();
+    void refreshTokenHealth();
+  };
+
+  const handleDisconnect = async () => {
+    await granola.disconnect();
+    void refreshStatus();
+    void refreshTokenHealth();
+  };
+
+  const handlePollIntervalChange = async (minutes: number) => {
+    try {
+      await invoke("set_granola_poll_interval", { minutes });
+      setStatus((current) =>
+        current ? { ...current, pollIntervalMinutes: minutes } : current,
+      );
+    } catch (err) {
+      console.error("Failed to set Granola poll interval:", err);
+      toast.error("Failed to update poll interval");
+    }
+  };
+
+  const handleBackfill = async () => {
+    setBackfilling(true);
+    try {
+      const result = await invoke<{ created: number; eligible: number }>("start_granola_backfill", {
+        daysBack: BACKFILL_DAYS,
+      });
+      toast(`Backfill: ${result.created} of ${result.eligible} documents matched`);
+      void refreshStatus();
+    } catch {
+      toast.error("Backfill failed");
+    } finally {
+      setBackfilling(false);
+    }
+  };
+
+  const statusLabel = isConnected
+    ? granola.email || "Connected"
+    : granola.phase === "authorizing"
+      ? "Waiting for authorization..."
+      : "Not connected";
+
+  const statusDotClass = isConnected
+    ? surface.statusDotConnected
+    : granola.phase === "authorizing"
+      ? surface.statusDotWarning
+      : surface.statusDotNeutral;
+  const hasSyncStats = Boolean(
+    status && (status.pendingSyncs > 0 || status.failedSyncs > 0 || status.completedSyncs > 0),
+  );
 
   return (
     <div>
       <div className={surface.intro}>
         <SettingsSectionLabel>Granola Transcripts</SettingsSectionLabel>
         <p className={`${formRowStyles.description} ${surface.introDescription}`}>
-          Sync meeting notes from Granola&apos;s local companion access, with legacy cache fallback
+          Sync meeting notes and transcripts from Granola.
         </p>
       </div>
 
       <div className={formRowStyles.settingRow}>
-        <div className={surface.settingCopy}>
-          <span className={surface.settingTitle}>
-            {status?.enabled ? "Enabled" : "Disabled"}
-          </span>
-          <p className={surface.settingDescription}>
-            {status?.enabled
-              ? "Notes will sync from Granola when local access is available"
-              : "Granola transcript sync is turned off"}
-          </p>
+        <div className={surface.statusSummary}>
+          {granola.phase === "authorizing" ? (
+            <Loader2 className="animate-spin" size={14} />
+          ) : isConnected ? (
+            <Check size={14} />
+          ) : (
+            <AlertCircle size={14} />
+          )}
+          <span className={clsx(surface.statusDot, statusDotClass)} />
+          <span className={surface.statusText}>{statusLabel}</span>
         </div>
-        <SettingsButton
-          tone="ghost"
-          className={!status ? surface.disabledButton : undefined}
-          onClick={toggleEnabled}
-          disabled={!status}
-        >
-          {status?.enabled ? "Disable" : "Enable"}
-        </SettingsButton>
+        <div className={surface.actionRow}>
+          {isConnected ? (
+            <SettingsButton
+              tone="danger"
+              onClick={handleDisconnect}
+              disabled={granola.loading}
+            >
+              {granola.phase === "disconnecting" ? (
+                <Loader2 className="animate-spin" size={14} />
+              ) : (
+                <LogOut size={14} />
+              )}
+              Disconnect
+            </SettingsButton>
+          ) : (
+            <SettingsButton
+              tone="primary"
+              onClick={handleConnect}
+              disabled={granola.loading}
+            >
+              {granola.phase === "authorizing" ? (
+                <Loader2 className="animate-spin" size={14} />
+              ) : (
+                <LogIn size={14} />
+              )}
+              Connect
+            </SettingsButton>
+          )}
+        </div>
       </div>
 
-      {status?.enabled && (
+      <FormRow
+        label="MCP endpoint"
+        help="Granola OAuth resource"
+        controlId="granola-mcp-endpoint"
+      >
+        <SettingsInput
+          id="granola-mcp-endpoint"
+          value={endpoint}
+          onChange={(event) => setEndpoint(event.target.value)}
+          width={300}
+          disabled={granola.loading}
+        />
+      </FormRow>
+
+      {granola.error && (
+        <div className={surface.errorRow}>
+          <span className={surface.errorText}>{granola.error}</span>
+          <SettingsButton tone="borderless" compact onClick={granola.clearError}>
+            Clear
+          </SettingsButton>
+        </div>
+      )}
+
+      {tokenHealth?.connected && tokenHealth.status !== "healthy" && (
+        <div className={surface.callout}>
+          <p className={surface.calloutLabel}>Session Attention</p>
+          <p className={surface.calloutText}>
+            Granola authorization is {tokenHealth.status}. Reconnect if sync stops.
+          </p>
+        </div>
+      )}
+
+      {isConnected && (
         <>
-          {!status.companionAvailable && status.encryptedCacheExists && (
-            <div className={surface.callout}>
-              <p className={surface.calloutLabel}>Access Needed</p>
-              <p className={surface.calloutText}>
-                Granola is writing protected local data. Enable Granola companion access so DailyOS can read current notes.
-              </p>
-              {status.companionMessage && (
-                <p className={`${surface.calloutText} ${surface.calloutTextSpaced}`}>
-                  {status.companionMessage}
-                </p>
-              )}
-            </div>
-          )}
-
-          {!status.cacheExists && !status.encryptedCacheExists && (
-            <div className={surface.callout}>
-              <p className={surface.calloutLabel}>Not Found</p>
-              <p className={surface.calloutText}>
-                Granola must be installed and have recorded at least one meeting.
-              </p>
-              <p className={`${surface.calloutText} ${surface.calloutTextSpaced}`}>
-                Expected path: <span className={surface.inlineCode}>~/Library/Application Support/Granola/</span>
-              </p>
-            </div>
-          )}
-
-          <div className={formRowStyles.settingRow}>
-            <div className={surface.statusSummary}>
-              <div
-                className={surface.statusDot}
-                style={{ "--connector-status-color": statusColor } as CSSProperties}
-              />
-              <span className={surface.statusText}>{statusLabel}</span>
-            </div>
-          </div>
-
-          {(status.pendingSyncs > 0 || status.failedSyncs > 0 || status.completedSyncs > 0) && (
+          {status && hasSyncStats ? (
             <div className={surface.statsRow}>
               {status.completedSyncs > 0 && (
                 <span className={`${surface.statsLabel} ${surface.statsSynced}`}>
@@ -150,32 +222,23 @@ export default function GranolaConnection() {
                 </span>
               )}
             </div>
-          )}
+          ) : null}
 
           <div className={formRowStyles.settingRow}>
             <div className={surface.settingCopy}>
               <span className={surface.settingTitle}>Poll interval</span>
               <p className={surface.settingDescription}>
-                How often to check Granola for new notes
+                How often DailyOS checks Granola for new notes
               </p>
             </div>
             <select
-              value={status.pollIntervalMinutes}
-              onChange={async (e) => {
-                const minutes = Number(e.target.value);
-                try {
-                  await invoke("set_granola_poll_interval", { minutes });
-                  setStatus({ ...status, pollIntervalMinutes: minutes });
-                } catch (err) {
-                  console.error("Failed to set poll interval:", err);
-                  toast.error("Failed to update poll interval");
-                }
-              }}
+              value={status?.pollIntervalMinutes ?? 10}
+              onChange={(event) => void handlePollIntervalChange(Number(event.target.value))}
               className={surface.selectControl}
             >
-              {[1, 2, 5, 10, 15, 30].map((m) => (
-                <option key={m} value={m}>
-                  {m} min
+              {[1, 2, 5, 10, 15, 30].map((minutes) => (
+                <option key={minutes} value={minutes}>
+                  {minutes} min
                 </option>
               ))}
             </select>
@@ -185,29 +248,19 @@ export default function GranolaConnection() {
             <div className={surface.settingCopy}>
               <span className={surface.settingTitle}>Historical backfill</span>
               <p className={surface.settingDescription}>
-                Match Granola notes to past meetings (last {BACKFILL_DAYS} days)
+                Match Granola notes to past meetings from the last {BACKFILL_DAYS} days
               </p>
             </div>
             <SettingsButton
               tone="ghost"
-              className={backfilling ? surface.disabledButton : undefined}
-              onClick={async () => {
-                setBackfilling(true);
-                try {
-                  const result = await invoke<{ created: number; eligible: number }>("start_granola_backfill", {
-                    daysBack: BACKFILL_DAYS,
-                  });
-                  toast(`Backfill: ${result.created} of ${result.eligible} documents matched`);
-                  const refreshed = await invoke<GranolaStatusData>("get_granola_status");
-                  setStatus(refreshed);
-                } catch {
-                  toast.error("Backfill failed");
-                } finally {
-                  setBackfilling(false);
-                }
-              }}
+              onClick={handleBackfill}
               disabled={backfilling}
             >
+              {backfilling ? (
+                <Loader2 className="animate-spin" size={14} />
+              ) : (
+                <RefreshCw size={14} />
+              )}
               {backfilling ? "Running..." : "Start Backfill"}
             </SettingsButton>
           </div>

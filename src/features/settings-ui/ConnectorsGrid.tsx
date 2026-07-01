@@ -38,15 +38,20 @@ function resolveStatus(id: string, result: unknown): { connected: boolean; label
     };
   }
 
+  if (id === "granola") {
+    const authStatus = (r as { status?: string }).status;
+    if (authStatus === "authenticated") {
+      return { connected: true, label: (r as { email?: string }).email ?? "Connected" };
+    }
+    return { connected: false, label: "Not connected" };
+  }
+
   // Standard pattern: enabled + some indicator
   const enabled = !!r.enabled;
   if (!enabled) return { connected: false, label: "Disabled" };
 
   if (id === "quill") {
     return { connected: !!r.bridgeExists, label: r.bridgeExists ? "Bridge active" : "Bridge not found" };
-  }
-  if (id === "granola") {
-    return { connected: !!r.cacheExists, label: r.cacheExists ? `${r.documentCount} documents` : "Cache not found" };
   }
   if (id === "gravatar") {
     return { connected: true, label: `${r.cachedCount} cached` };
@@ -92,13 +97,20 @@ export default function ConnectorsGrid() {
       .then((result) => setGleanMode(result.mode === "Glean"))
       .catch(() => setGleanMode(false));
 
-    // Listen for Google auth changes so the header dot updates live
-    const unlisten = listen("google-auth-changed", () => {
+    // Listen for auth changes so the header dots update live.
+    const unlistenGoogle = listen("google-auth-changed", () => {
       const google = connectors.find((c) => c.id === "google");
       if (google) refreshConnector(google.id, google.statusCommand);
     });
+    const unlistenGranola = listen("granola-auth-changed", () => {
+      const granola = connectors.find((c) => c.id === "granola");
+      if (granola) refreshConnector(granola.id, granola.statusCommand);
+    });
 
-    return () => { unlisten.then((fn) => fn()); };
+    return () => {
+      unlistenGoogle.then((fn) => fn());
+      unlistenGranola.then((fn) => fn());
+    };
   }, [refreshConnector]);
 
   function handleToggle(id: string) {

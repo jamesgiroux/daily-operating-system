@@ -76,10 +76,28 @@
   background: var(--connector-status-color, var(--color-text-tertiary));
 }
 
+.statusDotConnected {
+  background: var(--color-garden-olive);
+}
+
+.statusDotWarning {
+  background: var(--color-spice-turmeric);
+}
+
+.statusDotNeutral {
+  background: var(--color-text-tertiary);
+}
+
 .statusText {
   font-family: var(--font-sans);
   font-size: 13px;
   color: var(--color-text-secondary);
+}
+
+.actionRow {
+  display: flex;
+  align-items: center;
+  gap: var(--space-sm);
 }
 
 .statsRow {

@@ -765,6 +765,7 @@ pub struct GranolaStatus {
     pub completed_syncs: usize,
     pub last_sync_at: Option<String>,
     pub poll_interval_minutes: u32,
+    pub mcp_endpoint: String,
 }
 
 #[derive(Debug, serde::Serialize)]
@@ -786,31 +787,45 @@ pub async fn get_granola_status(state: State<'_, Arc<AppState>>) -> Result<Grano
     let config = state.config.read().as_ref().map(|c| c.granola.clone());
 
     let granola_config = config.unwrap_or_default();
-    let resolved_path = crate::granola::resolve_cache_path(&granola_config);
-    let cache_exists = resolved_path.is_some();
-    let encrypted_cache_exists = crate::granola::detect_encrypted_cache_path().is_some();
-    let companion_status = crate::granola::companion::CompanionClient::status();
-
-    let document_count = if companion_status.available {
-        crate::granola::companion::CompanionClient::new()
-            .and_then(|client| client.list_recent_notes(90).map(|notes| notes.len()))
-            .unwrap_or(0)
-    } else {
-        match &resolved_path {
-            Some(p) => crate::granola::cache::count_documents(p).unwrap_or(0),
+    let status_config = granola_config.clone();
+    let (
+        resolved_path,
+        cache_exists,
+        encrypted_cache_exists,
+        companion_status,
+        document_count,
+        source,
+    ) = tauri::async_runtime::spawn_blocking(move || {
+        let resolved_path = crate::granola::resolve_cache_path(&status_config);
+        let cache_exists = resolved_path.is_some();
+        let encrypted_cache_exists = crate::granola::detect_encrypted_cache_path().is_some();
+        let companion_status = crate::granola::companion::CompanionClient::status();
+        let document_count = match &resolved_path {
+            Some(path) => crate::granola::cache::count_documents(path).unwrap_or(0),
             None => 0,
+        };
+        let source = if cache_exists {
+            "cache"
+        } else if companion_status.available {
+            "companion"
+        } else if encrypted_cache_exists {
+            "encrypted_cache"
+        } else {
+            "none"
         }
-    };
+        .to_string();
 
-    let source = if companion_status.available {
-        "companion"
-    } else if cache_exists {
-        "cache"
-    } else if encrypted_cache_exists {
-        "encrypted_cache"
-    } else {
-        "none"
-    };
+        (
+            resolved_path,
+            cache_exists,
+            encrypted_cache_exists,
+            companion_status,
+            document_count,
+            source,
+        )
+    })
+    .await
+    .map_err(|e| format!("Granola status task failed: {e}"))?;
 
     // Count sync states from DB (source='granola')
     let (pending, failed, completed, last_sync) = state
@@ -855,7 +870,224 @@ pub async fn get_granola_status(state: State<'_, Arc<AppState>>) -> Result<Grano
         completed_syncs: completed,
         last_sync_at: last_sync,
         poll_interval_minutes: granola_config.poll_interval_minutes,
+        mcp_endpoint: granola_config.mcp_endpoint,
     })
+}
+
+/// Start Granola OAuth consent flow.
+#[tauri::command]
+pub async fn start_granola_oauth(
+    endpoint: String,
+    state: State<'_, Arc<AppState>>,
+    app_handle: tauri::AppHandle,
+) -> Result<crate::granola_oauth::GranolaAuthStatus, String> {
+    use crate::granola_oauth;
+
+    let request_id = crate::audit_log::new_request_id();
+    let endpoint = normalize_granola_endpoint(endpoint);
+
+    match granola_oauth::oauth::run_granola_consent_flow(&endpoint).await {
+        Ok(result) => {
+            let (email, name) =
+                refresh_granola_account_identity(&endpoint, result.email, result.name).await;
+            let status = granola_oauth::GranolaAuthStatus::Authenticated {
+                email: email.unwrap_or_else(|| "connected".to_string()),
+                name,
+            };
+
+            crate::state::create_or_update_config(&state, |config| {
+                config.granola.enabled = true;
+                config.granola.mcp_endpoint = endpoint.clone();
+            })?;
+            state.integrations.granola_poller_wake.notify_one();
+
+            {
+                let mut audit = state.audit_log.lock();
+                emit_user_audit(
+                    &mut audit,
+                    "oauth_connected",
+                    "security",
+                    serde_json::json!({"provider": "granola"}),
+                    &request_id,
+                )?;
+            }
+
+            #[allow(
+                clippy::let_underscore_must_use,
+                reason = "intentional best-effort discard; preserves existing non-blocking behavior"
+            )]
+            let _ = app_handle.emit("granola-auth-changed", &status);
+            Ok(status)
+        }
+        Err(granola_oauth::GranolaAuthError::FlowCancelled) => {
+            Err("Granola authorization was cancelled".to_string())
+        }
+        Err(e) => {
+            let message = format!("{}", e);
+            #[allow(
+                clippy::let_underscore_must_use,
+                reason = "intentional best-effort discard; preserves existing non-blocking behavior"
+            )]
+            let _ = app_handle.emit(
+                "granola-auth-failed",
+                serde_json::json!({ "message": message }),
+            );
+            Err(message)
+        }
+    }
+}
+
+/// Get current Granola OAuth status from Keychain.
+#[tauri::command]
+pub async fn get_granola_oauth_status() -> crate::granola_oauth::GranolaAuthStatus {
+    tauri::async_runtime::spawn_blocking(crate::granola_oauth::detect_granola_auth)
+        .await
+        .unwrap_or(crate::granola_oauth::GranolaAuthStatus::NotConfigured)
+}
+
+/// Disconnect Granola OAuth and stop background Granola polling.
+#[tauri::command]
+pub async fn disconnect_granola_oauth(
+    state: State<'_, Arc<AppState>>,
+    app_handle: tauri::AppHandle,
+) -> Result<(), String> {
+    let request_id = crate::audit_log::new_request_id();
+
+    tauri::async_runtime::spawn_blocking(crate::granola_oauth::token_store::delete_token)
+        .await
+        .map_err(|e| format!("Granola disconnect task failed: {e}"))?
+        .map_err(|e| format!("{}", e))?;
+
+    crate::state::create_or_update_config(&state, |config| {
+        config.granola.enabled = false;
+    })?;
+
+    {
+        let mut audit = state.audit_log.lock();
+        emit_user_audit(
+            &mut audit,
+            "oauth_revoked",
+            "security",
+            serde_json::json!({"provider": "granola"}),
+            &request_id,
+        )?;
+    }
+
+    let status = crate::granola_oauth::GranolaAuthStatus::NotConfigured;
+    #[allow(
+        clippy::let_underscore_must_use,
+        reason = "intentional best-effort discard; preserves existing non-blocking behavior"
+    )]
+    let _ = app_handle.emit("granola-auth-changed", &status);
+
+    Ok(())
+}
+
+#[derive(Debug, Clone, serde::Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct GranolaTokenHealth {
+    pub connected: bool,
+    pub status: String,
+    pub expires_at: Option<String>,
+    pub expires_in_hours: Option<i64>,
+}
+
+#[tauri::command]
+pub async fn get_granola_token_health() -> GranolaTokenHealth {
+    tauri::async_runtime::spawn_blocking(|| match crate::granola_oauth::token_store::load_token() {
+        Ok(token) => {
+            let expiry = token
+                .expiry
+                .as_ref()
+                .and_then(|value| chrono::DateTime::parse_from_rfc3339(value).ok())
+                .map(|value| value.with_timezone(&chrono::Utc));
+
+            match expiry {
+                Some(expiry) => {
+                    let hours = (expiry - chrono::Utc::now()).num_hours();
+                    let status = if hours < 0 {
+                        "expired"
+                    } else if hours < 24 {
+                        "expiring"
+                    } else {
+                        "healthy"
+                    };
+
+                    GranolaTokenHealth {
+                        connected: true,
+                        status: status.to_string(),
+                        expires_at: Some(expiry.to_rfc3339()),
+                        expires_in_hours: Some(hours),
+                    }
+                }
+                None => GranolaTokenHealth {
+                    connected: true,
+                    status: "healthy".to_string(),
+                    expires_at: None,
+                    expires_in_hours: None,
+                },
+            }
+        }
+        Err(_) => GranolaTokenHealth {
+            connected: false,
+            status: "not_connected".to_string(),
+            expires_at: None,
+            expires_in_hours: None,
+        },
+    })
+    .await
+    .unwrap_or(GranolaTokenHealth {
+        connected: false,
+        status: "not_connected".to_string(),
+        expires_at: None,
+        expires_in_hours: None,
+    })
+}
+
+fn normalize_granola_endpoint(endpoint: String) -> String {
+    let trimmed = endpoint.trim();
+    if trimmed.is_empty() {
+        crate::granola_oauth::DEFAULT_GRANOLA_MCP_ENDPOINT.to_string()
+    } else {
+        trimmed.trim_end_matches('/').to_string()
+    }
+}
+
+async fn refresh_granola_account_identity(
+    endpoint: &str,
+    fallback_email: Option<String>,
+    fallback_name: Option<String>,
+) -> (Option<String>, Option<String>) {
+    let client = crate::granola::mcp_client::GranolaMcpClient::new(endpoint);
+    let account = match client.get_account_info().await {
+        Ok(account) => account,
+        Err(error) => {
+            log::warn!(
+                "Granola account info fetch failed: error_ref={}",
+                crate::processor::transcript::digest_token(&error)
+            );
+            return (fallback_email, fallback_name);
+        }
+    };
+
+    let email = account.email.or(fallback_email);
+    let name = account.name.or(fallback_name);
+    let email_for_store = email.clone();
+    let name_for_store = name.clone();
+
+    #[allow(
+        clippy::let_underscore_must_use,
+        reason = "best-effort identity refresh; auth succeeds even if Keychain update is unavailable"
+    )]
+    let _ = tauri::async_runtime::spawn_blocking(move || {
+        let mut token = crate::granola_oauth::token_store::load_token()?;
+        token.email = email_for_store;
+        token.name = name_for_store;
+        crate::granola_oauth::token_store::save_token(&token)
+    })
+    .await;
+
+    (email, name)
 }
 
 /// Attempt an immediate Granola sync for a single meeting.
@@ -967,9 +1199,9 @@ pub struct GranolaBackfillResult {
     pub eligible: usize,
 }
 
-/// Create Granola sync rows for past meetings found in the cache.
+/// Create Granola sync rows for past meetings found in Granola.
 #[tauri::command]
-pub fn start_granola_backfill(
+pub async fn start_granola_backfill(
     days_back: Option<u32>,
     state: State<'_, Arc<AppState>>,
 ) -> Result<GranolaBackfillResult, String> {
@@ -978,7 +1210,7 @@ pub fn start_granola_backfill(
         return Err("daysBack must be between 1 and 3650".to_string());
     }
     let (created, eligible) =
-        crate::granola::poller::run_granola_backfill(&state, days_back as i32)?;
+        crate::granola::poller::run_granola_backfill(&state, days_back as i32).await?;
     Ok(GranolaBackfillResult { created, eligible })
 }
 

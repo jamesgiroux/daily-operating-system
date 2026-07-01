@@ -44,6 +44,7 @@ mod google;
 pub mod google_api;
 pub mod google_drive;
 pub mod granola;
+pub mod granola_oauth;
 pub mod gravatar;
 #[cfg(any(test, feature = "release-gate"))]
 pub mod harness;
@@ -1401,6 +1402,10 @@ pub fn run() {
             commands::trigger_quill_sync_for_meeting,
             // Granola Integration
             commands::get_granola_status,
+            commands::start_granola_oauth,
+            commands::get_granola_oauth_status,
+            commands::disconnect_granola_oauth,
+            commands::get_granola_token_health,
             commands::trigger_granola_sync_for_meeting,
             commands::set_granola_enabled,
             commands::set_granola_poll_interval,
