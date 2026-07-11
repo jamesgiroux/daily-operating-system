@@ -159,15 +159,15 @@ Your supporting arguments should be:
 
 ## Example
 
-**Title**: "Approve the Agentforce Partnership Investment"
+**Title**: "Approve the Aura Partnership Investment"
 
-**Answer**: We should invest $200K in formalizing the Globex Agentforce partnership. The market timing is right, technical validation is complete, and we have a lighthouse customer ready to deploy.
+**Answer**: We should invest $200K in formalizing the Globex Aura partnership. The market timing is right, technical validation is complete, and we have a lighthouse customer ready to deploy.
 
 **Argument 1: Market timing favors early movers**
-Globex generated $100M in Agentforce bookings in year one. Partner ecosystem is still forming. Early entrants get preferential positioning before the market crowds.
+Globex generated $100M in Aura bookings in year one. Partner ecosystem is still forming. Early entrants get preferential positioning before the market crowds.
 
 **Argument 2: Technical risk is behind us**
-Dreamforce demo validated the approach. Keystone Automotive POC is operational. We're scaling proven technology, not speculating.
+GlobexWorld demo validated the approach. Keystone Automotive POC is operational. We're scaling proven technology, not speculating.
 
 **Argument 3: Revenue opportunity is concrete**
 Vertex represents $400K in immediate pipeline. Three additional enterprise opportunities in active discussion. This isn't theoretical demand.

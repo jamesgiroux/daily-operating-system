@@ -222,7 +222,7 @@ Opening → Establish Positions → Explore Tensions → Find Synthesis → Clos
 **Participants**:
 - Amy (favors industry specialization)
 - Riley (favors capability specialization)
-- James (sees hybrid approach)
+- Jordan (sees hybrid approach)
 
 **Central question**: "What should determine how we organize TAM expertise?"
 

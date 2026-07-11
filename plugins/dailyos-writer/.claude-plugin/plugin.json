@@ -1,6 +1,6 @@
 {
   "name": "dailyos-writer",
-  "description": "Editorial production with writer's room quality control. Seven-phase workflow from ideation through review, with specialized voices and challenger gates.",
-  "version": "0.9.0",
+  "description": "Editorial production with writer's room quality control. Eight-phase workflow from ideation through review to capture, with specialized voices, challenger gates, a current-generation AI-tell detection layer, and a per-project voice learning loop.",
+  "version": "0.10.0",
   "author": "DailyOS"
 }

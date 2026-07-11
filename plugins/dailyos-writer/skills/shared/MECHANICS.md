@@ -14,15 +14,15 @@ Universal rules that apply to all content types.
 
 | With em dashes | Better |
 |---------------|--------|
-| "Two Globex AEs—Keith Coles and Joe Shunia—reached out" | "Two Globex AEs (Keith Coles from Data Cloud and Joe Shunia from Marketing Cloud Digital) reached out" |
-| "Dreamforce wasn't the finish line—it was the starting point" | "Dreamforce was the starting point." |
+| "Two of their reps—Dana Lee and Chris Park—reached out" | "Two Globex AEs (Dana Lee from the data team and Chris Park from marketing) reached out" |
+| "The launch wasn't the finish line—it was the starting point" | "The launch was the starting point." |
 | "The momentum is real—it's commercial, and moving fast" | "The momentum is translating into commercial activity." |
 
 ### Quotation Marks
 
 **Use curly quotes**, not straight quotes:
-- Correct: "WordPress VIP"
-- Wrong: "WordPress VIP"
+- Correct: "the product launch"
+- Wrong: "the product launch"
 
 **Exception**: Code snippets and technical documentation use straight quotes.
 
@@ -116,9 +116,9 @@ Wrong (not parallel):
 ### That vs. Which
 
 - **That** = Restrictive clause (no comma)
-  - "The connector that syncs WordPress content to Data Cloud"
+  - "The connector that syncs content to the data platform"
 - **Which** = Non-restrictive clause (with comma)
-  - "The connector, which launched in October, is now GA"
+  - "The connector, which launched last quarter, is now GA"
 
 ### Affect vs. Effect
 

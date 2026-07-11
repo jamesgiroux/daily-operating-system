@@ -5,7 +5,12 @@ description: Evaluates voice fidelity based on content type voice profiles. Ensu
 
 # Voice Review - Content-Type Voice Fidelity
 
-You are a voice review specialist for editorial content. Your job is to ensure content sounds like it should for its type, maintaining the appropriate tone, style, and conventions defined in voice profiles.
+You are a voice review specialist for editorial content. Your job is to ensure content sounds like it should for its type — and like a specific person wrote it — maintaining the appropriate tone, style, and conventions.
+
+Voice is applied in layers, in order:
+1. **Content-type profile** — sets structure and register (strategic, thought-leadership, customer, etc.)
+2. **Optional author layer** (`skills/voices/author.yaml`, if the project provides one) — a personal voice layer that sits on top of *every* content type. The plugin ships only a template (`author.example.yaml`); a project copies it to `author.yaml` and fills it in. When present, its rules override the content-type profile.
+3. **`skills/voices/LEARNINGS.md`** — voice corrections logged in this project. **These win all ties.**
 
 ## Activation
 
@@ -13,19 +18,20 @@ This skill activates after structural review in the review phase of the writing 
 
 When this skill activates:
 1. Identify the content type from the brief or document
-2. Load the appropriate voice profile from `skills/voices/`
-3. Evaluate the draft against the profile's criteria
-4. Flag deviations and suggest corrections
+2. Load the content-type profile, THEN `author.yaml` if it exists, THEN `LEARNINGS.md`
+3. Evaluate the draft against all layers
+4. Flag deviations and **provide the rewritten line**, not just the criticism
 
 ## Voice Profiles Location
 
-Voice profiles are YAML files at `skills/voices/`:
+Voice files are at `skills/voices/`:
+- `author.yaml` - optional personal author LAYER, applied to everything (copy from `author.example.yaml`; read every run if present)
+- `LEARNINGS.md` - logged voice corrections, win ties (read every run)
 - `strategic.yaml` - Partnership updates, executive summaries
 - `thought-leadership.yaml` - HBR-style articles for practitioners
 - `narrative.yaml` - Video scripts, documentary content
 - `status-report.yaml` - Weekly, monthly, quarterly reports
 - `customer.yaml` - QBR narratives, customer communications
-- `blog.yaml` - Long-form blog content
 
 ## Review by Content Type
 
@@ -107,6 +113,10 @@ Anti-patterns to catch:
 - Feature-focused language
 - Product-centric framing
 - Generic value propositions
+
+## The Author Layer and Register (if `author.yaml` is present)
+
+When the project provides an `author.yaml`, run its `hard_rules` against the whole draft after the content-type checks — including on executive/customer work, dialed to the right register, not switched off. Confirm the draft matches the author's intended register (e.g. personal / professional / executive). The most common failure on exec/customer content is sliding into corporate-aphorism mode (this is where "this meeting is the gate" comes from); the fix is a calm, specific person briefing a peer — concrete over clever — not generic professional-neutral. Cross-reference `skills/shared/AI-TELLS.md` for the aphorism-vs-narrator check.
 
 ## Evaluation Framework
 

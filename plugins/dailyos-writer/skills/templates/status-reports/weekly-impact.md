@@ -24,8 +24,8 @@ Outcome-focused weekly summary. Emphasizes impact over activity.
 | Activity (Avoid) | Outcome (Prefer) |
 |------------------|------------------|
 | Had meeting with Globex | Partnership advanced to legal review |
-| Worked on Keystone account | Keystone NADA project greenlit ($150K opportunity) |
-| Made progress on Agentforce | MVP scope finalized, on track for Feb launch |
+| Worked on Keystone account | Keystone DealerExpo project greenlit ($150K opportunity) |
+| Made progress on Aura | MVP scope finalized, on track for Feb launch |
 
 ## Structure
 
@@ -126,13 +126,13 @@ Outcome-focused weekly summary. Emphasizes impact over activity.
 
 ## Key Wins
 
-- **Agentforce partnership cleared for legal review** - Jared confirmed legal engagement starting this week; targeting Feb close (Strategic: Globex partnership)
-- **Keystone NADA project greenlit** - Tomasz confirmed go-ahead; $150K expansion opportunity identified (Strategic: Lighthouse customer)
+- **Aura partnership cleared for legal review** - Jared confirmed legal engagement starting this week; targeting Feb close (Strategic: Globex partnership)
+- **Keystone DealerExpo project greenlit** - Tomasz confirmed go-ahead; $150K expansion opportunity identified (Strategic: Lighthouse customer)
 - **Vertex co-sell advancing** - Technical POV delivered; next step is customer presentation Jan 15 (Strategic: First co-sell test)
 
 ## Progress
 
-- **Agentforce MVP**: Scope finalized with Abdul; on track for Feb beta → Next: Development kickoff
+- **Aura MVP**: Scope finalized with Abdul; on track for Feb beta → Next: Development kickoff
 - **Leadership Content**: Week 2 article drafted; in review cycle → Next: Publish by Friday
 - **Foundation accounts**: Completed health assessments for 5 accounts → Next: 5 more by end of month
 
@@ -144,7 +144,7 @@ Outcome-focused weekly summary. Emphasizes impact over activity.
 ## Next Week Focus
 
 1. Vertex customer presentation (Jan 15)
-2. Agentforce legal support as needed
+2. Aura legal support as needed
 3. Continue Foundation account assessments
 4. Week 3 Leadership Content draft
 ```

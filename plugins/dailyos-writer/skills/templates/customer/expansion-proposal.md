@@ -104,7 +104,7 @@ Good expansion proposals connect to genuine triggers:
 | **Strategic shift** | "Given your focus on personalization in 2026..." |
 | **Observed friction** | "The bottleneck you mentioned in APAC publishing..." |
 | **Success building** | "Given the results from the pilot..." |
-| **Market change** | "With Globex's Agentforce launch..." |
+| **Market change** | "With Globex's Aura launch..." |
 | **Organizational growth** | "As you bring on the European team..." |
 
 ## Template
@@ -156,24 +156,24 @@ Good expansion proposals connect to genuine triggers:
 ## Example
 
 ```markdown
-# Agentforce Integration: A Proposal for Keystone Automotive
+# Aura Integration: A Proposal for Keystone Automotive
 
 ## The Opportunity
 
 During our September strategy session, you mentioned dealer response time as a key friction point. Dealers waiting hours for answers that should take minutes. You estimated this costs 15 dealer-hours per day across your network.
 
-With Globex's Agentforce now operational in your environment, there's an opportunity to address this directly. AI-powered dealer support that responds immediately, with human escalation for complex issues.
+With Globex's Aura now operational in your environment, there's an opportunity to address this directly. AI-powered dealer support that responds immediately, with human escalation for complex issues.
 
 You've already invested in the Globex infrastructure. This is about activating it for a high-impact use case.
 
 ## Our Recommendation
 
-Implement the WordPress VIP Agentforce Connector to power intelligent dealer support on your existing content platform.
+Implement the Northwind Aura Connector to power intelligent dealer support on your existing content platform.
 
-This builds on your current WordPress VIP deployment and your Globex Data Cloud investment. No new infrastructure—just a bridge between what you already have.
+This builds on your current Northwind deployment and your Globex Data Platform investment. No new infrastructure—just a bridge between what you already have.
 
 ### What This Includes
-- Agentforce Connector deployment
+- Aura Connector deployment
 - Integration with your existing dealer content library
 - Training and enablement for your team
 - Ongoing support and optimization

@@ -1,131 +1,50 @@
 # Terminology
 
-Universal terminology rules that apply to all content types.
+Universal terminology discipline that applies to all content types. This file is intentionally product-agnostic. Add your own project's product names, brand spellings, and internal vocabulary where noted.
 
-## Product Names
+## Principles
 
-### WordPress VIP
+- **Consistency beats correctness.** Pick one spelling/casing for a term and use it everywhere in a piece.
+- **Full name on first reference, short form after.** "Technical Account Manager (TAM)" first, "TAM" after. Same for any acronym or product.
+- **Follow official styling** for product, company, and brand names (capitalization, spacing, punctuation). When unsure, check the entity's own site.
+- **Neutral competitive language.** Describe alternatives factually ("Adobe Experience Manager", not "AEM's bloated suite"). Avoid loaded adjectives.
 
-**Correct**: WordPress VIP
-**Wrong**: Wordpress VIP, WP VIP, WordPress-VIP
+## Project-specific terms (fill in)
 
-**Usage**: Always use full "WordPress VIP" on first reference. Can use "VIP" on subsequent references within same paragraph if context is clear.
+List the product names, brands, and proper nouns your project cares about, with correct and incorrect forms. Example shape:
 
-### Salesforce Products
+```
+**ProductName** (not Product Name, productname)
+**BrandName** (official styling)
+```
 
-**Agentforce** (not Agent Force, AgentForce)
-**Data Cloud** (not DataCloud; "Salesforce Data Cloud" on first reference)
-**Marketing Cloud** (specific product line)
+The mechanical pass can enforce these once you add them to `scripts/lint_typography.py` → `check_terminology`.
 
-### WordPress Core
+## Roles & engagement types (fill in)
 
-**WordPress** (not Wordpress, Word Press, wordpress)
-**Gutenberg** (the block editor)
-**Blocks** (not "WordPress Blocks" unless distinguishing from other block systems)
+Define the role names, meeting types, and internal vocabulary your team uses, with first-reference and short forms. Keep these out of customer-facing content unless the customer uses them too.
 
-## Company Names
+## Geographic & cultural
 
-### Follow Official Styling
+### Regional spelling
+Pick one and hold it per piece:
+- **American English**: "organization", "optimize"
+- **British/Canadian English**: "organisation"/"organization", "colour", "favour"
 
-**WordPress.com** (the hosting service)
-**WordPress.org** (the open source project)
-
-### Customer Names
-
-Use the customer's official company name styling:
-- **Acme Corp** (use official company name styling)
-- **Globex** (use official company name styling)
-- **Meta** (not Facebook, unless referring to pre-rebrand period)
-
-## Internal Terminology
-
-### Roles & Teams
-
-**Technical Account Manager (TAM)** - First reference
-**TAM** - Subsequent references
-
-**WordPress VIP** - The product/platform
-**VIP team** - The people
-
-### Engagement Types
-
-**Executive Business Review (EBR)** - Formal quarterly reviews
-**Monthly sync** - Regular check-ins
-**Partnership call** - Strategic alignment meetings
-**Technical review** - Architecture/implementation discussions
-
-## Lifecycle & Account Management
-
-### Lifecycle Rings (Project Bullseye)
-
-**Foundation ring** - Accounts focused on platform stability and operational excellence
-**Evolution ring** - Accounts expanding platform usage and strategic value
-**Influence ring** - Accounts co-creating solutions and shaping product direction
-**Summit ring** - Strategic partnerships with executive engagement and market influence
-
-**Usage**: Capitalize ring names when referring to the specific methodology. Use lowercase when using as descriptive terms.
-
-Example:
-- "Acme Corp is in the Evolution ring" (specific methodology reference)
-- "This account is evolving from infrastructure to strategic partnership" (descriptive)
-
-## Competitive Terminology
-
-### Avoid Loaded Language
-
-**Prefer neutral descriptions**:
-- "Adobe Experience Manager" (not "AEM's bloated suite")
-- "Alternative approach" (not "inferior solution")
-- "Lock-in" (acceptable when describing factual contractual constraints)
-
-### Positioning Language
-
-**WordPress VIP's positioning**:
-- "Open platform"
-- "Best-of-breed approach"
-- "Architectural flexibility"
-- "Partner ecosystem"
-
-**Use sparingly and only when directly relevant to customer decision criteria.**
-
-## Geographic & Cultural
-
-### Regional Spelling
-
-**American English** for customer-facing content (US market focus)
-- "organization" not "organisation"
-- "optimize" not "optimise"
-
-**Canadian English** acceptable for internal P2s
-- "colour," "favour," etc.
-
-### Date Formats
-
-**ISO 8601 for filenames**: YYYY-MM-DD (2025-11-03)
-**Prose**: "November 3, 2025" or "Nov 3"
+### Date formats
+- **ISO 8601 for filenames**: YYYY-MM-DD (2026-06-07)
+- **Prose**: "June 7, 2026" or "Jun 7"
 
 ### Currency
+- **State the currency**: $100M (USD), EUR 50M, GBP 40M. Don't leave a bare symbol ambiguous in international contexts.
 
-**Default to USD**: $100M, $639k ARR
-**Other currencies**: Specify (EUR 50M, GBP 40M)
+## Technical terminology (common cases)
 
-## Technical Terminology
+- **REST API** (not Rest API, rest api)
+- **GraphQL** (not Graph QL, graphQL)
+- **webhook** (not WebHook, web hook)
+- **CDN** (Content Delivery Network — spell out on first reference)
+- **multisite** (not multi-site)
+- **subdomain** (not sub-domain)
 
-### APIs & Integrations
-
-**REST API** (not Rest API, rest api)
-**GraphQL** (not Graph QL, graphQL)
-**webhook** (not WebHook, web hook)
-
-### Agentforce Technical Terms
-
-**Agent** - The AI-powered assistant
-**Data Cloud** - The data platform
-**Prompt** - The instruction set for the agent
-**Connector** - The integration component
-
-### Infrastructure
-
-**multisite** (not multi-site)
-**subdomain** (not sub-domain)
-**CDN** (Content Delivery Network - spell out on first reference)
+Add your own technical terms as needed.

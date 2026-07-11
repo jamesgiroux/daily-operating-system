@@ -1,12 +1,11 @@
 #!/usr/bin/env python3
 """
-Typography linter for VIP editorial standards.
+Typography linter for editorial standards.
 
 Checks for:
 - Em dashes (should use parentheses or periods)
 - Straight quotes (should use curly quotes)
-- WordPress VIP terminology
-- Salesforce product names
+- Project-specific terminology (configurable; empty by default)
 - Oxford comma issues
 
 Usage:
@@ -34,22 +33,22 @@ def check_em_dashes(line: str, line_num: int) -> List[TypographyIssue]:
         suggestion = "Replace em dashes with parentheses, periods, or restructure the sentence."
         issues.append(TypographyIssue(
             line_num, line, "em-dash",
-            f"Found {count} em dash(es). Em dashes should be avoided in VIP content.",
+            f"Found {count} em dash(es). Em dashes should be avoided in prose.",
             suggestion
         ))
     return issues
 
-def check_wordpress_terminology(line: str, line_num: int) -> List[TypographyIssue]:
-    """Check for incorrect WordPress VIP terminology."""
+def check_terminology(line: str, line_num: int) -> List[TypographyIssue]:
+    """Check for incorrect project-specific terminology.
+
+    Empty by default. Add (regex, correct_form, message) tuples for the
+    product, brand, and proper-noun spellings your project cares about,
+    e.g. (r'\\bGithub\\b', 'GitHub', "Use 'GitHub' (capital H)").
+    """
     issues = []
 
-    patterns = [
-        (r'\bWordpress\b', "WordPress", "Use 'WordPress' (capital P)"),
-        (r'\bWordPress-VIP\b', "WordPress VIP", "Use 'WordPress VIP' (no hyphen)"),
-        (r'\bWP VIP\b', "WordPress VIP", "Use full 'WordPress VIP' in formal content"),
-        (r'\bAgent Force\b', "Agentforce", "Salesforce product is 'Agentforce' (one word)"),
-        (r'\bAgentForce\b', "Agentforce", "Use 'Agentforce' (not camelCase)"),
-        (r'\bDataCloud\b', "Data Cloud", "Use 'Data Cloud' (two words)"),
+    patterns: List = [
+        # (r'\bYourProduct\b', "YourProduct", "Correct casing for YourProduct"),
     ]
 
     for pattern, correct, message in patterns:
@@ -129,7 +128,7 @@ def lint_file(file_path: Path) -> List[TypographyIssue]:
 
         # Run checks
         issues.extend(check_em_dashes(line, line_num))
-        issues.extend(check_wordpress_terminology(line, line_num))
+        issues.extend(check_terminology(line, line_num))
         issues.extend(check_quotes(line, line_num))
         issues.extend(check_oxford_comma(line, line_num))
 

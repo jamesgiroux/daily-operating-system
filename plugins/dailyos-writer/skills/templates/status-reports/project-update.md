@@ -171,7 +171,7 @@ Use consistent status indicators:
 ## Example
 
 ```markdown
-# Agentforce WordPress Connector - Update - Jan 10, 2026
+# Aura Northwind Connector - Update - Jan 10, 2026
 
 ## Status: 🟢 On Track
 MVP feature-complete. Now in testing phase with Keystone POC environment validation underway.

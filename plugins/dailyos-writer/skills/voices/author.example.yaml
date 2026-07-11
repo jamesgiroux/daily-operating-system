@@ -1,0 +1,83 @@
+# Author Voice Layer — TEMPLATE
+#
+# Copy this file to `author.yaml` and fill it in to give every piece of writing
+# a consistent personal voice, on top of the content-type profiles.
+#
+# This is NOT a content-type profile. It is a LAYER that sits on top of whichever
+# content-type profile is active. The content-type profile decides structure and
+# register; this layer decides the words sound like a specific person.
+#
+# Load order: content-type profile FIRST, then this layer, then voices/LEARNINGS.md
+# (most specific, wins ties). The voice-review skill applies it automatically when
+# `author.yaml` exists.
+#
+# Keep it short and example-driven. Every rule should be applicable from its
+# before/after alone. Delete the sample rules below and write your own.
+
+name: "Author (personal voice layer)"
+applies_to: ALL          # layered onto every content type, including exec/customer
+
+# ─────────────────────────────────────────────────────────────────────────────
+# CORE STANCE — the thing all the rules serve
+# ─────────────────────────────────────────────────────────────────────────────
+stance:
+  mode: "narrator, not aphorist"
+  one_line: >
+    Write as a specific person thinking out loud, not as a confident voice that
+    belongs to no one. See shared/AI-TELLS.md for aphorism-mode vs. narrator-mode.
+
+# ─────────────────────────────────────────────────────────────────────────────
+# HARD RULES — these override the content-type profile when they conflict.
+# Replace these samples with your own. Each needs a before/after.
+# ─────────────────────────────────────────────────────────────────────────────
+hard_rules:
+
+  - id: example-no-setup-colons
+    rule: "No setup-colons in flowing prose (a common AI-tell)."
+    bad: "The reality: we're behind."
+    good: "We're behind."
+    note: "Colons are fine in lists, ratios, times."
+
+  - id: example-think-out-loud
+    rule: "Prefer the uncertain narrator over the flat declarative for contestable claims."
+    bad: "The market is shifting toward judgment over memory."
+    good: "What I keep noticing is the market shifting toward judgment, not just memory."
+    note: "One honest qualifier, not a stack. Don't hedge a fact you're sure of."
+
+  - id: example-observer-not-oracle
+    rule: "Write as a colleague noticing something, not an analyst unveiling a category."
+    bad: "There's a third axis nobody has named."
+    good: "I keep coming back to a third thing that doesn't get talked about much."
+
+# ─────────────────────────────────────────────────────────────────────────────
+# REGISTER DIAL — how the voice adapts to formality.
+# The narrator never disappears. It changes clothes, not identity.
+# ─────────────────────────────────────────────────────────────────────────────
+register:
+  personal:        # blog, public, community
+    contractions: yes
+    asides: yes
+    uncertainty_markers: frequent
+  professional:    # internal docs, thought leadership, status, strategic
+    contractions: yes
+    asides: sparing
+    uncertainty_markers: occasional
+  executive:       # exec / customer briefings, board-facing
+    contractions: light
+    asides: rare
+    uncertainty_markers: minimal but real
+    note: >
+      The register where "this meeting is the gate" creeps in. The fix is a
+      calm, specific person briefing a peer. Concrete over clever.
+
+# ─────────────────────────────────────────────────────────────────────────────
+# THE TEST
+# ─────────────────────────────────────────────────────────────────────────────
+read_aloud_test:
+  - "Would the author say this sentence out loud to a colleague? If it only works on a slide, rewrite it."
+  - "Is there a line a suspicious reader could point to and say 'a bot wrote that'? Fix it before it ships."
+
+see_also:
+  - "shared/AI-TELLS.md      — the current-generation tell taxonomy"
+  - "shared/ANTI-PATTERNS.md — older line-level patterns"
+  - "voices/LEARNINGS.md     — corrections logged since this file; these win ties"

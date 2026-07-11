@@ -246,9 +246,9 @@ Before each phase transition:
 
 ## Example
 
-The Agentforce partnership follows this framework:
+The Aura partnership follows this framework:
 
-**BUILD**: Connector MVP for Globex Data Cloud + Agentforce integration. Exit: Dreamforce demo-ready.
+**BUILD**: Connector MVP for Globex Data Platform + Aura integration. Exit: GlobexWorld demo-ready.
 
 **SHOWCASE**: Keystone Automotive as lighthouse. Exit: POC validated, case study material, reference call willing.
 

@@ -2,6 +2,10 @@
 
 Patterns to avoid across all content types. These are detected by `scripts/detect_patterns.py` and flagged during the Mechanical review pass.
 
+> **Two files, one job.** This file holds the line-level writing-quality patterns (contrast framing, throat-clearing, evidence anti-patterns). **`shared/AI-TELLS.md` holds the current-generation machine-detection layer** — the aphorism-mode vs. narrator-mode framing and the "X is the gate" class that makes writing read as AI to a 2026 reader. The Authenticity pass reads AI-TELLS.md as its primary reference; read it alongside this file. When a new tell recurs, it graduates from `voices/LEARNINGS.md` into whichever of these two files fits.
+
+**The frame that ties it all together:** AI writes in *aphorism mode* — crisp, confident, balanced declaratives that each sound like an insight but belong to no one. The target is *narrator mode* — a specific person thinking out loud. Most patterns below are specific shapes of aphorism mode. See `AI-TELLS.md` for the full treatment.
+
 ## Voice Anti-Patterns
 
 ### 1. Contrast Framing
@@ -16,7 +20,7 @@ Patterns to avoid across all content types. These are detected by `scripts/detec
 
 | Contrast framing | Direct statement |
 |-----------------|------------------|
-| "They're not treating WordPress VIP as a vendor. They're treating us as strategic partners." | "The Globex team is treating WordPress VIP as a strategic partner." |
+| "They're not treating Northwind as a vendor. They're treating us as strategic partners." | "The Globex team is treating Northwind as a strategic partner." |
 | "This isn't just about one opportunity." | "Globex is building the infrastructure..." |
 | "What we're seeing isn't speculative interest. It's commercial traction." | "We're seeing commercial traction." |
 
@@ -24,7 +28,7 @@ Patterns to avoid across all content types. These are detected by `scripts/detec
 
 **Pattern**: "Unlike our competitors who lock customers in..."
 
-**Fix**: "WordPress VIP connects to what enterprises already use."
+**Fix**: "Northwind connects to what enterprises already use."
 
 **Why**: Positioning by what you're NOT creates defensive framing. Lead with what you ARE.
 
@@ -48,7 +52,7 @@ Patterns to avoid across all content types. These are detected by `scripts/detec
 
 **Pattern**: "This is a revolutionary game-changing moment for the industry!"
 
-**Fix**: "Dreamforce created visibility. These conversations are creating outcomes."
+**Fix**: "GlobexWorld created visibility. These conversations are creating outcomes."
 
 **Why**: Superlatives without specific evidence sound like marketing copy.
 
@@ -109,7 +113,7 @@ Good writing has natural rhythm variation:
 |-------|----------|
 | "Significant traction" | "Three enterprise deals in pipeline totaling $400K" |
 | "Strong momentum" | "Partnership formalization moving to legal review" |
-| "Positive feedback" | "Keith from Globex said: '[specific quote]'" |
+| "Positive feedback" | "Dana from Globex said: '[specific quote]'" |
 
 ### Orphan Claims
 
